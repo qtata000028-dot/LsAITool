@@ -8,6 +8,10 @@ This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/a3c25e12-bfc6-41a0-ba01-00a0996b4f0b
 
+## Team Collaboration
+
+Team workflow and branch rules are documented in [CONTRIBUTING.md](./CONTRIBUTING.md).
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
