@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #0e7490;
+  --color-erp-blue: #0369a1;
+  --color-background-light: #f8fafc;
+  --color-background-dark: #0f172a;
+  --font-display: "Manrope", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-sans: "Inter", "Noto Sans SC", sans-serif;
+}
+
+@layer utilities {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);
+  }
+  .main-gradient {
+    background: radial-gradient(circle at 0% 0%, #e0f2fe 0%, #f0f9ff 30%, #ffffff 100%);
+    background-attachment: fixed;
+  }
+  .mesh-bg {
+    background-image: radial-gradient(circle at 2px 2px, rgba(14, 116, 144, 0.05) 1px, transparent 0);
+    background-size: 40px 40px;
+  }
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+}
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  z-index: 0;
+  opacity: 0.5;
+  animation: float 20s ease-in-out infinite;
+}

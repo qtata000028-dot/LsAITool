@@ -1,0 +1,153 @@
+import React from 'react';
+
+interface LoginProps {
+  onLogin: () => void;
+}
+
+export default function Login({ onLogin }: LoginProps) {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onLogin();
+  };
+
+  return (
+    <div className="font-display main-gradient text-slate-900 min-h-screen overflow-x-hidden relative">
+      {/* Ambient Background Elements */}
+      <div className="fixed inset-0 mesh-bg pointer-events-none"></div>
+      <div className="blob w-[600px] h-[600px] bg-sky-200 -top-48 -left-24"></div>
+      <div className="blob w-[500px] h-[500px] bg-cyan-100 bottom-0 -right-24" style={{ animationDelay: '-5s' }}></div>
+      <div className="blob w-[300px] h-[300px] bg-blue-100 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" style={{ animationDelay: '-10s' }}></div>
+      
+      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-6 md:p-12">
+        {/* Brand Header */}
+        <div className="mb-12 flex flex-col items-center text-center">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="bg-primary/10 p-2.5 rounded-xl border border-primary/20">
+              <svg className="w-8 h-8 text-primary" fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                <path clipRule="evenodd" d="M24 4H42V17.3333V30.6667H24V44H6V30.6667V17.3333H24V4Z" fill="currentColor" fillRule="evenodd"></path>
+              </svg>
+            </div>
+            <div className="flex flex-col text-left">
+              <span className="text-2xl font-extrabold text-slate-900 tracking-tight">LANGSU AI</span>
+              <span className="text-[10px] text-primary font-bold tracking-[0.3em] uppercase">朗速 AI 开发平台</span>
+            </div>
+          </div>
+          <h1 className="text-4xl md:text-5xl font-light text-slate-900">构建<span className="font-bold">下一代</span>企业级智能应用</h1>
+        </div>
+
+        {/* Main Layout Container */}
+        <div className="w-full max-w-6xl flex flex-col lg:flex-row items-center gap-16">
+          {/* Features Section (Left) */}
+          <div className="hidden lg:flex flex-col flex-1 space-y-12">
+            <div className="space-y-10">
+              <div className="flex items-start gap-6 group">
+                <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-2xl bg-white/50 border border-slate-200 shadow-sm text-primary font-bold">01</div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">需求调研 / INSIGHT</h3>
+                  <p className="text-slate-500 leading-relaxed text-sm max-w-md">基于大模型的深度业务分析，实现需求全链路数字化闭环。</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-6 group">
+                <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-2xl bg-white/50 border border-slate-200 shadow-sm text-primary font-bold">02</div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">模块设计 / ARCHITECT</h3>
+                  <p className="text-slate-500 leading-relaxed text-sm max-w-md">可视化低代码建模引擎，分钟级完成复杂业务流程编排。</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-6 group">
+                <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-2xl bg-white/50 border border-slate-200 shadow-sm text-primary font-bold">03</div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">AI 生成 / GENERATE</h3>
+                  <p className="text-slate-500 leading-relaxed text-sm max-w-md">工业级代码自动生成，对标顶尖架构师水准，大幅降低开发门槛。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Login Card (Right/Center) */}
+          <div className="w-full max-w-md glass-card rounded-3xl p-8 md:p-10">
+            <div className="mb-10">
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">欢迎回来</h2>
+              <p className="text-slate-500 text-sm">请输入您的凭据以访问朗速协作平台</p>
+            </div>
+            <form className="space-y-6" onSubmit={handleSubmit}>
+              {/* Company */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">所属机构</label>
+                <div className="relative">
+                  <select className="w-full h-12 pl-4 pr-10 rounded-xl border border-slate-200/60 bg-white/50 text-slate-900 appearance-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm outline-none">
+                    <option value="">选择企业机构</option>
+                    <option value="group-a">朗速科技集团 A</option>
+                    <option value="group-b">朗速科技集团 B</option>
+                    <option value="partner">合作伙伴中心</option>
+                  </select>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                    <span className="material-symbols-outlined text-lg">expand_more</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Account */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">登录账号</label>
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                    <span className="material-symbols-outlined text-lg">person</span>
+                  </div>
+                  <input className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200/60 bg-white/50 text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm outline-none placeholder:text-slate-400" placeholder="手机号 / 邮箱 / 工号" type="text" />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">访问密码</label>
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                    <span className="material-symbols-outlined text-lg">lock</span>
+                  </div>
+                  <input className="w-full h-12 pl-12 pr-12 rounded-xl border border-slate-200/60 bg-white/50 text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm outline-none placeholder:text-slate-400" placeholder="请输入密码" type="password" />
+                  <button className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary transition-colors" type="button">
+                    <span className="material-symbols-outlined text-lg">visibility</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Remember & Forgot */}
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex items-center cursor-pointer group">
+                  <input className="hidden peer" id="remember-me" type="checkbox" />
+                  <div className="w-5 h-5 rounded border border-slate-300 bg-white flex items-center justify-center mr-2 group-hover:border-primary transition-colors peer-checked:bg-primary peer-checked:border-primary">
+                    <span className="material-symbols-outlined text-white text-[14px] font-bold opacity-0 peer-checked:opacity-100" id="check-icon">check</span>
+                  </div>
+                  <span className="text-xs text-slate-500 font-medium">保持登录</span>
+                </label>
+              </div>
+
+              {/* Submit */}
+              <div className="pt-4">
+                <button className="w-full h-12 bg-primary hover:bg-erp-blue text-white font-bold rounded-xl shadow-lg shadow-primary/20 transform active:scale-[0.98] transition-all flex items-center justify-center gap-2" type="submit">
+                  <span className="tracking-widest uppercase text-sm">立即登录</span>
+                  <span className="material-symbols-outlined text-lg">login</span>
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-10 pt-6 border-t border-slate-200/50">
+              <p className="text-[10px] text-slate-400 text-center leading-relaxed">
+                本系统仅供授权员工使用。未经许可的访问尝试将被记录并可能导致法律责任。<br />
+                © 2024 Langsu Tech. All Rights Reserved.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Links */}
+        <div className="mt-16 flex gap-8 text-[11px] text-slate-400 uppercase tracking-widest">
+          <a className="hover:text-primary transition-colors" href="#">技术支持</a>
+          <a className="hover:text-primary transition-colors" href="#">安全条例</a>
+          <a className="hover:text-primary transition-colors" href="#">用户协议</a>
+        </div>
+      </div>
+    </div>
+  );
+}
