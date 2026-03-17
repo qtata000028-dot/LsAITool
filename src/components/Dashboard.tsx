@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface DashboardProps {
@@ -6,6 +6,15 @@ interface DashboardProps {
 }
 
 type Subsystem = 'finance' | 'hr' | 'supply';
+
+const FIELD_TYPE_OPTIONS = ['文本', '数字', '下拉框', '搜索框', '日期框', '单选框', '多选框'];
+
+const DETAIL_FILL_TYPE_OPTIONS = [
+  { value: '表格', label: '表格', icon: 'table_rows', description: '适合字段型明细维护' },
+  { value: '树表格', label: '树表格', icon: 'account_tree', description: '适合层级型明细展示' },
+  { value: '图表', label: '图表', icon: 'bar_chart', description: '适合统计型结果呈现' },
+  { value: '网页', label: '网页', icon: 'language', description: '适合外部页面嵌入' },
+];
 
 export default function Dashboard({ onLogout }: DashboardProps) {
   const [isSubsystemOpen, setIsSubsystemOpen] = useState(true);
@@ -76,7 +85,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   ]);
   const [detailTabs, setDetailTabs] = useState([{ id: 'tab1', name: '关联附件' }, { id: 'tab2', name: '操作日志' }]);
   const [activeTab, setActiveTab] = useState('tab1');
-  const [tabFillTypes, setTabFillTypes] = useState<Record<string, string>>({ tab1: '表格', tab2: '操作日志' });
+  const [tabFillTypes, setTabFillTypes] = useState<Record<string, string>>({ tab1: '表格', tab2: '表格' });
   const [selectedLeftColId, setSelectedLeftColId] = useState<string | null>(null);
   const [selectedMainColId, setSelectedMainColId] = useState<string | null>(null);
   const [selectedLeftForDelete, setSelectedLeftForDelete] = useState<string[]>([]);
@@ -86,7 +95,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     tab1: [
       { id: 'd_col1', name: '附件名称', type: '文本', width: 150 },
       { id: 'd_col2', name: '上传人', type: '文本', width: 100 },
-    ]
+    ],
+    tab2: [
+      { id: 'd_col3', name: '操作时间', type: '日期框', width: 160 },
+      { id: 'd_col4', name: '操作人', type: '文本', width: 120 },
+      { id: 'd_col5', name: '操作动作', type: '下拉框', width: 120 },
+    ],
   });
   const [selectedDetailColId, setSelectedDetailColId] = useState<string | null>(null);
   const [selectedDetailForDelete, setSelectedDetailForDelete] = useState<string[]>([]);
@@ -97,8 +111,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     setActiveTab(newId);
     setTabFillTypes({ ...tabFillTypes, [newId]: '表格' });
     setDetailTableColumns({ ...detailTableColumns, [newId]: [
-      { id: `d_col_${Date.now()}_1`, name: '新字段1', type: '文本', width: 120 },
-      { id: `d_col_${Date.now()}_2`, name: '新字段2', type: '文本', width: 120 },
+      { id: `d_col_${Date.now()}_1`, name: '新字段 1', type: '文本', width: 120 },
+      { id: `d_col_${Date.now()}_2`, name: '新字段 2', type: '文本', width: 120 },
     ] });
   };
 
@@ -106,6 +120,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     e.stopPropagation();
     const newTabs = detailTabs.filter(t => t.id !== id);
     setDetailTabs(newTabs);
+    setTabFillTypes(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setDetailTableColumns(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     if (activeTab === id) {
       setActiveTab(newTabs.length > 0 ? newTabs[0].id : '');
     }
@@ -213,13 +237,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         value={col.type}
                         onChange={(e) => updateColType(col.id, e.target.value, setCols)}
                       >
-                        <option value="文本">文本</option>
-                        <option value="数字">数字</option>
-                        <option value="下拉框">下拉框</option>
-                        <option value="搜索框">搜索框</option>
-                        <option value="日期框">日期框</option>
-                        <option value="复选框">复选框</option>
-                        <option value="多选框">多选框</option>
+                        {FIELD_TYPE_OPTIONS.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
                       </select>
                       <span className="material-symbols-outlined absolute right-0.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 pointer-events-none">arrow_drop_down</span>
                     </div>
@@ -234,7 +256,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             ))}
             <th className="py-2 px-3 text-slate-400 font-normal min-w-[40px]">
               <button 
-                onClick={() => setCols(prev => [...prev, { id: `col_${Date.now()}`, name: `新字段${prev.length + 1}`, type: '文本', width: 120 }])}
+                onClick={() => setCols(prev => [...prev, { id: `col_${Date.now()}`, name: `新字段 ${prev.length + 1}`, type: '文本', width: 120 }])}
                 className="size-6 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center transition-colors"
               >
                 <span className="material-symbols-outlined text-[16px]">add</span>
@@ -284,13 +306,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                               onChange={(e) => updateColType(col.id, e.target.value, setCols)}
                               className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-[12px] focus:ring-1 focus:ring-primary outline-none"
                             >
-                              <option value="文本">文本</option>
-                              <option value="数字">数字</option>
-                              <option value="下拉框">下拉框</option>
-                              <option value="搜索框">搜索框</option>
-                              <option value="日期框">日期框</option>
-                              <option value="复选框">复选框</option>
-                              <option value="多选框">多选框</option>
+                              {FIELD_TYPE_OPTIONS.map((type) => (
+                                <option key={type} value={type}>
+                                  {type}
+                                </option>
+                              ))}
                             </select>
                           </div>
                           <div className="space-y-1">
@@ -363,7 +383,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     <span className="material-symbols-outlined text-[24px] text-slate-300 dark:text-slate-600">data_object</span>
                   </div>
                   <div>
-                    <p className="font-bold text-[13px] text-slate-500 dark:text-slate-400">暂无数据行</p>
+                    <p className="font-bold text-[13px] text-slate-500 dark:text-slate-400">暂无数据表</p>
                   </div>
                 </div>
               </td>
@@ -402,7 +422,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     supply: [
       { id: 'procurement', name: '采购管理', icon: 'shopping_cart' },
       { id: 'inventory', name: '库存管理', icon: 'inventory' },
-      { id: 'logistics', name: '物流追踪', icon: 'local_shipping' }
+      { id: 'logistics', name: '物流跟踪', icon: 'local_shipping' }
     ]
   };
 
@@ -411,6 +431,244 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   const activeMenuName = menuData[activeSubsystem].find(m => m.id === activeMenu)?.name || '';
+  const isConfigFullscreenActive = isConfigOpen && configStep === 4 && isFullscreenConfig;
+  const currentDetailFillType = DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === tabFillTypes[activeTab])
+    ? tabFillTypes[activeTab]
+    : DETAIL_FILL_TYPE_OPTIONS[0].value;
+
+  useEffect(() => {
+    setSelectedDetailColId(null);
+    setSelectedDetailForDelete([]);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!isConfigOpen || configStep !== 4) {
+      setIsFullscreenConfig(false);
+    }
+  }, [configStep, isConfigOpen]);
+
+  const getDetailFillTypeMeta = (fillType?: string) => (
+    DETAIL_FILL_TYPE_OPTIONS.find((option) => option.value === fillType) ?? DETAIL_FILL_TYPE_OPTIONS[0]
+  );
+
+  const renderDetailFillPlaceholder = () => {
+    const fillTypeMeta = getDetailFillTypeMeta(currentDetailFillType);
+
+    return (
+      <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-4 rounded-[24px] border border-dashed border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(248,250,252,0.92))] px-8 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
+        <div className="flex size-16 items-center justify-center rounded-3xl border border-white/80 bg-white/80 text-primary shadow-[0_20px_40px_-28px_rgba(14,116,144,0.65)] dark:border-slate-700 dark:bg-slate-800">
+          <span className="material-symbols-outlined text-[28px]">{fillTypeMeta.icon}</span>
+        </div>
+        <div className="space-y-2">
+          <div className="text-[15px] font-bold text-slate-800 dark:text-slate-200">{fillTypeMeta.label} 视图预留区</div>
+          <div className="max-w-md text-[13px] leading-relaxed">
+            当前已切换为“{fillTypeMeta.label}”填充类型，这里将承载对应的展示组件与交互配置。
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDetailTabsWorkspace = (panelMode: 'document' | 'builder') => {
+    const activeTabMeta = getDetailFillTypeMeta(currentDetailFillType);
+    const contentPadding = isConfigFullscreenActive
+      ? 'p-4'
+      : panelMode === 'document'
+        ? 'p-6'
+        : 'p-5';
+
+    return (
+      <div className={`flex h-full min-h-0 flex-col ${contentPadding}`}>
+        <div className={`rounded-[24px] border border-white/70 bg-[linear-gradient(145deg,rgba(255,255,255,0.92),rgba(248,250,252,0.78))] p-4 shadow-[0_30px_60px_-45px_rgba(15,23,42,0.35)] dark:border-slate-700 dark:bg-slate-900/60 ${isConfigFullscreenActive ? 'mb-3' : 'mb-5'}`}>
+          <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+              {detailTabs.map((tab) => {
+                const tabMeta = getDetailFillTypeMeta(tabFillTypes[tab.id]);
+                const isActive = activeTab === tab.id;
+
+                return (
+                  <div
+                    key={tab.id}
+                    className={`group flex min-w-[180px] items-center gap-2 rounded-[22px] border px-2 py-2 transition-all ${
+                      isActive
+                        ? 'border-primary/30 bg-white text-slate-900 shadow-[0_20px_36px_-28px_rgba(14,116,144,0.65)] dark:bg-slate-800 dark:text-white'
+                        : 'border-slate-200/80 bg-slate-50/80 text-slate-600 hover:border-primary/20 hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300'
+                    }`}
+                  >
+                    <button
+                      onClick={() => setActiveTab(tab.id)}
+                      className="flex min-w-0 flex-1 items-center gap-3 rounded-[18px] px-2 py-1.5 text-left"
+                    >
+                      <div className={`flex size-9 shrink-0 items-center justify-center rounded-2xl ${
+                        isActive ? 'bg-primary/12 text-primary' : 'bg-white text-slate-400 shadow-sm dark:bg-slate-800'
+                      }`}>
+                        <span className="material-symbols-outlined text-[18px]">{tabMeta.icon}</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-bold">{tab.name}</div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            isActive ? 'bg-primary/10 text-primary' : 'bg-slate-200/80 text-slate-500 dark:bg-slate-700 dark:text-slate-300'
+                          }`}>
+                            {tabMeta.label}
+                          </span>
+                          <span className="truncate text-[11px] text-slate-400">{tabMeta.description}</span>
+                        </div>
+                      </div>
+                    </button>
+                    {detailTabs.length > 1 && (
+                      <button
+                        onClick={(e) => deleteTab(tab.id, e)}
+                        className="flex size-8 shrink-0 items-center justify-center rounded-2xl text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-500/10"
+                        title="删除页签"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">close</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+
+              <button
+                onClick={addTab}
+                className="inline-flex h-[54px] shrink-0 items-center gap-2 rounded-[20px] border border-dashed border-primary/30 bg-primary/5 px-4 text-[13px] font-bold text-primary transition-all hover:bg-primary/10 hover:shadow-[0_18px_30px_-24px_rgba(14,116,144,0.65)]"
+              >
+                <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                新增页签
+              </button>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2 2xl:w-[440px]">
+              {DETAIL_FILL_TYPE_OPTIONS.map((option) => {
+                const isActive = currentDetailFillType === option.value;
+
+                return (
+                  <button
+                    key={option.value}
+                    onClick={() => setTabFillTypes((prev) => ({ ...prev, [activeTab]: option.value }))}
+                    className={`rounded-[20px] border px-4 py-3 text-left transition-all ${
+                      isActive
+                        ? 'border-primary/35 bg-primary/10 text-primary shadow-[0_20px_36px_-26px_rgba(14,116,144,0.55)]'
+                        : 'border-slate-200/80 bg-white/80 text-slate-600 hover:border-primary/25 hover:bg-primary/5 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 flex size-10 items-center justify-center rounded-2xl ${
+                        isActive ? 'bg-white text-primary' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'
+                      }`}>
+                        <span className="material-symbols-outlined text-[18px]">{option.icon}</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-bold">{option.label}</div>
+                        <div className="mt-1 text-[11px] leading-relaxed text-slate-400">{option.description}</div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col rounded-[24px] border border-slate-200/80 bg-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:border-slate-700 dark:bg-slate-900/50">
+          {currentDetailFillType === '表格' ? (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex items-center justify-between border-b border-slate-200/80 px-4 py-3 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <div className="flex size-8 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <span className="material-symbols-outlined text-[16px]">table_rows</span>
+                  </div>
+                    <div>
+                      <div className="text-[13px] font-bold text-slate-700 dark:text-slate-200">明细字段配置</div>
+                      <div className="text-[11px] text-slate-400">支持粘贴字段名并批量生成列</div>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedDetailForDelete.length > 0 && (
+                    <button
+                      onClick={() => {
+                        setDetailTableColumns((prev) => ({
+                          ...prev,
+                          [activeTab]: prev[activeTab].filter((c) => !selectedDetailForDelete.includes(c.id)),
+                        }));
+                        setSelectedDetailForDelete([]);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">delete</span>
+                      删除 ({selectedDetailForDelete.length})
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setDetailTableColumns((prev) => ({
+                      ...prev,
+                      [activeTab]: [...(prev[activeTab] || []), { id: `d_col_${Date.now()}`, name: `新字段 ${(prev[activeTab] || []).length + 1}`, type: '文本', width: 120 }],
+                    }))}
+                    className="inline-flex items-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-[12px] font-bold text-white shadow-[0_16px_26px_-18px_rgba(14,116,144,0.65)] transition-all hover:bg-erp-blue"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">add</span>
+                    新增字段
+                  </button>
+                </div>
+              </div>
+              <div
+                className="min-h-0 flex-1 overflow-auto outline-none"
+                tabIndex={0}
+                onPaste={(e) => {
+                  const text = e.clipboardData.getData('text');
+                  if (!text) return;
+                  const newColNames = text.split(/[\t\n]/).map((s) => s.trim()).filter(Boolean);
+                  if (newColNames.length > 0) {
+                    e.preventDefault();
+                    const newCols = newColNames.map((name, i) => ({
+                      id: `d_col_${Date.now()}_${i}`,
+                      name,
+                        type: '文本',
+                      width: 100,
+                    }));
+                    setDetailTableColumns((prev) => ({
+                      ...prev,
+                      [activeTab]: [...(prev[activeTab] || []), ...newCols],
+                    }));
+                  }
+                }}
+              >
+                {renderTableBuilder(
+                  detailTableColumns[activeTab] || [],
+                  (newCols) => setDetailTableColumns((prev) => ({
+                    ...prev,
+                    [activeTab]: typeof newCols === 'function' ? newCols(prev[activeTab] || []) : newCols,
+                  })),
+                  selectedDetailColId,
+                  setSelectedDetailColId,
+                  selectedDetailForDelete,
+                  setSelectedDetailForDelete,
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 p-4">
+              {renderDetailFillPlaceholder()}
+            </div>
+          )}
+        </div>
+
+        <div className={`flex items-center justify-between rounded-[20px] border border-slate-200/70 bg-white/80 px-4 py-3 text-[12px] text-slate-500 shadow-[0_16px_30px_-28px_rgba(15,23,42,0.35)] dark:border-slate-700 dark:bg-slate-900/50 ${isConfigFullscreenActive ? 'mt-3' : 'mt-4'}`}>
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[16px] text-primary">info</span>
+            当前页签:
+            <span className="font-bold text-slate-700 dark:text-slate-200">
+              {detailTabs.find((tab) => tab.id === activeTab)?.name || '未选择'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 font-bold text-primary">{activeTabMeta.label}</span>
+            <span>{activeTabMeta.description}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans">
@@ -423,7 +681,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           </div>
           <div className="flex flex-col">
             <h1 className="text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-tight">朗速 AI</h1>
-            <p className="text-primary text-[10px] font-bold uppercase tracking-wider">Module Workspace</p>
+            <p className="text-primary text-[10px] font-bold tracking-wider">模块工作台</p>
           </div>
         </div>
 
@@ -606,7 +864,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     {activeMenuName} <span className="text-primary/40 ml-1 text-2xl">/</span> <span className="text-slate-400 font-medium text-lg capitalize">{activeMenu}</span>
                   </h3>
                   <p className="text-slate-500 text-sm max-w-2xl leading-relaxed">
-                    管理{subsystems.find(s => s.id === activeSubsystem)?.name}子系统下的{activeMenuName}相关业务模块。在此您可以进行精细化核算配置、数据模型定义及AI增强逻辑的导入。
+                    管理{subsystems.find(s => s.id === activeSubsystem)?.name}子系统下的{activeMenuName}相关业务模块。在这里您可以进行精细化核算配置、数据模型定义以及 AI 增强逻辑的导入。
                   </p>
                 </div>
                 <button className="flex items-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-xl shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 transition-all">
@@ -666,7 +924,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     <div className="flex items-center gap-2 mb-4">
                       <code className="text-[11px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-slate-200/50 dark:border-slate-700 font-mono">HR-{activeMenu.toUpperCase().substring(0, 2)}-002</code>
                     </div>
-                    <p className="text-[13px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3">成本分析与管控，涉及薪酬计算、社保公积金支出控制及人力外包服务成本模型分析。</p>
+                    <p className="text-[13px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3">成本分析与管控，涉及薪酬计算、社保公积金支出控制，以及人力外包服务成本模型分析。</p>
                   </div>
                   <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 rounded-b-2xl flex items-center justify-between">
                     <div className="flex gap-4">
@@ -699,7 +957,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     <div className="flex items-center gap-2 mb-4">
                       <code className="text-[11px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-slate-200/50 dark:border-slate-700 font-mono">AM-{activeMenu.toUpperCase().substring(0, 2)}-003</code>
                     </div>
-                    <p className="text-[13px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3">固定资产与低值易耗品的折旧、维修、处置成本全生命周期跟踪，集成智能折旧预估算法。</p>
+                    <p className="text-[13px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3">覆盖固定资产与低值易耗品的折旧、维修、处置成本全生命周期跟踪，并集成智能折旧预测算法。</p>
                   </div>
                   <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 rounded-b-2xl flex items-center justify-between">
                     <div className="flex gap-4">
@@ -723,7 +981,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   </div>
                   <div className="text-center">
                     <h5 className="text-base font-bold text-slate-900 dark:text-white mb-2 group-hover:text-primary transition-colors">新增业务模块</h5>
-                    <p className="text-[13px] text-slate-500 max-w-[180px] leading-relaxed">基于 AI 模型快速生成或手动配置新的业务单元</p>
+                    <p className="text-[13px] text-slate-500 max-w-[180px] leading-relaxed">基于 AI 模型快速生成，或手动配置新的业务单元。</p>
                   </div>
                   <div className="mt-8 flex gap-2">
                     <span className="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded text-[11px] font-medium text-slate-400 group-hover:text-slate-600 transition-colors">快速配置</span>
@@ -783,7 +1041,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </AnimatePresence>
 
             {/* Left Subway Line Panel */}
-            <div className="w-96 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-10 flex flex-col shrink-0 shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10">
+            <div className={`shrink-0 overflow-hidden border-r border-slate-200 bg-white shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${
+              isConfigFullscreenActive ? 'w-0 border-r-0 p-0 opacity-0' : 'w-96 p-10 opacity-100'
+            }`}>
               <div className="flex items-center gap-4 mb-14">
                 <button 
                   onClick={() => setIsConfigOpen(false)}
@@ -810,7 +1070,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         if (!isLocked) {
                           setConfigStep(step.id);
                         } else {
-                          showToast('请先保存“菜单信息”步骤后再进行模块设置');
+                          showToast('请先保存“菜单信息”步骤后，再进入模块设置。');
                         }
                       }}
                       className={`relative z-10 flex items-start gap-6 group ${isLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
@@ -854,17 +1114,29 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </div>
 
             {/* Right Content Area */}
-            <div className="flex-1 flex flex-col bg-slate-50/50 dark:bg-slate-900/50 relative">
+            <div className="relative flex min-w-0 flex-1 flex-col bg-slate-50/50 dark:bg-slate-900/50">
               {/* Ambient Background */}
               <div className="absolute inset-0 mesh-bg opacity-50 pointer-events-none"></div>
-              
-              <div className="flex-1 p-8 lg:p-12 overflow-y-auto relative z-10 flex flex-col">
+              {isConfigFullscreenActive && (
+                <div className="absolute right-6 top-6 z-20">
+                  <button
+                    onClick={() => setIsConfigOpen(false)}
+                    className="flex size-11 items-center justify-center rounded-2xl border border-white/80 bg-white/85 text-slate-500 shadow-[0_20px_35px_-24px_rgba(15,23,42,0.45)] transition-all hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-300 dark:hover:text-white"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">close</span>
+                  </button>
+                </div>
+              )}
+               
+              <div className={`relative z-10 flex flex-1 flex-col ${
+                isConfigFullscreenActive ? 'overflow-hidden p-4 lg:p-5' : 'overflow-y-auto p-8 lg:p-12'
+              }`}>
                 <motion.div
                   key={configStep}
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, ease: "easeOut" }}
-                  className="w-full max-w-[1600px] mx-auto flex-1 flex flex-col"
+                  className={`mx-auto flex w-full flex-1 min-h-0 flex-col ${isConfigFullscreenActive ? 'max-w-none overflow-hidden' : 'max-w-[1600px]'}`}
                 >
                   <div className="mb-0"></div>
 
@@ -880,10 +1152,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           <div className="relative z-10">
                             <div className="space-y-6">
                               <div className="grid grid-cols-2 gap-6">
-                                {/* 模块编号 */}
+                                {/* 模块编码 */}
                                 <div className="space-y-2.5">
                                   <label className="text-[13px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                                    模块编号 <span className="text-rose-500">*</span>
+                                    模块编码 <span className="text-rose-500">*</span>
                                   </label>
                                   <div className="relative flex items-center">
                                     <span className="absolute left-4 text-slate-400 material-symbols-outlined text-[18px]">tag</span>
@@ -909,7 +1181,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                 <div className="flex p-1.5 bg-slate-100 dark:bg-slate-900/50 rounded-xl border border-slate-200/50 dark:border-slate-700/50 relative">
                                   {(['document', 'table', 'tree'] as const).map((type) => {
                                     const isActive = businessType === type;
-                                    const labels = { document: '单据模型', table: '单表模型', tree: '树形模型' };
+                                    const labels = { document: '单据模式', table: '列表模式', tree: '树形模式' };
                                     const icons = { document: 'receipt_long', table: 'table_chart', tree: 'account_tree' };
                                     return (
                                       <button
@@ -992,7 +1264,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                 </div>
                               </div>
 
-                              {/* 模块简介 */}
+                              {/* 妯″潡绠€浠?*/}
                               <div className="space-y-2.5">
                                 <label className="text-[13px] font-bold text-slate-700 dark:text-slate-300">模块简介</label>
                                 <textarea className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-[14px] focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all resize-none text-slate-700 dark:text-slate-300 leading-relaxed" rows={4} defaultValue="核心成本控制核算系统，包含凭证处理、账簿查询、报表生成等基础控制能力，支持跨部门自动结算。"></textarea>
@@ -1004,7 +1276,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
                       {/* Right Column: Visual & Routing */}
                       <div className="flex flex-col gap-6">
-                        {/* 视觉与状态 */}
+                        {/* 瑙嗚涓庣姸鎬?*/}
                         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden">
                           <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex items-center gap-3">
                             <div className="size-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
@@ -1023,7 +1295,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                 </div>
                                 <div className="flex-1">
                                   <div className="text-[14px] font-bold text-slate-800 dark:text-slate-200">payments</div>
-                                  <div className="text-[12px] text-slate-500 mt-0.5">Material Symbol</div>
+                                  <div className="text-[12px] text-slate-500 mt-0.5">图标库</div>
                                 </div>
                                 <button className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[13px] font-bold text-slate-600 dark:text-slate-300 hover:text-primary dark:hover:text-primary transition-colors shadow-sm">更换</button>
                               </div>
@@ -1139,14 +1411,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-6 outline-none" contentEditable suppressContentEditableWarning>成本控制模块详细说明</h1>
                           <div className="prose prose-slate dark:prose-invert max-w-none outline-none min-h-[400px]" contentEditable suppressContentEditableWarning>
                             <p className="text-slate-600 dark:text-slate-300 leading-relaxed mb-4">
-                              成本控制模块是财务管理子系统的核心组件，旨在为企业提供全方位的成本核算、分析与控制能力。本模块通过集成各业务环节的数据，实现成本的精细化管理。
-                            </p>
+                              成本控制模块是财务管理子系统的核心组件，旨在为企业提供全方位的成本核算、分析与控制能力。该模块通过整合各业务环节的数据，实现成本的精细化管理。                            </p>
                             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 mt-8 mb-4">核心功能</h3>
                             <ul className="list-disc pl-5 space-y-2 text-slate-600 dark:text-slate-300 mb-6">
-                              <li><strong>成本核算：</strong> 支持多种成本核算方法（如标准成本法、实际成本法、作业成本法），自动归集和分配各项成本费用。</li>
-                              <li><strong>预算控制：</strong> 建立多维度的成本预算体系，实时监控预算执行情况，提供超预算预警功能。</li>
-                              <li><strong>成本分析：</strong> 提供丰富的成本分析报表，支持多维度、多视角的成本构成分析、趋势分析和差异分析。</li>
-                              <li><strong>成本预测：</strong> 基于历史数据和业务模型，利用 AI 算法进行成本预测，辅助管理层决策。</li>
+                              <li><strong>成本核算:</strong> 支持多种成本核算方法，如标准成本法、实际成本法和作业成本法，自动归集和分配各项成本费用。</li>
+                              <li><strong>预算控制:</strong> 建立多维度的成本预算体系，实时监控预算执行情况，并提供超预算预警能力。</li>
+                              <li><strong>成本分析:</strong> 提供丰富的成本分析报表，支持多维度、多视角的成本构成分析、趋势分析和差异分析。</li>
+                              <li><strong>成本预测:</strong> 基于历史数据和业务模型，利用 AI 算法进行成本预测，辅助管理层决策。</li>
                             </ul>
                             
                             <div className="mt-8 p-6 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 dark:bg-slate-800/30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer group">
@@ -1154,7 +1425,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                 <span className="material-symbols-outlined text-[24px] text-slate-400 group-hover:text-primary">add_photo_alternate</span>
                               </div>
                               <span className="text-[14px] font-medium group-hover:text-primary transition-colors">拖拽或点击上传流程图/架构图</span>
-                              <span className="text-[12px] mt-1 opacity-70">支持 PNG, JPG, SVG 格式</span>
+                              <span className="text-[12px] mt-1 opacity-70">支持 PNG、JPG、SVG 格式</span>
                             </div>
                           </div>
                         </div>
@@ -1163,104 +1434,121 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   )}
 
                   {configStep === 4 && (
-                    <motion.div 
+                    <motion.div
                       key={`layout-${businessType}`}
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ duration: 0.4 }}
-                      className="flex-1 flex flex-col"
+                      className="flex min-h-0 flex-1 flex-col overflow-hidden"
                     >
                       {businessType === 'document' ? (
-                        <div className="flex flex-col gap-6 flex-1 min-h-[700px]">
-                          {/* Top Section */}
-                          <div className="flex-1 flex gap-6 min-h-[400px]">
-                            {/* Left: 多页签的来源 */}
-                            <div className="w-1/3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col overflow-hidden">
-                              <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex items-center gap-3">
-                                <div className="size-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
-                                  <span className="material-symbols-outlined text-[18px]">source</span>
+                        <div className={`grid flex-1 min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] ${isConfigFullscreenActive ? 'h-full gap-4' : 'min-h-[860px] gap-6'}`}>
+                          <div className={`grid min-h-0 ${isConfigFullscreenActive ? 'gap-4 xl:grid-cols-[minmax(250px,0.82fr)_minmax(0,1.18fr)]' : 'gap-6 xl:grid-cols-[minmax(280px,0.92fr)_minmax(0,1.08fr)]'}`}>
+                            <div className="flex min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/88 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
+                              <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-6 py-4 dark:border-slate-700 dark:bg-slate-800/70">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex size-9 items-center justify-center rounded-2xl bg-indigo-500/12 text-indigo-500">
+                                    <span className="material-symbols-outlined text-[18px]">source</span>
+                                  </div>
+                                  <div>
+                                    <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">档案来源区</h3>
+                                    <p className="mt-0.5 text-[12px] text-slate-400">拖拽来源对象，组成档案页签的数据基础</p>
+                                  </div>
                                 </div>
-                                <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">多页签来源</h3>
+                                <span className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-bold text-indigo-500 dark:bg-indigo-500/10">来源池</span>
                               </div>
-                              <div className="flex-1 p-5 overflow-y-auto">
-                                {/* Mock Tabs */}
-                                <div className="flex gap-2 mb-5 border-b border-slate-200 dark:border-slate-700 pb-2">
-                                  <button className="px-3 py-1.5 text-[13px] font-bold text-primary border-b-2 border-primary">数据源</button>
-                                  <button className="px-3 py-1.5 text-[13px] font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">接口</button>
-                                  <button className="px-3 py-1.5 text-[13px] font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">关联</button>
-                                </div>
-                                {/* Mock List */}
-                                <div className="space-y-3">
-                                  {[1, 2, 3, 4].map(i => (
-                                    <div key={i} className="p-3 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center gap-3 cursor-move hover:border-primary/30 hover:shadow-sm transition-all group">
-                                      <span className="material-symbols-outlined text-slate-400 text-[18px] group-hover:text-primary transition-colors">drag_indicator</span>
-                                      <div className="size-10 rounded-lg bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center text-slate-500 border border-slate-100 dark:border-slate-700">
-                                        <span className="material-symbols-outlined text-[18px]">dataset</span>
-                                      </div>
-                                      <div className="flex-1">
-                                        <div className="text-[14px] font-bold text-slate-700 dark:text-slate-300">数据源 {i}</div>
-                                        <div className="text-[12px] text-slate-400 mt-0.5">表或视图映射</div>
-                                      </div>
+                              <div className={`flex min-h-0 flex-1 flex-col gap-3 ${isConfigFullscreenActive ? 'overflow-hidden p-4' : 'overflow-y-auto p-5'}`}>
+                                {['基础资料', '单据接口', '关联实体', '外部附件'].map((source) => (
+                                  <button
+                                    key={source}
+                                    className="group flex items-center gap-3 rounded-[22px] border border-slate-200/80 bg-slate-50/80 px-4 py-4 text-left transition-all hover:border-primary/30 hover:bg-white hover:shadow-[0_20px_30px_-26px_rgba(14,116,144,0.4)] dark:border-slate-700 dark:bg-slate-900/50"
+                                  >
+                                    <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-300">
+                                      <span className="material-symbols-outlined text-[18px]">dataset</span>
                                     </div>
-                                  ))}
-                                </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-[14px] font-bold text-slate-700 dark:text-slate-200">{source}</div>
+                                      <div className="mt-1 text-[12px] text-slate-400">支持拖入页签并自动带入字段结构</div>
+                                    </div>
+                                    <span className="material-symbols-outlined text-[18px] text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-primary">arrow_forward</span>
+                                  </button>
+                                ))}
                               </div>
                             </div>
 
-                            {/* Right: 主单 & 明细 */}
-                            <div className="w-2/3 flex flex-col gap-6">
-                              {/* Right Top: 主单 */}
-                              <div className="flex-[3] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col overflow-hidden">
-                                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-between">
+                            <div className={`grid min-h-0 ${isConfigFullscreenActive ? 'gap-4 lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]' : 'gap-6 lg:grid-rows-2'}`}>
+                              <div className="flex min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/88 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
+                                <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-6 py-4 dark:border-slate-700 dark:bg-slate-800/70">
                                   <div className="flex items-center gap-3">
-                                    <div className="size-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                                    <div className="flex size-9 items-center justify-center rounded-2xl bg-emerald-500/12 text-emerald-500">
                                       <span className="material-symbols-outlined text-[18px]">dashboard_customize</span>
                                     </div>
-                                    <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">主单控件布局</h3>
+                                    <div>
+                                      <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">档案主布局</h3>
+                                      <p className="mt-0.5 text-[12px] text-slate-400">主表单、概要信息与操作面板的排布区域</p>
+                                    </div>
                                   </div>
-                                  <button className="text-[13px] text-primary hover:bg-primary/10 px-4 py-2 rounded-lg transition-colors font-bold flex items-center gap-1.5">
-                                    <span className="material-symbols-outlined text-[16px]">edit</span> 编辑布局
+                                  <button className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/85 px-4 py-2 text-[13px] font-bold text-primary transition-all hover:bg-primary/5 dark:border-slate-700 dark:bg-slate-800">
+                                    <span className="material-symbols-outlined text-[16px]">edit_square</span>
+                                    编辑布局
                                   </button>
                                 </div>
-                                <div className="flex-1 p-8 bg-slate-50/30 dark:bg-slate-900/30 flex items-center justify-center">
-                                  <div className="w-full h-full border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center text-slate-400 gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group">
-                                    <div className="size-14 rounded-full bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center group-hover:scale-110 transition-transform">
-                                      <span className="material-symbols-outlined text-[28px] text-slate-400 group-hover:text-primary">add_box</span>
+                                <div className="flex min-h-0 flex-1 items-center justify-center bg-[linear-gradient(180deg,rgba(248,250,252,0.76),rgba(255,255,255,0.9))] p-8 dark:bg-slate-900/40">
+                                  <div className="flex h-full w-full flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-slate-200/80 bg-white/60 text-slate-400 transition-colors hover:border-primary/25 hover:bg-white dark:border-slate-700 dark:bg-slate-900/40">
+                                    <div className="mb-4 flex size-16 items-center justify-center rounded-3xl bg-white text-primary shadow-[0_22px_32px_-24px_rgba(14,116,144,0.55)] dark:bg-slate-800">
+                                      <span className="material-symbols-outlined text-[30px]">add_box</span>
                                     </div>
-                                    <span className="text-[14px] font-medium group-hover:text-primary transition-colors">拖拽控件至此区域</span>
+                                    <div className="text-[15px] font-bold text-slate-700 dark:text-slate-200">拖拽组件到这里搭建档案页</div>
+                                    <div className="mt-2 text-[12px] text-slate-400">支持头部摘要、详情表单、操作侧栏等组合区域</div>
                                   </div>
                                 </div>
                               </div>
 
-                              {/* Right Bottom: 单据明细 */}
-                              <div className="flex-[2] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col overflow-hidden">
-                                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex items-center gap-3">
-                                  <div className="size-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center">
-                                    <span className="material-symbols-outlined text-[18px]">list_alt</span>
+                              <div className="flex min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/88 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
+                                <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-6 py-4 dark:border-slate-700 dark:bg-slate-800/70">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex size-9 items-center justify-center rounded-2xl bg-amber-500/12 text-amber-500">
+                                      <span className="material-symbols-outlined text-[18px]">list_alt</span>
+                                    </div>
+                                    <div>
+                                      <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">档案明细预览</h3>
+                                      <p className="mt-0.5 text-[12px] text-slate-400">预览档案页中下方明细区域的字段效果</p>
+                                    </div>
                                   </div>
-                                  <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">单据明细</h3>
+                                  <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-500 dark:bg-amber-500/10">明细预览</span>
                                 </div>
-                                <div className="flex-1 p-5 overflow-y-auto">
-                                  <div className="w-full border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                                <div className="flex min-h-0 flex-1 items-center px-6 py-5">
+                                  <div className="w-full overflow-hidden rounded-[22px] border border-slate-200/80 dark:border-slate-700">
                                     <table className="w-full text-left text-[13px]">
-                                      <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 border-b border-slate-200 dark:border-slate-700">
+                                      <thead className="bg-slate-50/90 text-slate-500 dark:bg-slate-900/70">
                                         <tr>
-                                          <th className="px-5 py-3 font-medium">字段名</th>
+                                          <th className="px-5 py-3 font-medium">字段名称</th>
                                           <th className="px-5 py-3 font-medium">类型</th>
                                           <th className="px-5 py-3 font-medium">必填</th>
                                         </tr>
                                       </thead>
-                                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50 text-slate-700 dark:text-slate-300">
-                                        <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                          <td className="px-5 py-3 font-medium">物料编码</td>
-                                          <td className="px-5 py-3"><span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[12px]">文本</span></td>
-                                          <td className="px-5 py-3"><span className="px-2 py-1 bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 rounded text-[12px] font-bold">是</span></td>
-                                        </tr>
-                                        <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                          <td className="px-5 py-3 font-medium">数量</td>
-                                          <td className="px-5 py-3"><span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[12px]">数字</span></td>
-                                          <td className="px-5 py-3"><span className="px-2 py-1 bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 rounded text-[12px] font-bold">是</span></td>
-                                        </tr>
+                                      <tbody className="divide-y divide-slate-100 text-slate-700 dark:divide-slate-700 dark:text-slate-300">
+                                        {[
+                                          ['物料编码', '文本', '是'],
+                                          ['物料名称', '文本', '是'],
+                                          ['规格型号', '文本', '否'],
+                                        ].map((row) => (
+                                          <tr key={row[0]} className="bg-white/70 hover:bg-slate-50/80 dark:bg-slate-900/30 dark:hover:bg-slate-800/50">
+                                            <td className="px-5 py-3 font-medium">{row[0]}</td>
+                                            <td className="px-5 py-3">
+                                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[12px] font-medium dark:bg-slate-800">{row[1]}</span>
+                                            </td>
+                                            <td className="px-5 py-3">
+                                              <span className={`rounded-full px-2.5 py-1 text-[12px] font-bold ${
+                                                row[2] === '是'
+                                                  ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400'
+                                                  : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400'
+                                              }`}>
+                                                {row[2]}
+                                              </span>
+                                            </td>
+                                          </tr>
+                                        ))}
                                       </tbody>
                                     </table>
                                   </div>
@@ -1269,173 +1557,70 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                             </div>
                           </div>
 
-                          {/* Bottom Section: 多页签明细 */}
-                          <div className="h-1/3 min-h-[280px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col overflow-hidden">
-                            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex items-center gap-3">
-                              <div className="size-8 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center">
-                                <span className="material-symbols-outlined text-[18px]">tab</span>
-                              </div>
-                              <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">多页签明细</h3>
-                            </div>
-                            <div className="flex-1 p-6 flex flex-col">
-                              <div className="flex gap-2 mb-5 border-b border-slate-200 dark:border-slate-700 pb-2 overflow-x-auto">
-                                {detailTabs.map(tab => (
-                                  <div key={tab.id} className="relative group">
-                                    <button 
-                                      onClick={() => setActiveTab(tab.id)}
-                                      className={`px-3 py-1.5 text-[13px] font-bold transition-colors flex items-center gap-1 ${activeTab === tab.id ? 'text-primary border-b-2 border-primary' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                    >
-                                      {tab.name}
-                                      {activeTab === tab.id && (
-                                        <span className="material-symbols-outlined text-[14px]">expand_more</span>
-                                      )}
-                                    </button>
-                                    
-                                    {/* Dropdown for active tab */}
-                                    {activeTab === tab.id && (
-                                      <div className="absolute top-full left-0 mt-1 w-32 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                                        <div className="p-1">
-                                          <button 
-                                            onClick={(e) => deleteTab(tab.id, e)}
-                                            className="w-full text-left px-3 py-1.5 text-[12px] text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-md flex items-center gap-2"
-                                          >
-                                            <span className="material-symbols-outlined text-[14px]">delete</span> 删除页签
-                                          </button>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                                <button 
-                                  onClick={addTab}
-                                  className="px-3 py-1.5 text-slate-400 hover:text-primary ml-auto flex items-center gap-1 text-[12px] font-bold bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700"
-                                >
-                                  <span className="material-symbols-outlined text-[14px]">add</span> 新增页签
-                                </button>
-                              </div>
-                              
-                              {/* Tab Content */}
-                              <div className="flex-1 flex flex-col min-h-0">
-                                <div className="flex items-center gap-4 mb-4">
-                                  <span className="text-[13px] font-bold text-slate-700 dark:text-slate-300">填充类型:</span>
-                                  <div className="flex gap-2">
-                                    {['表格', '树表格', '图标', '网页'].map(type => (
-                                      <label key={type} className="flex items-center gap-1.5 cursor-pointer">
-                                        <input 
-                                          type="radio" 
-                                          name={`fillType_${activeTab}`}
-                                          value={type}
-                                          checked={(tabFillTypes[activeTab] || '表格') === type}
-                                          onChange={() => setTabFillTypes(prev => ({ ...prev, [activeTab]: type }))}
-                                          className="text-primary focus:ring-primary"
-                                        />
-                                        <span className="text-[13px] text-slate-600 dark:text-slate-400">{type}</span>
-                                      </label>
-                                    ))}
-                                  </div>
+                          <div className="flex min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/88 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
+                            <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-6 py-4 dark:border-slate-700 dark:bg-slate-800/70">
+                              <div className="flex items-center gap-3">
+                                <div className="flex size-9 items-center justify-center rounded-2xl bg-blue-500/12 text-blue-500">
+                                  <span className="material-symbols-outlined text-[18px]">tab_group</span>
                                 </div>
-
-                                <div className="flex-1 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-slate-50/30 dark:bg-slate-900/30 flex flex-col">
-                                  {(tabFillTypes[activeTab] || '表格') === '表格' ? (
-                                    <div className="flex-1 flex flex-col min-h-0">
-                                      <div className="p-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800">
-                                        <div className="flex items-center gap-2">
-                                          <span className="material-symbols-outlined text-[16px] text-slate-400">table_chart</span>
-                                          <span className="text-[13px] font-bold text-slate-700 dark:text-slate-300">表格字段配置</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                          {selectedDetailForDelete.length > 0 && (
-                                            <button 
-                                              onClick={() => {
-                                                setDetailTableColumns(prev => ({
-                                                  ...prev,
-                                                  [activeTab]: prev[activeTab].filter(c => !selectedDetailForDelete.includes(c.id))
-                                                }));
-                                                setSelectedDetailForDelete([]);
-                                              }}
-                                              className="text-[11px] text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1"
-                                            >
-                                              <span className="material-symbols-outlined text-[14px]">delete</span> 删除 ({selectedDetailForDelete.length})
-                                            </button>
-                                          )}
-                                          <button 
-                                            onClick={() => setDetailTableColumns(prev => ({
-                                              ...prev,
-                                              [activeTab]: [...(prev[activeTab] || []), { id: `d_col_${Date.now()}`, name: `新字段${(prev[activeTab] || []).length + 1}`, type: '文本', width: 120 }]
-                                            }))}
-                                            className="text-[11px] text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1"
-                                          >
-                                            <span className="material-symbols-outlined text-[14px]">add</span> 新增字段
-                                          </button>
-                                        </div>
-                                      </div>
-                                      <div className="flex-1 overflow-auto">
-                                        {renderTableBuilder(
-                                          detailTableColumns[activeTab] || [], 
-                                          (newCols) => setDetailTableColumns(prev => ({
-                                            ...prev,
-                                            [activeTab]: typeof newCols === 'function' ? newCols(prev[activeTab] || []) : newCols
-                                          })), 
-                                          selectedDetailColId, 
-                                          setSelectedDetailColId, 
-                                          selectedDetailForDelete, 
-                                          setSelectedDetailForDelete
-                                        )}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="flex-1 flex items-center justify-center text-slate-400">
-                                      <div className="flex flex-col items-center gap-2">
-                                        <span className="material-symbols-outlined text-[32px] text-slate-300 dark:text-slate-600">
-                                          {tabFillTypes[activeTab] === '树表格' ? 'account_tree' : tabFillTypes[activeTab] === '图标' ? 'insert_photo' : 'language'}
-                                        </span>
-                                        <span className="text-[14px] font-medium">当前填充类型: {tabFillTypes[activeTab]}</span>
-                                      </div>
-                                    </div>
-                                  )}
+                                <div>
+                                  <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">明细页签设计</h3>
+                                  <p className="mt-0.5 text-[12px] text-slate-400">页签结构、填充类型与明细列配置统一在这里完成</p>
                                 </div>
                               </div>
+                              <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold text-blue-500 dark:bg-blue-500/10">页签设计</span>
                             </div>
+                            {renderDetailTabsWorkspace('document')}
                           </div>
                         </div>
                       ) : (
-                        <div className={`flex flex-col flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden ${
-                          isFullscreenConfig ? 'fixed inset-4 z-[200] shadow-2xl' : 'min-h-[700px]'
-                        }`}>
-                          {/* Main Content Area: Left/Right Split */}
-                          <div className="flex-1 flex gap-4 p-4 overflow-hidden bg-slate-50/50 dark:bg-slate-900/50">
-                            
-                            {/* Left: Left Table Builder */}
+                        <div className={`flex flex-1 min-h-0 flex-col overflow-hidden rounded-[30px] border border-white/70 bg-white/82 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.38)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/85 ${isConfigFullscreenActive ? 'h-full' : 'min-h-[760px]'}`}>
+                          <div className={`grid min-h-0 flex-1 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.72))] dark:bg-slate-900/30 ${
+                            businessType === 'table'
+                              ? 'grid-cols-1'
+                              : isConfigFullscreenActive
+                                ? 'xl:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)]'
+                                : 'xl:grid-cols-[minmax(260px,0.82fr)_minmax(0,1.18fr)]'
+                          } ${isConfigFullscreenActive ? 'gap-4 p-4' : 'gap-5 p-5'} ${
+                            businessType === 'table' && isConfigFullscreenActive ? 'h-full' : ''
+                          }`}>
                             {businessType !== 'table' && (
-                              <div className="w-[35%] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm flex flex-col overflow-hidden">
-                                <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
-                                  <h4 className="font-bold text-[13px] text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-[16px] text-primary">view_sidebar</span>
-                                    左表字段配置
-                                  </h4>
+                              <div className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/70 bg-white/88 shadow-[0_24px_44px_-34px_rgba(15,23,42,0.3)] dark:border-slate-700 dark:bg-slate-800/88">
+                                <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-5 py-4 dark:border-slate-700 dark:bg-slate-800/70">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex size-9 items-center justify-center rounded-2xl bg-primary/12 text-primary">
+                                      <span className="material-symbols-outlined text-[18px]">view_sidebar</span>
+                                    </div>
+                                    <div>
+                                      <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-200">左侧表配置</h4>
+                                      <p className="mt-0.5 text-[12px] text-slate-400">控制树节点、分类维度与导航层级</p>
+                                    </div>
+                                  </div>
                                   <div className="flex items-center gap-2">
                                     {selectedLeftForDelete.length > 0 && (
-                                      <button 
+                                      <button
                                         onClick={() => {
-                                          setLeftTableColumns(prev => prev.filter(c => !selectedLeftForDelete.includes(c.id)));
+                                          setLeftTableColumns((prev) => prev.filter((c) => !selectedLeftForDelete.includes(c.id)));
                                           setSelectedLeftForDelete([]);
                                         }}
-                                        className="text-[12px] text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1"
+                                        className="inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
                                       >
-                                        <span className="material-symbols-outlined text-[14px]">delete</span> 删除 ({selectedLeftForDelete.length})
+                                        <span className="material-symbols-outlined text-[14px]">delete</span>
+                                        删除 ({selectedLeftForDelete.length})
                                       </button>
                                     )}
-                                    <button 
-                                      onClick={() => setLeftTableColumns(prev => [...prev, { id: `l_col_${Date.now()}`, name: `新字段${prev.length + 1}`, type: '文本', width: 120 }])}
-                                      className="text-[12px] text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1"
+                                    <button
+                                      onClick={() => setLeftTableColumns((prev) => [...prev, { id: `l_col_${Date.now()}`, name: `新字段 ${prev.length + 1}`, type: '文本', width: 120 }])}
+                                      className="inline-flex items-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-[12px] font-bold text-white shadow-[0_16px_28px_-20px_rgba(14,116,144,0.6)] transition-all hover:bg-erp-blue"
                                     >
-                                      <span className="material-symbols-outlined text-[14px]">add</span> 新增
+                                      <span className="material-symbols-outlined text-[14px]">add</span>
+                                      新增
                                     </button>
                                   </div>
                                 </div>
-                                <div 
-                                  className="flex-1 overflow-auto outline-none" 
-                                  tabIndex={0} 
+                                <div
+                                  className="min-h-0 flex-1 overflow-auto outline-none"
+                                  tabIndex={0}
                                   onPaste={(e) => handlePasteColumns(e, setLeftTableColumns)}
                                 >
                                   {renderTableBuilder(leftTableColumns, setLeftTableColumns, selectedLeftColId, setSelectedLeftColId, selectedLeftForDelete, setSelectedLeftForDelete)}
@@ -1443,198 +1628,65 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                               </div>
                             )}
 
-                            {/* Right: Top Table, Bottom Tabs */}
-                            <div className={`${businessType === 'table' ? 'w-full' : 'w-[65%]'} flex flex-col gap-4`}>
-                              {/* Right Top: Main Table Builder */}
-                              <div className="flex-[3] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm flex flex-col overflow-hidden">
-                                <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
-                                  <h4 className="font-bold text-[13px] text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-[16px] text-emerald-500">table_rows</span>
-                                    主表字段配置
-                                  </h4>
+                            <div className="grid min-h-0 gap-5 lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+                              <div className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/70 bg-white/88 shadow-[0_24px_44px_-34px_rgba(15,23,42,0.3)] dark:border-slate-700 dark:bg-slate-800/88">
+                                <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-5 py-4 dark:border-slate-700 dark:bg-slate-800/70">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex size-9 items-center justify-center rounded-2xl bg-emerald-500/12 text-emerald-500">
+                                      <span className="material-symbols-outlined text-[18px]">table_rows</span>
+                                    </div>
+                                    <div>
+                                      <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-200">主表字段配置</h4>
+                                      <p className="mt-0.5 text-[12px] text-slate-400">当前模块的主表单字段、类型与列宽设置</p>
+                                    </div>
+                                  </div>
                                   <div className="flex items-center gap-2">
                                     {selectedMainForDelete.length > 0 && (
-                                      <button 
+                                      <button
                                         onClick={() => {
-                                          setMainTableColumns(prev => prev.filter(c => !selectedMainForDelete.includes(c.id)));
+                                          setMainTableColumns((prev) => prev.filter((c) => !selectedMainForDelete.includes(c.id)));
                                           setSelectedMainForDelete([]);
                                         }}
-                                        className="text-[12px] text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1"
+                                        className="inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
                                       >
-                                        <span className="material-symbols-outlined text-[14px]">delete</span> 删除 ({selectedMainForDelete.length})
+                                        <span className="material-symbols-outlined text-[14px]">delete</span>
+                                        删除 ({selectedMainForDelete.length})
                                       </button>
                                     )}
-                                    <button 
-                                      onClick={() => setMainTableColumns(prev => [...prev, { id: `m_col_${Date.now()}`, name: `新字段${prev.length + 1}`, type: '文本', width: 120 }])}
-                                      className="text-[12px] text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1"
+                                    <button
+                                      onClick={() => setMainTableColumns((prev) => [...prev, { id: `m_col_${Date.now()}`, name: `新字段 ${prev.length + 1}`, type: '文本', width: 120 }])}
+                                      className="inline-flex items-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-[12px] font-bold text-white shadow-[0_16px_28px_-20px_rgba(14,116,144,0.6)] transition-all hover:bg-erp-blue"
                                     >
-                                      <span className="material-symbols-outlined text-[14px]">add</span> 新增
+                                      <span className="material-symbols-outlined text-[14px]">add</span>
+                                      新增
                                     </button>
                                   </div>
                                 </div>
-                                <div 
-                                  className="flex-1 overflow-auto outline-none" 
-                                  tabIndex={0} 
+                                <div
+                                  className="min-h-0 flex-1 overflow-auto outline-none"
+                                  tabIndex={0}
                                   onPaste={(e) => handlePasteColumns(e, setMainTableColumns)}
                                 >
                                   {renderTableBuilder(mainTableColumns, setMainTableColumns, selectedMainColId, setSelectedMainColId, selectedMainForDelete, setSelectedMainForDelete)}
                                 </div>
                               </div>
 
-                              {/* Right Bottom: Multi-tabs */}
-                              <div className="flex-[2] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm flex flex-col overflow-hidden">
-                                <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
-                                  <h4 className="font-bold text-[13px] text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-[16px] text-blue-500">tab</span>
-                                    明细配置
-                                  </h4>
-                                  <button onClick={addTab} className="text-[12px] text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1">
-                                    <span className="material-symbols-outlined text-[14px]">add</span> 新增页签
-                                  </button>
-                                </div>
-                                <div className="flex-1 p-4 flex flex-col">
-                                  <div className="flex gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 overflow-x-auto">
-                                    {detailTabs.map(tab => (
-                                      <div key={tab.id} className="relative group">
-                                        <button 
-                                          onClick={() => setActiveTab(tab.id)}
-                                          className={`px-3 py-1.5 text-[13px] font-bold transition-colors flex items-center gap-1 ${activeTab === tab.id ? 'text-primary border-b-2 border-primary' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                        >
-                                          {tab.name}
-                                          {activeTab === tab.id && (
-                                            <span className="material-symbols-outlined text-[14px]">expand_more</span>
-                                          )}
-                                        </button>
-                                        
-                                        {/* Dropdown for active tab */}
-                                        {activeTab === tab.id && (
-                                          <div className="absolute top-full left-0 mt-1 w-32 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                                            <div className="p-1">
-                                              <button 
-                                                onClick={(e) => deleteTab(tab.id, e)}
-                                                className="w-full text-left px-3 py-1.5 text-[12px] text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-md flex items-center gap-2"
-                                              >
-                                                <span className="material-symbols-outlined text-[14px]">delete</span> 删除页签
-                                              </button>
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <div className="flex-1 mt-4 flex flex-col gap-3">
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-[13px] font-bold text-slate-600 dark:text-slate-400">填充类型:</span>
-                                      <div className="flex gap-2">
-                                        {['表格', '树表格', '图表', '网页'].map(type => (
-                                          <button 
-                                            key={type}
-                                            onClick={() => setTabFillTypes(prev => ({ ...prev, [activeTab]: type }))}
-                                            className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors border ${
-                                              tabFillTypes[activeTab] === type 
-                                                ? 'bg-primary/10 text-primary border-primary/30' 
-                                                : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
-                                            }`}
-                                          >
-                                            {type}
-                                          </button>
-                                        ))}
-                                      </div>
+                              <div className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/70 bg-white/88 shadow-[0_24px_44px_-34px_rgba(15,23,42,0.3)] dark:border-slate-700 dark:bg-slate-800/88">
+                                <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-5 py-4 dark:border-slate-700 dark:bg-slate-800/70">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex size-9 items-center justify-center rounded-2xl bg-blue-500/12 text-blue-500">
+                                      <span className="material-symbols-outlined text-[18px]">tab_group</span>
                                     </div>
-                                    
-                                    {tabFillTypes[activeTab] === '表格' ? (
-                                      <div className="flex-1 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden flex flex-col">
-                                        <div className="px-3 py-2 bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                                          <span className="text-[12px] font-bold text-slate-600 dark:text-slate-400">明细字段配置</span>
-                                          <div className="flex items-center gap-2">
-                                            {selectedDetailForDelete.length > 0 && (
-                                              <button 
-                                                onClick={() => {
-                                                  setDetailTableColumns(prev => ({
-                                                    ...prev,
-                                                    [activeTab]: prev[activeTab].filter(c => !selectedDetailForDelete.includes(c.id))
-                                                  }));
-                                                  setSelectedDetailForDelete([]);
-                                                }}
-                                                className="text-[11px] text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1"
-                                              >
-                                                <span className="material-symbols-outlined text-[14px]">delete</span> 删除 ({selectedDetailForDelete.length})
-                                              </button>
-                                            )}
-                                            <button 
-                                              onClick={() => setDetailTableColumns(prev => ({
-                                                ...prev,
-                                                [activeTab]: [...(prev[activeTab] || []), { id: `d_col_${Date.now()}`, name: `新字段${(prev[activeTab] || []).length + 1}`, type: '文本', width: 120 }]
-                                              }))}
-                                              className="text-[11px] text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1"
-                                            >
-                                              <span className="material-symbols-outlined text-[14px]">add</span> 新增字段
-                                            </button>
-                                          </div>
-                                        </div>
-                                        <div 
-                                          className="flex-1 overflow-auto outline-none" 
-                                          tabIndex={0} 
-                                          onPaste={(e) => {
-                                            const text = e.clipboardData.getData('text');
-                                            if (!text) return;
-                                            const newColNames = text.split(/[\t\n]/).map(s => s.trim()).filter(Boolean);
-                                            if (newColNames.length > 0) {
-                                              e.preventDefault();
-                                              const newCols = newColNames.map((name, i) => ({
-                                                id: `d_col_${Date.now()}_${i}`,
-                                                name,
-                                                type: '文本',
-                                                width: 100
-                                              }));
-                                              setDetailTableColumns(prev => ({
-                                                ...prev,
-                                                [activeTab]: [...(prev[activeTab] || []), ...newCols]
-                                              }));
-                                            }
-                                          }}
-                                        >
-                                          {renderTableBuilder(
-                                            detailTableColumns[activeTab] || [], 
-                                            (newCols) => setDetailTableColumns(prev => ({
-                                              ...prev,
-                                              [activeTab]: typeof newCols === 'function' ? newCols(prev[activeTab] || []) : newCols
-                                            })), 
-                                            selectedDetailColId, 
-                                            setSelectedDetailColId, 
-                                            selectedDetailForDelete, 
-                                            setSelectedDetailForDelete
-                                          )}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div className="flex-1 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center text-slate-400 bg-slate-50/30 dark:bg-slate-900/30">
-                                        <div className="flex flex-col items-center gap-2">
-                                          <span className="material-symbols-outlined text-[28px] text-slate-300 dark:text-slate-600">
-                                            {tabFillTypes[activeTab] === '树表格' ? 'account_tree' : 
-                                             tabFillTypes[activeTab] === '图表' ? 'bar_chart' : 'web'}
-                                          </span>
-                                          <span className="text-[13px] font-medium">当前页签类型: {tabFillTypes[activeTab] || '表格'}</span>
-                                        </div>
-                                      </div>
-                                    )}
+                                    <div>
+                                      <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-200">明细页签配置</h4>
+                                      <p className="mt-0.5 text-[12px] text-slate-400">把页签新增、选中和填充类型选择集中到同一工作区</p>
+                                    </div>
                                   </div>
+                                  <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold text-blue-500 dark:bg-blue-500/10">明细页签</span>
                                 </div>
+                                {renderDetailTabsWorkspace('builder')}
                               </div>
                             </div>
-                          </div>
-                          
-                          {/* Footer with Full Screen Button */}
-                          <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex justify-end bg-white dark:bg-slate-800 shrink-0">
-                            <button 
-                              onClick={() => setIsFullscreenConfig(!isFullscreenConfig)}
-                              className="px-4 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors font-bold text-[13px] gap-2"
-                            >
-                              <span className="material-symbols-outlined text-[18px]">
-                                {isFullscreenConfig ? 'fullscreen_exit' : 'fullscreen'}
-                              </span>
-                              {isFullscreenConfig ? '退出全屏' : '全屏配置'}
-                            </button>
                           </div>
                         </div>
                       )}
@@ -1642,185 +1694,189 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   )}
 
                   {configStep === 3 && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1 min-h-[650px]">
-                      {/* Left: Interactive Survey Chat */}
-                      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col overflow-hidden">
-                        <div className="p-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-center gap-3">
-                          <div className="size-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                    <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 flex-1 min-h-[650px]">
+                      <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                        <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/50 p-5 dark:border-slate-800 dark:bg-slate-800/50">
+                          <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
                             <span className="material-symbols-outlined text-[20px]">smart_toy</span>
                           </div>
                           <div>
-                            <h3 className="text-[16px] font-bold text-slate-800 dark:text-slate-200">AI 架构师</h3>
-                            <p className="text-[12px] text-slate-500">正在为您进行需求调研</p>
+                            <h3 className="text-[16px] font-bold text-slate-800 dark:text-slate-200">AI 架构助手</h3>
+                            <p className="text-[12px] text-slate-500">正在为您进行需求调研...</p>
                           </div>
                         </div>
-                        
-                        <div className="flex-1 p-6 overflow-y-auto space-y-6 bg-slate-50/30 dark:bg-slate-900/30 custom-scrollbar">
-                          {/* Message 1 */}
+
+                        <div className="flex-1 space-y-6 overflow-y-auto bg-slate-50/30 p-6 custom-scrollbar dark:bg-slate-900/30">
                           <div className="flex gap-4">
-                            <div className="size-10 rounded-full bg-primary flex items-center justify-center text-white shrink-0 shadow-md shadow-primary/20">
+                            <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-md shadow-primary/20">
                               <span className="material-symbols-outlined text-[20px]">smart_toy</span>
                             </div>
-                            <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4 rounded-2xl rounded-tl-none shadow-sm text-[14px] text-slate-700 dark:text-slate-300 leading-relaxed max-w-[85%]">
-                              您好！为了更好地为您构建【成本控制】模块，我们需要进行简单的调研。请问您希望采用哪种开发模式？
+                            <div className="max-w-[85%] rounded-2xl rounded-tl-none border border-slate-100 bg-white p-4 text-[14px] leading-relaxed text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                              您好。为了更好地为您构建【成本控制】模块，我需要先确认开发模式。您希望采用哪一种？
                             </div>
                           </div>
-                          
-                          {/* Options 1 */}
+
                           {surveyStep === 0 && (
                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="pl-14 flex flex-wrap gap-3">
-                              {['标准 CRUD 模式', '复杂审批流模式', '数据看板模式'].map(opt => (
-                                <button key={opt} onClick={() => { setSurveyAnswers([...surveyAnswers, opt]); setSurveyStep(1); }} className="px-5 py-2.5 rounded-xl border border-primary/20 bg-primary/5 text-primary text-[14px] font-bold hover:bg-primary hover:text-white transition-all shadow-sm">
+                              {['标准 CRUD 模式', '复杂审批流模式', '数据看板模式'].map((opt) => (
+                                <button
+                                  key={opt}
+                                  onClick={() => {
+                                    setSurveyAnswers([opt]);
+                                    setSurveyStep(1);
+                                  }}
+                                  className="rounded-xl border border-primary/20 bg-primary/5 px-5 py-2.5 text-[14px] font-bold text-primary shadow-sm transition-all hover:bg-primary hover:text-white"
+                                >
                                   {opt}
                                 </button>
                               ))}
                             </motion.div>
                           )}
 
-                          {/* User Answer 1 */}
                           {surveyStep > 0 && (
-                            <div className="flex gap-4 flex-row-reverse">
-                              <div className="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 shrink-0">
+                            <div className="flex flex-row-reverse gap-4">
+                              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
                                 <span className="material-symbols-outlined text-[20px]">person</span>
                               </div>
-                              <div className="bg-primary text-white p-4 rounded-2xl rounded-tr-none shadow-sm text-[14px] leading-relaxed max-w-[85%]">
+                              <div className="max-w-[85%] rounded-2xl rounded-tr-none bg-primary p-4 text-[14px] leading-relaxed text-white shadow-sm">
                                 {surveyAnswers[0]}
                               </div>
                             </div>
                           )}
 
-                          {/* Message 2 */}
                           {surveyStep > 0 && (
                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex gap-4">
-                              <div className="size-10 rounded-full bg-primary flex items-center justify-center text-white shrink-0 shadow-md shadow-primary/20">
+                              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-md shadow-primary/20">
                                 <span className="material-symbols-outlined text-[20px]">smart_toy</span>
                               </div>
-                              <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4 rounded-2xl rounded-tl-none shadow-sm text-[14px] text-slate-700 dark:text-slate-300 leading-relaxed max-w-[85%]">
-                                好的，已选择【{surveyAnswers[0]}】。请问该模块的数据来源主要是什么？
+                              <div className="max-w-[85%] rounded-2xl rounded-tl-none border border-slate-100 bg-white p-4 text-[14px] leading-relaxed text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                好的，已选择“{surveyAnswers[0]}”。请问该模块的数据来源主要是什么？
                               </div>
                             </motion.div>
                           )}
 
-                          {/* Options 2 */}
                           {surveyStep === 1 && (
                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="pl-14 flex flex-wrap gap-3">
-                              {['手工录入为主', '外部系统对接 (API)', 'Excel 批量导入'].map(opt => (
-                                <button key={opt} onClick={() => { 
-                                  setSurveyAnswers([...surveyAnswers, opt]); 
-                                  setSurveyStep(2); 
-                                  setIsGenerating(true);
-                                  setTimeout(() => setIsGenerating(false), 3000);
-                                }} className="px-5 py-2.5 rounded-xl border border-primary/20 bg-primary/5 text-primary text-[14px] font-bold hover:bg-primary hover:text-white transition-all shadow-sm">
+                              {['手工录入为主', '外部系统对接 (API)', 'Excel 批量导入'].map((opt) => (
+                                <button
+                                  key={opt}
+                                  onClick={() => {
+                                    setSurveyAnswers((prev) => [...prev, opt]);
+                                    setSurveyStep(2);
+                                    setIsGenerating(true);
+                                    setTimeout(() => setIsGenerating(false), 3000);
+                                  }}
+                                  className="rounded-xl border border-primary/20 bg-primary/5 px-5 py-2.5 text-[14px] font-bold text-primary shadow-sm transition-all hover:bg-primary hover:text-white"
+                                >
                                   {opt}
                                 </button>
                               ))}
                             </motion.div>
                           )}
 
-                          {/* User Answer 2 */}
                           {surveyStep > 1 && (
-                            <div className="flex gap-4 flex-row-reverse">
-                              <div className="size-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 shrink-0">
+                            <div className="flex flex-row-reverse gap-4">
+                              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
                                 <span className="material-symbols-outlined text-[20px]">person</span>
                               </div>
-                              <div className="bg-primary text-white p-4 rounded-2xl rounded-tr-none shadow-sm text-[14px] leading-relaxed max-w-[85%]">
+                              <div className="max-w-[85%] rounded-2xl rounded-tr-none bg-primary p-4 text-[14px] leading-relaxed text-white shadow-sm">
                                 {surveyAnswers[1]}
                               </div>
                             </div>
                           )}
 
-                          {/* Message 3 (Done) */}
                           {surveyStep > 1 && (
                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex gap-4">
-                              <div className="size-10 rounded-full bg-emerald-500 flex items-center justify-center text-white shrink-0 shadow-md shadow-emerald-500/20">
+                              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md shadow-emerald-500/20">
                                 <span className="material-symbols-outlined text-[20px]">check</span>
                               </div>
-                              <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-4 rounded-2xl rounded-tl-none shadow-sm text-[14px] text-slate-700 dark:text-slate-300 leading-relaxed max-w-[85%]">
-                                调研完成！我已经完全理解您的需求。右侧是为您生成的底层领域模型与执行计划，请查阅。
+                              <div className="max-w-[85%] rounded-2xl rounded-tl-none border border-slate-100 bg-white p-4 text-[14px] leading-relaxed text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                调研完成，我已经理解您的需求。右侧是为您生成的底层领域模型与执行计划，请查阅。
                               </div>
                             </motion.div>
                           )}
                         </div>
-                        
-                        {/* Reset Button */}
+
                         {surveyStep > 1 && (
-                          <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
-                            <button onClick={() => { setSurveyStep(0); setSurveyAnswers([]); }} className="w-full py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-primary dark:hover:text-primary rounded-xl text-[14px] font-bold transition-all flex items-center justify-center gap-2 shadow-sm">
+                          <div className="border-t border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-800/50">
+                            <button
+                              onClick={() => {
+                                setSurveyStep(0);
+                                setSurveyAnswers([]);
+                                setIsGenerating(false);
+                              }}
+                              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-[14px] font-bold text-slate-600 shadow-sm transition-all hover:text-primary dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:text-primary"
+                            >
                               <span className="material-symbols-outlined text-[18px]">refresh</span>
                               重新开始调研
                             </button>
                           </div>
                         )}
                       </div>
-                      
-                      {/* Right: AI Process Terminal */}
-                      <div className="bg-slate-900 rounded-2xl p-8 shadow-xl relative overflow-hidden flex flex-col border border-slate-800">
-                        {/* Glow effect */}
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[120%] h-48 bg-primary/20 blur-[80px] pointer-events-none"></div>
-                        
-                        <div className="flex items-center justify-between mb-8 relative z-10">
-                          <h3 className="text-[16px] font-bold text-white flex items-center gap-3">
-                            <span className="material-symbols-outlined text-emerald-400 text-[24px]">terminal</span>
-                            Plan Execution
+
+                      <div className="relative flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-xl">
+                        <div className="pointer-events-none absolute left-1/2 top-0 h-48 w-[120%] -translate-x-1/2 bg-primary/20 blur-[80px]"></div>
+
+                        <div className="relative z-10 mb-8 flex items-center justify-between">
+                          <h3 className="flex items-center gap-3 text-[16px] font-bold text-white">
+                            <span className="material-symbols-outlined text-[24px] text-emerald-400">terminal</span>
+                            执行计划
                           </h3>
                           {surveyStep >= 2 && (
-                            <span className={`px-3 py-1.5 rounded-full text-[12px] font-mono font-bold border ${isGenerating ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'}`}>
+                            <span className={`rounded-full border px-3 py-1.5 text-[12px] font-mono font-bold ${isGenerating ? 'border-amber-500/30 bg-amber-500/20 text-amber-400' : 'border-emerald-500/30 bg-emerald-500/20 text-emerald-400'}`}>
                               {isGenerating ? 'RUNNING' : 'COMPLETED'}
                             </span>
                           )}
                         </div>
-                        
-                        <div className="flex-1 overflow-y-auto space-y-8 relative z-10 pr-4 custom-scrollbar">
+
+                        <div className="relative z-10 flex-1 space-y-8 overflow-y-auto pr-4 custom-scrollbar">
                           {surveyStep < 2 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-4">
+                            <div className="flex h-full flex-col items-center justify-center space-y-4 text-slate-500">
                               <span className="material-symbols-outlined text-5xl opacity-20">hourglass_empty</span>
                               <p className="text-[14px]">等待调研完成以生成执行计划...</p>
                             </div>
                           ) : (
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-                              {/* Step 1 */}
                               <div className="flex gap-5">
-                                <div className="mt-0.5 relative">
-                                  <span className="material-symbols-outlined text-emerald-500 text-[24px] relative z-10 bg-slate-900">check_circle</span>
-                                  <div className="absolute top-6 left-1/2 -translate-x-1/2 w-px h-10 bg-emerald-500/30"></div>
+                                <div className="relative mt-0.5">
+                                  <span className="material-symbols-outlined relative z-10 bg-slate-900 text-[24px] text-emerald-500">check_circle</span>
+                                  <div className="absolute left-1/2 top-6 h-10 w-px -translate-x-1/2 bg-emerald-500/30"></div>
                                 </div>
                                 <div>
                                   <div className="text-[15px] font-bold text-slate-200">解析业务需求</div>
-                                  <div className="text-[14px] text-slate-400 mt-2 leading-relaxed">已提取核心诉求：模式为【{surveyAnswers[0]}】，数据来源为【{surveyAnswers[1]}】。</div>
+                                  <div className="mt-2 text-[14px] leading-relaxed text-slate-400">已提取核心诉求：模式为“{surveyAnswers[0]}”，数据来源为“{surveyAnswers[1]}”。</div>
                                 </div>
                               </div>
-                              
-                              {/* Step 2 */}
+
                               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1 }} className="flex gap-5">
-                                <div className="mt-0.5 relative">
-                                  <span className={`material-symbols-outlined text-[24px] relative z-10 bg-slate-900 ${isGenerating ? 'text-amber-500 animate-spin' : 'text-emerald-500'}`}>
+                                <div className="relative mt-0.5">
+                                  <span className={`material-symbols-outlined relative z-10 bg-slate-900 text-[24px] ${isGenerating ? 'animate-spin text-amber-500' : 'text-emerald-500'}`}>
                                     {isGenerating ? 'sync' : 'check_circle'}
                                   </span>
-                                  <div className={`absolute top-6 left-1/2 -translate-x-1/2 w-px h-32 ${isGenerating ? 'bg-amber-500/30' : 'bg-emerald-500/30'}`}></div>
+                                  <div className={`absolute left-1/2 top-6 h-32 w-px -translate-x-1/2 ${isGenerating ? 'bg-amber-500/30' : 'bg-emerald-500/30'}`}></div>
                                 </div>
                                 <div>
                                   <div className="text-[15px] font-bold text-slate-200">构建领域模型 (Domain Model)</div>
-                                  <div className="text-[14px] text-slate-400 mt-2 leading-relaxed">生成数据表结构草案，建立表间关联关系。</div>
-                                  <div className="mt-4 p-4 bg-slate-950/80 rounded-xl border border-slate-800 font-mono text-[13px] text-emerald-400/80 leading-relaxed shadow-inner">
-                                    <span className="text-slate-500 mr-2">$</span> Table CostCenter created<br/>
-                                    <span className="text-slate-500 mr-2">$</span> Table BOM_Cost_Rollup created<br/>
-                                    <span className="text-slate-500 mr-2">$</span> Relations mapped successfully
+                                  <div className="mt-2 text-[14px] leading-relaxed text-slate-400">生成数据表结构草案，建立表间关联关系。</div>
+                                  <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/80 p-4 font-mono text-[13px] leading-relaxed text-emerald-400/80 shadow-inner">
+                                    <span className="mr-2 text-slate-500">$</span> Table CostCenter created<br />
+                                    <span className="mr-2 text-slate-500">$</span> Table BOM_Cost_Rollup created<br />
+                                    <span className="mr-2 text-slate-500">$</span> Relations mapped successfully
                                   </div>
                                 </div>
                               </motion.div>
 
-                              {/* Step 3 */}
                               {!isGenerating && (
                                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex gap-5">
                                   <div className="mt-0.5 relative">
-                                    <span className="material-symbols-outlined text-emerald-500 text-[24px] relative z-10 bg-slate-900">check_circle</span>
+                                    <span className="material-symbols-outlined relative z-10 bg-slate-900 text-[24px] text-emerald-500">check_circle</span>
                                   </div>
                                   <div className="w-full">
                                     <div className="text-[15px] font-bold text-slate-200">生成交互原型与架构评估</div>
-                                    <div className="text-[14px] text-slate-400 mt-2 leading-relaxed">基于【{surveyAnswers[0]}】生成了对应的页面布局与表单，并输出架构评估报告。</div>
-                                    
-                                    <div className="mt-4 p-5 bg-slate-950/80 rounded-xl border border-slate-800 font-mono text-[13px] text-emerald-400/90 leading-relaxed shadow-inner space-y-3">
-                                      <div className="flex items-center gap-2 text-white/90 border-b border-slate-800 pb-2 mb-3">
+                                    <div className="mt-2 text-[14px] leading-relaxed text-slate-400">基于“{surveyAnswers[0]}”生成了对应的页面布局与表单，并输出架构评估报告。</div>
+
+                                    <div className="mt-4 space-y-3 rounded-xl border border-slate-800 bg-slate-950/80 p-5 font-mono text-[13px] leading-relaxed text-emerald-400/90 shadow-inner">
+                                      <div className="mb-3 flex items-center gap-2 border-b border-slate-800 pb-2 text-white/90">
                                         <span className="material-symbols-outlined text-[18px] text-primary">analytics</span>
                                         <span className="font-bold text-[14px]">架构方案评估报告 (Architecture Assessment Report)</span>
                                       </div>
@@ -1828,17 +1884,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                       <p><span className="text-slate-500"># 数据来源:</span> {surveyAnswers[1]}</p>
                                       <p><span className="text-slate-500"># 复杂度评估:</span> <span className="text-amber-400">High (高)</span></p>
                                       <p><span className="text-slate-500"># 预计开发周期:</span> 2.5 Weeks</p>
-                                      <div className="pt-2 border-t border-slate-800/50">
-                                        <p className="text-slate-400 mb-1">推荐技术栈与中间件:</p>
-                                        <ul className="list-disc pl-5 text-emerald-500/80 space-y-1">
+                                      <div className="border-t border-slate-800/50 pt-2">
+                                        <p className="mb-1 text-slate-400">推荐技术栈与中间件:</p>
+                                        <ul className="list-disc space-y-1 pl-5 text-emerald-500/80">
                                           <li>前端: React 18 + TailwindCSS + Framer Motion</li>
                                           <li>后端: Node.js (NestJS) + Prisma ORM</li>
-                                          <li>存储: PostgreSQL (支持复杂BOM树形查询)</li>
-                                          <li>缓存: Redis (应对高并发查询约束)</li>
+                                          <li>存储: PostgreSQL (支持复杂 BOM 树形查询)</li>
+                                          <li>缓存: Redis (应对高并发查询压力)</li>
                                         </ul>
                                       </div>
-                                      <div className="pt-2 border-t border-slate-800/50 text-emerald-300">
-                                        <span className="text-slate-500 mr-2">$</span> System ready for code generation.
+                                      <div className="border-t border-slate-800/50 pt-2 text-emerald-300">
+                                        <span className="mr-2 text-slate-500">$</span> System ready for code generation.
                                       </div>
                                     </div>
                                   </div>
@@ -1850,7 +1906,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       </div>
                     </div>
                   )}
-
                   {(configStep === 5) && (
                     <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-10 flex-1 min-h-[500px] flex items-center justify-center">
                       <div className="text-center space-y-4">
@@ -1863,8 +1918,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           {configSteps.find(s => s.id === configStep)?.title}内容区域
                         </h3>
                         <p className="text-slate-400 text-sm max-w-sm mx-auto leading-relaxed">
-                          这里是高级配置面板的内容占位符。您可以根据具体业务需求在此处渲染表单、图表或预览界面。
-                        </p>
+                          这里是高级配置面板的内容占位区域。您可以根据具体业务需求，在此处渲染表单、图表或预览界面。                        </p>
                       </div>
                     </div>
                   )}
@@ -1872,57 +1926,81 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               </div>
 
               {/* Bottom Action Bar */}
-              <div className="h-28 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-16 flex items-center justify-between shrink-0 z-10 shadow-[0_-4px_24px_rgba(0,0,0,0.02)]">
-                <button 
-                  onClick={() => setConfigStep(Math.max(1, configStep - 1))}
-                  className={`px-8 py-3.5 rounded-xl font-bold text-[15px] transition-all ${
-                    configStep === 1 
-                      ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' 
-                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  disabled={configStep === 1}
-                >
-                  上一步
-                </button>
-                
-                <div className="flex gap-5">
-                  <button 
-                    onClick={() => {
-                      if (!completedSteps.includes(configStep)) {
-                        setCompletedSteps([...completedSteps, configStep]);
-                      }
-                    }}
-                    className="px-8 py-3.5 rounded-xl font-bold text-[15px] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center gap-2"
+              <div
+                className={`shrink-0 border-t border-white/70 bg-white/85 backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/85 shadow-[0_-10px_40px_rgba(15,23,42,0.08)] ${
+                  isConfigFullscreenActive ? 'px-8 lg:px-10' : 'px-12 lg:px-16'
+                }`}
+              >
+                <div className="flex h-28 items-center justify-between gap-6">
+                  <button
+                    onClick={() => setConfigStep(Math.max(1, configStep - 1))}
+                    className={`inline-flex items-center gap-2 rounded-2xl border px-6 py-3 text-[15px] font-semibold transition-all ${
+                      configStep === 1
+                        ? 'cursor-not-allowed border-slate-200/80 bg-slate-100/70 text-slate-300 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-600'
+                        : 'border-slate-200/80 bg-white/80 text-slate-600 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200'
+                    }`}
+                    disabled={configStep === 1}
                   >
-                    <span className="material-symbols-outlined text-[20px]">save</span>
-                    保存本页
+                    <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+                    上一步
                   </button>
-                  <button 
-                    onClick={() => {
-                      const newCompleted = [...completedSteps];
-                      if (!newCompleted.includes(configStep)) {
-                        newCompleted.push(configStep);
-                        setCompletedSteps(newCompleted);
-                      }
-                      
-                      const nextStep = configStep + 1;
-                      const isNextLocked = (nextStep === 4 || nextStep === 5) && !newCompleted.includes(1);
-                      
-                      if (configStep < 5) {
-                        if (!isNextLocked) {
-                          setConfigStep(nextStep);
-                        } else {
-                          showToast('请先保存“菜单信息”步骤后再进行模块设置');
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        if (!completedSteps.includes(configStep)) {
+                          setCompletedSteps([...completedSteps, configStep]);
                         }
-                      } else {
-                        setIsConfigOpen(false);
-                      }
-                    }}
-                    className="px-10 py-3.5 bg-primary hover:bg-erp-blue text-white rounded-xl font-bold text-[15px] shadow-lg shadow-primary/20 transition-all flex items-center gap-2"
-                  >
-                    {configStep === 5 ? '完成配置' : '下一步'}
-                    {configStep !== 5 && <span className="material-symbols-outlined text-[20px]">arrow_forward</span>}
-                  </button>
+                      }}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/80 px-6 py-3 text-[15px] font-semibold text-slate-600 shadow-[0_12px_32px_rgba(15,23,42,0.06)] transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">save</span>
+                      保存本页
+                    </button>
+
+                    {configStep === 4 && (
+                      <button
+                        onClick={() => setIsFullscreenConfig((prev) => !prev)}
+                        className={`inline-flex items-center gap-2 rounded-2xl border px-6 py-3 text-[15px] font-semibold transition-all ${
+                          isConfigFullscreenActive
+                            ? 'border-primary/30 bg-primary/10 text-primary shadow-[0_16px_36px_rgba(49,98,255,0.18)]'
+                            : 'border-slate-200/80 bg-white/80 text-slate-600 shadow-[0_12px_32px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[20px]">
+                          {isConfigFullscreenActive ? 'fullscreen_exit' : 'fullscreen'}
+                        </span>
+                        {isConfigFullscreenActive ? '退出全屏' : '全屏配置'}
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        const newCompleted = [...completedSteps];
+                        if (!newCompleted.includes(configStep)) {
+                          newCompleted.push(configStep);
+                          setCompletedSteps(newCompleted);
+                        }
+
+                        const nextStep = configStep + 1;
+                        const isNextLocked = (nextStep === 4 || nextStep === 5) && !newCompleted.includes(1);
+
+                        if (configStep < 5) {
+                          if (!isNextLocked) {
+                            setConfigStep(nextStep);
+                          } else {
+                            showToast('请先保存“菜单信息”步骤后，再进入模块设置。');
+                          }
+                        } else {
+                          setIsConfigOpen(false);
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-primary px-7 py-3 text-[15px] font-semibold text-white shadow-[0_18px_40px_rgba(49,98,255,0.28)] transition-all hover:-translate-y-0.5 hover:bg-erp-blue"
+                    >
+                      {configStep === 5 ? '完成配置' : '下一步'}
+                      {configStep !== 5 && <span className="material-symbols-outlined text-[20px]">arrow_forward</span>}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1932,3 +2010,4 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     </div>
   );
 }
+
