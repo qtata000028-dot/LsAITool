@@ -12,6 +12,13 @@ View your app in AI Studio: https://ai.studio/apps/a3c25e12-bfc6-41a0-ba01-00a09
 
 Team workflow and branch rules are documented in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
+GitHub collaboration files are available in:
+
+- `.github/CODEOWNERS`
+- `.github/pull_request_template.md`
+- `.github/ISSUE_TEMPLATE/`
+- `.github/workflows/ci.yml`
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
