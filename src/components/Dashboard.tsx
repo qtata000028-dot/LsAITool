@@ -1,5 +1,6 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useDeferredValue, useMemo } from 'react';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -7,7 +8,9 @@ interface DashboardProps {
 
 type Subsystem = 'finance' | 'hr' | 'supply';
 
-const FIELD_TYPE_OPTIONS = ['文本', '数字', '下拉框', '搜索框', '日期框', '单选框', '多选框'];
+const FIELD_TYPE_OPTIONS = ['文本', '数字', '下拉框', '搜索框', '日期框', '单选框', '多选框', '树形节点关联'];
+const COLUMN_ALIGN_OPTIONS = ['左对齐', '居中', '右对齐'];
+const TABLE_TYPE_OPTIONS = ['普通表格', '多表头', '树表格'];
 
 const DETAIL_FILL_TYPE_OPTIONS = [
   { value: '表格', label: '表格', icon: 'table_rows', description: '适合字段型明细维护' },
@@ -72,10 +75,127 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
-  const [leftTableColumns, setLeftTableColumns] = useState([
-    { id: 'l_col1', name: '分类编码', type: '文本', width: 120 },
-    { id: 'l_col2', name: '分类名称', type: '文本', width: 150 },
-  ]);
+
+  const buildColumn = (prefix: string, index: number, overrides: Record<string, any> = {}) => ({
+    id: `${prefix}_${Date.now()}_${index}`,
+    name: `新字段 ${index}`,
+    type: '文本',
+    width: 120,
+    required: false,
+    visible: true,
+    searchable: false,
+    readonly: false,
+    align: '左对齐',
+    placeholder: '',
+    defaultValue: '',
+    dictCode: '',
+    formula: '',
+    relationSql: '',
+    dynamicSql: '',
+    helpText: '',
+    ...overrides,
+  });
+
+  const buildConditionField = (index: number, overrides: Record<string, any> = {}) => ({
+    id: `cond_${Date.now()}_${index}`,
+    name: `条件 ${index}`,
+    type: '文本',
+    width: 220,
+    required: false,
+    visible: true,
+    searchable: true,
+    readonly: false,
+    align: '左对齐',
+    placeholder: '',
+    defaultValue: '',
+    dictCode: '',
+    formula: '',
+    relationSql: '',
+    dynamicSql: '',
+    helpText: '',
+    ...overrides,
+  });
+
+  const buildContextMenuItem = (index: number, overrides: Record<string, any> = {}) => ({
+    id: `ctx_${Date.now()}_${index}`,
+    label: `右键功能 ${index}`,
+    actionKey: `action_${index}`,
+    disabledCondition: '',
+    ...overrides,
+  });
+
+  const buildGridConfig = (mainSql: string, defaultQuery: string, overrides: Record<string, any> = {}) => ({
+    mainSql,
+    defaultQuery,
+    tableType: '普通表格',
+    contextMenuEnabled: false,
+    contextMenuItems: [buildContextMenuItem(1, { label: '查看详情', actionKey: 'open-detail' })],
+    ...overrides,
+  });
+
+  const buildDetailTabConfig = (overrides: Record<string, any> = {}) => ({
+    relatedModule: '',
+    relatedCondition: '',
+    autoRefresh: true,
+    disabled: false,
+    disabledCondition: '',
+    ...overrides,
+  });
+
+  const parseSqlFieldNames = (sql: string) => {
+    const match = sql.match(/select\s+([\s\S]+?)\s+from/i);
+    if (!match) return [];
+
+    return Array.from(new Set(
+      match[1]
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => {
+          const aliasMatch = item.match(/\bas\s+([\[\]`"A-Za-z0-9_]+)/i);
+          const rawName = aliasMatch?.[1] ?? item.split(/\s+/).pop() ?? item;
+          return rawName
+            .replace(/[\[\]`"]/g, '')
+            .split('.')
+            .pop()
+            ?.trim() ?? '';
+        })
+        .filter(Boolean),
+    ));
+  };
+
+  const normalizeColumn = (col: any) => ({
+    required: false,
+    visible: true,
+    searchable: false,
+    readonly: false,
+    align: '左对齐',
+    placeholder: '',
+    defaultValue: '',
+    dictCode: '',
+    formula: '',
+    relationSql: '',
+    dynamicSql: '',
+    helpText: '',
+    ...col,
+  });
+
+  const normalizeConditionField = (field: any) => ({
+    required: false,
+    visible: true,
+    searchable: true,
+    readonly: false,
+    align: '左对齐',
+    placeholder: '',
+    defaultValue: '',
+    dictCode: '',
+    formula: '',
+    relationSql: '',
+    dynamicSql: '',
+    helpText: '',
+    ...field,
+  });
+  const [leftTableColumns, setLeftTableColumns] = useState<any[]>([]);
   const [mainTableColumns, setMainTableColumns] = useState([
     { id: 'm_col1', name: '物料编码', type: '文本', width: 120 },
     { id: 'm_col2', name: '物料名称', type: '文本', width: 150 },
@@ -86,8 +206,57 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [detailTabs, setDetailTabs] = useState([{ id: 'tab1', name: '关联附件' }, { id: 'tab2', name: '操作日志' }]);
   const [activeTab, setActiveTab] = useState('tab1');
   const [tabFillTypes, setTabFillTypes] = useState<Record<string, string>>({ tab1: '表格', tab2: '表格' });
-  const [selectedLeftColId, setSelectedLeftColId] = useState<string | null>(null);
-  const [selectedMainColId, setSelectedMainColId] = useState<string | null>(null);
+  const [mainTableConfig, setMainTableConfig] = useState(
+    buildGridConfig('SELECT * FROM customer_archive', 'enable = 1', {
+      contextMenuEnabled: true,
+      contextMenuItems: [
+        buildContextMenuItem(1, { label: '查看档案详情', actionKey: 'open-archive-detail' }),
+        buildContextMenuItem(2, { label: '打开附件列表', actionKey: 'open-attachments' }),
+      ],
+    }),
+  );
+  const [detailTableConfigs, setDetailTableConfigs] = useState<Record<string, any>>({
+    tab1: buildGridConfig('SELECT * FROM customer_attachment', 'archive_id = ${id}', {
+      contextMenuItems: [buildContextMenuItem(1, { label: '下载附件', actionKey: 'download-file' })],
+    }),
+    tab2: buildGridConfig('SELECT * FROM customer_log', 'archive_id = ${id}', {
+      contextMenuItems: [buildContextMenuItem(1, { label: '查看日志详情', actionKey: 'open-log-detail' })],
+    }),
+  });
+  const [mainFilterFields, setMainFilterFields] = useState([
+    buildConditionField(1, { name: '客户编号', placeholder: '请输入客户编号', width: 220 }),
+    buildConditionField(2, { name: '客户全称', placeholder: '请输入客户全称', width: 240 }),
+    buildConditionField(3, { name: '测试日期', type: '日期框', width: 180, placeholder: '请选择日期' }),
+  ]);
+  const [detailFilterFields, setDetailFilterFields] = useState<Record<string, any[]>>({
+    tab1: [
+      buildConditionField(1, { name: '附件名称', placeholder: '请输入附件名称', width: 220 }),
+      buildConditionField(2, { name: '上传人', placeholder: '请输入上传人', width: 180 }),
+    ],
+    tab2: [
+      buildConditionField(1, { name: '操作人', placeholder: '请输入操作人', width: 180 }),
+      buildConditionField(2, { name: '操作时间', type: '日期框', placeholder: '请选择操作时间', width: 180 }),
+    ],
+  });
+  const [detailTabConfigs, setDetailTabConfigs] = useState<Record<string, any>>({
+    tab1: buildDetailTabConfig({ relatedModule: '附件管理', relatedCondition: 'archive_id = ${id}', autoRefresh: true }),
+    tab2: buildDetailTabConfig({ relatedModule: '日志中心', relatedCondition: 'archive_id = ${id}', autoRefresh: false }),
+  });
+  const [inspectorTarget, setInspectorTarget] = useState<{
+    kind:
+      | 'none'
+      | 'left-col'
+      | 'main-col'
+      | 'detail-col'
+      | 'main-filter'
+      | 'detail-filter'
+      | 'detail-tab'
+      | 'main-grid'
+      | 'detail-grid'
+      | 'main-context'
+      | 'detail-context';
+    id?: string | null;
+  }>({ kind: 'main-grid' });
   const [selectedLeftForDelete, setSelectedLeftForDelete] = useState<string[]>([]);
   const [selectedMainForDelete, setSelectedMainForDelete] = useState<string[]>([]);
 
@@ -102,18 +271,98 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       { id: 'd_col5', name: '操作动作', type: '下拉框', width: 120 },
     ],
   });
-  const [selectedDetailColId, setSelectedDetailColId] = useState<string | null>(null);
   const [selectedDetailForDelete, setSelectedDetailForDelete] = useState<string[]>([]);
+  const [selectedArchiveNodeId, setSelectedArchiveNodeId] = useState('archive-main');
+  const [documentLeftPaneWidth, setDocumentLeftPaneWidth] = useState(198);
+  const [documentDetailPaneWidth, setDocumentDetailPaneWidth] = useState(368);
+  const [documentTopPaneHeight, setDocumentTopPaneHeight] = useState(414);
+  const [isDetailBoardOpen, setIsDetailBoardOpen] = useState(false);
+  const [detailBoardSortColumnId, setDetailBoardSortColumnId] = useState<string | null>(null);
+  const [detailBoardOpenedRowId, setDetailBoardOpenedRowId] = useState<number | null>(null);
+  const [previewContextMenu, setPreviewContextMenu] = useState<{
+    scope: 'main' | 'detail';
+    rowId: number;
+    x: number;
+    y: number;
+    items: any[];
+  } | null>(null);
+  const layoutDragRef = useRef<{
+    type: 'document-left-width' | 'document-detail-width' | 'document-top-height';
+    startX: number;
+    startY: number;
+    startValue: number;
+  } | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
+
+  const selectedLeftColId = inspectorTarget.kind === 'left-col' ? inspectorTarget.id ?? null : null;
+  const selectedMainColId = inspectorTarget.kind === 'main-col' ? inspectorTarget.id ?? null : null;
+  const selectedDetailColId = inspectorTarget.kind === 'detail-col' ? inspectorTarget.id ?? null : null;
+  const selectedMainFilterId = inspectorTarget.kind === 'main-filter' ? inspectorTarget.id ?? null : null;
+  const selectedDetailFilterId = inspectorTarget.kind === 'detail-filter' ? inspectorTarget.id ?? null : null;
+  const selectedDetailTabId = inspectorTarget.kind === 'detail-tab' ? inspectorTarget.id ?? null : null;
+  const selectedTableConfigScope = inspectorTarget.kind === 'main-grid' ? 'main' : inspectorTarget.kind === 'detail-grid' ? 'detail' : null;
+  const selectedContextMenuScope = inspectorTarget.kind === 'main-context' ? 'main' : inspectorTarget.kind === 'detail-context' ? 'detail' : null;
+
+  const clearColumnSelection = () => {
+    setInspectorTarget({ kind: 'none' });
+  };
+
+  const activateColumnSelection = (scope: 'left' | 'main' | 'detail', columnId: string | null) => {
+    setInspectorTarget({
+      kind: scope === 'left' ? 'left-col' : scope === 'main' ? 'main-col' : 'detail-col',
+      id: columnId,
+    });
+  };
+
+  const activateConditionSelection = (conditionId: string | null) => {
+    setInspectorTarget(conditionId ? { kind: 'main-filter', id: conditionId } : { kind: 'none' });
+  };
+
+  const activateDetailConditionSelection = (conditionId: string | null) => {
+    setInspectorTarget(conditionId ? { kind: 'detail-filter', id: conditionId } : { kind: 'none' });
+  };
+
+  const activateTableConfigSelection = (scope: 'main' | 'detail') => {
+    setInspectorTarget({ kind: scope === 'main' ? 'main-grid' : 'detail-grid' });
+  };
+
+  const activateContextMenuSelection = (scope: 'main' | 'detail') => {
+    setInspectorTarget({ kind: scope === 'main' ? 'main-context' : 'detail-context' });
+  };
+
+  const activateDetailTabSelection = (tabId: string | null) => {
+    setInspectorTarget(tabId ? { kind: 'detail-tab', id: tabId } : { kind: 'none' });
+  };
+
+  const openDetailBoardPreview = (rowId: number, preferredSortColumnId?: string | null) => {
+    setDetailBoardSortColumnId(preferredSortColumnId ?? selectedMainColId ?? mainTableColumns[0]?.id ?? null);
+    setDetailBoardOpenedRowId(rowId);
+    setIsDetailBoardOpen(true);
+  };
 
   const addTab = () => {
     const newId = `tab_${Date.now()}`;
     setDetailTabs([...detailTabs, { id: newId, name: `新页签 ${detailTabs.length + 1}` }]);
     setActiveTab(newId);
     setTabFillTypes({ ...tabFillTypes, [newId]: '表格' });
+    setDetailFilterFields((prev) => ({
+      ...prev,
+      [newId]: [buildConditionField(1, { name: '关键字', placeholder: '请输入关键字', width: 220 })],
+    }));
+    setDetailTabConfigs((prev) => ({
+      ...prev,
+      [newId]: buildDetailTabConfig({ relatedModule: '未关联模块', relatedCondition: 'parent_id = ${id}' }),
+    }));
     setDetailTableColumns({ ...detailTableColumns, [newId]: [
       { id: `d_col_${Date.now()}_1`, name: '新字段 1', type: '文本', width: 120 },
       { id: `d_col_${Date.now()}_2`, name: '新字段 2', type: '文本', width: 120 },
     ] });
+    setDetailTableConfigs((prev) => ({
+      ...prev,
+      [newId]: buildGridConfig('SELECT * FROM detail_table', 'parent_id = ${id}', {
+        contextMenuItems: [buildContextMenuItem(1, { label: '查看记录', actionKey: 'open-detail' })],
+      }),
+    }));
   };
 
   const deleteTab = (id: string, e: React.MouseEvent) => {
@@ -125,13 +374,31 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       delete next[id];
       return next;
     });
+    setDetailFilterFields((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setDetailTabConfigs((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     setDetailTableColumns(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setDetailTableConfigs((prev) => {
       const next = { ...prev };
       delete next[id];
       return next;
     });
     if (activeTab === id) {
       setActiveTab(newTabs.length > 0 ? newTabs[0].id : '');
+    }
+    if (selectedDetailTabId === id) {
+      setInspectorTarget({ kind: 'none' });
     }
   };
 
@@ -155,18 +422,35 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     setCols(prev => prev.map(c => c.id === id ? { ...c, type } : c));
   };
 
-  const startResize = (e: React.MouseEvent, colId: string, cols: any[], setCols: React.Dispatch<React.SetStateAction<any[]>>) => {
+  const startResize = (
+    e: React.MouseEvent,
+    colId: string,
+    cols: any[],
+    setCols: React.Dispatch<React.SetStateAction<any[]>>,
+    minWidth = 80,
+    maxWidth = 680,
+  ) => {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.pageX;
     const startWidth = cols.find(c => c.id === colId)?.width || 100;
+    let latestWidth = startWidth;
     
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const newWidth = Math.max(50, startWidth + (moveEvent.pageX - startX));
-      setCols(prev => prev.map(c => c.id === colId ? { ...c, width: newWidth } : c));
+      latestWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + (moveEvent.pageX - startX)));
+      if (resizeFrameRef.current !== null) return;
+      resizeFrameRef.current = window.requestAnimationFrame(() => {
+        resizeFrameRef.current = null;
+        setCols(prev => prev.map(c => c.id === colId ? { ...c, width: latestWidth } : c));
+      });
     };
     
     const handleMouseUp = () => {
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+      setCols(prev => prev.map(c => c.id === colId ? { ...c, width: latestWidth } : c));
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
@@ -175,222 +459,397 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const renderTableBuilder = (
-    cols: any[], 
-    setCols: React.Dispatch<React.SetStateAction<any[]>>, 
-    selectedId: string | null, 
-    setSelectedId: React.Dispatch<React.SetStateAction<string | null>>,
-    selectedForDelete: string[],
-    setSelectedForDelete: React.Dispatch<React.SetStateAction<string[]>>
-  ) => {
-    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.checked) {
-        setSelectedForDelete(cols.map(c => c.id));
-      } else {
-        setSelectedForDelete([]);
+  const getFieldOptionValues = (rawField: any) => {
+    const field = normalizeColumn(rawField);
+    const source = field.dictCode || field.helpText || '';
+
+    if (/[,\n，;；|]/.test(source)) {
+      const items = source
+        .split(/[\n,，;；|]/)
+        .map((item: string) => item.trim())
+        .filter(Boolean);
+
+      if (items.length > 0) {
+        return items;
       }
+    }
+
+    if (field.type === '下拉框') {
+      return ['正常', '停用', '草稿'];
+    }
+
+    if (field.type === '单选框') {
+      return ['是', '否'];
+    }
+
+    if (field.type === '多选框') {
+      return ['标签A', '标签B', '标签C'];
+    }
+
+    return [];
+  };
+
+  const getPreviewCellValue = (rawCol: any, rowIndex: number) => {
+    const col = normalizeColumn(rawCol);
+    const fieldName = col.name || '字段';
+    const optionValues = getFieldOptionValues(col);
+
+    if (col.defaultValue) {
+      return col.defaultValue;
+    }
+
+    if (col.type === '数字' || /金额|单价|数量|价格|余额/.test(fieldName)) {
+      return `${(rowIndex + 1) * 125}`;
+    }
+
+    if (col.type === '日期框' || /日期|时间/.test(fieldName)) {
+      return `2026-03-${String(rowIndex + 18).padStart(2, '0')}`;
+    }
+
+    if (col.type === '下拉框' || col.type === '单选框') {
+      return optionValues[rowIndex % optionValues.length] || '未选择';
+    }
+
+    if (col.type === '多选框') {
+      return optionValues.slice(0, 2).join('、') || '标签A、标签B';
+    }
+
+    if (/编码|编号/.test(fieldName)) {
+      return `NO-${String(rowIndex + 1).padStart(3, '0')}`;
+    }
+
+    if (/名称/.test(fieldName)) {
+      return `示例${rowIndex + 1}`;
+    }
+
+    if (/单位/.test(fieldName)) {
+      return ['个', '件', '套'][rowIndex % 3];
+    }
+
+    if (col.type === '搜索框') {
+      return `${fieldName}检索词`;
+    }
+
+    return `${fieldName}${rowIndex + 1}`;
+  };
+
+  const renderFieldPreview = (rawField: any, rowIndex: number, mode: 'table' | 'filter' = 'table') => {
+    const field = normalizeColumn(rawField);
+    const previewValue = getPreviewCellValue(field, rowIndex);
+    const optionValues = getFieldOptionValues(field);
+    const isFilterMode = mode === 'filter';
+    const inputClass = isFilterMode
+      ? 'h-9 w-full rounded border border-slate-300 bg-white px-3 text-[12px] text-slate-600 outline-none transition focus:border-[#1686e3] focus:ring-2 focus:ring-[#1686e3]/12 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
+      : 'h-9 w-full rounded border border-slate-200/70 bg-white px-3 text-[12px] text-slate-700 outline-none transition focus:border-[#1686e3] focus:ring-2 focus:ring-[#1686e3]/12 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100';
+    const compactInputClass = `${inputClass} px-2.5`;
+    const previewKey = `${field.id}-${field.type}-${field.dictCode}-${field.defaultValue}-${field.placeholder}`;
+
+    const stopPreviewEvent = (event: React.SyntheticEvent) => {
+      event.stopPropagation();
     };
 
-    const handleSelectCol = (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
-      e.stopPropagation();
-      if (e.target.checked) {
-        setSelectedForDelete(prev => [...prev, id]);
-      } else {
-        setSelectedForDelete(prev => prev.filter(i => i !== id));
-      }
-    };
+    if (field.type === '日期框') {
+      return (
+        <input
+          key={previewKey}
+          data-preview-control="true"
+          type="date"
+          defaultValue={previewValue}
+          className={compactInputClass}
+          onClick={stopPreviewEvent}
+          onDoubleClick={stopPreviewEvent}
+        />
+      );
+    }
+
+    if (field.type === '下拉框') {
+      return (
+        <select
+          key={previewKey}
+          data-preview-control="true"
+          defaultValue={optionValues.includes(previewValue) ? previewValue : optionValues[0] || ''}
+          className={compactInputClass}
+          onClick={stopPreviewEvent}
+          onDoubleClick={stopPreviewEvent}
+        >
+          {optionValues.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (field.type === '搜索框') {
+      return (
+        <div
+          data-preview-control="true"
+          className="relative"
+          onClick={stopPreviewEvent}
+          onDoubleClick={stopPreviewEvent}
+        >
+          <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[16px] text-slate-400 ${isFilterMode ? '' : 'z-[1]'}`}>
+            search
+          </span>
+          <input
+            key={previewKey}
+            defaultValue={previewValue || ''}
+            placeholder={field.placeholder || `请输入${field.name}`}
+            className={`${compactInputClass} ${isFilterMode ? 'pl-8 pr-3' : 'pl-8 pr-3'} min-w-0`}
+          />
+        </div>
+      );
+    }
+
+    if (field.type === '单选框') {
+      return (
+        <div
+          data-preview-control="true"
+          className="flex flex-wrap items-center gap-3"
+          onClick={stopPreviewEvent}
+          onDoubleClick={stopPreviewEvent}
+        >
+          {(optionValues.length > 0 ? optionValues : ['是', '否']).map((option) => (
+            <label key={option} className="inline-flex items-center gap-1.5 text-[12px] text-slate-600 dark:text-slate-300">
+              <input
+                type="radio"
+                name={`${field.id}-${mode}`}
+                defaultChecked={option === previewValue}
+                className="h-3.5 w-3.5 accent-[#1686e3]"
+              />
+              <span>{option}</span>
+            </label>
+          ))}
+        </div>
+      );
+    }
+
+    if (field.type === '多选框') {
+      const tags = optionValues.slice(0, 2);
+      return (
+        <div
+          data-preview-control="true"
+          className="flex flex-wrap gap-2"
+          onClick={stopPreviewEvent}
+          onDoubleClick={stopPreviewEvent}
+        >
+          {(optionValues.length > 0 ? optionValues : ['标签A', '标签B', '标签C']).map((tag, index) => (
+            <label key={tag} className="inline-flex items-center gap-1.5 text-[12px] text-slate-600 dark:text-slate-300">
+              <input
+                type="checkbox"
+                defaultChecked={index < (tags.length > 0 ? tags.length : 2)}
+                className="h-3.5 w-3.5 rounded accent-[#1686e3]"
+              />
+              <span>{tag}</span>
+            </label>
+          ))}
+        </div>
+      );
+    }
+
+    if (field.type === '数字') {
+      return (
+        <input
+          key={previewKey}
+          data-preview-control="true"
+          type="number"
+          defaultValue={previewValue}
+          className={`${compactInputClass} text-right font-semibold tabular-nums`}
+          onClick={stopPreviewEvent}
+          onDoubleClick={stopPreviewEvent}
+        />
+      );
+    }
 
     return (
-      <table className="w-full text-left text-[13px] border-collapse">
-        <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 select-none sticky top-0 z-20">
-          <tr>
-            <th className="w-10 border-r border-slate-200 dark:border-slate-700 text-center py-2">
-              <input 
-                type="checkbox" 
-                className="rounded border-slate-300 text-primary focus:ring-primary"
-                onChange={handleSelectAll} 
-                checked={cols.length > 0 && selectedForDelete.length === cols.length} 
-              />
-            </th>
-            {cols.map(col => (
-              <th 
-                key={col.id} 
-                style={{ width: col.width, minWidth: 50 }} 
-                className={`border-r border-slate-200 dark:border-slate-700 relative group cursor-pointer transition-colors ${
-                  selectedId === col.id ? 'bg-primary/10' : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-                onClick={() => setSelectedId(col.id)}
-              >
-                <div className="flex items-center gap-2 p-1.5">
-                  <input 
-                    type="checkbox" 
-                    className="rounded border-slate-300 text-primary focus:ring-primary shrink-0"
-                    checked={selectedForDelete.includes(col.id)} 
-                    onChange={(e) => handleSelectCol(e, col.id)} 
-                    onClick={e => e.stopPropagation()} 
-                  />
-                  <div className="flex flex-col gap-1 flex-1 min-w-0">
-                    <div className="font-bold truncate text-[12px]" title={col.name}>{col.name}</div>
-                    <div className="relative" onClick={e => e.stopPropagation()}>
-                      <select 
-                        className="w-full text-[11px] bg-transparent border border-slate-200 dark:border-slate-600 rounded px-1 py-0.5 text-slate-500 dark:text-slate-400 focus:ring-1 focus:ring-primary outline-none appearance-none cursor-pointer"
-                        value={col.type}
-                        onChange={(e) => updateColType(col.id, e.target.value, setCols)}
-                      >
-                        {FIELD_TYPE_OPTIONS.map((type) => (
-                          <option key={type} value={type}>
-                            {type}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="material-symbols-outlined absolute right-0.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 pointer-events-none">arrow_drop_down</span>
-                    </div>
-                  </div>
-                </div>
-                {/* Resize Handle */}
-                <div 
-                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary z-10 opacity-0 group-hover:opacity-100 transition-opacity"
-                  onMouseDown={(e) => startResize(e, col.id, cols, setCols)}
-                />
-              </th>
-            ))}
-            <th className="py-2 px-3 text-slate-400 font-normal min-w-[40px]">
-              <button 
-                onClick={() => setCols(prev => [...prev, { id: `col_${Date.now()}`, name: `新字段 ${prev.length + 1}`, type: '文本', width: 120 }])}
-                className="size-6 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center transition-colors"
-              >
-                <span className="material-symbols-outlined text-[16px]">add</span>
-              </button>
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50 text-slate-600 dark:text-slate-400">
-          {selectedId ? (
-            <tr>
-              <td colSpan={cols.length + 2} className="p-0">
-                {(() => {
-                  const col = cols.find(c => c.id === selectedId);
-                  if (!col) return null;
-                  return (
-                    <div className="bg-slate-50/80 dark:bg-slate-900/80 border-y border-slate-200 dark:border-slate-700 p-5 shadow-inner">
-                      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200 dark:border-slate-700">
-                        <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[18px] text-primary">settings</span>
-                          字段高级配置: {col.name}
-                        </h4>
-                        <button 
-                          onClick={() => setSelectedId(null)}
-                          className="size-6 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-500 transition-colors"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">close</span>
-                        </button>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        {/* Basic Info */}
-                        <div className="space-y-4 col-span-1">
-                          <h5 className="text-[12px] font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[14px] text-slate-400">info</span> 基础信息</h5>
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-500">字段名称</label>
-                            <input 
-                              type="text" 
-                              value={col.name}
-                              onChange={(e) => setCols(prev => prev.map(c => c.id === col.id ? { ...c, name: e.target.value } : c))}
-                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-[12px] focus:ring-1 focus:ring-primary outline-none" 
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-500">字段类型</label>
-                            <select 
-                              value={col.type}
-                              onChange={(e) => updateColType(col.id, e.target.value, setCols)}
-                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-[12px] focus:ring-1 focus:ring-primary outline-none"
-                            >
-                              {FIELD_TYPE_OPTIONS.map((type) => (
-                                <option key={type} value={type}>
-                                  {type}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-500">列宽 (px)</label>
-                            <input 
-                              type="number" 
-                              value={Math.round(col.width)}
-                              onChange={(e) => setCols(prev => prev.map(c => c.id === col.id ? { ...c, width: Number(e.target.value) } : c))}
-                              className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-[12px] focus:ring-1 focus:ring-primary outline-none" 
-                            />
-                          </div>
-                        </div>
-                        
-                        {/* Advanced SQL */}
-                        <div className="space-y-4 col-span-1 md:col-span-2">
-                          <h5 className="text-[12px] font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[14px] text-slate-400">database</span> 数据与计算</h5>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-bold text-slate-500">关联值</label>
-                              <input type="text" placeholder="例如: dict_type_1" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-[12px] focus:ring-1 focus:ring-primary outline-none font-mono" />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-bold text-slate-500">计算 SQL</label>
-                              <input type="text" placeholder="例如: col1 + col2" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-[12px] focus:ring-1 focus:ring-primary outline-none font-mono" />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-bold text-slate-500">关联 SQL</label>
-                              <textarea rows={2} placeholder="SELECT id, name FROM table" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-[12px] focus:ring-1 focus:ring-primary outline-none font-mono resize-none" />
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-bold text-slate-500">动态 SQL</label>
-                              <textarea rows={2} placeholder="WHERE status = 1" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-[12px] focus:ring-1 focus:ring-primary outline-none font-mono resize-none" />
-                            </div>
-                          </div>
-                        </div>
+      <input
+        key={previewKey}
+        data-preview-control="true"
+        type="text"
+        defaultValue={previewValue || ''}
+        placeholder={field.placeholder || `${field.name}示例值`}
+        className={compactInputClass}
+        onClick={stopPreviewEvent}
+        onDoubleClick={stopPreviewEvent}
+      />
+    );
+  };
 
-                        {/* Properties */}
-                        <div className="space-y-4 col-span-1">
-                          <h5 className="text-[12px] font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[14px] text-slate-400">toggle_on</span> 属性控制</h5>
-                          <div className="space-y-3 bg-white dark:bg-slate-800 p-3 rounded-md border border-slate-200 dark:border-slate-700">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input type="checkbox" className="rounded border-slate-300 text-primary focus:ring-primary" defaultChecked />
-                              <span className="text-[12px] text-slate-700 dark:text-slate-300">必填字段</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input type="checkbox" className="rounded border-slate-300 text-primary focus:ring-primary" defaultChecked />
-                              <span className="text-[12px] text-slate-700 dark:text-slate-300">在列表中显示</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input type="checkbox" className="rounded border-slate-300 text-primary focus:ring-primary" />
-                              <span className="text-[12px] text-slate-700 dark:text-slate-300">支持搜索</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input type="checkbox" className="rounded border-slate-300 text-primary focus:ring-primary" />
-                              <span className="text-[12px] text-slate-700 dark:text-slate-300">只读</span>
-                            </label>
-                          </div>
+  const renderTableBuilder = (
+    scope: 'left' | 'main' | 'detail',
+    cols: any[],
+    setCols: React.Dispatch<React.SetStateAction<any[]>>,
+    selectedId: string | null,
+    selectedForDelete: string[],
+    setSelectedForDelete: React.Dispatch<React.SetStateAction<string[]>>,
+    options?: {
+      showDetailAction?: boolean;
+      contextMenuScope?: 'main' | 'detail';
+      contextMenuConfig?: {
+        enabled: boolean;
+        items: any[];
+      };
+    }
+  ) => {
+    const showDetailAction = options?.showDetailAction ?? false;
+    const previewRowCount = 1;
+    const contextMenuScope = options?.contextMenuScope;
+    const contextMenuConfig = options?.contextMenuConfig;
+
+    const handleColumnHeaderClick = (event: React.MouseEvent<HTMLButtonElement>, id: string) => {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        setSelectedForDelete((prev) => (
+          prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+        ));
+        activateColumnSelection(scope, id);
+        return;
+      }
+
+      setSelectedForDelete([id]);
+      activateColumnSelection(scope, id);
+    };
+
+    if (cols.length === 0) {
+      return (
+        <div className="flex h-full min-h-[240px] items-center justify-center px-6 text-center text-slate-400">
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex size-14 items-center justify-center rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+              <span className="material-symbols-outlined text-[24px] text-slate-300 dark:text-slate-500">data_object</span>
+            </div>
+            <div>
+              <p className="text-[14px] font-bold text-slate-500 dark:text-slate-300">当前区域还没有字段</p>
+              <p className="mt-1 text-[12px] text-slate-400">点击右上角新增，或直接粘贴列名批量生成。</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-w-max">
+        <table className="w-full min-w-full border-separate border-spacing-0 text-left text-[13px]">
+          <thead className="sticky top-0 z-20 select-none bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.92))] dark:bg-slate-900/90">
+            <tr>
+              <th className="w-11 border-b border-r border-slate-200/80 bg-[#f8fafc] px-2 py-3 text-center text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400 dark:border-slate-700 dark:bg-slate-900/70">
+                #
+              </th>
+              {cols.map((col) => {
+                const normalizedCol = normalizeColumn(col);
+                const isActive = selectedId === col.id;
+                const isMarkedForDelete = selectedForDelete.includes(col.id);
+
+                return (
+                  <th
+                    key={col.id}
+                    style={{ width: normalizedCol.width, minWidth: 168 }}
+                    className="group relative border-b border-r border-slate-200/80 p-0 align-top dark:border-slate-700"
+                  >
+                    <button
+                      type="button"
+                      onClick={(event) => handleColumnHeaderClick(event, col.id)}
+                      className={`relative flex h-full min-h-[56px] w-full items-center overflow-hidden px-4 py-0 text-left transition-all ${
+                        isActive
+                          ? 'bg-[linear-gradient(180deg,rgba(231,243,255,0.98),rgba(244,249,255,0.98))] shadow-[inset_0_0_0_1px_rgba(22,134,227,0.18)] dark:bg-primary/12'
+                          : isMarkedForDelete
+                            ? 'bg-rose-50/90 shadow-[inset_0_0_0_1px_rgba(244,63,94,0.12)] dark:bg-rose-500/10'
+                            : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
+                      }`}
+                    >
+                      <div className={`absolute inset-y-0 left-0 w-[3px] ${isActive ? 'bg-[#1686e3]' : isMarkedForDelete ? 'bg-rose-400' : 'bg-transparent'}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className={`truncate text-[13px] font-bold tracking-[0.01em] ${
+                          isActive
+                            ? 'text-[#1686e3] dark:text-primary'
+                            : isMarkedForDelete
+                              ? 'text-rose-500 dark:text-rose-300'
+                              : 'text-slate-700 dark:text-slate-100'
+                        }`} title={normalizedCol.name}>
+                          {normalizedCol.name}
                         </div>
                       </div>
+                    </button>
+                    <div
+                      className="absolute right-0 top-1.5 bottom-1.5 flex w-2 cursor-col-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
+                      onMouseDown={(e) => startResize(e, col.id, cols, setCols)}
+                    >
+                      <div className="h-7 w-[3px] rounded-full bg-slate-300 transition-colors group-hover:bg-[#1686e3] dark:bg-slate-700 dark:group-hover:bg-[#1686e3]" />
                     </div>
+                  </th>
+                );
+              })}
+              <th className="w-14 border-b border-slate-200/80 bg-[#f8fafc] px-2 py-3 text-center dark:border-slate-700 dark:bg-slate-900/70">
+                <button
+                  onClick={() => setCols((prev) => [...prev, buildColumn(scope === 'detail' ? 'd_col' : `${scope}_col`, prev.length + 1)])}
+                  className="inline-flex size-8 items-center justify-center rounded-2xl border border-dashed border-primary/30 bg-primary/5 text-primary transition-all hover:bg-primary/10"
+                  title="新增字段"
+                >
+                  <span className="material-symbols-outlined text-[18px]">add</span>
+                </button>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="text-slate-600 dark:text-slate-300">
+            {Array.from({ length: previewRowCount }).map((_, rowIndex) => (
+              <tr
+                key={rowIndex}
+                onContextMenu={(event) => {
+                  if (!contextMenuScope || !contextMenuConfig?.enabled || (contextMenuConfig.items ?? []).length === 0) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setPreviewContextMenu({
+                    scope: contextMenuScope,
+                    rowId: rowIndex + 1,
+                    x: event.clientX,
+                    y: event.clientY,
+                    items: contextMenuConfig.items,
+                  });
+                }}
+                onDoubleClick={showDetailAction ? () => openDetailBoardPreview(rowIndex + 1, selectedId ?? cols[0]?.id ?? null) : undefined}
+                className={showDetailAction ? 'group cursor-pointer' : ''}
+              >
+                <td className="border-b border-r border-slate-100/90 bg-slate-50/75 px-3 py-3 text-center text-[12px] font-bold text-slate-400 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-500">
+                  {rowIndex + 1}
+                </td>
+                {cols.map((col) => {
+                  const normalizedCol = normalizeColumn(col);
+                  const isActive = selectedId === col.id;
+
+                  return (
+                    <td
+                      key={`${col.id}-${rowIndex}`}
+                      className={`border-b border-r border-slate-100/90 px-3 py-3 transition-colors dark:border-slate-800 ${
+                        isActive
+                          ? 'bg-primary/[0.06] text-slate-700 dark:bg-primary/10 dark:text-slate-100'
+                          : 'bg-white/78 dark:bg-slate-900/35'
+                      }`}
+                    >
+                      {renderFieldPreview(normalizedCol, rowIndex)}
+                    </td>
                   );
-                })()}
-              </td>
-            </tr>
-          ) : (
-            <tr>
-              <td colSpan={cols.length + 2} className="py-16 text-center text-slate-400">
-                <div className="flex flex-col items-center justify-center gap-2">
-                  <div className="size-12 rounded-full bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center border border-slate-100 dark:border-slate-700">
-                    <span className="material-symbols-outlined text-[24px] text-slate-300 dark:text-slate-600">data_object</span>
-                  </div>
-                  <div>
-                    <p className="font-bold text-[13px] text-slate-500 dark:text-slate-400">暂无数据表</p>
-                  </div>
-                </div>
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+                })}
+                <td className="border-b border-slate-100/90 bg-slate-50/55 px-3 py-3 text-center dark:border-slate-800 dark:bg-slate-900/25">
+                  {showDetailAction ? (
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openDetailBoardPreview(rowIndex + 1, selectedId ?? cols[0]?.id ?? null);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-full border border-[#1686e3]/20 bg-[#1686e3]/8 px-3 py-1.5 text-[11px] font-bold text-[#1686e3] transition-colors hover:bg-[#1686e3]/14 dark:border-[#1686e3]/25 dark:bg-[#1686e3]/10"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">web_traffic</span>
+                      详情
+                    </button>
+                  ) : (
+                    <span className="text-[11px] font-bold text-slate-300 dark:text-slate-600">预览</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     );
   };
 
@@ -435,11 +894,49 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const currentDetailFillType = DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === tabFillTypes[activeTab])
     ? tabFillTypes[activeTab]
     : DETAIL_FILL_TYPE_OPTIONS[0].value;
+  const treeRelationColumn = mainTableColumns.find((column) => normalizeColumn(column).type === '树形节点关联') ?? null;
+  const parsedTreeSourceFields = useMemo(
+    () => parseSqlFieldNames(treeRelationColumn?.dynamicSql ?? ''),
+    [treeRelationColumn?.dynamicSql],
+  );
+  const isTreePaneVisible = Boolean(treeRelationColumn);
+  const deferredActiveTab = useDeferredValue(activeTab);
+  const deferredInspectorTarget = useDeferredValue(inspectorTarget);
 
   useEffect(() => {
-    setSelectedDetailColId(null);
     setSelectedDetailForDelete([]);
+    setInspectorTarget((prev) => {
+      if (prev.kind === 'detail-col' || prev.kind === 'detail-filter') {
+        return { kind: 'none' };
+      }
+      if (prev.kind === 'detail-tab' && prev.id && prev.id !== activeTab) {
+        return { kind: 'detail-tab', id: activeTab };
+      }
+      return prev;
+    });
+    setPreviewContextMenu(null);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!treeRelationColumn) {
+      setInspectorTarget((prev) => (prev.kind === 'left-col' ? { kind: 'none' } : prev));
+      return;
+    }
+
+    const sourceFields = parsedTreeSourceFields.length > 0 ? parsedTreeSourceFields : ['node_id', 'node_name', 'parent_id'];
+    setLeftTableColumns((prev) => sourceFields.map((fieldName, index) => {
+      const existing = prev.find((item) => item.sourceField === fieldName);
+      if (existing) {
+        return { ...existing, sourceField: fieldName };
+      }
+
+      return buildColumn('tree_col', index + 1, {
+        name: fieldName,
+        sourceField: fieldName,
+        width: index === 1 ? 176 : 148,
+      });
+    }));
+  }, [parsedTreeSourceFields, treeRelationColumn]);
 
   useEffect(() => {
     if (!isConfigOpen || configStep !== 4) {
@@ -447,9 +944,80 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     }
   }, [configStep, isConfigOpen]);
 
+  useEffect(() => {
+    const handlePointerMove = (event: MouseEvent) => {
+      if (!layoutDragRef.current) return;
+
+      const drag = layoutDragRef.current;
+      if (drag.type === 'document-left-width') {
+        const delta = event.clientX - drag.startX;
+        setDocumentLeftPaneWidth(Math.min(280, Math.max(170, drag.startValue + delta)));
+      }
+
+      if (drag.type === 'document-detail-width') {
+        const delta = drag.startX - event.clientX;
+        setDocumentDetailPaneWidth(Math.min(460, Math.max(320, drag.startValue + delta)));
+      }
+
+      if (drag.type === 'document-top-height') {
+        const delta = event.clientY - drag.startY;
+        setDocumentTopPaneHeight(Math.min(520, Math.max(260, drag.startValue + delta)));
+      }
+    };
+
+    const stopDrag = () => {
+      if (!layoutDragRef.current) return;
+      layoutDragRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', stopDrag);
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', stopDrag);
+    };
+  }, []);
+
+  useEffect(() => {
+    const closeContextMenu = () => setPreviewContextMenu(null);
+
+    window.addEventListener('click', closeContextMenu);
+    window.addEventListener('resize', closeContextMenu);
+    window.addEventListener('scroll', closeContextMenu, true);
+
+    return () => {
+      window.removeEventListener('click', closeContextMenu);
+      window.removeEventListener('resize', closeContextMenu);
+      window.removeEventListener('scroll', closeContextMenu, true);
+    };
+  }, []);
+
   const getDetailFillTypeMeta = (fillType?: string) => (
     DETAIL_FILL_TYPE_OPTIONS.find((option) => option.value === fillType) ?? DETAIL_FILL_TYPE_OPTIONS[0]
   );
+
+  const startLayoutDrag = (
+    type: 'document-left-width' | 'document-detail-width' | 'document-top-height',
+    event: React.MouseEvent,
+  ) => {
+    event.preventDefault();
+    layoutDragRef.current = {
+      type,
+      startX: event.clientX,
+      startY: event.clientY,
+      startValue:
+        type === 'document-left-width'
+          ? documentLeftPaneWidth
+          : type === 'document-detail-width'
+            ? documentDetailPaneWidth
+            : documentTopPaneHeight,
+    };
+    document.body.style.cursor = type === 'document-top-height' ? 'row-resize' : 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
 
   const renderDetailFillPlaceholder = () => {
     const fillTypeMeta = getDetailFillTypeMeta(currentDetailFillType);
@@ -634,13 +1202,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 }}
               >
                 {renderTableBuilder(
+                  'detail',
                   detailTableColumns[activeTab] || [],
                   (newCols) => setDetailTableColumns((prev) => ({
                     ...prev,
                     [activeTab]: typeof newCols === 'function' ? newCols(prev[activeTab] || []) : newCols,
                   })),
                   selectedDetailColId,
-                  setSelectedDetailColId,
                   selectedDetailForDelete,
                   setSelectedDetailForDelete,
                 )}
@@ -667,6 +1235,1587 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           </div>
         </div>
       </div>
+    );
+  };
+
+  const selectedColumnContext = useMemo(() => {
+    const panelTabId = deferredActiveTab;
+    const activeDetailTabName = detailTabs.find((tab) => tab.id === panelTabId)?.name || '当前明细';
+    const deferredSelectedLeftColId = deferredInspectorTarget.kind === 'left-col' ? deferredInspectorTarget.id ?? null : null;
+    const deferredSelectedMainColId = deferredInspectorTarget.kind === 'main-col' ? deferredInspectorTarget.id ?? null : null;
+    const deferredSelectedDetailColId = deferredInspectorTarget.kind === 'detail-col' ? deferredInspectorTarget.id ?? null : null;
+    const deferredSelectedMainFilterId = deferredInspectorTarget.kind === 'main-filter' ? deferredInspectorTarget.id ?? null : null;
+    const deferredSelectedDetailFilterId = deferredInspectorTarget.kind === 'detail-filter' ? deferredInspectorTarget.id ?? null : null;
+    const deferredSelectedDetailTabId = deferredInspectorTarget.kind === 'detail-tab' ? deferredInspectorTarget.id ?? null : null;
+    const deferredSelectedTableConfigScope = deferredInspectorTarget.kind === 'main-grid' ? 'main' : deferredInspectorTarget.kind === 'detail-grid' ? 'detail' : null;
+    const deferredSelectedContextMenuScope = deferredInspectorTarget.kind === 'main-context' ? 'main' : deferredInspectorTarget.kind === 'detail-context' ? 'detail' : null;
+    const makeDetailSetter = (updater: React.SetStateAction<any[]>) => {
+      setDetailTableColumns((prev) => ({
+        ...prev,
+        [panelTabId]: typeof updater === 'function' ? updater(prev[panelTabId] || []) : updater,
+      }));
+    };
+
+    if (deferredSelectedMainFilterId) {
+      const condition = mainFilterFields.find((item) => item.id === deferredSelectedMainFilterId);
+      return condition
+        ? {
+            kind: 'condition' as const,
+            scope: 'filter' as const,
+            title: '查询条件',
+            description: '控制顶部条件区的控件名称、类型、默认值和查询联动逻辑。',
+            icon: 'filter_alt',
+            iconClass: 'bg-amber-500/12 text-amber-500',
+            column: condition,
+            setCols: setMainFilterFields,
+            removeLabel: '删除条件',
+          }
+        : null;
+    }
+
+    if (deferredSelectedDetailFilterId) {
+      const condition = (detailFilterFields[panelTabId] || []).find((item) => item.id === deferredSelectedDetailFilterId);
+      return condition
+        ? {
+            kind: 'condition' as const,
+            scope: 'detail-filter' as const,
+            title: `明细条件 · ${activeDetailTabName}`,
+            description: '控制当前明细页签的查询条件、默认值和联动逻辑。',
+            icon: 'filter_alt',
+            iconClass: 'bg-orange-500/12 text-orange-500',
+            column: condition,
+            setCols: (updater: React.SetStateAction<any[]>) => {
+              setDetailFilterFields((prev) => ({
+                ...prev,
+                [panelTabId]: typeof updater === 'function' ? updater(prev[panelTabId] || []) : updater,
+              }));
+            },
+            removeLabel: '删除条件',
+          }
+        : null;
+    }
+
+    if (deferredSelectedDetailTabId) {
+      return {
+        kind: 'detail-tab' as const,
+        scope: 'detail-tab' as const,
+        title: `明细页签配置 · ${detailTabs.find((tab) => tab.id === deferredSelectedDetailTabId)?.name || activeDetailTabName}`,
+        description: '控制当前明细页签的关联模块、联动条件和禁用策略。',
+        icon: 'tab',
+        iconClass: 'bg-violet-500/12 text-violet-500',
+        column: detailTabConfigs[deferredSelectedDetailTabId] ?? buildDetailTabConfig(),
+        setCols: (updater: React.SetStateAction<any>) => {
+          setDetailTabConfigs((prev) => ({
+            ...prev,
+            [deferredSelectedDetailTabId]: typeof updater === 'function' ? updater(prev[deferredSelectedDetailTabId] ?? buildDetailTabConfig()) : updater,
+          }));
+        },
+        removeLabel: '',
+      };
+    }
+
+    if (deferredSelectedContextMenuScope === 'main') {
+      return {
+        kind: 'contextmenu' as const,
+        scope: 'main-contextmenu' as const,
+        title: '主表右键菜单',
+        description: '控制主表预览区的右键菜单项，设置后可直接在表格中右击查看效果。',
+        icon: 'right_click',
+        iconClass: 'bg-cyan-500/12 text-cyan-500',
+        column: mainTableConfig,
+        setCols: setMainTableConfig,
+        removeLabel: '',
+      };
+    }
+
+    if (deferredSelectedContextMenuScope === 'detail') {
+      return {
+        kind: 'contextmenu' as const,
+        scope: 'detail-contextmenu' as const,
+        title: `明细右键菜单 · ${activeDetailTabName}`,
+        description: '控制当前明细表的右键菜单项与禁用条件，设置后可直接右击明细行预览。',
+        icon: 'right_click',
+        iconClass: 'bg-sky-500/12 text-sky-500',
+        column: detailTableConfigs[panelTabId] ?? buildGridConfig('', ''),
+        setCols: (updater: React.SetStateAction<any>) => {
+          setDetailTableConfigs((prev) => ({
+            ...prev,
+            [panelTabId]: typeof updater === 'function' ? updater(prev[panelTabId] ?? buildGridConfig('', '')) : updater,
+          }));
+        },
+        removeLabel: '',
+      };
+    }
+
+    if (deferredSelectedTableConfigScope === 'main') {
+      return {
+        kind: 'grid' as const,
+        scope: 'main-grid' as const,
+        title: '主表配置',
+        description: '控制主表的主 SQL、默认查询条件和表格展示类型。',
+        icon: 'table_view',
+        iconClass: 'bg-cyan-500/12 text-cyan-500',
+        column: mainTableConfig,
+        setCols: setMainTableConfig,
+        removeLabel: '',
+      };
+    }
+
+    if (deferredSelectedTableConfigScope === 'detail') {
+      return {
+        kind: 'grid' as const,
+        scope: 'detail-grid' as const,
+        title: `明细表配置 · ${activeDetailTabName}`,
+        description: '控制当前明细表的主 SQL、默认查询条件和表格展示类型。',
+        icon: 'table_chart',
+        iconClass: 'bg-sky-500/12 text-sky-500',
+        column: detailTableConfigs[panelTabId] ?? { mainSql: '', defaultQuery: '', tableType: '普通表格' },
+        setCols: (updater: React.SetStateAction<any>) => {
+          setDetailTableConfigs((prev) => ({
+            ...prev,
+            [panelTabId]: typeof updater === 'function' ? updater(prev[panelTabId] ?? { mainSql: '', defaultQuery: '', tableType: '普通表格' }) : updater,
+          }));
+        },
+        removeLabel: '',
+      };
+    }
+
+    if (deferredSelectedLeftColId) {
+      const column = leftTableColumns.find((item) => item.id === deferredSelectedLeftColId);
+      return column
+        ? {
+            kind: 'column' as const,
+            scope: 'left' as const,
+            title: '左侧树节点',
+            description: '控制树形节点关联列解析出的左侧节点字段名称与展示宽度。',
+            icon: 'account_tree',
+            iconClass: 'bg-indigo-500/12 text-indigo-500',
+            column,
+            setCols: setLeftTableColumns,
+            removeLabel: '删除列',
+          }
+        : null;
+    }
+
+    if (deferredSelectedMainColId) {
+      const column = mainTableColumns.find((item) => item.id === deferredSelectedMainColId);
+      return column
+        ? {
+            kind: 'column' as const,
+            scope: 'main' as const,
+            title: '基础档案主表',
+            description: '控制中间主表区域的字段样式、联动与展示行为。',
+            icon: 'table_rows',
+            iconClass: 'bg-emerald-500/12 text-emerald-500',
+            column,
+            setCols: setMainTableColumns,
+            removeLabel: '删除列',
+          }
+        : null;
+    }
+
+    if (deferredSelectedDetailColId) {
+      const detailCols = detailTableColumns[panelTabId] || [];
+      const column = detailCols.find((item) => item.id === deferredSelectedDetailColId);
+      return column
+        ? {
+            kind: 'column' as const,
+            scope: 'detail' as const,
+            title: `明细页签 · ${activeDetailTabName}`,
+            description: '控制最右详情区字段与页签表格的展示、校验和业务联动。',
+            icon: 'receipt_long',
+            iconClass: 'bg-blue-500/12 text-blue-500',
+            column,
+            setCols: makeDetailSetter,
+            removeLabel: '删除列',
+          }
+        : null;
+    }
+
+    return null;
+  }, [
+    deferredActiveTab,
+    deferredInspectorTarget,
+    detailTabs,
+    leftTableColumns,
+    mainTableColumns,
+    detailTableColumns,
+    mainFilterFields,
+    detailFilterFields,
+    mainTableConfig,
+    detailTableConfigs,
+    detailTabConfigs,
+  ]);
+
+  const renderColumnOperationPanel = () => {
+    const fieldClass = 'w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3.5 py-2.5 text-[13px] text-slate-700 outline-none transition focus:border-primary/35 focus:ring-2 focus:ring-primary/10 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-100';
+    const textareaClass = `${fieldClass} min-h-[84px] resize-none font-mono text-[12px]`;
+
+    if (!selectedColumnContext) {
+      return (
+        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/90 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
+          <div className="border-b border-slate-200/70 px-6 py-5 dark:border-slate-700">
+            <div className="flex items-center gap-3">
+              <div className="flex size-11 items-center justify-center rounded-3xl bg-primary/10 text-primary">
+                <span className="material-symbols-outlined text-[20px]">tune</span>
+              </div>
+              <div>
+                <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-100">详细配置</h3>
+                <p className="mt-1 text-[12px] leading-relaxed text-slate-400">从顶部条件区、表头列名或表格标题区点选对象，所有配置都会固定收敛到这里。</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex min-h-0 flex-1 items-center justify-center px-8 py-10">
+            <div className="w-full rounded-[26px] border border-dashed border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.75),rgba(255,255,255,0.92))] px-6 py-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
+              <div className="mx-auto flex size-16 items-center justify-center rounded-[24px] bg-white text-primary shadow-[0_24px_34px_-24px_rgba(14,116,144,0.55)] dark:bg-slate-800">
+                <span className="material-symbols-outlined text-[28px]">touch_app</span>
+              </div>
+              <div className="mt-5 text-[15px] font-bold text-slate-700 dark:text-slate-100">先点选一个条件或列头</div>
+              <p className="mt-2 text-[12px] leading-relaxed text-slate-400">
+                右侧会固定显示当前对象的名称、类型、宽度、校验、展示属性和业务联动配置；表格级配置请直接点主表或明细表标题。
+              </p>
+              <div className="mt-6 grid gap-3 text-left text-[12px] text-slate-500 dark:text-slate-400">
+                {[
+                  '基础定义：名称、类型、宽度、对齐',
+                  '交互属性：必填、显示、搜索、只读、默认值',
+                  '业务联动：字典值、公式、关联 SQL、动态 SQL',
+                ].map((item) => (
+                  <div key={item} className="flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white/70 px-3.5 py-3 dark:border-slate-700 dark:bg-slate-900/40">
+                    <span className="material-symbols-outlined text-[16px] text-primary">check_circle</span>
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (selectedColumnContext.kind === 'detail-tab') {
+      const currentTabConfig = selectedColumnContext.column;
+      const updateTabConfig = (patch: Record<string, any>) => {
+        selectedColumnContext.setCols((prev: Record<string, any>) => ({
+          ...prev,
+          ...patch,
+        }));
+      };
+
+      return (
+        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/90 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
+          <div className="border-b border-slate-200/70 px-6 py-5 dark:border-slate-700">
+            <div className="flex items-start gap-3">
+              <div className={`flex size-11 shrink-0 items-center justify-center rounded-3xl ${selectedColumnContext.iconClass}`}>
+                <span className="material-symbols-outlined text-[20px]">{selectedColumnContext.icon}</span>
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="truncate text-[15px] font-bold text-slate-800 dark:text-slate-100">{selectedColumnContext.title}</h3>
+                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">页签级配置</span>
+                </div>
+                <p className="mt-1 text-[12px] leading-relaxed text-slate-400">{selectedColumnContext.description}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
+            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
+              <div className="grid gap-4">
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">关联模块</label>
+                  <input
+                    type="text"
+                    value={currentTabConfig.relatedModule ?? ''}
+                    onChange={(e) => updateTabConfig({ relatedModule: e.target.value })}
+                    placeholder="例如：附件管理 / 销售订单 / 入库记录"
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">关联条件</label>
+                  <textarea
+                    rows={3}
+                    value={currentTabConfig.relatedCondition ?? ''}
+                    onChange={(e) => updateTabConfig({ relatedCondition: e.target.value })}
+                    placeholder="例如：archive_id = ${id}"
+                    className={textareaClass}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
+              <div className="grid gap-4">
+                <label className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 text-[13px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-200">
+                  <span>自动刷新</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(currentTabConfig.autoRefresh)}
+                    onChange={(e) => updateTabConfig({ autoRefresh: e.target.checked })}
+                    className="h-4 w-4 rounded accent-[#1686e3]"
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 text-[13px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-200">
+                  <span>禁用页签</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(currentTabConfig.disabled)}
+                    onChange={(e) => updateTabConfig({ disabled: e.target.checked })}
+                    className="h-4 w-4 rounded accent-[#1686e3]"
+                  />
+                </label>
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">禁用条件</label>
+                  <textarea
+                    rows={3}
+                    value={currentTabConfig.disabledCondition ?? ''}
+                    onChange={(e) => updateTabConfig({ disabledCondition: e.target.value })}
+                    placeholder="例如：status = '停用' OR parent_disabled = 1"
+                    className={textareaClass}
+                  />
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      );
+    }
+
+    if (selectedColumnContext.kind === 'contextmenu') {
+      const currentContextConfig = selectedColumnContext.column;
+      const updateContextConfig = (patch: Record<string, any>) => {
+        selectedColumnContext.setCols((prev: Record<string, any>) => ({
+          ...prev,
+          ...patch,
+        }));
+      };
+      const menuItems = currentContextConfig.contextMenuItems ?? [];
+      const enabledMenuCount = menuItems.filter((item: any) => !item.disabledCondition).length;
+
+      return (
+        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,252,0.94))] shadow-[0_34px_70px_-44px_rgba(15,23,42,0.42)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/92">
+          <div className="border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,251,255,0.96),rgba(255,255,255,0.88))] px-6 py-5 dark:border-slate-700 dark:bg-slate-800/86">
+            <div className="flex items-start gap-3">
+              <div className={`flex size-11 shrink-0 items-center justify-center rounded-3xl ${selectedColumnContext.iconClass}`}>
+                <span className="material-symbols-outlined text-[20px]">{selectedColumnContext.icon}</span>
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="truncate text-[15px] font-bold text-slate-800 dark:text-slate-100">{selectedColumnContext.title}</h3>
+                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">右键菜单</span>
+                </div>
+                <p className="mt-1 text-[12px] leading-relaxed text-slate-400">{selectedColumnContext.description}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
+            <section className="overflow-hidden rounded-[26px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,252,0.96))] shadow-[0_20px_44px_-36px_rgba(15,23,42,0.42)] dark:border-slate-700 dark:bg-slate-900/48">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 px-5 py-5 dark:border-slate-700">
+                <div className="min-w-0">
+                  <div className="text-[14px] font-bold text-slate-800 dark:text-slate-100">菜单状态</div>
+                  <div className="mt-1 text-[12px] leading-relaxed text-slate-400">在这里控制右键菜单是否启用，并预览当前菜单结构。</div>
+                </div>
+                <label className="inline-flex shrink-0 cursor-pointer items-center gap-3 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[12px] font-bold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  <span>{currentContextConfig.contextMenuEnabled ? '已启用' : '未启用'}</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(currentContextConfig.contextMenuEnabled)}
+                    onChange={(e) => updateContextConfig({ contextMenuEnabled: e.target.checked })}
+                    className="h-4 w-4 rounded accent-[#1686e3]"
+                  />
+                </label>
+              </div>
+              <div className="grid gap-4 px-5 py-5">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-[20px] border border-slate-200/70 bg-white/92 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">菜单总数</div>
+                    <div className="mt-2 text-[22px] font-black text-slate-800 dark:text-slate-100">{menuItems.length}</div>
+                  </div>
+                  <div className="rounded-[20px] border border-slate-200/70 bg-white/92 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">可用项</div>
+                    <div className="mt-2 text-[22px] font-black text-emerald-500">{enabledMenuCount}</div>
+                  </div>
+                  <div className="rounded-[20px] border border-slate-200/70 bg-white/92 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">禁用项</div>
+                    <div className="mt-2 text-[22px] font-black text-amber-500">{Math.max(0, menuItems.length - enabledMenuCount)}</div>
+                  </div>
+                </div>
+
+                <div className="overflow-hidden rounded-[22px] border border-slate-200/70 bg-[#f8fbff] dark:border-slate-700 dark:bg-slate-900/62">
+                  <div className="border-b border-slate-200/70 px-4 py-3 dark:border-slate-700">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px] text-[#1686e3]">preview</span>
+                      <span className="text-[12px] font-bold text-slate-700 dark:text-slate-100">右键菜单预览</span>
+                    </div>
+                  </div>
+                  <div className="bg-[radial-gradient(circle_at_top_left,rgba(22,134,227,0.12),transparent_55%),linear-gradient(180deg,rgba(241,247,253,0.94),rgba(255,255,255,0.96))] p-4 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.55),rgba(15,23,42,0.76))]">
+                    <div className="mx-auto max-w-[260px] rounded-[18px] border border-white/80 bg-white/96 p-2 shadow-[0_24px_54px_-28px_rgba(15,23,42,0.38)] dark:border-slate-700 dark:bg-slate-900/96">
+                      {menuItems.length > 0 ? (
+                        menuItems.map((item: any) => {
+                          const isDisabled = Boolean(item.disabledCondition);
+
+                          return (
+                            <div
+                              key={`preview-${item.id}`}
+                              className={`flex items-center gap-3 rounded-[14px] px-3 py-2.5 ${
+                                isDisabled ? 'opacity-55' : 'hover:bg-[#eef6ff] dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              <div className={`flex size-8 items-center justify-center rounded-2xl ${
+                                isDisabled ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600' : 'bg-[#1686e3]/10 text-[#1686e3]'
+                              }`}>
+                                <span className="material-symbols-outlined text-[15px]">{isDisabled ? 'block' : 'subdirectory_arrow_right'}</span>
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className={`truncate text-[12px] font-bold ${
+                                  isDisabled ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-100'
+                                }`}>
+                                  {item.label || '未命名菜单'}
+                                </div>
+                                <div className="mt-1 truncate font-mono text-[10px] text-slate-400">{item.actionKey || '未配置动作'}</div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="rounded-[16px] border border-dashed border-slate-200/80 px-4 py-6 text-center text-[12px] text-slate-400 dark:border-slate-700">
+                          当前还没有右键菜单项
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-[26px] border border-slate-200/70 bg-white/84 p-5 shadow-[0_22px_48px_-38px_rgba(15,23,42,0.32)] dark:border-slate-700 dark:bg-slate-900/45">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[14px] font-bold text-slate-800 dark:text-slate-100">菜单项编辑</div>
+                  <div className="mt-1 text-[12px] text-slate-400">维护菜单名称、动作标识和禁用条件，修改后上方预览会同步更新。</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateContextConfig({
+                    contextMenuItems: [...menuItems, buildContextMenuItem(menuItems.length + 1)],
+                  })}
+                  className="inline-flex items-center gap-1 rounded-xl border border-[#1686e3] bg-[#1686e3] px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-[#1176ca]"
+                >
+                  <span className="material-symbols-outlined text-[14px]">add</span>
+                  新增菜单
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {menuItems.length > 0 ? (
+                  menuItems.map((item: any, index: number) => (
+                    <div key={item.id} className="rounded-[24px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(247,250,253,0.94))] p-4 shadow-[0_22px_40px_-34px_rgba(15,23,42,0.36)] dark:border-slate-700 dark:bg-slate-900/55">
+                      <div className="mb-4 flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="flex size-10 items-center justify-center rounded-[18px] bg-[#1686e3]/10 text-[#1686e3]">
+                            <span className="material-symbols-outlined text-[17px]">right_click</span>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">菜单 {index + 1}</div>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                item.disabledCondition ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300'
+                              }`}>
+                                {item.disabledCondition ? '有禁用条件' : '默认可用'}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-slate-400">这项会直接出现在预览区右键菜单中。</div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => updateContextConfig({
+                            contextMenuItems: menuItems.filter((menu: any) => menu.id !== item.id),
+                          })}
+                          className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">delete</span>
+                          删除
+                        </button>
+                      </div>
+
+                      <div className="grid gap-4">
+                        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_170px]">
+                          <div>
+                            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">菜单名称</label>
+                            <input
+                              type="text"
+                              value={item.label ?? ''}
+                              onChange={(e) => updateContextConfig({
+                                contextMenuItems: menuItems.map((menu: any) => (
+                                  menu.id === item.id ? { ...menu, label: e.target.value } : menu
+                                )),
+                              })}
+                              placeholder="菜单名称"
+                              className={fieldClass}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">动作标识</label>
+                            <input
+                              type="text"
+                              value={item.actionKey ?? ''}
+                              onChange={(e) => updateContextConfig({
+                                contextMenuItems: menuItems.map((menu: any) => (
+                                  menu.id === item.id ? { ...menu, actionKey: e.target.value } : menu
+                                )),
+                              })}
+                              placeholder="open-detail"
+                              className={`${fieldClass} font-mono text-[12px]`}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">禁用条件</label>
+                          <textarea
+                            rows={2}
+                            value={item.disabledCondition ?? ''}
+                            onChange={(e) => updateContextConfig({
+                              contextMenuItems: menuItems.map((menu: any) => (
+                                menu.id === item.id ? { ...menu, disabledCondition: e.target.value } : menu
+                              )),
+                            })}
+                            placeholder="例如：status = '停用'"
+                            className={textareaClass}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[22px] border border-dashed border-slate-200/80 px-4 py-8 text-center text-[12px] text-slate-400 dark:border-slate-700">
+                    还没有配置右键菜单，点击右上角“新增菜单”开始。
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        </div>
+      );
+    }
+
+    if (selectedColumnContext.kind === 'grid') {
+      const currentGridConfig = selectedColumnContext.column;
+      const updateGridConfig = (patch: Record<string, any>) => {
+        selectedColumnContext.setCols((prev: Record<string, any>) => ({
+          ...prev,
+          ...patch,
+        }));
+      };
+
+      return (
+        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/90 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
+          <div className="border-b border-slate-200/70 px-6 py-5 dark:border-slate-700">
+            <div className="flex items-start gap-3">
+              <div className={`flex size-11 shrink-0 items-center justify-center rounded-3xl ${selectedColumnContext.iconClass}`}>
+                <span className="material-symbols-outlined text-[20px]">{selectedColumnContext.icon}</span>
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="truncate text-[15px] font-bold text-slate-800 dark:text-slate-100">{selectedColumnContext.title}</h3>
+                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">表格级配置</span>
+                </div>
+                <p className="mt-1 text-[12px] leading-relaxed text-slate-400">{selectedColumnContext.description}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5">
+            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-primary">database</span>
+                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">数据源配置</h4>
+              </div>
+              <div className="grid gap-4">
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">主 SQL</label>
+                  <textarea
+                    rows={4}
+                    value={currentGridConfig.mainSql}
+                    onChange={(e) => updateGridConfig({ mainSql: e.target.value })}
+                    placeholder="SELECT * FROM your_table"
+                    className={textareaClass}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">默认查询</label>
+                  <textarea
+                    rows={3}
+                    value={currentGridConfig.defaultQuery}
+                    onChange={(e) => updateGridConfig({ defaultQuery: e.target.value })}
+                    placeholder="enable = 1 AND org_id = ${orgId}"
+                    className={textareaClass}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="mt-5 rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-primary">table_chart</span>
+                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">展示配置</h4>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[12px] font-bold text-slate-500">表格类型</label>
+                <select
+                  value={currentGridConfig.tableType}
+                  onChange={(e) => updateGridConfig({ tableType: e.target.value })}
+                  className={fieldClass}
+                >
+                  {TABLE_TYPE_OPTIONS.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </section>
+          </div>
+        </div>
+      );
+    }
+
+    const isConditionConfig = selectedColumnContext.kind === 'condition';
+    const currentColumn = isConditionConfig
+      ? normalizeConditionField(selectedColumnContext.column)
+      : normalizeColumn(selectedColumnContext.column);
+    const updateColumn = (patch: Record<string, any>) => {
+      selectedColumnContext.setCols((prev) => prev.map((item) => (
+        item.id === currentColumn.id ? { ...item, ...patch } : item
+      )));
+    };
+
+    const removeCurrentColumn = () => {
+      selectedColumnContext.setCols((prev) => prev.filter((item) => item.id !== currentColumn.id));
+      clearColumnSelection();
+    };
+
+    const propertySwitches = isConditionConfig
+      ? [
+          { key: 'required', label: '必填条件', desc: '查询前必须填写该条件' },
+          { key: 'visible', label: '界面显示', desc: '控制是否在顶部条件区展示' },
+          { key: 'searchable', label: '参与查询', desc: '启用后参与查询条件拼装' },
+          { key: 'readonly', label: '只读预设', desc: '适合系统回填或固定条件' },
+        ]
+      : [
+          { key: 'required', label: '必填字段', desc: '保存前必须输入或选择值' },
+          { key: 'visible', label: '界面显示', desc: '控制是否在列表或表单中展示' },
+          { key: 'searchable', label: '支持搜索', desc: '可作为筛选检索字段参与查询' },
+          { key: 'readonly', label: '只读模式', desc: '用于系统回填或计算型字段' },
+        ];
+    const availableFieldTypes = isConditionConfig
+      ? FIELD_TYPE_OPTIONS.filter((type) => type !== '树形节点关联')
+      : FIELD_TYPE_OPTIONS;
+
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/90 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
+        <div className="border-b border-slate-200/70 px-6 py-5 dark:border-slate-700">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className={`flex size-11 shrink-0 items-center justify-center rounded-3xl ${selectedColumnContext.iconClass}`}>
+                <span className="material-symbols-outlined text-[20px]">{selectedColumnContext.icon}</span>
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="truncate text-[15px] font-bold text-slate-800 dark:text-slate-100">{currentColumn.name}</h3>
+                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">{selectedColumnContext.title}</span>
+                </div>
+                <p className="mt-1 text-[12px] leading-relaxed text-slate-400">{selectedColumnContext.description}</p>
+              </div>
+            </div>
+            <button
+              onClick={removeCurrentColumn}
+              className="inline-flex shrink-0 items-center gap-1 rounded-2xl border border-rose-200/70 bg-rose-50/80 px-3 py-2 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10"
+            >
+              <span className="material-symbols-outlined text-[14px]">delete</span>
+              {selectedColumnContext.removeLabel}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5">
+          <div className="grid gap-4 rounded-[24px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,0.94))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] dark:border-slate-700 dark:bg-slate-900/45">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40">
+                <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{isConditionConfig ? '条件标识' : '字段标识'}</div>
+                <div className="mt-1 truncate font-mono text-[13px] text-slate-700 dark:text-slate-200">{currentColumn.id}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40">
+                <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前类型</div>
+                <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-200">{currentColumn.type}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-5">
+            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-primary">view_list</span>
+                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">{isConditionConfig ? '条件定义' : '基础定义'}</h4>
+              </div>
+              <div className="grid gap-4">
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '条件名称' : '字段名称'}</label>
+                  <input
+                    type="text"
+                    value={currentColumn.name}
+                    onChange={(e) => updateColumn({ name: e.target.value })}
+                    className={fieldClass}
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '控件类型' : '字段类型'}</label>
+                    <select
+                      value={currentColumn.type}
+                      onChange={(e) => updateColumn({ type: e.target.value })}
+                      className={fieldClass}
+                    >
+                      {availableFieldTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '控件宽度 (px)' : '列宽 (px)'}</label>
+                    <input
+                      type="number"
+                      min={80}
+                      value={Math.round(currentColumn.width)}
+                      onChange={(e) => updateColumn({ width: Math.max(80, Number(e.target.value) || 80) })}
+                      className={fieldClass}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">对齐方式</label>
+                    <select
+                      value={currentColumn.align}
+                      onChange={(e) => updateColumn({ align: e.target.value })}
+                      className={fieldClass}
+                    >
+                      {COLUMN_ALIGN_OPTIONS.map((align) => (
+                        <option key={align} value={align}>
+                          {align}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">默认值</label>
+                    <input
+                      type="text"
+                      value={currentColumn.defaultValue}
+                      onChange={(e) => updateColumn({ defaultValue: e.target.value })}
+                      placeholder="例如：默认状态、初始值"
+                      className={fieldClass}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '提示文案' : '占位提示'}</label>
+                  <input
+                    type="text"
+                    value={currentColumn.placeholder}
+                    onChange={(e) => updateColumn({ placeholder: e.target.value })}
+                    placeholder={isConditionConfig ? '用于顶部条件区展示的提示文案' : '用于表单输入提示'}
+                    className={fieldClass}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-primary">toggle_on</span>
+                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">{isConditionConfig ? '条件属性' : '交互属性'}</h4>
+              </div>
+              <div className="grid gap-3">
+                {propertySwitches.map((item) => (
+                  <label
+                    key={item.key}
+                    className="flex items-start gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-3.5 py-3 cursor-pointer transition-colors hover:border-primary/20 hover:bg-white dark:border-slate-700 dark:bg-slate-900/35 dark:hover:bg-slate-900/55"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 rounded border-slate-300 text-primary focus:ring-primary"
+                      checked={Boolean(currentColumn[item.key])}
+                      onChange={(e) => updateColumn({ [item.key]: e.target.checked })}
+                    />
+                    <div>
+                      <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">{item.label}</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-slate-400">{item.desc}</div>
+                    </div>
+                  </label>
+                ))}
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">帮助文案</label>
+                  <textarea
+                    rows={3}
+                    value={currentColumn.helpText}
+                    onChange={(e) => updateColumn({ helpText: e.target.value })}
+                    placeholder="填写字段说明、校验规则或业务提示"
+                    className={fieldClass}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
+              <div className="mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-primary">hub</span>
+                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">{isConditionConfig ? '查询联动' : '业务联动'}</h4>
+              </div>
+              <div className="grid gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '下拉数据 / 值集' : '关联字典 / 值集'}</label>
+                    <input
+                      type="text"
+                      value={currentColumn.dictCode}
+                      onChange={(e) => updateColumn({ dictCode: e.target.value })}
+                      placeholder={isConditionConfig ? '例如：正常,停用,草稿' : '例如：material_status'}
+                      className={fieldClass}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '默认表达式' : '公式 / 计算表达式'}</label>
+                    <input
+                      type="text"
+                      value={currentColumn.formula}
+                      onChange={(e) => updateColumn({ formula: e.target.value })}
+                      placeholder={isConditionConfig ? '例如：today() / 本月 / 当前组织' : '例如：price * qty'}
+                      className={fieldClass}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '条件 SQL / 取数逻辑' : '关联 SQL'}</label>
+                  <textarea
+                    rows={3}
+                    value={currentColumn.relationSql}
+                    onChange={(e) => updateColumn({ relationSql: e.target.value })}
+                    placeholder={isConditionConfig ? 'SELECT code, name FROM ...' : 'SELECT id, name FROM ... '}
+                    className={textareaClass}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '联动 SQL / 条件表达式' : '动态 SQL / 条件表达式'}</label>
+                  <textarea
+                    rows={3}
+                    value={currentColumn.dynamicSql}
+                    onChange={(e) => updateColumn({ dynamicSql: e.target.value })}
+                    placeholder={isConditionConfig ? 'WHERE org_id = ${orgId} AND enable = 1' : 'WHERE org_id = ${orgId}'}
+                    className={textareaClass}
+                  />
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const columnOperationPanel = useMemo(() => renderColumnOperationPanel(), [selectedColumnContext]);
+
+  const renderDocumentTreePanel = () => {
+    if (!treeRelationColumn) return null;
+
+    const sourceFields = leftTableColumns.length > 0 ? leftTableColumns : [
+      buildColumn('tree_col', 1, { name: 'node_id', sourceField: 'node_id', width: 148 }),
+      buildColumn('tree_col', 2, { name: 'node_name', sourceField: 'node_name', width: 176 }),
+      buildColumn('tree_col', 3, { name: 'parent_id', sourceField: 'parent_id', width: 148 }),
+    ];
+
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[8px] border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900">
+        <div className="border-b border-slate-300 bg-[#f7f9fc] px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/80">
+          <div className="flex items-start gap-2">
+            <div className="flex size-8 items-center justify-center rounded-2xl bg-[#1686e3]/10 text-[#1686e3]">
+              <span className="material-symbols-outlined text-[16px]">account_tree</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">左侧树节点</div>
+              <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                已从“{treeRelationColumn.name}”的动态 SQL 自动解析字段，点节点字段可直接改中文名。
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="border-b border-slate-200/80 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+          <div className="rounded-[16px] border border-slate-200/70 bg-slate-50/80 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/45">
+            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">动态 SQL</div>
+            <div className="mt-1 line-clamp-3 font-mono text-[11px] leading-relaxed text-slate-500 dark:text-slate-300">
+              {treeRelationColumn.dynamicSql || '未配置动态 SQL，当前按默认树节点字段生成。'}
+            </div>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto px-2 py-3">
+          <div className="rounded-[18px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,249,252,0.96))] p-2 shadow-[0_16px_32px_-28px_rgba(15,23,42,0.35)] dark:border-slate-700 dark:bg-slate-900/45">
+            <div className="flex items-center gap-2 rounded-[14px] bg-[#eef6ff] px-3 py-2 text-[12px] font-bold text-[#1686e3] dark:bg-primary/10 dark:text-primary">
+              <span className="material-symbols-outlined text-[16px]">folder_open</span>
+              <span className="truncate">{activeMenuName || '基础档案树'}</span>
+            </div>
+            <div className="mt-2 ml-4 border-l border-dashed border-slate-200 pl-3 dark:border-slate-700">
+              {sourceFields.map((field, index) => {
+                const isActive = selectedLeftColId === field.id;
+
+                return (
+                  <button
+                    key={field.id}
+                    type="button"
+                    onClick={() => activateColumnSelection('left', field.id)}
+                    className={`group mt-1 flex w-full items-center gap-2 rounded-[14px] px-3 py-2 text-left transition-all ${
+                      isActive
+                        ? 'bg-[#eef6ff] text-[#1686e3] shadow-[inset_0_0_0_1px_rgba(22,134,227,0.16)] dark:bg-primary/10 dark:text-primary'
+                        : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800/70'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px] text-slate-400">subdirectory_arrow_right</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12px] font-bold">{field.name}</div>
+                      <div className="mt-1 truncate font-mono text-[10px] text-slate-400">{field.sourceField || `field_${index + 1}`}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDocumentGridToolbar = (
+    columns: any[],
+    title: string,
+    selectedCount: number,
+    onDelete: () => void,
+    onAdd: () => void,
+    extraActions?: React.ReactNode,
+    filterConfig?: {
+      fields: any[];
+      selectedId: string | null;
+      onSelect: (id: string) => void;
+      onAdd: () => void;
+      onDelete: () => void;
+      setFields: React.Dispatch<React.SetStateAction<any[]>>;
+    },
+    tableConfigAction?: {
+      active?: boolean;
+      onSelect: () => void;
+    },
+  ) => {
+    const filterFields = filterConfig?.fields ?? columns.slice(0, 3);
+
+    return (
+      <>
+        <div className="border-b border-slate-300 bg-[#f7f9fc] px-3 py-2 dark:border-slate-700 dark:bg-slate-800/80">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                {filterFields.map((field, index) => {
+                  const normalizedField = normalizeConditionField(field);
+                  const isActive = filterConfig?.selectedId === field.id;
+                  const filterWidth = Math.max(320, Math.min(520, (normalizedField.width || 220) + 108));
+
+                  return (
+                    <div
+                      key={field.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => filterConfig?.onSelect(field.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          filterConfig?.onSelect(field.id);
+                        }
+                      }}
+                      style={{ width: filterWidth, minWidth: filterWidth }}
+                      className={`group relative grid shrink-0 grid-cols-[96px_minmax(0,1fr)] items-center overflow-hidden rounded border transition-colors ${
+                        isActive
+                          ? 'border-[#1686e3] bg-[#eef6ff] shadow-[inset_0_0_0_1px_rgba(22,134,227,0.14)] dark:border-[#1686e3] dark:bg-primary/10'
+                          : 'border-slate-300 bg-white hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900'
+                      }`}
+                    >
+                      <span className={`border-r px-3 py-2 text-[12px] font-bold ${
+                        isActive
+                          ? 'border-[#cfe4fd] bg-[#e8f2ff] text-[#1686e3] dark:border-primary/20 dark:bg-primary/12'
+                          : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                      }`}>
+                        {normalizedField.name}
+                      </span>
+                      <div className="min-w-0 flex-1 px-2 py-1.5 text-left">
+                        {renderFieldPreview(normalizedField, index, 'filter')}
+                      </div>
+                      <div
+                        className="absolute right-0 top-1 bottom-1 flex w-2 cursor-col-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
+                        onMouseDown={(event) => startResize(event, field.id, filterFields, filterConfig.setFields, 160, 620)}
+                      >
+                        <div className="h-6 w-[3px] rounded-full bg-slate-300 transition-colors group-hover:bg-[#1686e3] dark:bg-slate-700 dark:group-hover:bg-[#1686e3]" />
+                      </div>
+                    </div>
+                  );
+                })}
+                {filterConfig && (
+                    <button
+                      type="button"
+                      onClick={filterConfig.onAdd}
+                      className="inline-flex h-9 shrink-0 items-center justify-center rounded border border-dashed border-[#1686e3]/35 bg-white px-3 text-[12px] font-bold text-[#1686e3] transition-colors hover:bg-[#f4f9ff] dark:border-[#1686e3]/25 dark:bg-slate-900"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">playlist_add</span>
+                      条件
+                    </button>
+                )}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center self-center rounded-[14px] border border-slate-200/80 bg-white/90 px-2 py-1 shadow-[0_12px_26px_-22px_rgba(15,23,42,0.35)] dark:border-slate-700 dark:bg-slate-900/90">
+              {filterConfig && (
+                <button
+                  type="button"
+                  onClick={filterConfig.onDelete}
+                  disabled={!filterConfig.selectedId}
+                  className={`inline-flex h-9 items-center justify-center rounded px-3 text-[12px] font-bold transition-colors ${
+                    filterConfig.selectedId
+                      ? 'text-slate-600 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800'
+                      : 'cursor-not-allowed text-slate-300 dark:text-slate-600'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[15px]">delete</span>
+                  删除条件
+                </button>
+              )}
+              <div className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
+              <button className="inline-flex h-9 items-center justify-center rounded-[10px] bg-[#1686e3] px-4 text-[12px] font-bold text-white transition-colors hover:bg-[#1176ca]">
+                <span className="material-symbols-outlined text-[16px]">search</span>
+                查询
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between border-b border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+          <button
+            type="button"
+            onClick={tableConfigAction?.onSelect}
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] font-bold transition-colors ${
+              tableConfigAction?.active
+                ? 'border-[#1686e3] bg-[#eef6ff] text-[#1686e3] dark:border-[#1686e3] dark:bg-primary/10 dark:text-primary'
+                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-800'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[15px]">table_view</span>
+            {title}
+          </button>
+          <div className="flex items-center gap-2">
+            {extraActions}
+            <button
+              onClick={onAdd}
+              className="inline-flex items-center gap-1 rounded border border-[#1686e3] bg-[#1686e3] px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-[#1176ca]"
+            >
+              <span className="material-symbols-outlined text-[14px]">add</span>
+              新增
+            </button>
+            <button
+              onClick={onDelete}
+              disabled={selectedCount === 0}
+              className={`inline-flex items-center gap-1 rounded border px-3 py-1.5 text-[12px] font-bold transition-colors ${
+                selectedCount > 0
+                  ? 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
+                  : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-600'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[14px]">delete</span>
+              删除
+            </button>
+            <button className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+              <span className="material-symbols-outlined text-[14px]">save</span>
+              保存
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  const renderDocumentGridFooter = (rowCount: number) => (
+    <div className="mt-auto shrink-0 flex items-center justify-between border-t border-slate-300 bg-[#f8fafc] px-4 py-2 text-[12px] text-slate-500 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300">
+      <div className="flex items-center gap-2">
+        <select className="rounded border border-slate-300 bg-white px-2 py-1 outline-none dark:border-slate-700 dark:bg-slate-900">
+          <option>50</option>
+          <option>100</option>
+        </select>
+        <div className="flex items-center gap-1">
+          {['first_page', 'chevron_left', 'chevron_right', 'last_page', 'refresh'].map((icon) => (
+            <button key={icon} className="inline-flex size-7 items-center justify-center rounded border border-transparent text-slate-500 transition-colors hover:border-slate-200 hover:bg-white dark:hover:border-slate-700 dark:hover:bg-slate-900">
+              <span className="material-symbols-outlined text-[16px]">{icon}</span>
+            </button>
+          ))}
+        </div>
+        <span>第 1 页 共1页</span>
+      </div>
+      <div>显示第1到{Math.max(1, rowCount)}条记录，共{rowCount}条</div>
+    </div>
+  );
+
+  const renderDocumentDetailWorkbench = () => {
+    const detailCols = detailTableColumns[activeTab] || [];
+    const activeTabName = detailTabs.find((tab) => tab.id === activeTab)?.name || '明细页签';
+
+    return (
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="border-b border-slate-200/80 bg-white/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/80">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              {detailTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    activateDetailTabSelection(tab.id);
+                    setSelectedArchiveNodeId(`detail-${tab.id}`);
+                  }}
+                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-bold transition-all ${
+                    activeTab === tab.id
+                      ? 'border-[#1686e3] bg-[#1686e3] text-white shadow-[0_18px_30px_-20px_rgba(22,134,227,0.8)]'
+                      : 'border-slate-200 bg-slate-50/80 text-slate-600 hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                  }`}
+                >
+                  {tab.name}
+                  {detailTabs.length > 1 && (
+                    <span
+                      onClick={(event) => deleteTab(tab.id, event)}
+                      className={`material-symbols-outlined text-[14px] ${activeTab === tab.id ? 'text-white/90' : 'text-slate-400'}`}
+                    >
+                      close
+                    </span>
+                  )}
+                </button>
+              ))}
+              <button
+                onClick={addTab}
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-[#1686e3]/40 bg-white px-3 py-1.5 text-[12px] font-bold text-[#1686e3] dark:border-[#1686e3]/30 dark:bg-slate-900"
+              >
+                <span className="material-symbols-outlined text-[14px]">add</span>
+                新页签
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {DETAIL_FILL_TYPE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setTabFillTypes((prev) => ({ ...prev, [activeTab]: option.value }))}
+                  className={`rounded-full border px-2.5 py-1.5 text-[12px] font-bold transition-all ${
+                    currentDetailFillType === option.value
+                      ? 'border-[#1686e3] bg-[#1686e3] text-white shadow-[0_18px_30px_-20px_rgba(22,134,227,0.8)]'
+                      : 'border-slate-200 bg-slate-50/80 text-slate-500 hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        {currentDetailFillType === '表格' ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {renderDocumentGridToolbar(
+              detailCols,
+              `${activeTabName} · 明细表`,
+              selectedDetailForDelete.length,
+              () => {
+                setDetailTableColumns((prev) => ({
+                  ...prev,
+                  [activeTab]: (prev[activeTab] || []).filter((c) => !selectedDetailForDelete.includes(c.id)),
+                }));
+                setSelectedDetailForDelete([]);
+                setInspectorTarget({ kind: 'none' });
+              },
+              () => setDetailTableColumns((prev) => ({
+                ...prev,
+                [activeTab]: [...(prev[activeTab] || []), buildColumn('d_col', (prev[activeTab] || []).length + 1)],
+              })),
+              <button
+                type="button"
+                onClick={() => activateContextMenuSelection('detail')}
+                className={`inline-flex items-center gap-1 rounded border px-3 py-1.5 text-[12px] font-bold transition-colors ${
+                  selectedContextMenuScope === 'detail'
+                    ? 'border-[#1686e3] bg-[#eef6ff] text-[#1686e3] dark:border-[#1686e3] dark:bg-primary/10 dark:text-primary'
+                    : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[14px]">right_click</span>
+                右键创建
+              </button>,
+              {
+                fields: detailFilterFields[activeTab] || [],
+                selectedId: selectedDetailFilterId,
+                setFields: (updater) => {
+                  setDetailFilterFields((prev) => ({
+                    ...prev,
+                    [activeTab]: typeof updater === 'function' ? updater(prev[activeTab] || []) : updater,
+                  }));
+                },
+                onSelect: (id) => {
+                  setSelectedArchiveNodeId(`detail-${activeTab}`);
+                  activateDetailConditionSelection(id);
+                },
+                onAdd: () => {
+                  const next = buildConditionField((detailFilterFields[activeTab] || []).length + 1);
+                  setDetailFilterFields((prev) => ({
+                    ...prev,
+                    [activeTab]: [...(prev[activeTab] || []), next],
+                  }));
+                  activateDetailConditionSelection(next.id);
+                },
+                onDelete: () => {
+                  if (!selectedDetailFilterId) return;
+                  setDetailFilterFields((prev) => ({
+                    ...prev,
+                    [activeTab]: (prev[activeTab] || []).filter((item) => item.id !== selectedDetailFilterId),
+                  }));
+                  setInspectorTarget({ kind: 'none' });
+                },
+              },
+              {
+                active: selectedTableConfigScope === 'detail',
+                onSelect: () => {
+                  setSelectedArchiveNodeId(`detail-${activeTab}`);
+                  activateTableConfigSelection('detail');
+                },
+              },
+            )}
+            <div
+              className="min-h-0 flex-1 overflow-auto bg-white outline-none dark:bg-slate-900"
+              tabIndex={0}
+              onPaste={(e) => {
+                const text = e.clipboardData.getData('text');
+                if (!text) return;
+                const newColNames = text.split(/[\t\n]/).map((s) => s.trim()).filter(Boolean);
+                if (newColNames.length > 0) {
+                  e.preventDefault();
+                  const newCols = newColNames.map((name, i) => buildColumn('d_col', (detailCols.length || 0) + i + 1, { name }));
+                  setDetailTableColumns((prev) => ({
+                    ...prev,
+                    [activeTab]: [...(prev[activeTab] || []), ...newCols],
+                  }));
+                }
+              }}
+            >
+              {renderTableBuilder(
+                'detail',
+                detailCols,
+                (newCols) => setDetailTableColumns((prev) => ({
+                  ...prev,
+                  [activeTab]: typeof newCols === 'function' ? newCols(prev[activeTab] || []) : newCols,
+                })),
+                selectedDetailColId,
+                selectedDetailForDelete,
+                setSelectedDetailForDelete,
+                {
+                  contextMenuScope: 'detail',
+                  contextMenuConfig: {
+                    enabled: Boolean(detailTableConfigs[activeTab]?.contextMenuEnabled),
+                    items: detailTableConfigs[activeTab]?.contextMenuItems ?? [],
+                  },
+                },
+              )}
+            </div>
+            {renderDocumentGridFooter(1)}
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 bg-white p-3 dark:bg-slate-900">
+            {renderDetailFillPlaceholder()}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderPreviewContextMenu = () => {
+    if (!previewContextMenu) return null;
+    const enabledCount = previewContextMenu.items.filter((item: any) => !item.disabledCondition).length;
+
+    return (
+      <div
+        className="fixed inset-0 z-[75] bg-slate-950/8 backdrop-blur-[1.5px]"
+        onClick={() => setPreviewContextMenu(null)}
+      >
+        <div
+          className="absolute min-w-[284px] overflow-hidden rounded-[24px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,249,253,0.99))] p-2.5 shadow-[0_36px_90px_-30px_rgba(15,23,42,0.56)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/96"
+          style={{
+            left: Math.min(previewContextMenu.x, window.innerWidth - 308),
+            top: Math.min(previewContextMenu.y, window.innerHeight - 280),
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="overflow-hidden rounded-[20px] border border-slate-200/70 bg-white/84 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:border-slate-700 dark:bg-slate-900/70">
+            <div className="border-b border-slate-200/70 px-4 py-3 dark:border-slate-700">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="flex size-10 items-center justify-center rounded-2xl bg-[#1686e3]/10 text-[#1686e3]">
+                    <span className="material-symbols-outlined text-[18px]">right_click</span>
+                  </div>
+                  <div>
+                    <div className="text-[13px] font-bold text-slate-800 dark:text-slate-100">
+                      {previewContextMenu.scope === 'main' ? '主表右键菜单' : '明细右键菜单'}
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate-400">第 {previewContextMenu.rowId} 行 · {enabledCount} 个可用操作</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewContextMenu(null)}
+                  className="inline-flex size-8 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                >
+                  <span className="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              </div>
+            </div>
+            <div className="px-2 py-2">
+              {previewContextMenu.items.map((item: any) => {
+                const isDisabled = Boolean(item.disabledCondition);
+
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => {
+                      if (isDisabled) return;
+                      showToast(`已触发右键动作：${item.label}`);
+                      setPreviewContextMenu(null);
+                    }}
+                    className={`flex w-full items-center gap-3 rounded-[16px] border border-transparent px-3 py-3 text-left transition-all ${
+                      isDisabled
+                        ? 'cursor-not-allowed opacity-55'
+                        : 'hover:border-[#cfe4fd] hover:bg-[#eef6ff] hover:shadow-[0_14px_24px_-22px_rgba(22,134,227,0.55)] dark:hover:border-slate-700 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className={`flex size-9 shrink-0 items-center justify-center rounded-2xl ${
+                      isDisabled ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600' : 'bg-[#1686e3]/10 text-[#1686e3]'
+                    }`}>
+                      <span className="material-symbols-outlined text-[16px]">{isDisabled ? 'block' : 'subdirectory_arrow_right'}</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className={`truncate text-[12px] font-bold ${
+                        isDisabled ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-100'
+                      }`}>
+                        {item.label || '未命名菜单'}
+                      </div>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="truncate rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                          {item.actionKey || '未配置动作'}
+                        </span>
+                        {isDisabled && (
+                          <span className="truncate text-[10px] text-rose-400">禁用: {item.disabledCondition}</span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDetailBoardModal = () => {
+    if (!isDetailBoardOpen) return null;
+
+    const sortColumnId = detailBoardSortColumnId || mainTableColumns[0]?.id || null;
+    const previewRows = Array.from({ length: 6 }).map((_, rowIndex) => ({
+      id: rowIndex + 1,
+      values: mainTableColumns.reduce<Record<string, string>>((result, column) => {
+        result[column.id] = getPreviewCellValue(column, rowIndex);
+        return result;
+      }, {}),
+    }));
+
+    const sortedRows = sortColumnId
+      ? [...previewRows].sort((left, right) => (
+          `${left.values[sortColumnId] ?? ''}`.localeCompare(`${right.values[sortColumnId] ?? ''}`, 'zh-Hans-CN')
+        ))
+      : previewRows;
+    const openedRow = sortedRows.find((row) => row.id === detailBoardOpenedRowId) ?? sortedRows[0];
+    const leadColumn = mainTableColumns[0];
+    const secondaryColumns = mainTableColumns.slice(1, 5);
+    const tertiaryColumns = mainTableColumns.slice(0, 6);
+
+    return (
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/35 p-6 backdrop-blur-sm"
+          onClick={() => setIsDetailBoardOpen(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 24, scale: 0.98 }}
+            transition={{ duration: 0.22 }}
+            onClick={(event) => event.stopPropagation()}
+            className="flex h-[80vh] w-full max-w-[1240px] flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,252,0.98))] shadow-[0_50px_120px_-48px_rgba(15,23,42,0.68)] dark:border-slate-700 dark:bg-slate-900"
+          >
+            <div className="border-b border-slate-200 bg-[linear-gradient(180deg,#f8fbff,#edf4fc)] px-6 py-5 dark:border-slate-700 dark:bg-slate-800/85">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-[17px] font-bold text-slate-800 dark:text-slate-100">详情看板预览</div>
+                  <div className="mt-1 text-[12px] text-slate-400">用于客户双击主表记录时预览详情效果。顶部支持按列快速排序，右侧看板同步展示选中记录。</div>
+                </div>
+                <button
+                  onClick={() => setIsDetailBoardOpen(false)}
+                  className="inline-flex size-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
+              <div className="mt-5 flex flex-wrap items-center gap-2">
+                {mainTableColumns.map((column) => (
+                  <button
+                    key={column.id}
+                    onClick={() => setDetailBoardSortColumnId(column.id)}
+                    className={`rounded-full border px-3 py-1.5 text-[12px] font-bold transition-all ${
+                      sortColumnId === column.id
+                        ? 'border-[#1686e3] bg-[#1686e3] text-white shadow-[0_18px_28px_-20px_rgba(22,134,227,0.75)]'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                    }`}
+                  >
+                    按 {column.name} 排序
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+              <div className="min-h-0 overflow-auto bg-[#f8fafc] p-5 dark:bg-slate-950/40">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">候选记录</div>
+                  <div className="text-[11px] text-slate-400">双击卡片可模拟客户打开详情</div>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {sortedRows.map((row) => (
+                    <button
+                      key={row.id}
+                      onClick={() => setDetailBoardOpenedRowId(row.id)}
+                      onDoubleClick={() => {
+                        setDetailBoardOpenedRowId(row.id);
+                        showToast(`已打开第 ${row.id} 条看板预览`);
+                      }}
+                      className={`rounded-[18px] border p-4 text-left transition-all ${
+                        detailBoardOpenedRowId === row.id
+                          ? 'border-[#1686e3] bg-[#eaf4ff] shadow-[0_28px_42px_-28px_rgba(22,134,227,0.65)] dark:border-[#1686e3] dark:bg-[#1686e3]/10'
+                          : 'border-slate-200 bg-white hover:-translate-y-0.5 hover:border-[#1686e3]/40 hover:shadow-[0_24px_40px_-32px_rgba(15,23,42,0.3)] dark:border-slate-700 dark:bg-slate-900'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[14px] font-bold text-slate-800 dark:text-slate-100">
+                          {row.values[sortColumnId || mainTableColumns[0]?.id || ''] || `记录 ${row.id}`}
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                          #{row.id}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        {tertiaryColumns.map((column) => (
+                          <div key={column.id} className="rounded-2xl border border-slate-100 bg-slate-50/80 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-800/50">
+                            <div className="text-[11px] font-bold text-slate-400">{column.name}</div>
+                            <div className="mt-1 truncate text-[13px] text-slate-700 dark:text-slate-100">{row.values[column.id]}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-4 text-[11px] text-slate-400">双击卡片可模拟客户打开详情看板。</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-l border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,248,252,0.98))] px-6 py-5 dark:border-slate-700 dark:bg-slate-900">
+                <div className="rounded-[24px] border border-white/80 bg-[linear-gradient(160deg,rgba(26,110,197,0.08),rgba(255,255,255,0.96))] p-5 shadow-[0_30px_50px_-36px_rgba(22,134,227,0.45)] dark:border-slate-700 dark:bg-slate-800/80">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[12px] font-bold tracking-[0.12em] text-[#1686e3]">DETAIL BOARD</div>
+                      <div className="mt-2 text-[20px] font-bold text-slate-800 dark:text-slate-100">
+                        {openedRow?.values[leadColumn?.id || ''] || '未选择记录'}
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-white/85 px-3 py-1 text-[11px] font-bold text-slate-500 shadow-sm dark:bg-slate-900/85 dark:text-slate-300">
+                      #{openedRow?.id ?? '--'}
+                    </span>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {secondaryColumns.map((column) => (
+                      <div key={column.id} className="rounded-full border border-white/80 bg-white/80 px-3 py-1 text-[11px] font-bold text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300">
+                        {column.name}：{openedRow?.values[column.id] || '--'}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-4 shadow-[0_20px_30px_-28px_rgba(15,23,42,0.28)] dark:border-slate-700 dark:bg-slate-800/80">
+                    <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前排序字段</div>
+                    <div className="mt-2 text-[15px] font-bold text-[#1686e3]">
+                      {mainTableColumns.find((column) => column.id === sortColumnId)?.name || '未选择'}
+                    </div>
+                  </div>
+                  <div className="rounded-[18px] border border-slate-200 bg-white px-4 py-4 shadow-[0_20px_30px_-28px_rgba(15,23,42,0.28)] dark:border-slate-700 dark:bg-slate-800/80">
+                    <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">交互方式</div>
+                    <div className="mt-2 text-[15px] font-bold text-slate-700 dark:text-slate-100">双击主表记录进入看板</div>
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-[20px] border border-slate-200 bg-white p-4 shadow-[0_20px_30px_-28px_rgba(15,23,42,0.28)] dark:border-slate-700 dark:bg-slate-800/80">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">关键信息面板</div>
+                    <span className="rounded-full bg-[#1686e3]/10 px-2.5 py-1 text-[11px] font-bold text-[#1686e3]">
+                      实时预览
+                    </span>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {tertiaryColumns.map((column) => (
+                      <div key={column.id} className="rounded-[16px] border border-slate-100 bg-slate-50/80 px-3 py-3 dark:border-slate-700 dark:bg-slate-900/55">
+                        <div className="text-[11px] font-bold text-slate-400">{column.name}</div>
+                        <div className="mt-1 text-[13px] font-semibold text-slate-700 dark:text-slate-100">
+                          {openedRow?.values[column.id] || '--'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-[20px] border border-slate-200 bg-white p-4 shadow-[0_20px_30px_-28px_rgba(15,23,42,0.28)] dark:border-slate-700 dark:bg-slate-800/80">
+                  <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">演示建议</div>
+                  <div className="mt-3 space-y-3 text-[12px] text-slate-500 dark:text-slate-300">
+                    <div className="rounded-[16px] border border-slate-100 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
+                      1. 先切换顶部排序字段，给客户看列表如何按业务列重新编排。
+                    </div>
+                    <div className="rounded-[16px] border border-slate-100 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
+                      2. 再双击左侧卡片，演示从主表进入详情看板的真实操作路径。
+                    </div>
+                    <div className="rounded-[16px] border border-slate-100 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
+                      3. 右侧结构已经预留好，后面可以继续叠业务状态、统计块和动作按钮。
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
     );
   };
 
@@ -1039,6 +3188,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 </motion.div>
               )}
             </AnimatePresence>
+            {renderDetailBoardModal()}
+            {renderPreviewContextMenu()}
 
             {/* Left Subway Line Panel */}
             <div className={`shrink-0 overflow-hidden border-r border-slate-200 bg-white shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${
@@ -1179,10 +3330,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                               <div className="space-y-2.5">
                                 <label className="text-[13px] font-bold text-slate-700 dark:text-slate-300">业务类型</label>
                                 <div className="flex p-1.5 bg-slate-100 dark:bg-slate-900/50 rounded-xl border border-slate-200/50 dark:border-slate-700/50 relative">
-                                  {(['document', 'table', 'tree'] as const).map((type) => {
-                                    const isActive = businessType === type;
-                                    const labels = { document: '单据模式', table: '列表模式', tree: '树形模式' };
-                                    const icons = { document: 'receipt_long', table: 'table_chart', tree: 'account_tree' };
+                              {(['document', 'table', 'tree'] as const).map((type) => {
+                                const isActive = businessType === type;
+                                const labels = { document: '基础档案', table: '单据模式', tree: '树形模式' };
+                                const icons = { document: 'inventory_2', table: 'receipt_long', tree: 'account_tree' };
                                     return (
                                       <button
                                         key={type}
@@ -1442,135 +3593,127 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       className="flex min-h-0 flex-1 flex-col overflow-hidden"
                     >
                       {businessType === 'document' ? (
-                        <div className={`grid flex-1 min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] ${isConfigFullscreenActive ? 'h-full gap-4' : 'min-h-[860px] gap-6'}`}>
-                          <div className={`grid min-h-0 ${isConfigFullscreenActive ? 'gap-4 xl:grid-cols-[minmax(250px,0.82fr)_minmax(0,1.18fr)]' : 'gap-6 xl:grid-cols-[minmax(280px,0.92fr)_minmax(0,1.08fr)]'}`}>
-                            <div className="flex min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/88 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
-                              <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-6 py-4 dark:border-slate-700 dark:bg-slate-800/70">
-                                <div className="flex items-center gap-3">
-                                  <div className="flex size-9 items-center justify-center rounded-2xl bg-indigo-500/12 text-indigo-500">
-                                    <span className="material-symbols-outlined text-[18px]">source</span>
-                                  </div>
-                                  <div>
-                                    <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">档案来源区</h3>
-                                    <p className="mt-0.5 text-[12px] text-slate-400">拖拽来源对象，组成档案页签的数据基础</p>
-                                  </div>
-                                </div>
-                                <span className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-bold text-indigo-500 dark:bg-indigo-500/10">来源池</span>
+                        <div className={`flex flex-1 min-h-0 overflow-hidden rounded-[10px] border border-slate-300 bg-[#eef3f9] shadow-[0_18px_42px_-34px_rgba(15,23,42,0.45)] dark:border-slate-700 dark:bg-slate-800/60 ${isConfigFullscreenActive ? 'h-full' : 'min-h-[860px]'}`}>
+                          {isTreePaneVisible && (
+                            <>
+                              <div className="flex min-h-0 shrink-0 flex-col border-r border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900" style={{ width: documentLeftPaneWidth }}>
+                                {renderDocumentTreePanel()}
                               </div>
-                              <div className={`flex min-h-0 flex-1 flex-col gap-3 ${isConfigFullscreenActive ? 'overflow-hidden p-4' : 'overflow-y-auto p-5'}`}>
-                                {['基础资料', '单据接口', '关联实体', '外部附件'].map((source) => (
-                                  <button
-                                    key={source}
-                                    className="group flex items-center gap-3 rounded-[22px] border border-slate-200/80 bg-slate-50/80 px-4 py-4 text-left transition-all hover:border-primary/30 hover:bg-white hover:shadow-[0_20px_30px_-26px_rgba(14,116,144,0.4)] dark:border-slate-700 dark:bg-slate-900/50"
+
+                              <div
+                                className="group flex w-2 shrink-0 cursor-col-resize items-center justify-center bg-[#eef3f9] dark:bg-slate-800/60"
+                                onMouseDown={(event) => startLayoutDrag('document-left-width', event)}
+                              >
+                                <div className="h-full w-px bg-slate-300 transition-colors group-hover:bg-[#1686e3] dark:bg-slate-700 dark:group-hover:bg-[#1686e3]" />
+                              </div>
+                            </>
+                          )}
+
+                          <div className="min-h-0 min-w-0 flex-1 bg-[#eef3f9] px-1 py-1">
+                            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[8px] border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900">
+                              <div className="min-h-0 shrink-0 overflow-hidden" style={{ height: documentTopPaneHeight }}>
+                                <div className="flex h-full min-h-0 flex-col overflow-hidden">
+                                  {renderDocumentGridToolbar(
+                                    mainTableColumns,
+                                    '基础档案主表',
+                                    selectedMainForDelete.length,
+                                    () => {
+                                      setMainTableColumns((prev) => prev.filter((c) => !selectedMainForDelete.includes(c.id)));
+                                      setSelectedMainForDelete([]);
+                                      setInspectorTarget({ kind: 'none' });
+                                    },
+                                    () => setMainTableColumns((prev) => [...prev, buildColumn('m_col', prev.length + 1)]),
+                                    <>
+                                      <button
+                                        onClick={() => openDetailBoardPreview(detailBoardOpenedRowId ?? 1)}
+                                        className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">dashboard</span>
+                                        详情看板
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => activateContextMenuSelection('main')}
+                                        className={`inline-flex items-center gap-1 rounded border px-3 py-1.5 text-[12px] font-bold transition-colors ${
+                                          selectedContextMenuScope === 'main'
+                                            ? 'border-[#1686e3] bg-[#eef6ff] text-[#1686e3] dark:border-[#1686e3] dark:bg-primary/10 dark:text-primary'
+                                            : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
+                                        }`}
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">right_click</span>
+                                        右键创建
+                                      </button>
+                                    </>,
+                                    {
+                                      fields: mainFilterFields,
+                                      selectedId: selectedMainFilterId,
+                                      setFields: setMainFilterFields,
+                                      onSelect: (id) => {
+                                        setSelectedArchiveNodeId('archive-filter');
+                                        activateConditionSelection(id);
+                                      },
+                                      onAdd: () => {
+                                        const next = buildConditionField(mainFilterFields.length + 1);
+                                        setMainFilterFields((prev) => [...prev, next]);
+                                        setSelectedArchiveNodeId('archive-filter');
+                                        activateConditionSelection(next.id);
+                                      },
+                                      onDelete: () => {
+                                        if (!selectedMainFilterId) return;
+                                        setMainFilterFields((prev) => prev.filter((item) => item.id !== selectedMainFilterId));
+                                        setInspectorTarget({ kind: 'none' });
+                                      },
+                                    },
+                                    {
+                                      active: selectedTableConfigScope === 'main',
+                                      onSelect: () => {
+                                        setSelectedArchiveNodeId('archive-main');
+                                        activateTableConfigSelection('main');
+                                      },
+                                    },
+                                  )}
+                                  <div
+                                    className="min-h-0 flex-1 overflow-auto bg-white outline-none dark:bg-slate-900"
+                                    tabIndex={0}
+                                    onPaste={(e) => handlePasteColumns(e, setMainTableColumns)}
                                   >
-                                    <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-300">
-                                      <span className="material-symbols-outlined text-[18px]">dataset</span>
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <div className="text-[14px] font-bold text-slate-700 dark:text-slate-200">{source}</div>
-                                      <div className="mt-1 text-[12px] text-slate-400">支持拖入页签并自动带入字段结构</div>
-                                    </div>
-                                    <span className="material-symbols-outlined text-[18px] text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-primary">arrow_forward</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className={`grid min-h-0 ${isConfigFullscreenActive ? 'gap-4 lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]' : 'gap-6 lg:grid-rows-2'}`}>
-                              <div className="flex min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/88 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
-                                <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-6 py-4 dark:border-slate-700 dark:bg-slate-800/70">
-                                  <div className="flex items-center gap-3">
-                                    <div className="flex size-9 items-center justify-center rounded-2xl bg-emerald-500/12 text-emerald-500">
-                                      <span className="material-symbols-outlined text-[18px]">dashboard_customize</span>
-                                    </div>
-                                    <div>
-                                      <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">档案主布局</h3>
-                                      <p className="mt-0.5 text-[12px] text-slate-400">主表单、概要信息与操作面板的排布区域</p>
-                                    </div>
-                                  </div>
-                                  <button className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/85 px-4 py-2 text-[13px] font-bold text-primary transition-all hover:bg-primary/5 dark:border-slate-700 dark:bg-slate-800">
-                                    <span className="material-symbols-outlined text-[16px]">edit_square</span>
-                                    编辑布局
-                                  </button>
+                                  {renderTableBuilder('main', mainTableColumns, setMainTableColumns, selectedMainColId, selectedMainForDelete, setSelectedMainForDelete, {
+                                    showDetailAction: true,
+                                    contextMenuScope: 'main',
+                                    contextMenuConfig: {
+                                      enabled: Boolean(mainTableConfig.contextMenuEnabled),
+                                      items: mainTableConfig.contextMenuItems ?? [],
+                                    },
+                                  })}
                                 </div>
-                                <div className="flex min-h-0 flex-1 items-center justify-center bg-[linear-gradient(180deg,rgba(248,250,252,0.76),rgba(255,255,255,0.9))] p-8 dark:bg-slate-900/40">
-                                  <div className="flex h-full w-full flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-slate-200/80 bg-white/60 text-slate-400 transition-colors hover:border-primary/25 hover:bg-white dark:border-slate-700 dark:bg-slate-900/40">
-                                    <div className="mb-4 flex size-16 items-center justify-center rounded-3xl bg-white text-primary shadow-[0_22px_32px_-24px_rgba(14,116,144,0.55)] dark:bg-slate-800">
-                                      <span className="material-symbols-outlined text-[30px]">add_box</span>
-                                    </div>
-                                    <div className="text-[15px] font-bold text-slate-700 dark:text-slate-200">拖拽组件到这里搭建档案页</div>
-                                    <div className="mt-2 text-[12px] text-slate-400">支持头部摘要、详情表单、操作侧栏等组合区域</div>
-                                  </div>
+                                  {renderDocumentGridFooter(1)}
                                 </div>
                               </div>
 
-                              <div className="flex min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/88 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
-                                <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-6 py-4 dark:border-slate-700 dark:bg-slate-800/70">
-                                  <div className="flex items-center gap-3">
-                                    <div className="flex size-9 items-center justify-center rounded-2xl bg-amber-500/12 text-amber-500">
-                                      <span className="material-symbols-outlined text-[18px]">list_alt</span>
-                                    </div>
-                                    <div>
-                                      <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">档案明细预览</h3>
-                                      <p className="mt-0.5 text-[12px] text-slate-400">预览档案页中下方明细区域的字段效果</p>
-                                    </div>
-                                  </div>
-                                  <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-500 dark:bg-amber-500/10">明细预览</span>
-                                </div>
-                                <div className="flex min-h-0 flex-1 items-center px-6 py-5">
-                                  <div className="w-full overflow-hidden rounded-[22px] border border-slate-200/80 dark:border-slate-700">
-                                    <table className="w-full text-left text-[13px]">
-                                      <thead className="bg-slate-50/90 text-slate-500 dark:bg-slate-900/70">
-                                        <tr>
-                                          <th className="px-5 py-3 font-medium">字段名称</th>
-                                          <th className="px-5 py-3 font-medium">类型</th>
-                                          <th className="px-5 py-3 font-medium">必填</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100 text-slate-700 dark:divide-slate-700 dark:text-slate-300">
-                                        {[
-                                          ['物料编码', '文本', '是'],
-                                          ['物料名称', '文本', '是'],
-                                          ['规格型号', '文本', '否'],
-                                        ].map((row) => (
-                                          <tr key={row[0]} className="bg-white/70 hover:bg-slate-50/80 dark:bg-slate-900/30 dark:hover:bg-slate-800/50">
-                                            <td className="px-5 py-3 font-medium">{row[0]}</td>
-                                            <td className="px-5 py-3">
-                                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[12px] font-medium dark:bg-slate-800">{row[1]}</span>
-                                            </td>
-                                            <td className="px-5 py-3">
-                                              <span className={`rounded-full px-2.5 py-1 text-[12px] font-bold ${
-                                                row[2] === '是'
-                                                  ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400'
-                                                  : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400'
-                                              }`}>
-                                                {row[2]}
-                                              </span>
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
+                              <div
+                                className="group flex h-2 shrink-0 cursor-row-resize items-center justify-center bg-[#eef3f9] dark:bg-slate-800/60"
+                                onMouseDown={(event) => startLayoutDrag('document-top-height', event)}
+                              >
+                                <div className="h-px w-full bg-slate-300 transition-colors group-hover:bg-[#1686e3] dark:bg-slate-700 dark:group-hover:bg-[#1686e3]" />
+                              </div>
+
+                              <div className="min-h-0 flex-1 overflow-hidden">
+                                {renderDocumentDetailWorkbench()}
                               </div>
                             </div>
                           </div>
 
-                          <div className="flex min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/88 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
-                            <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-6 py-4 dark:border-slate-700 dark:bg-slate-800/70">
-                              <div className="flex items-center gap-3">
-                                <div className="flex size-9 items-center justify-center rounded-2xl bg-blue-500/12 text-blue-500">
-                                  <span className="material-symbols-outlined text-[18px]">tab_group</span>
-                                </div>
-                                <div>
-                                  <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">明细页签设计</h3>
-                                  <p className="mt-0.5 text-[12px] text-slate-400">页签结构、填充类型与明细列配置统一在这里完成</p>
-                                </div>
-                              </div>
-                              <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold text-blue-500 dark:bg-blue-500/10">页签设计</span>
+                          <div
+                            className="group flex w-2 shrink-0 cursor-col-resize items-center justify-center bg-[#eef3f9] dark:bg-slate-800/60"
+                            onMouseDown={(event) => startLayoutDrag('document-detail-width', event)}
+                          >
+                            <div className="h-full w-px bg-slate-300 transition-colors group-hover:bg-[#1686e3] dark:bg-slate-700 dark:group-hover:bg-[#1686e3]" />
+                          </div>
+
+                          <div className="flex min-h-0 shrink-0 flex-col bg-[#eef3f9] px-1 py-1" style={{ width: documentDetailPaneWidth }}>
+                            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[8px] border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900">
+                              {columnOperationPanel}
                             </div>
-                            {renderDetailTabsWorkspace('document')}
                           </div>
                         </div>
                       ) : (
@@ -1623,7 +3766,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                   tabIndex={0}
                                   onPaste={(e) => handlePasteColumns(e, setLeftTableColumns)}
                                 >
-                                  {renderTableBuilder(leftTableColumns, setLeftTableColumns, selectedLeftColId, setSelectedLeftColId, selectedLeftForDelete, setSelectedLeftForDelete)}
+                                  {renderTableBuilder('left', leftTableColumns, setLeftTableColumns, selectedLeftColId, selectedLeftForDelete, setSelectedLeftForDelete)}
                                 </div>
                               </div>
                             )}
@@ -1667,7 +3810,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                   tabIndex={0}
                                   onPaste={(e) => handlePasteColumns(e, setMainTableColumns)}
                                 >
-                                  {renderTableBuilder(mainTableColumns, setMainTableColumns, selectedMainColId, setSelectedMainColId, selectedMainForDelete, setSelectedMainForDelete)}
+                                  {renderTableBuilder('main', mainTableColumns, setMainTableColumns, selectedMainColId, selectedMainForDelete, setSelectedMainForDelete)}
                                 </div>
                               </div>
 
