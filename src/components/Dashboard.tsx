@@ -80,7 +80,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     id: `${prefix}_${Date.now()}_${index}`,
     name: `新字段 ${index}`,
     type: '文本',
-    width: 120,
+    width: 104,
     required: false,
     visible: true,
     searchable: false,
@@ -197,11 +197,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   });
   const [leftTableColumns, setLeftTableColumns] = useState<any[]>([]);
   const [mainTableColumns, setMainTableColumns] = useState([
-    { id: 'm_col1', name: '物料编码', type: '文本', width: 120 },
-    { id: 'm_col2', name: '物料名称', type: '文本', width: 150 },
-    { id: 'm_col3', name: '规格型号', type: '文本', width: 120 },
-    { id: 'm_col4', name: '单位', type: '下拉框', width: 100 },
-    { id: 'm_col5', name: '单价', type: '数字', width: 100 },
+    { id: 'm_col1', name: '物料编码', type: '文本', width: 104 },
+    { id: 'm_col2', name: '物料名称', type: '文本', width: 132 },
+    { id: 'm_col3', name: '规格型号', type: '文本', width: 108 },
+    { id: 'm_col4', name: '单位', type: '下拉框', width: 88 },
+    { id: 'm_col5', name: '单价', type: '数字', width: 92 },
   ]);
   const [detailTabs, setDetailTabs] = useState([{ id: 'tab1', name: '关联附件' }, { id: 'tab2', name: '操作日志' }]);
   const [activeTab, setActiveTab] = useState('tab1');
@@ -257,25 +257,32 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       | 'detail-context';
     id?: string | null;
   }>({ kind: 'main-grid' });
+  const [inspectorPanelTab, setInspectorPanelTab] = useState<'common' | 'advanced'>('common');
   const [selectedLeftForDelete, setSelectedLeftForDelete] = useState<string[]>([]);
   const [selectedMainForDelete, setSelectedMainForDelete] = useState<string[]>([]);
 
   const [detailTableColumns, setDetailTableColumns] = useState<Record<string, any[]>>({
     tab1: [
-      { id: 'd_col1', name: '附件名称', type: '文本', width: 150 },
-      { id: 'd_col2', name: '上传人', type: '文本', width: 100 },
+      { id: 'd_col1', name: '附件名称', type: '文本', width: 128 },
+      { id: 'd_col2', name: '上传人', type: '文本', width: 92 },
     ],
     tab2: [
-      { id: 'd_col3', name: '操作时间', type: '日期框', width: 160 },
-      { id: 'd_col4', name: '操作人', type: '文本', width: 120 },
-      { id: 'd_col5', name: '操作动作', type: '下拉框', width: 120 },
+      { id: 'd_col3', name: '操作时间', type: '日期框', width: 138 },
+      { id: 'd_col4', name: '操作人', type: '文本', width: 98 },
+      { id: 'd_col5', name: '操作动作', type: '下拉框', width: 108 },
     ],
   });
   const [selectedDetailForDelete, setSelectedDetailForDelete] = useState<string[]>([]);
   const [selectedArchiveNodeId, setSelectedArchiveNodeId] = useState('archive-main');
   const [documentLeftPaneWidth, setDocumentLeftPaneWidth] = useState(198);
-  const [documentDetailPaneWidth, setDocumentDetailPaneWidth] = useState(368);
+  const [documentDetailPaneWidth, setDocumentDetailPaneWidth] = useState(332);
   const [documentTopPaneHeight, setDocumentTopPaneHeight] = useState(414);
+  const [activeResize, setActiveResize] = useState<{
+    id: string;
+    label: string;
+    width: number;
+    mode: 'column' | 'filter';
+  } | null>(null);
   const [isDetailBoardOpen, setIsDetailBoardOpen] = useState(false);
   const [detailBoardSortColumnId, setDetailBoardSortColumnId] = useState<string | null>(null);
   const [detailBoardOpenedRowId, setDetailBoardOpenedRowId] = useState<number | null>(null);
@@ -302,6 +309,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const selectedDetailTabId = inspectorTarget.kind === 'detail-tab' ? inspectorTarget.id ?? null : null;
   const selectedTableConfigScope = inspectorTarget.kind === 'main-grid' ? 'main' : inspectorTarget.kind === 'detail-grid' ? 'detail' : null;
   const selectedContextMenuScope = inspectorTarget.kind === 'main-context' ? 'main' : inspectorTarget.kind === 'detail-context' ? 'detail' : null;
+
+  useEffect(() => {
+    setInspectorPanelTab('common');
+  }, [inspectorTarget.kind, inspectorTarget.id, activeTab]);
 
   const clearColumnSelection = () => {
     setInspectorTarget({ kind: 'none' });
@@ -422,39 +433,92 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     setCols(prev => prev.map(c => c.id === id ? { ...c, type } : c));
   };
 
-  const startResize = (
-    e: React.MouseEvent,
+  const estimateColumnWidth = (rawColumn: any, minWidth = 80, maxWidth = 680) => {
+    const column = normalizeColumn(rawColumn);
+    const contentLength = Math.max(
+      column.name?.length ?? 0,
+      column.placeholder?.length ?? 0,
+      column.defaultValue?.length ?? 0,
+      column.type?.length ?? 0,
+    );
+    const baseWidth =
+      column.type === '日期框'
+        ? 188
+        : column.type === '数字'
+          ? 144
+          : column.type === '搜索框'
+            ? 228
+            : column.type === '下拉框'
+              ? 176
+              : 124;
+
+    return Math.max(minWidth, Math.min(maxWidth, baseWidth + contentLength * 15));
+  };
+
+  const autoFitColumnWidth = (
+    event: React.MouseEvent,
     colId: string,
     cols: any[],
     setCols: React.Dispatch<React.SetStateAction<any[]>>,
     minWidth = 80,
     maxWidth = 680,
+    mode: 'column' | 'filter' = 'column',
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const targetCol = cols.find((item) => item.id === colId);
+    if (!targetCol) return;
+
+    const nextWidth = estimateColumnWidth(targetCol, minWidth, maxWidth);
+    setActiveResize({ id: colId, label: targetCol.name || '未命名字段', width: nextWidth, mode });
+    setCols((prev) => prev.map((item) => item.id === colId ? { ...item, width: nextWidth } : item));
+    window.setTimeout(() => setActiveResize((prev) => prev?.id === colId ? null : prev), 720);
+  };
+
+  const startResize = (
+    e: React.MouseEvent,
+    colId: string,
+    cols: any[],
+    setCols: React.Dispatch<React.SetStateAction<any[]>>,
+    minWidth = 60,
+    maxWidth = 2000,
+    mode: 'column' | 'filter' = 'column',
   ) => {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.pageX;
-    const startWidth = cols.find(c => c.id === colId)?.width || 100;
+    const targetCol = cols.find((item) => item.id === colId);
+    const startWidth = targetCol?.width || 100;
+    const resizeLabel = targetCol?.name || '未命名字段';
     let latestWidth = startWidth;
-    
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    setActiveResize({ id: colId, label: resizeLabel, width: startWidth, mode });
+
     const handleMouseMove = (moveEvent: MouseEvent) => {
       latestWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + (moveEvent.pageX - startX)));
+      setActiveResize((prev) => prev?.id === colId ? { ...prev, width: latestWidth } : prev);
       if (resizeFrameRef.current !== null) return;
       resizeFrameRef.current = window.requestAnimationFrame(() => {
         resizeFrameRef.current = null;
         setCols(prev => prev.map(c => c.id === colId ? { ...c, width: latestWidth } : c));
       });
     };
-    
+
     const handleMouseUp = () => {
       if (resizeFrameRef.current !== null) {
         window.cancelAnimationFrame(resizeFrameRef.current);
         resizeFrameRef.current = null;
       }
       setCols(prev => prev.map(c => c.id === colId ? { ...c, width: latestWidth } : c));
+      setActiveResize((prev) => prev?.id === colId ? null : prev);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-    
+
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   };
@@ -690,12 +754,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         enabled: boolean;
         items: any[];
       };
+      backgroundSelectable?: boolean;
+      tableSelected?: boolean;
+      onSelectTable?: () => void;
+      canvasLabel?: string;
     }
   ) => {
     const showDetailAction = options?.showDetailAction ?? false;
-    const previewRowCount = 1;
     const contextMenuScope = options?.contextMenuScope;
     const contextMenuConfig = options?.contextMenuConfig;
+    const backgroundSelectable = options?.backgroundSelectable ?? false;
+    const tableSelected = options?.tableSelected ?? false;
+    const onSelectTable = options?.onSelectTable;
+    const canvasLabel = options?.canvasLabel ?? '点击空白区域配置表格';
 
     const handleColumnHeaderClick = (event: React.MouseEvent<HTMLButtonElement>, id: string) => {
       if (event.ctrlKey || event.metaKey) {
@@ -710,6 +781,15 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       setSelectedForDelete([id]);
       activateColumnSelection(scope, id);
     };
+
+    const minColumnWidth = isCompactModuleSetting ? 84 : 132;
+    const indexColumnWidth = isCompactModuleSetting ? 36 : 44;
+    const actionColumnWidth = isCompactModuleSetting ? 60 : 72;
+    const totalTableWidth = cols.reduce((sum, col) => sum + Math.max(minColumnWidth, Math.round(normalizeColumn(col).width || minColumnWidth)), indexColumnWidth + actionColumnWidth);
+    const visibleResizeTag = activeResize && cols.some((col) => col.id === activeResize.id) ? activeResize : null;
+    const getTextAlign = (align?: string): React.CSSProperties['textAlign'] => (
+      align === '居中' ? 'center' : align === '右对齐' ? 'right' : 'left'
+    );
 
     if (cols.length === 0) {
       return (
@@ -727,39 +807,161 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       );
     }
 
+    if (backgroundSelectable) {
+      return (
+        <div className={`relative flex h-full min-h-[260px] min-w-0 w-full flex-col overflow-hidden rounded-[14px] border bg-white shadow-[0_12px_22px_-22px_rgba(15,23,42,0.14)] dark:bg-slate-900/78 ${tableSelected ? 'border-[3px] border-[#e0a5b7] shadow-[0_0_0_1px_rgba(224,165,183,0.42),0_22px_40px_-24px_rgba(224,165,183,0.36)]' : 'border-slate-200 dark:border-slate-700'} ${isCompactModuleSetting ? 'p-1' : 'p-1.5'}`}>
+          {visibleResizeTag && (
+            <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-full border border-[#0b6bcb]/15 bg-white/96 px-3 py-1.5 text-[11px] font-bold text-[#0b6bcb] shadow-[0_18px_32px_-24px_rgba(11,107,203,0.48)] dark:border-[#0b6bcb]/20 dark:bg-slate-900/92">
+              <span className="material-symbols-outlined text-[14px]">straighten</span>
+              <span className="max-w-[150px] truncate">{visibleResizeTag.label}</span>
+              <span className="rounded-full bg-[#0b6bcb]/8 px-2 py-0.5">{Math.round(visibleResizeTag.width)}px</span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setCols((prev) => [...prev, buildColumn(scope === 'detail' ? 'd_col' : `${scope}_col`, prev.length + 1)])}
+            className={`absolute right-2 top-2 z-20 inline-flex items-center justify-center rounded-xl border border-dashed border-primary/30 bg-white/92 text-primary shadow-[0_10px_18px_-16px_rgba(22,134,227,0.32)] transition-all hover:-translate-y-0.5 hover:bg-primary/8 dark:bg-slate-900/80 ${isCompactModuleSetting ? 'size-6' : 'size-7'}`}
+            title="新增字段"
+          >
+            <span className="material-symbols-outlined text-[16px]">add</span>
+          </button>
+          <table
+            style={{ width: '100%', tableLayout: 'fixed' }}
+            className="border-separate border-spacing-0 text-left text-[12px]"
+          >
+            <colgroup>
+              <col style={{ width: indexColumnWidth, minWidth: indexColumnWidth }} />
+              {cols.map((col) => {
+                const headerWidth = Math.max(minColumnWidth, Math.round(normalizeColumn(col).width || minColumnWidth));
+                return <col key={`col-${col.id}`} style={{ width: headerWidth, minWidth: headerWidth }} />;
+              })}
+            </colgroup>
+            <thead className="sticky top-0 z-20 select-none bg-slate-50/95 dark:bg-slate-900/92">
+              <tr>
+                <th className={`border-b border-r border-slate-200/80 bg-[linear-gradient(180deg,rgba(250,252,255,0.98),rgba(243,247,251,0.94))] text-center font-bold uppercase tracking-[0.12em] text-slate-400 dark:border-slate-700 dark:bg-slate-900/78 ${isCompactModuleSetting ? 'px-1.5 py-2 text-[10px]' : 'px-2 py-3 text-[11px]'}`}>
+                  #
+                </th>
+                {cols.map((col) => {
+                  const normalizedCol = normalizeColumn(col);
+                  const isActive = selectedId === col.id;
+                  const isMarkedForDelete = selectedForDelete.includes(col.id);
+                  const isResizing = activeResize?.id === col.id;
+                  const headerWidth = Math.max(minColumnWidth, Math.round(normalizedCol.width || minColumnWidth));
+
+                  return (
+                    <th
+                      key={col.id}
+                      style={{ width: headerWidth, minWidth: headerWidth }}
+                      className="group relative border-b border-r border-slate-200/80 p-0 align-top dark:border-slate-700"
+                    >
+                      <button
+                        type="button"
+                        onClick={(event) => handleColumnHeaderClick(event, col.id)}
+                        className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${isCompactModuleSetting ? 'min-h-[28px] px-2 pr-3 py-0' : 'min-h-[32px] px-2.5 pr-4 py-0'} ${
+                          isActive
+                            ? 'bg-[#e8f2ff] shadow-[inset_0_0_0_1px_rgba(11,107,203,0.22)] dark:bg-primary/14'
+                            : isMarkedForDelete
+                              ? 'bg-[linear-gradient(180deg,rgba(255,241,244,0.98),rgba(255,247,248,0.98))] shadow-[inset_0_0_0_1px_rgba(244,63,94,0.12)] dark:bg-rose-500/10'
+                              : 'bg-white hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
+                        }`}
+                      >
+                        <div className="flex min-w-0 flex-1 items-center">
+                          <div className={`truncate font-semibold tracking-[0.01em] ${isCompactModuleSetting ? 'text-[10px]' : 'text-[11px]'} ${
+                            isActive
+                              ? 'text-[#0b6bcb] dark:text-primary'
+                              : isMarkedForDelete
+                                ? 'text-rose-500 dark:text-rose-300'
+                                : 'text-slate-700 dark:text-slate-100'
+                          }`} title={normalizedCol.name}>
+                            {normalizedCol.name}
+                          </div>
+                        </div>
+                      </button>
+                      <div
+                        className={`absolute right-0 top-0 bottom-0 z-20 flex ${isCompactModuleSetting ? 'w-2.5' : 'w-3'} cursor-col-resize items-center justify-center ${isActive ? 'bg-[#e8f2ff] dark:bg-primary/14' : ''}`}
+                        onMouseDown={(e) => startResize(e, col.id, cols, setCols, 60, 2000, 'column')}
+                        onDoubleClick={(e) => autoFitColumnWidth(e, col.id, cols, setCols, 60, 2000, 'column')}
+                        title="拖动调整列宽，双击可自动适配"
+                      >
+                        <span className={`h-4 w-px rounded-full transition-all ${isResizing ? 'bg-[#0b6bcb] shadow-[0_0_0_2px_rgba(11,107,203,0.12)]' : 'bg-transparent group-hover:bg-slate-300 dark:group-hover:bg-slate-500'}`} />
+                      </div>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+          </table>
+          <button
+            type="button"
+            onClick={onSelectTable}
+            className={`mt-0.5 flex min-h-0 w-full flex-1 items-center justify-center rounded-[10px] border border-dashed text-center transition-all dark:border-slate-700 ${tableSelected ? 'border-[#e0a5b7] bg-[linear-gradient(180deg,rgba(224,165,183,0.14),rgba(224,165,183,0.06))] text-[#b14f6e] dark:bg-[#e0a5b7]/12' : 'border-slate-200 bg-[linear-gradient(180deg,rgba(250,252,255,0.96),rgba(245,248,252,0.98))] text-slate-400 hover:border-slate-300 hover:bg-slate-50 dark:bg-slate-900/45 dark:text-slate-500'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+          >
+            <div className="flex flex-col items-center gap-2">
+              <div className={`flex items-center justify-center rounded-2xl ${isCompactModuleSetting ? 'size-10' : 'size-12'} ${tableSelected ? 'bg-[#0b6bcb]/10' : 'bg-white dark:bg-slate-800'}`}>
+                <span className={`material-symbols-outlined ${isCompactModuleSetting ? 'text-[18px]' : 'text-[20px]'} ${tableSelected ? 'text-[#0b6bcb]' : 'text-slate-300 dark:text-slate-500'}`}>table_view</span>
+              </div>
+              <div className={`font-semibold ${isCompactModuleSetting ? 'text-[12px]' : 'text-[13px]'} ${tableSelected ? 'text-[#0b6bcb]' : 'text-slate-500 dark:text-slate-300'}`}>
+                {canvasLabel}
+              </div>
+              <div className="text-[11px] text-slate-400">选中后在右侧配置表格属性</div>
+            </div>
+          </button>
+        </div>
+      );
+    }
+
     return (
-      <div className="min-w-max">
-        <table className="w-full min-w-full border-separate border-spacing-0 text-left text-[13px]">
-          <thead className="sticky top-0 z-20 select-none bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.92))] dark:bg-slate-900/90">
+      <div className={`relative min-w-max rounded-[14px] border bg-white shadow-[0_12px_22px_-22px_rgba(15,23,42,0.14)] dark:bg-slate-900/78 ${tableSelected ? 'border-primary shadow-[0_0_0_1px_rgba(14,116,144,0.2),0_16px_30px_-24px_rgba(14,116,144,0.22)]' : 'border-slate-200 dark:border-slate-700'} ${isCompactModuleSetting ? 'p-1' : 'p-1.5'}`}>
+        {visibleResizeTag && (
+          <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-full border border-[#1686e3]/15 bg-white/96 px-3 py-1.5 text-[11px] font-bold text-[#1686e3] shadow-[0_18px_32px_-24px_rgba(22,134,227,0.58)] dark:border-[#1686e3]/20 dark:bg-slate-900/92">
+            <span className="material-symbols-outlined text-[14px]">straighten</span>
+            <span className="max-w-[150px] truncate">{visibleResizeTag.label}</span>
+            <span className="rounded-full bg-[#1686e3]/8 px-2 py-0.5">{Math.round(visibleResizeTag.width)}px</span>
+          </div>
+        )}
+        <table
+          style={{ minWidth: totalTableWidth }}
+          className="overflow-hidden rounded-[12px] border-separate border-spacing-0 text-left text-[12px]"
+        >
+          <colgroup>
+            <col style={{ width: indexColumnWidth, minWidth: indexColumnWidth }} />
+            {cols.map((col) => {
+              const headerWidth = Math.max(minColumnWidth, Math.round(normalizeColumn(col).width || minColumnWidth));
+              return <col key={`col-${col.id}`} style={{ width: headerWidth, minWidth: headerWidth }} />;
+            })}
+            <col style={{ width: actionColumnWidth, minWidth: actionColumnWidth }} />
+          </colgroup>
+          <thead className="sticky top-0 z-20 select-none bg-slate-50/95 dark:bg-slate-900/92">
             <tr>
-              <th className="w-11 border-b border-r border-slate-200/80 bg-[#f8fafc] px-2 py-3 text-center text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400 dark:border-slate-700 dark:bg-slate-900/70">
+              <th className={`border-b border-r border-slate-200/80 bg-[linear-gradient(180deg,rgba(250,252,255,0.98),rgba(243,247,251,0.94))] text-center font-bold uppercase tracking-[0.12em] text-slate-400 dark:border-slate-700 dark:bg-slate-900/78 ${isCompactModuleSetting ? 'px-1.5 py-2 text-[10px]' : 'px-2 py-3 text-[11px]'}`}>
                 #
               </th>
               {cols.map((col) => {
                 const normalizedCol = normalizeColumn(col);
                 const isActive = selectedId === col.id;
                 const isMarkedForDelete = selectedForDelete.includes(col.id);
+                const isResizing = activeResize?.id === col.id;
+                const headerWidth = Math.max(minColumnWidth, Math.round(normalizedCol.width || minColumnWidth));
 
                 return (
                   <th
                     key={col.id}
-                    style={{ width: normalizedCol.width, minWidth: 168 }}
+                    style={{ width: headerWidth, minWidth: headerWidth }}
                     className="group relative border-b border-r border-slate-200/80 p-0 align-top dark:border-slate-700"
                   >
                     <button
                       type="button"
                       onClick={(event) => handleColumnHeaderClick(event, col.id)}
-                      className={`relative flex h-full min-h-[56px] w-full items-center overflow-hidden px-4 py-0 text-left transition-all ${
+                      className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${isCompactModuleSetting ? 'min-h-[34px] px-2 pr-4 py-0' : 'min-h-[42px] px-3 pr-5 py-0'} ${
                         isActive
-                          ? 'bg-[linear-gradient(180deg,rgba(231,243,255,0.98),rgba(244,249,255,0.98))] shadow-[inset_0_0_0_1px_rgba(22,134,227,0.18)] dark:bg-primary/12'
+                          ? 'bg-[#eef6ff] shadow-[inset_0_0_0_1px_rgba(22,134,227,0.18)] dark:bg-primary/12'
                           : isMarkedForDelete
-                            ? 'bg-rose-50/90 shadow-[inset_0_0_0_1px_rgba(244,63,94,0.12)] dark:bg-rose-500/10'
-                            : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
+                            ? 'bg-[linear-gradient(180deg,rgba(255,241,244,0.98),rgba(255,247,248,0.98))] shadow-[inset_0_0_0_1px_rgba(244,63,94,0.12)] dark:bg-rose-500/10'
+                            : 'bg-white hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
                       }`}
                     >
-                      <div className={`absolute inset-y-0 left-0 w-[3px] ${isActive ? 'bg-[#1686e3]' : isMarkedForDelete ? 'bg-rose-400' : 'bg-transparent'}`} />
-                      <div className="min-w-0 flex-1">
-                        <div className={`truncate text-[13px] font-bold tracking-[0.01em] ${
+                      <div className="flex min-w-0 flex-1 items-center">
+                        <div className={`truncate font-semibold tracking-[0.01em] ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${
                           isActive
                             ? 'text-[#1686e3] dark:text-primary'
                             : isMarkedForDelete
@@ -771,18 +973,20 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       </div>
                     </button>
                     <div
-                      className="absolute right-0 top-1.5 bottom-1.5 flex w-2 cursor-col-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
-                      onMouseDown={(e) => startResize(e, col.id, cols, setCols)}
+                      className={`absolute right-0 top-0 bottom-0 z-20 flex ${isCompactModuleSetting ? 'w-2.5' : 'w-3'} cursor-col-resize items-center justify-center ${isActive ? 'bg-[#e8f2ff] dark:bg-primary/14' : ''}`}
+                      onMouseDown={(e) => startResize(e, col.id, cols, setCols, 60, 2000, 'column')}
+                      onDoubleClick={(e) => autoFitColumnWidth(e, col.id, cols, setCols, 60, 2000, 'column')}
+                      title="拖动调整列宽，双击可自动适配"
                     >
-                      <div className="h-7 w-[3px] rounded-full bg-slate-300 transition-colors group-hover:bg-[#1686e3] dark:bg-slate-700 dark:group-hover:bg-[#1686e3]" />
+                      <span className={`h-4 rounded-full transition-all ${isCompactModuleSetting ? 'w-px' : 'w-px'} ${isResizing ? 'bg-[#1686e3] shadow-[0_0_0_2px_rgba(22,134,227,0.12)]' : 'bg-transparent group-hover:bg-slate-300 dark:group-hover:bg-slate-500'}`} />
                     </div>
                   </th>
                 );
               })}
-              <th className="w-14 border-b border-slate-200/80 bg-[#f8fafc] px-2 py-3 text-center dark:border-slate-700 dark:bg-slate-900/70">
+              <th className={`border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(250,252,255,0.98),rgba(243,247,251,0.94))] text-center dark:border-slate-700 dark:bg-slate-900/78 ${isCompactModuleSetting ? 'px-1 py-2' : 'px-2 py-3'}`}>
                 <button
                   onClick={() => setCols((prev) => [...prev, buildColumn(scope === 'detail' ? 'd_col' : `${scope}_col`, prev.length + 1)])}
-                  className="inline-flex size-8 items-center justify-center rounded-2xl border border-dashed border-primary/30 bg-primary/5 text-primary transition-all hover:bg-primary/10"
+                  className={`inline-flex items-center justify-center rounded-2xl border border-dashed border-primary/30 bg-white/92 text-primary shadow-[0_12px_22px_-20px_rgba(22,134,227,0.45)] transition-all hover:-translate-y-0.5 hover:bg-primary/8 dark:bg-slate-900/80 ${isCompactModuleSetting ? 'size-7' : 'size-9'}`}
                   title="新增字段"
                 >
                   <span className="material-symbols-outlined text-[18px]">add</span>
@@ -791,62 +995,25 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </tr>
           </thead>
           <tbody className="text-slate-600 dark:text-slate-300">
-            {Array.from({ length: previewRowCount }).map((_, rowIndex) => (
-              <tr
-                key={rowIndex}
-                onContextMenu={(event) => {
-                  if (!contextMenuScope || !contextMenuConfig?.enabled || (contextMenuConfig.items ?? []).length === 0) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setPreviewContextMenu({
-                    scope: contextMenuScope,
-                    rowId: rowIndex + 1,
-                    x: event.clientX,
-                    y: event.clientY,
-                    items: contextMenuConfig.items,
-                  });
-                }}
-                onDoubleClick={showDetailAction ? () => openDetailBoardPreview(rowIndex + 1, selectedId ?? cols[0]?.id ?? null) : undefined}
-                className={showDetailAction ? 'group cursor-pointer' : ''}
-              >
-                <td className="border-b border-r border-slate-100/90 bg-slate-50/75 px-3 py-3 text-center text-[12px] font-bold text-slate-400 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-500">
-                  {rowIndex + 1}
-                </td>
-                {cols.map((col) => {
-                  const normalizedCol = normalizeColumn(col);
-                  const isActive = selectedId === col.id;
-
-                  return (
-                    <td
-                      key={`${col.id}-${rowIndex}`}
-                      className={`border-b border-r border-slate-100/90 px-3 py-3 transition-colors dark:border-slate-800 ${
-                        isActive
-                          ? 'bg-primary/[0.06] text-slate-700 dark:bg-primary/10 dark:text-slate-100'
-                          : 'bg-white/78 dark:bg-slate-900/35'
-                      }`}
-                    >
-                      {renderFieldPreview(normalizedCol, rowIndex)}
-                    </td>
-                  );
-                })}
-                <td className="border-b border-slate-100/90 bg-slate-50/55 px-3 py-3 text-center dark:border-slate-800 dark:bg-slate-900/25">
-                  {showDetailAction ? (
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openDetailBoardPreview(rowIndex + 1, selectedId ?? cols[0]?.id ?? null);
-                      }}
-                      className="inline-flex items-center gap-1 rounded-full border border-[#1686e3]/20 bg-[#1686e3]/8 px-3 py-1.5 text-[11px] font-bold text-[#1686e3] transition-colors hover:bg-[#1686e3]/14 dark:border-[#1686e3]/25 dark:bg-[#1686e3]/10"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">web_traffic</span>
-                      详情
-                    </button>
-                  ) : (
-                    <span className="text-[11px] font-bold text-slate-300 dark:text-slate-600">预览</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            <tr>
+              <td colSpan={cols.length + 2} className="p-0">
+                <button
+                  type="button"
+                  onClick={onSelectTable}
+                  className={`flex w-full flex-col items-center justify-center ${isCompactModuleSetting ? 'min-h-[180px]' : 'min-h-[220px]'} rounded-b-[10px] border-t border-slate-100 bg-[linear-gradient(180deg,rgba(250,252,255,0.92),rgba(246,249,252,0.98))] text-center transition-all hover:bg-[linear-gradient(180deg,rgba(245,249,255,0.96),rgba(240,246,252,1))] dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))] ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+                >
+                  <div className={`flex items-center justify-center rounded-2xl border ${tableSelected ? 'border-primary/25 bg-primary/10 text-primary' : 'border-slate-200 bg-white text-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500'} ${isCompactModuleSetting ? 'size-10' : 'size-12'}`}>
+                    <span className={`material-symbols-outlined ${isCompactModuleSetting ? 'text-[18px]' : 'text-[20px]'}`}>table_view</span>
+                  </div>
+                  <div className={`mt-3 font-semibold ${isCompactModuleSetting ? 'text-[12px]' : 'text-[13px]'} ${tableSelected ? 'text-primary' : 'text-slate-500 dark:text-slate-300'}`}>
+                    {canvasLabel}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    选中后在右侧编辑表格属性
+                  </div>
+                </button>
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -890,7 +1057,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   const activeMenuName = menuData[activeSubsystem].find(m => m.id === activeMenu)?.name || '';
-  const isConfigFullscreenActive = isConfigOpen && configStep === 4 && isFullscreenConfig;
+  const isModuleSettingStep = isConfigOpen && configStep === 4;
+  const isConfigFullscreenActive = isModuleSettingStep && isFullscreenConfig;
+  const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
   const currentDetailFillType = DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === tabFillTypes[activeTab])
     ? tabFillTypes[activeTab]
     : DETAIL_FILL_TYPE_OPTIONS[0].value;
@@ -916,6 +1085,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     });
     setPreviewContextMenu(null);
   }, [activeTab]);
+
+  useEffect(() => {
+    setInspectorTarget((prev) => prev.kind === 'detail-filter' ? { kind: 'none' } : prev);
+  }, []);
 
   useEffect(() => {
     if (!treeRelationColumn) {
@@ -956,7 +1129,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
       if (drag.type === 'document-detail-width') {
         const delta = drag.startX - event.clientX;
-        setDocumentDetailPaneWidth(Math.min(460, Math.max(320, drag.startValue + delta)));
+        setDocumentDetailPaneWidth(Math.min(420, Math.max(280, drag.startValue + delta)));
       }
 
       if (drag.type === 'document-top-height') {
@@ -1023,14 +1196,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const fillTypeMeta = getDetailFillTypeMeta(currentDetailFillType);
 
     return (
-      <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-4 rounded-[24px] border border-dashed border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(248,250,252,0.92))] px-8 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
-        <div className="flex size-16 items-center justify-center rounded-3xl border border-white/80 bg-white/80 text-primary shadow-[0_20px_40px_-28px_rgba(14,116,144,0.65)] dark:border-slate-700 dark:bg-slate-800">
-          <span className="material-symbols-outlined text-[28px]">{fillTypeMeta.icon}</span>
+      <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 rounded-[16px] border border-dashed border-slate-200 bg-slate-50/70 px-6 text-center text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
+        <div className="flex size-12 items-center justify-center rounded-2xl bg-white text-primary shadow-sm dark:bg-slate-800">
+          <span className="material-symbols-outlined text-[22px]">{fillTypeMeta.icon}</span>
         </div>
-        <div className="space-y-2">
-          <div className="text-[15px] font-bold text-slate-800 dark:text-slate-200">{fillTypeMeta.label} 视图预留区</div>
-          <div className="max-w-md text-[13px] leading-relaxed">
-            当前已切换为“{fillTypeMeta.label}”填充类型，这里将承载对应的展示组件与交互配置。
+        <div className="space-y-1.5">
+          <div className="text-[13px] font-semibold text-slate-800 dark:text-slate-200">{fillTypeMeta.label} 视图预留区</div>
+          <div className="max-w-sm text-[11px] leading-5">
+            当前已切换为“{fillTypeMeta.label}”填充类型，这里承载对应展示组件。
           </div>
         </div>
       </div>
@@ -1047,9 +1220,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
     return (
       <div className={`flex h-full min-h-0 flex-col ${contentPadding}`}>
-        <div className={`rounded-[24px] border border-white/70 bg-[linear-gradient(145deg,rgba(255,255,255,0.92),rgba(248,250,252,0.78))] p-4 shadow-[0_30px_60px_-45px_rgba(15,23,42,0.35)] dark:border-slate-700 dark:bg-slate-900/60 ${isConfigFullscreenActive ? 'mb-3' : 'mb-5'}`}>
-          <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+        <div className={`rounded-[16px] border border-slate-200 bg-white p-3 shadow-[0_14px_26px_-24px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900/70 ${isConfigFullscreenActive ? 'mb-3' : 'mb-4'}`}>
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
               {detailTabs.map((tab) => {
                 const tabMeta = getDetailFillTypeMeta(tabFillTypes[tab.id]);
                 const isActive = activeTab === tab.id;
@@ -1057,31 +1230,24 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 return (
                   <div
                     key={tab.id}
-                    className={`group flex min-w-[180px] items-center gap-2 rounded-[22px] border px-2 py-2 transition-all ${
+                    className={`group flex min-w-[148px] items-center gap-2 rounded-[14px] border px-2 py-1.5 transition-all ${
                       isActive
-                        ? 'border-primary/30 bg-white text-slate-900 shadow-[0_20px_36px_-28px_rgba(14,116,144,0.65)] dark:bg-slate-800 dark:text-white'
-                        : 'border-slate-200/80 bg-slate-50/80 text-slate-600 hover:border-primary/20 hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300'
+                        ? 'border-primary/25 bg-slate-50 text-slate-900 shadow-[0_10px_18px_-18px_rgba(14,116,144,0.3)] dark:bg-slate-800 dark:text-white'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-primary/20 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300'
                     }`}
                   >
                     <button
                       onClick={() => setActiveTab(tab.id)}
-                      className="flex min-w-0 flex-1 items-center gap-3 rounded-[18px] px-2 py-1.5 text-left"
+                      className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[12px] px-2 py-1 text-left"
                     >
-                      <div className={`flex size-9 shrink-0 items-center justify-center rounded-2xl ${
-                        isActive ? 'bg-primary/12 text-primary' : 'bg-white text-slate-400 shadow-sm dark:bg-slate-800'
+                      <div className={`flex size-8 shrink-0 items-center justify-center rounded-xl ${
+                        isActive ? 'bg-primary/12 text-primary' : 'bg-slate-50 text-slate-400 dark:bg-slate-800'
                       }`}>
-                        <span className="material-symbols-outlined text-[18px]">{tabMeta.icon}</span>
+                        <span className="material-symbols-outlined text-[16px]">{tabMeta.icon}</span>
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-[13px] font-bold">{tab.name}</div>
-                        <div className="mt-1 flex items-center gap-2">
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                            isActive ? 'bg-primary/10 text-primary' : 'bg-slate-200/80 text-slate-500 dark:bg-slate-700 dark:text-slate-300'
-                          }`}>
-                            {tabMeta.label}
-                          </span>
-                          <span className="truncate text-[11px] text-slate-400">{tabMeta.description}</span>
-                        </div>
+                        <div className="truncate text-[12px] font-semibold">{tab.name}</div>
+                        <div className="mt-0.5 truncate text-[10px] text-slate-400">{tabMeta.label}</div>
                       </div>
                     </button>
                     {detailTabs.length > 1 && (
@@ -1099,14 +1265,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
               <button
                 onClick={addTab}
-                className="inline-flex h-[54px] shrink-0 items-center gap-2 rounded-[20px] border border-dashed border-primary/30 bg-primary/5 px-4 text-[13px] font-bold text-primary transition-all hover:bg-primary/10 hover:shadow-[0_18px_30px_-24px_rgba(14,116,144,0.65)]"
+                className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-[12px] border border-dashed border-primary/30 bg-primary/5 px-3 text-[11px] font-semibold text-primary transition-all hover:bg-primary/10"
               >
                 <span className="material-symbols-outlined text-[18px]">add_circle</span>
                 新增页签
               </button>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-2 2xl:w-[440px]">
+            <div className="grid gap-2 sm:grid-cols-2 xl:w-[360px]">
               {DETAIL_FILL_TYPE_OPTIONS.map((option) => {
                 const isActive = currentDetailFillType === option.value;
 
@@ -1114,21 +1280,21 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   <button
                     key={option.value}
                     onClick={() => setTabFillTypes((prev) => ({ ...prev, [activeTab]: option.value }))}
-                    className={`rounded-[20px] border px-4 py-3 text-left transition-all ${
+                    className={`rounded-[14px] border px-3 py-2 text-left transition-all ${
                       isActive
-                        ? 'border-primary/35 bg-primary/10 text-primary shadow-[0_20px_36px_-26px_rgba(14,116,144,0.55)]'
-                        : 'border-slate-200/80 bg-white/80 text-slate-600 hover:border-primary/25 hover:bg-primary/5 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300'
+                        ? 'border-primary/25 bg-primary/5 text-primary shadow-[0_10px_18px_-18px_rgba(14,116,144,0.3)]'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-primary/20 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300'
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className={`mt-0.5 flex size-10 items-center justify-center rounded-2xl ${
+                      <div className={`mt-0.5 flex size-8 items-center justify-center rounded-xl ${
                         isActive ? 'bg-white text-primary' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'
                       }`}>
-                        <span className="material-symbols-outlined text-[18px]">{option.icon}</span>
+                        <span className="material-symbols-outlined text-[16px]">{option.icon}</span>
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-[13px] font-bold">{option.label}</div>
-                        <div className="mt-1 text-[11px] leading-relaxed text-slate-400">{option.description}</div>
+                        <div className="text-[12px] font-semibold">{option.label}</div>
+                        <div className="mt-0.5 text-[10px] leading-5 text-slate-400">{option.description}</div>
                       </div>
                     </div>
                   </button>
@@ -1448,20 +1614,64 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   ]);
 
   const renderColumnOperationPanel = () => {
-    const fieldClass = 'w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3.5 py-2.5 text-[13px] text-slate-700 outline-none transition focus:border-primary/35 focus:ring-2 focus:ring-primary/10 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-100';
-    const textareaClass = `${fieldClass} min-h-[84px] resize-none font-mono text-[12px]`;
+    const fieldClass = 'w-full rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-[12px] text-slate-700 outline-none transition focus:border-primary/35 focus:ring-2 focus:ring-primary/10 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100';
+    const textareaClass = `${fieldClass} min-h-[78px] resize-none font-mono text-[11px] leading-5`;
+    const isCommonPanelTab = inspectorPanelTab === 'common';
+    const panelShellClass = 'flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-slate-200 bg-white shadow-[0_16px_30px_-28px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900/94';
+    const panelHeaderClass = 'border-b border-slate-200/70 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/88';
+    const panelTitleClass = 'text-[14px] font-bold leading-5 text-slate-800 break-words dark:text-slate-100';
+    const panelDescClass = 'mt-1 text-[11px] leading-5 text-slate-400 break-words';
+    const panelBadgeClass = 'inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+    const panelIconShellClass = 'flex size-9 shrink-0 items-center justify-center rounded-xl';
+    const compactInfoCardClass = 'rounded-[14px] border border-slate-200/80 bg-slate-50/85 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] dark:border-slate-700 dark:bg-slate-900/55';
+    const renderInspectorTabs = () => (
+      <div className="mt-3 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/80">
+        <button
+          type="button"
+          onClick={() => setInspectorPanelTab('common')}
+          className={`inline-flex h-8 items-center justify-center rounded-full px-3 text-[11px] font-bold whitespace-nowrap transition-all ${
+            isCommonPanelTab
+              ? 'bg-white text-primary shadow-sm dark:bg-slate-900'
+              : 'text-slate-500 hover:text-slate-700 dark:text-slate-300'
+          }`}
+        >
+          常用
+        </button>
+        <button
+          type="button"
+          onClick={() => setInspectorPanelTab('advanced')}
+          className={`inline-flex h-8 items-center justify-center rounded-full px-3 text-[11px] font-bold whitespace-nowrap transition-all ${
+            !isCommonPanelTab
+              ? 'bg-white text-primary shadow-sm dark:bg-slate-900'
+              : 'text-slate-500 hover:text-slate-700 dark:text-slate-300'
+          }`}
+        >
+          不常用
+        </button>
+      </div>
+    );
+    const compactCardClass = 'rounded-[16px] border border-slate-200/80 bg-white p-3.5 shadow-[0_12px_24px_-24px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900/55';
+    const renderAdvancedPlaceholder = (title: string, description: string) => (
+      <section className="rounded-[24px] border border-dashed border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,0.94))] px-5 py-8 text-center dark:border-slate-700 dark:bg-slate-900/35">
+        <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-white text-[#1686e3] shadow-[0_18px_30px_-24px_rgba(22,134,227,0.55)] dark:bg-slate-800">
+          <span className="material-symbols-outlined text-[20px]">inventory_2</span>
+        </div>
+        <div className="mt-4 text-[14px] font-bold text-slate-700 dark:text-slate-100">{title}</div>
+        <div className="mt-2 text-[12px] leading-relaxed text-slate-400">{description}</div>
+      </section>
+    );
 
     if (!selectedColumnContext) {
       return (
-        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/90 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
-          <div className="border-b border-slate-200/70 px-6 py-5 dark:border-slate-700">
+        <div className={panelShellClass}>
+          <div className={panelHeaderClass}>
             <div className="flex items-center gap-3">
               <div className="flex size-11 items-center justify-center rounded-3xl bg-primary/10 text-primary">
                 <span className="material-symbols-outlined text-[20px]">tune</span>
               </div>
               <div>
-                <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-100">详细配置</h3>
-                <p className="mt-1 text-[12px] leading-relaxed text-slate-400">从顶部条件区、表头列名或表格标题区点选对象，所有配置都会固定收敛到这里。</p>
+                <h3 className={panelTitleClass}>详细配置</h3>
+                <p className={panelDescClass}>从顶部条件区、表头列名或表格标题区点选对象，所有配置都会固定收敛到这里。</p>
               </div>
             </div>
           </div>
@@ -1502,80 +1712,89 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       };
 
       return (
-        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/90 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
-          <div className="border-b border-slate-200/70 px-6 py-5 dark:border-slate-700">
+        <div className={panelShellClass}>
+          <div className={panelHeaderClass}>
             <div className="flex items-start gap-3">
-              <div className={`flex size-11 shrink-0 items-center justify-center rounded-3xl ${selectedColumnContext.iconClass}`}>
-                <span className="material-symbols-outlined text-[20px]">{selectedColumnContext.icon}</span>
+              <div className={`${panelIconShellClass} ${selectedColumnContext.iconClass}`}>
+                <span className="material-symbols-outlined text-[18px]">{selectedColumnContext.icon}</span>
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="truncate text-[15px] font-bold text-slate-800 dark:text-slate-100">{selectedColumnContext.title}</h3>
-                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">页签级配置</span>
+                  <h3 className={panelTitleClass}>{selectedColumnContext.title}</h3>
+                  <span className={panelBadgeClass}>页签级配置</span>
                 </div>
-                <p className="mt-1 text-[12px] leading-relaxed text-slate-400">{selectedColumnContext.description}</p>
+                <p className={`${panelDescClass} max-w-[260px]`}>{selectedColumnContext.description}</p>
+                {renderInspectorTabs()}
               </div>
             </div>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
-            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
-              <div className="grid gap-4">
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">关联模块</label>
-                  <input
-                    type="text"
-                    value={currentTabConfig.relatedModule ?? ''}
-                    onChange={(e) => updateTabConfig({ relatedModule: e.target.value })}
-                    placeholder="例如：附件管理 / 销售订单 / 入库记录"
-                    className={fieldClass}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">关联条件</label>
-                  <textarea
-                    rows={3}
-                    value={currentTabConfig.relatedCondition ?? ''}
-                    onChange={(e) => updateTabConfig({ relatedCondition: e.target.value })}
-                    placeholder="例如：archive_id = ${id}"
-                    className={textareaClass}
-                  />
-                </div>
-              </div>
-            </section>
+            {isCommonPanelTab ? (
+              <>
+                <section className={compactCardClass}>
+                  <div className="grid gap-4">
+                    <div>
+                      <label className="mb-1.5 block text-[12px] font-bold text-slate-500">关联模块</label>
+                      <input
+                        type="text"
+                        value={currentTabConfig.relatedModule ?? ''}
+                        onChange={(e) => updateTabConfig({ relatedModule: e.target.value })}
+                        placeholder="例如：附件管理 / 销售订单 / 入库记录"
+                        className={fieldClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-[12px] font-bold text-slate-500">关联条件</label>
+                      <textarea
+                        rows={3}
+                        value={currentTabConfig.relatedCondition ?? ''}
+                        onChange={(e) => updateTabConfig({ relatedCondition: e.target.value })}
+                        placeholder="例如：archive_id = ${id}"
+                        className={textareaClass}
+                      />
+                    </div>
+                  </div>
+                </section>
 
-            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
-              <div className="grid gap-4">
-                <label className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 text-[13px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-200">
-                  <span>自动刷新</span>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(currentTabConfig.autoRefresh)}
-                    onChange={(e) => updateTabConfig({ autoRefresh: e.target.checked })}
-                    className="h-4 w-4 rounded accent-[#1686e3]"
-                  />
-                </label>
-                <label className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 text-[13px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-200">
-                  <span>禁用页签</span>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(currentTabConfig.disabled)}
-                    onChange={(e) => updateTabConfig({ disabled: e.target.checked })}
-                    className="h-4 w-4 rounded accent-[#1686e3]"
-                  />
-                </label>
+                <section className={compactCardClass}>
+                  <div className="grid gap-3">
+                    <label className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 text-[13px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-200">
+                      <span>自动刷新</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(currentTabConfig.autoRefresh)}
+                        onChange={(e) => updateTabConfig({ autoRefresh: e.target.checked })}
+                        className="h-4 w-4 rounded accent-[#1686e3]"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 text-[13px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-200">
+                      <span>禁用页签</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(currentTabConfig.disabled)}
+                        onChange={(e) => updateTabConfig({ disabled: e.target.checked })}
+                        className="h-4 w-4 rounded accent-[#1686e3]"
+                      />
+                    </label>
+                  </div>
+                </section>
+              </>
+            ) : (
+              <section className={compactCardClass}>
                 <div>
                   <label className="mb-1.5 block text-[12px] font-bold text-slate-500">禁用条件</label>
                   <textarea
-                    rows={3}
+                    rows={4}
                     value={currentTabConfig.disabledCondition ?? ''}
                     onChange={(e) => updateTabConfig({ disabledCondition: e.target.value })}
                     placeholder="例如：status = '停用' OR parent_disabled = 1"
                     className={textareaClass}
                   />
+                  <div className="mt-2 text-[11px] leading-relaxed text-slate-400">只有命中复杂状态时再来这里配置，常规页签联动先放在“常用”。</div>
                 </div>
-              </div>
-            </section>
+              </section>
+            )}
           </div>
         </div>
       );
@@ -1593,188 +1812,224 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       const enabledMenuCount = menuItems.filter((item: any) => !item.disabledCondition).length;
 
       return (
-        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,252,0.94))] shadow-[0_34px_70px_-44px_rgba(15,23,42,0.42)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/92">
-          <div className="border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,251,255,0.96),rgba(255,255,255,0.88))] px-6 py-5 dark:border-slate-700 dark:bg-slate-800/86">
+        <div className={panelShellClass}>
+          <div className={panelHeaderClass}>
             <div className="flex items-start gap-3">
-              <div className={`flex size-11 shrink-0 items-center justify-center rounded-3xl ${selectedColumnContext.iconClass}`}>
-                <span className="material-symbols-outlined text-[20px]">{selectedColumnContext.icon}</span>
+              <div className={`${panelIconShellClass} ${selectedColumnContext.iconClass}`}>
+                <span className="material-symbols-outlined text-[18px]">{selectedColumnContext.icon}</span>
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="truncate text-[15px] font-bold text-slate-800 dark:text-slate-100">{selectedColumnContext.title}</h3>
-                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">右键菜单</span>
+                  <h3 className={panelTitleClass}>{selectedColumnContext.title}</h3>
+                  <span className={panelBadgeClass}>右键菜单</span>
                 </div>
-                <p className="mt-1 text-[12px] leading-relaxed text-slate-400">{selectedColumnContext.description}</p>
+                <p className={`${panelDescClass} max-w-[260px]`}>{selectedColumnContext.description}</p>
+                {renderInspectorTabs()}
               </div>
             </div>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
-            <section className="overflow-hidden rounded-[26px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,252,0.96))] shadow-[0_20px_44px_-36px_rgba(15,23,42,0.42)] dark:border-slate-700 dark:bg-slate-900/48">
-              <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 px-5 py-5 dark:border-slate-700">
-                <div className="min-w-0">
-                  <div className="text-[14px] font-bold text-slate-800 dark:text-slate-100">菜单状态</div>
-                  <div className="mt-1 text-[12px] leading-relaxed text-slate-400">在这里控制右键菜单是否启用，并预览当前菜单结构。</div>
-                </div>
-                <label className="inline-flex shrink-0 cursor-pointer items-center gap-3 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[12px] font-bold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                  <span>{currentContextConfig.contextMenuEnabled ? '已启用' : '未启用'}</span>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(currentContextConfig.contextMenuEnabled)}
-                    onChange={(e) => updateContextConfig({ contextMenuEnabled: e.target.checked })}
-                    className="h-4 w-4 rounded accent-[#1686e3]"
-                  />
-                </label>
-              </div>
-              <div className="grid gap-4 px-5 py-5">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-[20px] border border-slate-200/70 bg-white/92 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">菜单总数</div>
-                    <div className="mt-2 text-[22px] font-black text-slate-800 dark:text-slate-100">{menuItems.length}</div>
-                  </div>
-                  <div className="rounded-[20px] border border-slate-200/70 bg-white/92 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">可用项</div>
-                    <div className="mt-2 text-[22px] font-black text-emerald-500">{enabledMenuCount}</div>
-                  </div>
-                  <div className="rounded-[20px] border border-slate-200/70 bg-white/92 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">禁用项</div>
-                    <div className="mt-2 text-[22px] font-black text-amber-500">{Math.max(0, menuItems.length - enabledMenuCount)}</div>
-                  </div>
-                </div>
-
-                <div className="overflow-hidden rounded-[22px] border border-slate-200/70 bg-[#f8fbff] dark:border-slate-700 dark:bg-slate-900/62">
-                  <div className="border-b border-slate-200/70 px-4 py-3 dark:border-slate-700">
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[16px] text-[#1686e3]">preview</span>
-                      <span className="text-[12px] font-bold text-slate-700 dark:text-slate-100">右键菜单预览</span>
+            {isCommonPanelTab ? (
+              <>
+                <section className="overflow-hidden rounded-[26px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,252,0.96))] shadow-[0_20px_44px_-36px_rgba(15,23,42,0.42)] dark:border-slate-700 dark:bg-slate-900/48">
+                  <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 px-5 py-5 dark:border-slate-700">
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-bold text-slate-800 dark:text-slate-100">菜单状态</div>
+                      <div className="mt-1 text-[12px] leading-relaxed text-slate-400">控制右键菜单是否启用，并预览当前菜单结构。</div>
                     </div>
+                    <label className="inline-flex shrink-0 cursor-pointer items-center gap-3 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[12px] font-bold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                      <span>{currentContextConfig.contextMenuEnabled ? '已启用' : '未启用'}</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(currentContextConfig.contextMenuEnabled)}
+                        onChange={(e) => updateContextConfig({ contextMenuEnabled: e.target.checked })}
+                        className="h-4 w-4 rounded accent-[#1686e3]"
+                      />
+                    </label>
                   </div>
-                  <div className="bg-[radial-gradient(circle_at_top_left,rgba(22,134,227,0.12),transparent_55%),linear-gradient(180deg,rgba(241,247,253,0.94),rgba(255,255,255,0.96))] p-4 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.55),rgba(15,23,42,0.76))]">
-                    <div className="mx-auto max-w-[260px] rounded-[18px] border border-white/80 bg-white/96 p-2 shadow-[0_24px_54px_-28px_rgba(15,23,42,0.38)] dark:border-slate-700 dark:bg-slate-900/96">
-                      {menuItems.length > 0 ? (
-                        menuItems.map((item: any) => {
-                          const isDisabled = Boolean(item.disabledCondition);
-
-                          return (
-                            <div
-                              key={`preview-${item.id}`}
-                              className={`flex items-center gap-3 rounded-[14px] px-3 py-2.5 ${
-                                isDisabled ? 'opacity-55' : 'hover:bg-[#eef6ff] dark:hover:bg-slate-800'
-                              }`}
-                            >
-                              <div className={`flex size-8 items-center justify-center rounded-2xl ${
-                                isDisabled ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600' : 'bg-[#1686e3]/10 text-[#1686e3]'
-                              }`}>
-                                <span className="material-symbols-outlined text-[15px]">{isDisabled ? 'block' : 'subdirectory_arrow_right'}</span>
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className={`truncate text-[12px] font-bold ${
-                                  isDisabled ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-100'
-                                }`}>
-                                  {item.label || '未命名菜单'}
-                                </div>
-                                <div className="mt-1 truncate font-mono text-[10px] text-slate-400">{item.actionKey || '未配置动作'}</div>
-                              </div>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="rounded-[16px] border border-dashed border-slate-200/80 px-4 py-6 text-center text-[12px] text-slate-400 dark:border-slate-700">
-                          当前还没有右键菜单项
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-[26px] border border-slate-200/70 bg-white/84 p-5 shadow-[0_22px_48px_-38px_rgba(15,23,42,0.32)] dark:border-slate-700 dark:bg-slate-900/45">
-              <div className="mb-5 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-[14px] font-bold text-slate-800 dark:text-slate-100">菜单项编辑</div>
-                  <div className="mt-1 text-[12px] text-slate-400">维护菜单名称、动作标识和禁用条件，修改后上方预览会同步更新。</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => updateContextConfig({
-                    contextMenuItems: [...menuItems, buildContextMenuItem(menuItems.length + 1)],
-                  })}
-                  className="inline-flex items-center gap-1 rounded-xl border border-[#1686e3] bg-[#1686e3] px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-[#1176ca]"
-                >
-                  <span className="material-symbols-outlined text-[14px]">add</span>
-                  新增菜单
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {menuItems.length > 0 ? (
-                  menuItems.map((item: any, index: number) => (
-                    <div key={item.id} className="rounded-[24px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(247,250,253,0.94))] p-4 shadow-[0_22px_40px_-34px_rgba(15,23,42,0.36)] dark:border-slate-700 dark:bg-slate-900/55">
-                      <div className="mb-4 flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          <div className="flex size-10 items-center justify-center rounded-[18px] bg-[#1686e3]/10 text-[#1686e3]">
-                            <span className="material-symbols-outlined text-[17px]">right_click</span>
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">菜单 {index + 1}</div>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                item.disabledCondition ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300'
-                              }`}>
-                                {item.disabledCondition ? '有禁用条件' : '默认可用'}
-                              </span>
-                            </div>
-                            <div className="mt-1 text-[11px] text-slate-400">这项会直接出现在预览区右键菜单中。</div>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => updateContextConfig({
-                            contextMenuItems: menuItems.filter((menu: any) => menu.id !== item.id),
-                          })}
-                          className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">delete</span>
-                          删除
-                        </button>
+                  <div className="grid gap-4 px-5 py-5">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-[20px] border border-slate-200/70 bg-white/92 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">菜单总数</div>
+                        <div className="mt-2 text-[22px] font-black text-slate-800 dark:text-slate-100">{menuItems.length}</div>
                       </div>
+                      <div className="rounded-[20px] border border-slate-200/70 bg-white/92 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">可用项</div>
+                        <div className="mt-2 text-[22px] font-black text-emerald-500">{enabledMenuCount}</div>
+                      </div>
+                      <div className="rounded-[20px] border border-slate-200/70 bg-white/92 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/55">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">禁用项</div>
+                        <div className="mt-2 text-[22px] font-black text-amber-500">{Math.max(0, menuItems.length - enabledMenuCount)}</div>
+                      </div>
+                    </div>
 
-                      <div className="grid gap-4">
-                        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_170px]">
-                          <div>
-                            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">菜单名称</label>
-                            <input
-                              type="text"
-                              value={item.label ?? ''}
-                              onChange={(e) => updateContextConfig({
-                                contextMenuItems: menuItems.map((menu: any) => (
-                                  menu.id === item.id ? { ...menu, label: e.target.value } : menu
-                                )),
+                    <div className="overflow-hidden rounded-[22px] border border-slate-200/70 bg-[#f8fbff] dark:border-slate-700 dark:bg-slate-900/62">
+                      <div className="border-b border-slate-200/70 px-4 py-3 dark:border-slate-700">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[16px] text-[#1686e3]">preview</span>
+                          <span className="text-[12px] font-bold text-slate-700 dark:text-slate-100">右键菜单预览</span>
+                        </div>
+                      </div>
+                      <div className="bg-[radial-gradient(circle_at_top_left,rgba(22,134,227,0.12),transparent_55%),linear-gradient(180deg,rgba(241,247,253,0.94),rgba(255,255,255,0.96))] p-4 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.55),rgba(15,23,42,0.76))]">
+                        <div className="mx-auto max-w-[260px] rounded-[18px] border border-white/80 bg-white/96 p-2 shadow-[0_24px_54px_-28px_rgba(15,23,42,0.38)] dark:border-slate-700 dark:bg-slate-900/96">
+                          {menuItems.length > 0 ? (
+                            menuItems.map((item: any) => {
+                              const isDisabled = Boolean(item.disabledCondition);
+
+                              return (
+                                <div
+                                  key={`preview-${item.id}`}
+                                  className={`flex items-center gap-3 rounded-[14px] px-3 py-2.5 ${
+                                    isDisabled ? 'opacity-55' : 'hover:bg-[#eef6ff] dark:hover:bg-slate-800'
+                                  }`}
+                                >
+                                  <div className={`flex size-8 items-center justify-center rounded-2xl ${
+                                    isDisabled ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600' : 'bg-[#1686e3]/10 text-[#1686e3]'
+                                  }`}>
+                                    <span className="material-symbols-outlined text-[15px]">{isDisabled ? 'block' : 'subdirectory_arrow_right'}</span>
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className={`break-words text-[12px] font-bold leading-5 ${
+                                      isDisabled ? 'text-slate-400 dark:text-slate-500' : 'text-slate-700 dark:text-slate-100'
+                                    }`}>
+                                      {item.label || '未命名菜单'}
+                                    </div>
+                                    <div className="mt-1 break-all font-mono text-[10px] leading-5 text-slate-400">{item.actionKey || '未配置动作'}</div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="rounded-[16px] border border-dashed border-slate-200/80 px-4 py-6 text-center text-[12px] text-slate-400 dark:border-slate-700">
+                              当前还没有右键菜单项
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-[26px] border border-slate-200/70 bg-white/84 p-5 shadow-[0_22px_48px_-38px_rgba(15,23,42,0.32)] dark:border-slate-700 dark:bg-slate-900/45">
+                  <div className="mb-5 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[14px] font-bold text-slate-800 dark:text-slate-100">菜单项编辑</div>
+                      <div className="mt-1 text-[12px] text-slate-400">常用里先维护菜单名称和动作标识，复杂禁用规则放到“不常用”。</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updateContextConfig({
+                        contextMenuItems: [...menuItems, buildContextMenuItem(menuItems.length + 1)],
+                      })}
+                      className="inline-flex items-center gap-1 rounded-xl border border-[#1686e3] bg-[#1686e3] px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-[#1176ca]"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">add</span>
+                      新增菜单
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {menuItems.length > 0 ? (
+                      menuItems.map((item: any, index: number) => (
+                        <div key={item.id} className="rounded-[24px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(247,250,253,0.94))] p-4 shadow-[0_22px_40px_-34px_rgba(15,23,42,0.36)] dark:border-slate-700 dark:bg-slate-900/55">
+                          <div className="mb-4 flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              <div className="flex size-10 items-center justify-center rounded-[18px] bg-[#1686e3]/10 text-[#1686e3]">
+                                <span className="material-symbols-outlined text-[17px]">right_click</span>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">菜单 {index + 1}</div>
+                                <div className="mt-1 text-[11px] text-slate-400">这项会直接出现在预览区右键菜单中。</div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => updateContextConfig({
+                                contextMenuItems: menuItems.filter((menu: any) => menu.id !== item.id),
                               })}
-                              placeholder="菜单名称"
-                              className={fieldClass}
-                            />
+                              className="inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">delete</span>
+                              删除
+                            </button>
                           </div>
-                          <div>
-                            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">动作标识</label>
-                            <input
-                              type="text"
-                              value={item.actionKey ?? ''}
-                              onChange={(e) => updateContextConfig({
-                                contextMenuItems: menuItems.map((menu: any) => (
-                                  menu.id === item.id ? { ...menu, actionKey: e.target.value } : menu
-                                )),
-                              })}
-                              placeholder="open-detail"
-                              className={`${fieldClass} font-mono text-[12px]`}
-                            />
+
+                          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_170px]">
+                            <div>
+                              <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">菜单名称</label>
+                              <input
+                                type="text"
+                                value={item.label ?? ''}
+                                onChange={(e) => updateContextConfig({
+                                  contextMenuItems: menuItems.map((menu: any) => (
+                                    menu.id === item.id ? { ...menu, label: e.target.value } : menu
+                                  )),
+                                })}
+                                placeholder="菜单名称"
+                                className={fieldClass}
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">动作标识</label>
+                              <input
+                                type="text"
+                                value={item.actionKey ?? ''}
+                                onChange={(e) => updateContextConfig({
+                                  contextMenuItems: menuItems.map((menu: any) => (
+                                    menu.id === item.id ? { ...menu, actionKey: e.target.value } : menu
+                                  )),
+                                })}
+                                placeholder="open-detail"
+                                className={`${fieldClass} font-mono text-[12px]`}
+                              />
+                            </div>
                           </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[22px] border border-dashed border-slate-200/80 px-4 py-8 text-center text-[12px] text-slate-400 dark:border-slate-700">
+                        还没有配置右键菜单，点击右上角“新增菜单”开始。
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </>
+            ) : (
+              <section className="rounded-[26px] border border-slate-200/70 bg-white/84 p-5 shadow-[0_22px_48px_-38px_rgba(15,23,42,0.32)] dark:border-slate-700 dark:bg-slate-900/45">
+                <div className="mb-5 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[14px] font-bold text-slate-800 dark:text-slate-100">禁用规则</div>
+                    <div className="mt-1 text-[12px] text-slate-400">只有需要按状态、权限或条件禁用右键项时再配置这里。</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => updateContextConfig({
+                      contextMenuItems: [...menuItems, buildContextMenuItem(menuItems.length + 1)],
+                    })}
+                    className="inline-flex items-center gap-1 rounded-xl border border-[#1686e3] bg-[#1686e3] px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-[#1176ca]"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">add</span>
+                    新增菜单
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {menuItems.length > 0 ? (
+                    menuItems.map((item: any, index: number) => (
+                      <div key={`advanced-${item.id}`} className="rounded-[22px] border border-slate-200/70 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
+                        <div className="mb-3 flex items-center gap-2">
+                          <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">菜单 {index + 1}</div>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            item.disabledCondition ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300'
+                          }`}>
+                            {item.disabledCondition ? '已配置禁用条件' : '默认可用'}
+                          </span>
                         </div>
                         <div>
                           <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">禁用条件</label>
                           <textarea
-                            rows={2}
+                            rows={3}
                             value={item.disabledCondition ?? ''}
                             onChange={(e) => updateContextConfig({
                               contextMenuItems: menuItems.map((menu: any) => (
@@ -1786,15 +2041,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           />
                         </div>
                       </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-[22px] border border-dashed border-slate-200/80 px-4 py-8 text-center text-[12px] text-slate-400 dark:border-slate-700">
-                    还没有配置右键菜单，点击右上角“新增菜单”开始。
-                  </div>
-                )}
-              </div>
-            </section>
+                    ))
+                  ) : (
+                    renderAdvancedPlaceholder('还没有高级右键规则', '先在“常用”里创建菜单项，只有要做禁用条件时再回到这里。')
+                  )}
+                </div>
+              </section>
+            )}
           </div>
         </div>
       );
@@ -1810,72 +2063,59 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       };
 
       return (
-        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/90 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
-          <div className="border-b border-slate-200/70 px-6 py-5 dark:border-slate-700">
+        <div className={panelShellClass}>
+          <div className={panelHeaderClass}>
             <div className="flex items-start gap-3">
-              <div className={`flex size-11 shrink-0 items-center justify-center rounded-3xl ${selectedColumnContext.iconClass}`}>
-                <span className="material-symbols-outlined text-[20px]">{selectedColumnContext.icon}</span>
+              <div className={`${panelIconShellClass} ${selectedColumnContext.iconClass}`}>
+                <span className="material-symbols-outlined text-[18px]">{selectedColumnContext.icon}</span>
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="truncate text-[15px] font-bold text-slate-800 dark:text-slate-100">{selectedColumnContext.title}</h3>
-                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">表格级配置</span>
+                  <h3 className={panelTitleClass}>{selectedColumnContext.title}</h3>
+                  <span className={panelBadgeClass}>表格级配置</span>
                 </div>
-                <p className="mt-1 text-[12px] leading-relaxed text-slate-400">{selectedColumnContext.description}</p>
+                <p className={`${panelDescClass} max-w-[260px]`}>{selectedColumnContext.description}</p>
+                {renderInspectorTabs()}
               </div>
             </div>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5">
-            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
-              <div className="mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-primary">database</span>
-                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">数据源配置</h4>
-              </div>
-              <div className="grid gap-4">
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">主 SQL</label>
-                  <textarea
-                    rows={4}
-                    value={currentGridConfig.mainSql}
-                    onChange={(e) => updateGridConfig({ mainSql: e.target.value })}
-                    placeholder="SELECT * FROM your_table"
-                    className={textareaClass}
-                  />
+            {isCommonPanelTab ? (
+              <section className={compactCardClass}>
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px] text-primary">table_chart</span>
+                  <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">表格属性</h4>
                 </div>
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">默认查询</label>
-                  <textarea
-                    rows={3}
-                    value={currentGridConfig.defaultQuery}
-                    onChange={(e) => updateGridConfig({ defaultQuery: e.target.value })}
-                    placeholder="enable = 1 AND org_id = ${orgId}"
-                    className={textareaClass}
-                  />
+                <div className="grid gap-4">
+                  <div>
+                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">表格类型</label>
+                    <select
+                      value={currentGridConfig.tableType}
+                      onChange={(e) => updateGridConfig({ tableType: e.target.value })}
+                      className={fieldClass}
+                    >
+                      {TABLE_TYPE_OPTIONS.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-[12px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-200">
+                    <span>启用右键菜单</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(currentGridConfig.contextMenuEnabled)}
+                      onChange={(e) => updateGridConfig({ contextMenuEnabled: e.target.checked })}
+                      className="h-4 w-4 rounded accent-[#1686e3]"
+                    />
+                  </label>
                 </div>
-              </div>
-            </section>
-
-            <section className="mt-5 rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
-              <div className="mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-primary">table_chart</span>
-                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">展示配置</h4>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-[12px] font-bold text-slate-500">表格类型</label>
-                <select
-                  value={currentGridConfig.tableType}
-                  onChange={(e) => updateGridConfig({ tableType: e.target.value })}
-                  className={fieldClass}
-                >
-                  {TABLE_TYPE_OPTIONS.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </section>
+              </section>
+            ) : (
+              renderAdvancedPlaceholder('表格高级项先留空', '这里只保留表格外观和交互属性，数据源不再在这里维护。')
+            )}
           </div>
         </div>
       );
@@ -1912,221 +2152,262 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const availableFieldTypes = isConditionConfig
       ? FIELD_TYPE_OPTIONS.filter((type) => type !== '树形节点关联')
       : FIELD_TYPE_OPTIONS;
+    const commonPropertySwitches = propertySwitches.filter((item) => item.key !== 'readonly');
+    const advancedPropertySwitches = propertySwitches.filter((item) => item.key === 'readonly');
 
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/90 shadow-[0_30px_60px_-44px_rgba(15,23,42,0.35)] backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/88">
-        <div className="border-b border-slate-200/70 px-6 py-5 dark:border-slate-700">
-          <div className="flex items-start justify-between gap-3">
+      <div className={panelShellClass}>
+        <div className={panelHeaderClass}>
+          <div className="flex items-start justify-between gap-4">
             <div className="flex min-w-0 items-start gap-3">
-              <div className={`flex size-11 shrink-0 items-center justify-center rounded-3xl ${selectedColumnContext.iconClass}`}>
-                <span className="material-symbols-outlined text-[20px]">{selectedColumnContext.icon}</span>
+              <div className={`${panelIconShellClass} ${selectedColumnContext.iconClass}`}>
+                <span className="material-symbols-outlined text-[18px]">{selectedColumnContext.icon}</span>
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="truncate text-[15px] font-bold text-slate-800 dark:text-slate-100">{currentColumn.name}</h3>
-                  <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">{selectedColumnContext.title}</span>
+                  <h3 className={panelTitleClass}>{currentColumn.name}</h3>
+                  <span className={panelBadgeClass}>{selectedColumnContext.title}</span>
                 </div>
-                <p className="mt-1 text-[12px] leading-relaxed text-slate-400">{selectedColumnContext.description}</p>
+                <p className={`${panelDescClass} max-w-[240px]`}>{selectedColumnContext.description}</p>
               </div>
             </div>
             <button
               onClick={removeCurrentColumn}
-              className="inline-flex shrink-0 items-center gap-1 rounded-2xl border border-rose-200/70 bg-rose-50/80 px-3 py-2 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10"
+              className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-rose-200/70 bg-white text-rose-400 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-500 dark:border-rose-500/20 dark:bg-slate-900 dark:text-rose-300"
+              title={selectedColumnContext.removeLabel}
             >
-              <span className="material-symbols-outlined text-[14px]">delete</span>
-              {selectedColumnContext.removeLabel}
+              <span className="material-symbols-outlined text-[16px]">delete</span>
             </button>
           </div>
+          {renderInspectorTabs()}
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5">
-          <div className="grid gap-4 rounded-[24px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,0.94))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] dark:border-slate-700 dark:bg-slate-900/45">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40">
-                <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{isConditionConfig ? '条件标识' : '字段标识'}</div>
-                <div className="mt-1 truncate font-mono text-[13px] text-slate-700 dark:text-slate-200">{currentColumn.id}</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40">
-                <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前类型</div>
-                <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-200">{currentColumn.type}</div>
-              </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className={compactInfoCardClass}>
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{isConditionConfig ? '条件标识' : '字段标识'}</div>
+              <div className="mt-1 break-all font-mono text-[12px] leading-5 text-slate-600 dark:text-slate-200">{currentColumn.id}</div>
+            </div>
+            <div className={compactInfoCardClass}>
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前类型</div>
+              <div className="mt-1 break-words text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">{currentColumn.type}</div>
+            </div>
+            <div className={compactInfoCardClass}>
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前宽度</div>
+              <div className="mt-1 break-words text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">{Math.round(currentColumn.width)}px</div>
+            </div>
+            <div className={compactInfoCardClass}>
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">对齐方式</div>
+              <div className="mt-1 break-words text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">{currentColumn.align}</div>
             </div>
           </div>
 
           <div className="mt-5 space-y-5">
-            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
-              <div className="mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-primary">view_list</span>
-                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">{isConditionConfig ? '条件定义' : '基础定义'}</h4>
-              </div>
-              <div className="grid gap-4">
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '条件名称' : '字段名称'}</label>
-                  <input
-                    type="text"
-                    value={currentColumn.name}
-                    onChange={(e) => updateColumn({ name: e.target.value })}
-                    className={fieldClass}
-                  />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '控件类型' : '字段类型'}</label>
-                    <select
-                      value={currentColumn.type}
-                      onChange={(e) => updateColumn({ type: e.target.value })}
-                      className={fieldClass}
-                    >
-                      {availableFieldTypes.map((type) => (
-                        <option key={type} value={type}>
-                          {type}
-                        </option>
-                      ))}
-                    </select>
+            {isCommonPanelTab ? (
+              <>
+                <section className={compactCardClass}>
+                  <div className="mb-4 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-primary">view_list</span>
+                    <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">{isConditionConfig ? '条件定义' : '基础定义'}</h4>
                   </div>
-                  <div>
-                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '控件宽度 (px)' : '列宽 (px)'}</label>
-                    <input
-                      type="number"
-                      min={80}
-                      value={Math.round(currentColumn.width)}
-                      onChange={(e) => updateColumn({ width: Math.max(80, Number(e.target.value) || 80) })}
-                      className={fieldClass}
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">对齐方式</label>
-                    <select
-                      value={currentColumn.align}
-                      onChange={(e) => updateColumn({ align: e.target.value })}
-                      className={fieldClass}
-                    >
-                      {COLUMN_ALIGN_OPTIONS.map((align) => (
-                        <option key={align} value={align}>
-                          {align}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">默认值</label>
-                    <input
-                      type="text"
-                      value={currentColumn.defaultValue}
-                      onChange={(e) => updateColumn({ defaultValue: e.target.value })}
-                      placeholder="例如：默认状态、初始值"
-                      className={fieldClass}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '提示文案' : '占位提示'}</label>
-                  <input
-                    type="text"
-                    value={currentColumn.placeholder}
-                    onChange={(e) => updateColumn({ placeholder: e.target.value })}
-                    placeholder={isConditionConfig ? '用于顶部条件区展示的提示文案' : '用于表单输入提示'}
-                    className={fieldClass}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
-              <div className="mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-primary">toggle_on</span>
-                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">{isConditionConfig ? '条件属性' : '交互属性'}</h4>
-              </div>
-              <div className="grid gap-3">
-                {propertySwitches.map((item) => (
-                  <label
-                    key={item.key}
-                    className="flex items-start gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-3.5 py-3 cursor-pointer transition-colors hover:border-primary/20 hover:bg-white dark:border-slate-700 dark:bg-slate-900/35 dark:hover:bg-slate-900/55"
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 rounded border-slate-300 text-primary focus:ring-primary"
-                      checked={Boolean(currentColumn[item.key])}
-                      onChange={(e) => updateColumn({ [item.key]: e.target.checked })}
-                    />
+                  <div className="grid gap-4">
                     <div>
-                      <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">{item.label}</div>
-                      <div className="mt-1 text-[11px] leading-relaxed text-slate-400">{item.desc}</div>
+                      <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '条件名称' : '字段名称'}</label>
+                      <input
+                        type="text"
+                        value={currentColumn.name}
+                        onChange={(e) => updateColumn({ name: e.target.value })}
+                        className={fieldClass}
+                      />
                     </div>
-                  </label>
-                ))}
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">帮助文案</label>
-                  <textarea
-                    rows={3}
-                    value={currentColumn.helpText}
-                    onChange={(e) => updateColumn({ helpText: e.target.value })}
-                    placeholder="填写字段说明、校验规则或业务提示"
-                    className={fieldClass}
-                  />
-                </div>
-              </div>
-            </section>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '控件类型' : '字段类型'}</label>
+                        <select
+                          value={currentColumn.type}
+                          onChange={(e) => updateColumn({ type: e.target.value })}
+                          className={fieldClass}
+                        >
+                          {availableFieldTypes.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '控件宽度 (px)' : '列宽 (px)'}</label>
+                        <input
+                          type="number"
+                          min={80}
+                          value={Math.round(currentColumn.width)}
+                          onChange={(e) => updateColumn({ width: Math.max(80, Number(e.target.value) || 80) })}
+                          className={fieldClass}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1.5 block text-[12px] font-bold text-slate-500">对齐方式</label>
+                        <select
+                          value={currentColumn.align}
+                          onChange={(e) => updateColumn({ align: e.target.value })}
+                          className={fieldClass}
+                        >
+                          {COLUMN_ALIGN_OPTIONS.map((align) => (
+                            <option key={align} value={align}>
+                              {align}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-[12px] font-bold text-slate-500">默认值</label>
+                        <input
+                          type="text"
+                          value={currentColumn.defaultValue}
+                          onChange={(e) => updateColumn({ defaultValue: e.target.value })}
+                          placeholder="例如：默认状态、初始值"
+                          className={fieldClass}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '提示文案' : '占位提示'}</label>
+                      <input
+                        type="text"
+                        value={currentColumn.placeholder}
+                        onChange={(e) => updateColumn({ placeholder: e.target.value })}
+                        placeholder={isConditionConfig ? '用于顶部条件区展示的提示文案' : '用于表单输入提示'}
+                        className={fieldClass}
+                      />
+                    </div>
+                  </div>
+                </section>
 
-            <section className="rounded-[24px] border border-slate-200/70 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-900/45">
-              <div className="mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-primary">hub</span>
-                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">{isConditionConfig ? '查询联动' : '业务联动'}</h4>
-              </div>
-              <div className="grid gap-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '下拉数据 / 值集' : '关联字典 / 值集'}</label>
-                    <input
-                      type="text"
-                      value={currentColumn.dictCode}
-                      onChange={(e) => updateColumn({ dictCode: e.target.value })}
-                      placeholder={isConditionConfig ? '例如：正常,停用,草稿' : '例如：material_status'}
-                      className={fieldClass}
-                    />
+                <section className={compactCardClass}>
+                  <div className="mb-4 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-primary">toggle_on</span>
+                    <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">{isConditionConfig ? '条件属性' : '交互属性'}</h4>
                   </div>
-                  <div>
-                    <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '默认表达式' : '公式 / 计算表达式'}</label>
-                    <input
-                      type="text"
-                      value={currentColumn.formula}
-                      onChange={(e) => updateColumn({ formula: e.target.value })}
-                      placeholder={isConditionConfig ? '例如：today() / 本月 / 当前组织' : '例如：price * qty'}
-                      className={fieldClass}
-                    />
+                  <div className="grid gap-3">
+                    {commonPropertySwitches.map((item) => (
+                      <label
+                        key={item.key}
+                        className="flex items-start gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-3.5 py-3 cursor-pointer transition-colors hover:border-primary/20 hover:bg-white dark:border-slate-700 dark:bg-slate-900/35 dark:hover:bg-slate-900/55"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-slate-300 text-primary focus:ring-primary"
+                          checked={Boolean(currentColumn[item.key])}
+                          onChange={(e) => updateColumn({ [item.key]: e.target.checked })}
+                        />
+                        <div>
+                          <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">{item.label}</div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-slate-400">{item.desc}</div>
+                        </div>
+                      </label>
+                    ))}
                   </div>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '条件 SQL / 取数逻辑' : '关联 SQL'}</label>
-                  <textarea
-                    rows={3}
-                    value={currentColumn.relationSql}
-                    onChange={(e) => updateColumn({ relationSql: e.target.value })}
-                    placeholder={isConditionConfig ? 'SELECT code, name FROM ...' : 'SELECT id, name FROM ... '}
-                    className={textareaClass}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '联动 SQL / 条件表达式' : '动态 SQL / 条件表达式'}</label>
-                  <textarea
-                    rows={3}
-                    value={currentColumn.dynamicSql}
-                    onChange={(e) => updateColumn({ dynamicSql: e.target.value })}
-                    placeholder={isConditionConfig ? 'WHERE org_id = ${orgId} AND enable = 1' : 'WHERE org_id = ${orgId}'}
-                    className={textareaClass}
-                  />
-                </div>
-              </div>
-            </section>
+                </section>
+              </>
+            ) : (
+              <>
+                <section className={compactCardClass}>
+                  <div className="mb-4 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-primary">toggle_on</span>
+                    <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">高级属性</h4>
+                  </div>
+                  <div className="grid gap-3">
+                    {advancedPropertySwitches.map((item) => (
+                      <label
+                        key={item.key}
+                        className="flex items-start gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-3.5 py-3 cursor-pointer transition-colors hover:border-primary/20 hover:bg-white dark:border-slate-700 dark:bg-slate-900/35 dark:hover:bg-slate-900/55"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-slate-300 text-primary focus:ring-primary"
+                          checked={Boolean(currentColumn[item.key])}
+                          onChange={(e) => updateColumn({ [item.key]: e.target.checked })}
+                        />
+                        <div>
+                          <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">{item.label}</div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-slate-400">{item.desc}</div>
+                        </div>
+                      </label>
+                    ))}
+                    <div>
+                      <label className="mb-1.5 block text-[12px] font-bold text-slate-500">帮助文案</label>
+                      <textarea
+                        rows={3}
+                        value={currentColumn.helpText}
+                        onChange={(e) => updateColumn({ helpText: e.target.value })}
+                        placeholder="填写字段说明、校验规则或业务提示"
+                        className={fieldClass}
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section className={compactCardClass}>
+                  <div className="mb-4 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-primary">hub</span>
+                    <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">{isConditionConfig ? '查询联动' : '业务联动'}</h4>
+                  </div>
+                  <div className="grid gap-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '下拉数据 / 值集' : '关联字典 / 值集'}</label>
+                        <input
+                          type="text"
+                          value={currentColumn.dictCode}
+                          onChange={(e) => updateColumn({ dictCode: e.target.value })}
+                          placeholder={isConditionConfig ? '例如：正常,停用,草稿' : '例如：material_status'}
+                          className={fieldClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '默认表达式' : '公式 / 计算表达式'}</label>
+                        <input
+                          type="text"
+                          value={currentColumn.formula}
+                          onChange={(e) => updateColumn({ formula: e.target.value })}
+                          placeholder={isConditionConfig ? '例如：today() / 本月 / 当前组织' : '例如：price * qty'}
+                          className={fieldClass}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '条件 SQL / 取数逻辑' : '关联 SQL'}</label>
+                      <textarea
+                        rows={3}
+                        value={currentColumn.relationSql}
+                        onChange={(e) => updateColumn({ relationSql: e.target.value })}
+                        placeholder={isConditionConfig ? 'SELECT code, name FROM ...' : 'SELECT id, name FROM ... '}
+                        className={textareaClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-[12px] font-bold text-slate-500">{isConditionConfig ? '联动 SQL / 条件表达式' : '动态 SQL / 条件表达式'}</label>
+                      <textarea
+                        rows={3}
+                        value={currentColumn.dynamicSql}
+                        onChange={(e) => updateColumn({ dynamicSql: e.target.value })}
+                        placeholder={isConditionConfig ? 'WHERE org_id = ${orgId} AND enable = 1' : 'WHERE org_id = ${orgId}'}
+                        className={textareaClass}
+                      />
+                    </div>
+                  </div>
+                </section>
+              </>
+            )}
           </div>
         </div>
       </div>
     );
   };
 
-  const columnOperationPanel = useMemo(() => renderColumnOperationPanel(), [selectedColumnContext]);
+  const columnOperationPanel = useMemo(() => renderColumnOperationPanel(), [selectedColumnContext, inspectorPanelTab]);
 
   const renderDocumentTreePanel = () => {
     if (!treeRelationColumn) return null;
@@ -2215,12 +2496,26 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       active?: boolean;
       onSelect: () => void;
     },
+    options?: {
+      hideActionBar?: boolean;
+    },
   ) => {
     const filterFields = filterConfig?.fields ?? columns.slice(0, 3);
+    const activeFilterResize = activeResize?.mode === 'filter' && filterFields.some((field) => field.id === activeResize.id)
+      ? activeResize
+      : null;
+    const hideActionBar = options?.hideActionBar ?? false;
 
     return (
       <>
-        <div className="border-b border-slate-300 bg-[#f7f9fc] px-3 py-2 dark:border-slate-700 dark:bg-slate-800/80">
+        <div className="relative border-b border-slate-200 bg-slate-50/90 px-2.5 py-2 dark:border-slate-700 dark:bg-slate-900/82">
+          {activeFilterResize && (
+            <div className="pointer-events-none absolute right-3 top-2 z-10 inline-flex items-center gap-2 rounded-full border border-[#1686e3]/15 bg-white/96 px-3 py-1 text-[11px] font-bold text-[#1686e3] shadow-[0_18px_32px_-24px_rgba(22,134,227,0.58)] dark:border-[#1686e3]/20 dark:bg-slate-900/92">
+              <span className="material-symbols-outlined text-[13px]">tune</span>
+              <span className="max-w-[140px] truncate">{activeFilterResize.label}</span>
+              <span className="rounded-full bg-[#1686e3]/8 px-2 py-0.5">{Math.round(activeFilterResize.width)}px</span>
+            </div>
+          )}
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -2242,27 +2537,29 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         }
                       }}
                       style={{ width: filterWidth, minWidth: filterWidth }}
-                      className={`group relative grid shrink-0 grid-cols-[96px_minmax(0,1fr)] items-center overflow-hidden rounded border transition-colors ${
+                      className={`group relative grid shrink-0 grid-cols-[88px_minmax(0,1fr)] items-center overflow-hidden rounded-xl border transition-colors ${
                         isActive
                           ? 'border-[#1686e3] bg-[#eef6ff] shadow-[inset_0_0_0_1px_rgba(22,134,227,0.14)] dark:border-[#1686e3] dark:bg-primary/10'
                           : 'border-slate-300 bg-white hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900'
                       }`}
                     >
-                      <span className={`border-r px-3 py-2 text-[12px] font-bold ${
+                      <span className={`border-r px-2.5 py-2 text-[11px] font-semibold ${
                         isActive
                           ? 'border-[#cfe4fd] bg-[#e8f2ff] text-[#1686e3] dark:border-primary/20 dark:bg-primary/12'
                           : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
                       }`}>
                         {normalizedField.name}
                       </span>
-                      <div className="min-w-0 flex-1 px-2 py-1.5 text-left">
+                      <div className="min-w-0 flex-1 px-2 py-1 text-left">
                         {renderFieldPreview(normalizedField, index, 'filter')}
                       </div>
                       <div
-                        className="absolute right-0 top-1 bottom-1 flex w-2 cursor-col-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
-                        onMouseDown={(event) => startResize(event, field.id, filterFields, filterConfig.setFields, 160, 620)}
+                        className="absolute right-0 top-1 bottom-1 flex w-1.5 cursor-col-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
+                        onMouseDown={(event) => startResize(event, field.id, filterFields, filterConfig.setFields, 160, 620, 'filter')}
+                        onDoubleClick={(event) => autoFitColumnWidth(event, field.id, filterFields, filterConfig.setFields, 160, 620, 'filter')}
+                        title="拖动调整条件宽度，双击可自动适配"
                       >
-                        <div className="h-6 w-[3px] rounded-full bg-slate-300 transition-colors group-hover:bg-[#1686e3] dark:bg-slate-700 dark:group-hover:bg-[#1686e3]" />
+                        <span className="h-4 w-px rounded-full bg-slate-300 transition-colors group-hover:bg-[#1686e3] dark:bg-slate-700 dark:group-hover:bg-[#1686e3]" />
                       </div>
                     </div>
                   );
@@ -2271,7 +2568,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     <button
                       type="button"
                       onClick={filterConfig.onAdd}
-                      className="inline-flex h-9 shrink-0 items-center justify-center rounded border border-dashed border-[#1686e3]/35 bg-white px-3 text-[12px] font-bold text-[#1686e3] transition-colors hover:bg-[#f4f9ff] dark:border-[#1686e3]/25 dark:bg-slate-900"
+                      className="inline-flex h-8 shrink-0 items-center justify-center rounded-xl border border-dashed border-primary/35 bg-white px-2.5 text-[11px] font-semibold text-primary transition-colors hover:bg-[#f4f9ff] dark:border-primary/25 dark:bg-slate-900"
                     >
                       <span className="material-symbols-outlined text-[15px]">playlist_add</span>
                       条件
@@ -2296,76 +2593,58 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 </button>
               )}
               <div className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
-              <button className="inline-flex h-9 items-center justify-center rounded-[10px] bg-[#1686e3] px-4 text-[12px] font-bold text-white transition-colors hover:bg-[#1176ca]">
+              <button className="inline-flex h-8 items-center justify-center rounded-xl bg-primary px-3.5 text-[11px] font-semibold text-white transition-colors hover:bg-erp-blue">
                 <span className="material-symbols-outlined text-[16px]">search</span>
                 查询
               </button>
             </div>
           </div>
         </div>
-        <div className="flex items-center justify-between border-b border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-          <button
-            type="button"
-            onClick={tableConfigAction?.onSelect}
-            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] font-bold transition-colors ${
-              tableConfigAction?.active
-                ? 'border-[#1686e3] bg-[#eef6ff] text-[#1686e3] dark:border-[#1686e3] dark:bg-primary/10 dark:text-primary'
-                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-800'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[15px]">table_view</span>
-            {title}
-          </button>
-          <div className="flex items-center gap-2">
-            {extraActions}
+        {!hideActionBar && (
+          <div className="flex items-center justify-between border-b border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
             <button
-              onClick={onAdd}
-              className="inline-flex items-center gap-1 rounded border border-[#1686e3] bg-[#1686e3] px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-[#1176ca]"
-            >
-              <span className="material-symbols-outlined text-[14px]">add</span>
-              新增
-            </button>
-            <button
-              onClick={onDelete}
-              disabled={selectedCount === 0}
-              className={`inline-flex items-center gap-1 rounded border px-3 py-1.5 text-[12px] font-bold transition-colors ${
-                selectedCount > 0
-                  ? 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
-                  : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-600'
+              type="button"
+              onClick={tableConfigAction?.onSelect}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] font-bold transition-colors ${
+                tableConfigAction?.active
+                  ? 'border-[#1686e3] bg-[#eef6ff] text-[#1686e3] dark:border-[#1686e3] dark:bg-primary/10 dark:text-primary'
+                  : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-800'
               }`}
             >
-              <span className="material-symbols-outlined text-[14px]">delete</span>
-              删除
+              <span className="material-symbols-outlined text-[15px]">table_view</span>
+              {title}
             </button>
-            <button className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-              <span className="material-symbols-outlined text-[14px]">save</span>
-              保存
-            </button>
+            <div className="flex items-center gap-2">
+              {extraActions}
+              <button
+                onClick={onAdd}
+                className="inline-flex items-center gap-1 rounded border border-[#1686e3] bg-[#1686e3] px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-[#1176ca]"
+              >
+                <span className="material-symbols-outlined text-[14px]">add</span>
+                新增
+              </button>
+              <button
+                onClick={onDelete}
+                disabled={selectedCount === 0}
+                className={`inline-flex items-center gap-1 rounded border px-3 py-1.5 text-[12px] font-bold transition-colors ${
+                  selectedCount > 0
+                    ? 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
+                    : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-600'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[14px]">delete</span>
+                删除
+              </button>
+              <button className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                <span className="material-symbols-outlined text-[14px]">save</span>
+                保存
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </>
     );
   };
-
-  const renderDocumentGridFooter = (rowCount: number) => (
-    <div className="mt-auto shrink-0 flex items-center justify-between border-t border-slate-300 bg-[#f8fafc] px-4 py-2 text-[12px] text-slate-500 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300">
-      <div className="flex items-center gap-2">
-        <select className="rounded border border-slate-300 bg-white px-2 py-1 outline-none dark:border-slate-700 dark:bg-slate-900">
-          <option>50</option>
-          <option>100</option>
-        </select>
-        <div className="flex items-center gap-1">
-          {['first_page', 'chevron_left', 'chevron_right', 'last_page', 'refresh'].map((icon) => (
-            <button key={icon} className="inline-flex size-7 items-center justify-center rounded border border-transparent text-slate-500 transition-colors hover:border-slate-200 hover:bg-white dark:hover:border-slate-700 dark:hover:bg-slate-900">
-              <span className="material-symbols-outlined text-[16px]">{icon}</span>
-            </button>
-          ))}
-        </div>
-        <span>第 1 页 共1页</span>
-      </div>
-      <div>显示第1到{Math.max(1, rowCount)}条记录，共{rowCount}条</div>
-    </div>
-  );
 
   const renderDocumentDetailWorkbench = () => {
     const detailCols = detailTableColumns[activeTab] || [];
@@ -2373,8 +2652,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
     return (
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="border-b border-slate-200/80 bg-white/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/80">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="border-b border-slate-200 bg-slate-50/85 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/82">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
               {detailTabs.map((tab) => (
                 <button
@@ -2384,7 +2663,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     activateDetailTabSelection(tab.id);
                     setSelectedArchiveNodeId(`detail-${tab.id}`);
                   }}
-                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-[12px] font-bold transition-all ${
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${
                     activeTab === tab.id
                       ? 'border-[#1686e3] bg-[#1686e3] text-white shadow-[0_18px_30px_-20px_rgba(22,134,227,0.8)]'
                       : 'border-slate-200 bg-slate-50/80 text-slate-600 hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
@@ -2403,140 +2682,83 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               ))}
               <button
                 onClick={addTab}
-                className="inline-flex items-center gap-1 rounded-full border border-dashed border-[#1686e3]/40 bg-white px-3 py-1.5 text-[12px] font-bold text-[#1686e3] dark:border-[#1686e3]/30 dark:bg-slate-900"
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-primary/35 bg-white px-2.5 py-1 text-[11px] font-semibold text-primary dark:border-primary/25 dark:bg-slate-900"
               >
                 <span className="material-symbols-outlined text-[14px]">add</span>
                 新页签
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {DETAIL_FILL_TYPE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  onClick={() => setTabFillTypes((prev) => ({ ...prev, [activeTab]: option.value }))}
-                  className={`rounded-full border px-2.5 py-1.5 text-[12px] font-bold transition-all ${
-                    currentDetailFillType === option.value
-                      ? 'border-[#1686e3] bg-[#1686e3] text-white shadow-[0_18px_30px_-20px_rgba(22,134,227,0.8)]'
-                      : 'border-slate-200 bg-slate-50/80 text-slate-500 hover:border-slate-300 hover:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
         {currentDetailFillType === '表格' ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {renderDocumentGridToolbar(
-              detailCols,
-              `${activeTabName} · 明细表`,
-              selectedDetailForDelete.length,
-              () => {
+          <div className="min-h-0 flex-1 overflow-auto bg-white outline-none dark:bg-slate-900"
+            tabIndex={0}
+            onPaste={(e) => {
+              const text = e.clipboardData.getData('text');
+              if (!text) return;
+              const newColNames = text.split(/[\t\n]/).map((s) => s.trim()).filter(Boolean);
+              if (newColNames.length > 0) {
+                e.preventDefault();
+                const newCols = newColNames.map((name, i) => buildColumn('d_col', (detailCols.length || 0) + i + 1, { name }));
                 setDetailTableColumns((prev) => ({
                   ...prev,
-                  [activeTab]: (prev[activeTab] || []).filter((c) => !selectedDetailForDelete.includes(c.id)),
+                  [activeTab]: [...(prev[activeTab] || []), ...newCols],
                 }));
-                setSelectedDetailForDelete([]);
-                setInspectorTarget({ kind: 'none' });
-              },
-              () => setDetailTableColumns((prev) => ({
+              }
+            }}
+          >
+            {renderTableBuilder(
+              'detail',
+              detailCols,
+              (newCols) => setDetailTableColumns((prev) => ({
                 ...prev,
-                [activeTab]: [...(prev[activeTab] || []), buildColumn('d_col', (prev[activeTab] || []).length + 1)],
+                [activeTab]: typeof newCols === 'function' ? newCols(prev[activeTab] || []) : newCols,
               })),
-              <button
-                type="button"
-                onClick={() => activateContextMenuSelection('detail')}
-                className={`inline-flex items-center gap-1 rounded border px-3 py-1.5 text-[12px] font-bold transition-colors ${
-                  selectedContextMenuScope === 'detail'
-                    ? 'border-[#1686e3] bg-[#eef6ff] text-[#1686e3] dark:border-[#1686e3] dark:bg-primary/10 dark:text-primary'
-                    : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[14px]">right_click</span>
-                右键创建
-              </button>,
+              selectedDetailColId,
+              selectedDetailForDelete,
+              setSelectedDetailForDelete,
               {
-                fields: detailFilterFields[activeTab] || [],
-                selectedId: selectedDetailFilterId,
-                setFields: (updater) => {
-                  setDetailFilterFields((prev) => ({
-                    ...prev,
-                    [activeTab]: typeof updater === 'function' ? updater(prev[activeTab] || []) : updater,
-                  }));
+                contextMenuScope: 'detail',
+                contextMenuConfig: {
+                  enabled: Boolean(detailTableConfigs[activeTab]?.contextMenuEnabled),
+                  items: detailTableConfigs[activeTab]?.contextMenuItems ?? [],
                 },
-                onSelect: (id) => {
-                  setSelectedArchiveNodeId(`detail-${activeTab}`);
-                  activateDetailConditionSelection(id);
-                },
-                onAdd: () => {
-                  const next = buildConditionField((detailFilterFields[activeTab] || []).length + 1);
-                  setDetailFilterFields((prev) => ({
-                    ...prev,
-                    [activeTab]: [...(prev[activeTab] || []), next],
-                  }));
-                  activateDetailConditionSelection(next.id);
-                },
-                onDelete: () => {
-                  if (!selectedDetailFilterId) return;
-                  setDetailFilterFields((prev) => ({
-                    ...prev,
-                    [activeTab]: (prev[activeTab] || []).filter((item) => item.id !== selectedDetailFilterId),
-                  }));
-                  setInspectorTarget({ kind: 'none' });
-                },
-              },
-              {
-                active: selectedTableConfigScope === 'detail',
-                onSelect: () => {
+                backgroundSelectable: true,
+                tableSelected: selectedTableConfigScope === 'detail',
+                onSelectTable: () => {
                   setSelectedArchiveNodeId(`detail-${activeTab}`);
                   activateTableConfigSelection('detail');
                 },
+                canvasLabel: '点击配置明细表属性',
               },
             )}
-            <div
-              className="min-h-0 flex-1 overflow-auto bg-white outline-none dark:bg-slate-900"
-              tabIndex={0}
-              onPaste={(e) => {
-                const text = e.clipboardData.getData('text');
-                if (!text) return;
-                const newColNames = text.split(/[\t\n]/).map((s) => s.trim()).filter(Boolean);
-                if (newColNames.length > 0) {
-                  e.preventDefault();
-                  const newCols = newColNames.map((name, i) => buildColumn('d_col', (detailCols.length || 0) + i + 1, { name }));
-                  setDetailTableColumns((prev) => ({
-                    ...prev,
-                    [activeTab]: [...(prev[activeTab] || []), ...newCols],
-                  }));
-                }
-              }}
-            >
-              {renderTableBuilder(
-                'detail',
-                detailCols,
-                (newCols) => setDetailTableColumns((prev) => ({
-                  ...prev,
-                  [activeTab]: typeof newCols === 'function' ? newCols(prev[activeTab] || []) : newCols,
-                })),
-                selectedDetailColId,
-                selectedDetailForDelete,
-                setSelectedDetailForDelete,
-                {
-                  contextMenuScope: 'detail',
-                  contextMenuConfig: {
-                    enabled: Boolean(detailTableConfigs[activeTab]?.contextMenuEnabled),
-                    items: detailTableConfigs[activeTab]?.contextMenuItems ?? [],
-                  },
-                },
-              )}
-            </div>
-            {renderDocumentGridFooter(1)}
           </div>
         ) : (
           <div className="min-h-0 flex-1 bg-white p-3 dark:bg-slate-900">
             {renderDetailFillPlaceholder()}
           </div>
         )}
+        <div className="shrink-0 border-t border-slate-200 bg-slate-50/90 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/82">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-[12px] font-bold text-slate-400">明细填充方式</div>
+            <div className="flex flex-wrap items-center gap-2">
+              {DETAIL_FILL_TYPE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setTabFillTypes((prev) => ({ ...prev, [activeTab]: option.value }))}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-bold transition-all ${
+                    currentDetailFillType === option.value
+                      ? 'border-[#1686e3] bg-[#eef6ff] text-[#1686e3] shadow-[0_14px_24px_-20px_rgba(22,134,227,0.45)] dark:border-[#1686e3]/30 dark:bg-primary/10 dark:text-primary'
+                      : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">{option.icon}</span>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   };
@@ -3192,22 +3414,22 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             {renderPreviewContextMenu()}
 
             {/* Left Subway Line Panel */}
-            <div className={`shrink-0 overflow-hidden border-r border-slate-200 bg-white shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${
-              isConfigFullscreenActive ? 'w-0 border-r-0 p-0 opacity-0' : 'w-96 p-10 opacity-100'
+            <div className={`shrink-0 overflow-hidden border-r border-slate-200 bg-white shadow-[4px_0_18px_rgba(15,23,42,0.04)] transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${
+              isConfigFullscreenActive ? 'w-0 border-r-0 p-0 opacity-0' : 'w-72 p-5 opacity-100'
             }`}>
-              <div className="flex items-center gap-4 mb-14">
+              <div className="mb-6 flex items-center gap-3">
                 <button 
                   onClick={() => setIsConfigOpen(false)}
-                  className="size-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
+                  className="flex size-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:text-slate-900 dark:bg-slate-800 dark:hover:text-white"
                 >
                   <span className="material-symbols-outlined text-xl">close</span>
                 </button>
-                <span className="font-extrabold text-xl text-slate-900 dark:text-white tracking-tight">配置向导</span>
+                <span className="text-[18px] font-bold tracking-tight text-slate-900 dark:text-white">配置向导</span>
               </div>
 
-              <div className="relative flex flex-col gap-12 flex-1">
+              <div className="relative flex flex-1 flex-col gap-6">
                 {/* Continuous Line */}
-                <div className="absolute left-[19px] top-5 bottom-10 w-[2px] bg-slate-100 dark:bg-slate-800 rounded-full" />
+                <div className="absolute left-[15px] top-4 bottom-6 w-px rounded-full bg-slate-200 dark:bg-slate-800" />
                 
                 {configSteps.map((step) => {
                   const isActive = configStep === step.id;
@@ -3224,18 +3446,18 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           showToast('请先保存“菜单信息”步骤后，再进入模块设置。');
                         }
                       }}
-                      className={`relative z-10 flex items-start gap-6 group ${isLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                      className={`relative z-10 flex items-start gap-3 group ${isLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                     >
                       {/* Node */}
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all duration-500 ${
+                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all duration-500 ${
                         isLocked
                           ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
                           : isCompleted
                             ? isActive 
-                              ? 'bg-emerald-500 shadow-[0_0_0_8px_rgba(16,185,129,0.2)]'
+                              ? 'bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.14)]'
                               : 'bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.1)]'
                             : isActive 
-                              ? 'bg-primary shadow-[0_0_0_8px_rgba(14,116,144,0.15)] dark:shadow-[0_0_0_8px_rgba(14,116,144,0.3)]' 
+                              ? 'bg-primary shadow-[0_0_0_6px_rgba(14,116,144,0.12)] dark:shadow-[0_0_0_6px_rgba(14,116,144,0.24)]' 
                               : 'bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 group-hover:border-primary/50'
                       }`}>
                         {isLocked ? (
@@ -3245,18 +3467,18 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         ) : isActive ? (
                           <motion.div layoutId="activeNode" className="w-3 h-3 bg-white rounded-full" />
                         ) : (
-                          <span className="text-slate-400 text-[14px] font-bold">{step.id}</span>
+                          <span className="text-[12px] font-bold text-slate-400">{step.id}</span>
                         )}
                       </div>
                       
                       {/* Text */}
-                      <div className="flex flex-col mt-1.5">
-                        <span className={`text-[16px] font-bold transition-colors duration-300 ${
+                      <div className="mt-0 flex flex-col">
+                        <span className={`text-[14px] font-semibold transition-colors duration-300 ${
                           isActive ? 'text-primary' : isCompleted ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
                         }`}>
                           {step.title}
                         </span>
-                        <span className="text-[13px] text-slate-500 mt-2 leading-relaxed">{step.desc}</span>
+                        <span className="mt-1 text-[11px] leading-5 text-slate-500">{step.desc}</span>
                       </div>
                     </div>
                   );
@@ -3265,9 +3487,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </div>
 
             {/* Right Content Area */}
-            <div className="relative flex min-w-0 flex-1 flex-col bg-slate-50/50 dark:bg-slate-900/50">
+            <div className="relative flex min-w-0 flex-1 flex-col bg-slate-100/60 dark:bg-slate-900/50">
               {/* Ambient Background */}
-              <div className="absolute inset-0 mesh-bg opacity-50 pointer-events-none"></div>
+              <div className="pointer-events-none absolute inset-0 mesh-bg opacity-20"></div>
               {isConfigFullscreenActive && (
                 <div className="absolute right-6 top-6 z-20">
                   <button
@@ -3280,14 +3502,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               )}
                
               <div className={`relative z-10 flex flex-1 flex-col ${
-                isConfigFullscreenActive ? 'overflow-hidden p-4 lg:p-5' : 'overflow-y-auto p-8 lg:p-12'
+                isConfigFullscreenActive ? 'overflow-hidden p-3 lg:p-4' : isModuleSettingStep ? 'overflow-y-auto p-4 lg:p-4' : 'overflow-y-auto p-6 lg:p-8'
               }`}>
                 <motion.div
                   key={configStep}
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, ease: "easeOut" }}
-                  className={`mx-auto flex w-full flex-1 min-h-0 flex-col ${isConfigFullscreenActive ? 'max-w-none overflow-hidden' : 'max-w-[1600px]'}`}
+                  className={`mx-auto flex w-full flex-1 min-h-0 flex-col ${isConfigFullscreenActive ? 'max-w-none overflow-hidden' : isModuleSettingStep ? 'max-w-none' : 'max-w-[1600px]'}`}
                 >
                   <div className="mb-0"></div>
 
@@ -3593,10 +3815,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       className="flex min-h-0 flex-1 flex-col overflow-hidden"
                     >
                       {businessType === 'document' ? (
-                        <div className={`flex flex-1 min-h-0 overflow-hidden rounded-[10px] border border-slate-300 bg-[#eef3f9] shadow-[0_18px_42px_-34px_rgba(15,23,42,0.45)] dark:border-slate-700 dark:bg-slate-800/60 ${isConfigFullscreenActive ? 'h-full' : 'min-h-[860px]'}`}>
+                        <div className={`flex flex-1 min-h-0 overflow-hidden rounded-[14px] border border-slate-200 bg-[#f5f7fb] shadow-[0_16px_28px_-26px_rgba(15,23,42,0.14)] dark:border-slate-700 dark:bg-slate-800/60 ${isConfigFullscreenActive ? 'h-full' : 'min-h-[720px]'}`}>
                           {isTreePaneVisible && (
                             <>
-                              <div className="flex min-h-0 shrink-0 flex-col border-r border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900" style={{ width: documentLeftPaneWidth }}>
+                              <div className="flex min-h-0 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900" style={{ width: documentLeftPaneWidth }}>
                                 {renderDocumentTreePanel()}
                               </div>
 
@@ -3610,7 +3832,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           )}
 
                           <div className="min-h-0 min-w-0 flex-1 bg-[#eef3f9] px-1 py-1">
-                            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[8px] border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900">
+                            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[14px] border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
                               <div className="min-h-0 shrink-0 overflow-hidden" style={{ height: documentTopPaneHeight }}>
                                 <div className="flex h-full min-h-0 flex-col overflow-hidden">
                                   {renderDocumentGridToolbar(
@@ -3623,27 +3845,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                       setInspectorTarget({ kind: 'none' });
                                     },
                                     () => setMainTableColumns((prev) => [...prev, buildColumn('m_col', prev.length + 1)]),
-                                    <>
-                                      <button
-                                        onClick={() => openDetailBoardPreview(detailBoardOpenedRowId ?? 1)}
-                                        className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                                      >
-                                        <span className="material-symbols-outlined text-[14px]">dashboard</span>
-                                        详情看板
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => activateContextMenuSelection('main')}
-                                        className={`inline-flex items-center gap-1 rounded border px-3 py-1.5 text-[12px] font-bold transition-colors ${
-                                          selectedContextMenuScope === 'main'
-                                            ? 'border-[#1686e3] bg-[#eef6ff] text-[#1686e3] dark:border-[#1686e3] dark:bg-primary/10 dark:text-primary'
-                                            : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
-                                        }`}
-                                      >
-                                        <span className="material-symbols-outlined text-[14px]">right_click</span>
-                                        右键创建
-                                      </button>
-                                    </>,
+                                    undefined,
                                     {
                                       fields: mainFilterFields,
                                       selectedId: selectedMainFilterId,
@@ -3664,13 +3866,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                         setInspectorTarget({ kind: 'none' });
                                       },
                                     },
-                                    {
-                                      active: selectedTableConfigScope === 'main',
-                                      onSelect: () => {
-                                        setSelectedArchiveNodeId('archive-main');
-                                        activateTableConfigSelection('main');
-                                      },
-                                    },
+                                    undefined,
+                                    { hideActionBar: true },
                                   )}
                                   <div
                                     className="min-h-0 flex-1 overflow-auto bg-white outline-none dark:bg-slate-900"
@@ -3678,15 +3875,20 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                     onPaste={(e) => handlePasteColumns(e, setMainTableColumns)}
                                   >
                                   {renderTableBuilder('main', mainTableColumns, setMainTableColumns, selectedMainColId, selectedMainForDelete, setSelectedMainForDelete, {
-                                    showDetailAction: true,
                                     contextMenuScope: 'main',
                                     contextMenuConfig: {
                                       enabled: Boolean(mainTableConfig.contextMenuEnabled),
                                       items: mainTableConfig.contextMenuItems ?? [],
                                     },
+                                    backgroundSelectable: true,
+                                    tableSelected: selectedTableConfigScope === 'main',
+                                    onSelectTable: () => {
+                                      setSelectedArchiveNodeId('archive-main');
+                                      activateTableConfigSelection('main');
+                                    },
+                                    canvasLabel: '点击配置基础档案主表',
                                   })}
                                 </div>
-                                  {renderDocumentGridFooter(1)}
                                 </div>
                               </div>
 
@@ -3711,7 +3913,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           </div>
 
                           <div className="flex min-h-0 shrink-0 flex-col bg-[#eef3f9] px-1 py-1" style={{ width: documentDetailPaneWidth }}>
-                            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[8px] border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-900">
+                            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-[0_14px_26px_-24px_rgba(15,23,42,0.14)] dark:border-slate-700 dark:bg-slate-900">
                               {columnOperationPanel}
                             </div>
                           </div>
@@ -3728,15 +3930,15 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                             businessType === 'table' && isConfigFullscreenActive ? 'h-full' : ''
                           }`}>
                             {businessType !== 'table' && (
-                              <div className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/70 bg-white/88 shadow-[0_24px_44px_-34px_rgba(15,23,42,0.3)] dark:border-slate-700 dark:bg-slate-800/88">
-                                <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-5 py-4 dark:border-slate-700 dark:bg-slate-800/70">
+                              <div className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-[0_12px_22px_-20px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-800/88">
+                                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/70">
                                   <div className="flex items-center gap-3">
-                                    <div className="flex size-9 items-center justify-center rounded-2xl bg-primary/12 text-primary">
-                                      <span className="material-symbols-outlined text-[18px]">view_sidebar</span>
+                                    <div className="flex size-8 items-center justify-center rounded-xl bg-primary/12 text-primary">
+                                      <span className="material-symbols-outlined text-[16px]">view_sidebar</span>
                                     </div>
                                     <div>
-                                      <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-200">左侧表配置</h4>
-                                      <p className="mt-0.5 text-[12px] text-slate-400">控制树节点、分类维度与导航层级</p>
+                                      <h4 className="text-[12px] font-semibold text-slate-800 dark:text-slate-200">左侧表配置</h4>
+                                      <p className="mt-0.5 text-[11px] text-slate-400">控制树节点、分类维度与导航层级</p>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">
@@ -3746,7 +3948,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                           setLeftTableColumns((prev) => prev.filter((c) => !selectedLeftForDelete.includes(c.id)));
                                           setSelectedLeftForDelete([]);
                                         }}
-                                        className="inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
                                       >
                                         <span className="material-symbols-outlined text-[14px]">delete</span>
                                         删除 ({selectedLeftForDelete.length})
@@ -3754,7 +3956,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                     )}
                                     <button
                                       onClick={() => setLeftTableColumns((prev) => [...prev, { id: `l_col_${Date.now()}`, name: `新字段 ${prev.length + 1}`, type: '文本', width: 120 }])}
-                                      className="inline-flex items-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-[12px] font-bold text-white shadow-[0_16px_28px_-20px_rgba(14,116,144,0.6)] transition-all hover:bg-erp-blue"
+                                      className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_10px_18px_-16px_rgba(14,116,144,0.45)] transition-all hover:bg-erp-blue"
                                     >
                                       <span className="material-symbols-outlined text-[14px]">add</span>
                                       新增
@@ -3773,14 +3975,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
                             <div className="grid min-h-0 gap-5 lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
                               <div className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/70 bg-white/88 shadow-[0_24px_44px_-34px_rgba(15,23,42,0.3)] dark:border-slate-700 dark:bg-slate-800/88">
-                                <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-5 py-4 dark:border-slate-700 dark:bg-slate-800/70">
+                                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/70">
                                   <div className="flex items-center gap-3">
-                                    <div className="flex size-9 items-center justify-center rounded-2xl bg-emerald-500/12 text-emerald-500">
-                                      <span className="material-symbols-outlined text-[18px]">table_rows</span>
+                                    <div className="flex size-8 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-500">
+                                      <span className="material-symbols-outlined text-[16px]">table_rows</span>
                                     </div>
                                     <div>
-                                      <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-200">主表字段配置</h4>
-                                      <p className="mt-0.5 text-[12px] text-slate-400">当前模块的主表单字段、类型与列宽设置</p>
+                                      <h4 className="text-[12px] font-semibold text-slate-800 dark:text-slate-200">主表字段配置</h4>
+                                      <p className="mt-0.5 text-[11px] text-slate-400">当前模块的主表字段与列宽设置</p>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">
@@ -3790,7 +3992,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                           setMainTableColumns((prev) => prev.filter((c) => !selectedMainForDelete.includes(c.id)));
                                           setSelectedMainForDelete([]);
                                         }}
-                                        className="inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                                        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
                                       >
                                         <span className="material-symbols-outlined text-[14px]">delete</span>
                                         删除 ({selectedMainForDelete.length})
@@ -3798,34 +4000,73 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                     )}
                                     <button
                                       onClick={() => setMainTableColumns((prev) => [...prev, { id: `m_col_${Date.now()}`, name: `新字段 ${prev.length + 1}`, type: '文本', width: 120 }])}
-                                      className="inline-flex items-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-[12px] font-bold text-white shadow-[0_16px_28px_-20px_rgba(14,116,144,0.6)] transition-all hover:bg-erp-blue"
+                                      className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_10px_18px_-16px_rgba(14,116,144,0.45)] transition-all hover:bg-erp-blue"
                                     >
                                       <span className="material-symbols-outlined text-[14px]">add</span>
                                       新增
                                     </button>
                                   </div>
                                 </div>
+                                {renderDocumentGridToolbar(
+                                  mainTableColumns,
+                                  '主表字段配置',
+                                  selectedMainForDelete.length,
+                                  () => {
+                                    setMainTableColumns((prev) => prev.filter((c) => !selectedMainForDelete.includes(c.id)));
+                                    setSelectedMainForDelete([]);
+                                    setInspectorTarget({ kind: 'none' });
+                                  },
+                                  () => setMainTableColumns((prev) => [...prev, buildColumn('m_col', prev.length + 1)]),
+                                  undefined,
+                                  {
+                                    fields: mainFilterFields,
+                                    selectedId: selectedMainFilterId,
+                                    setFields: setMainFilterFields,
+                                    onSelect: (id) => {
+                                      setSelectedArchiveNodeId('archive-filter');
+                                      activateConditionSelection(id);
+                                    },
+                                    onAdd: () => {
+                                      const next = buildConditionField(mainFilterFields.length + 1);
+                                      setMainFilterFields((prev) => [...prev, next]);
+                                      setSelectedArchiveNodeId('archive-filter');
+                                      activateConditionSelection(next.id);
+                                    },
+                                    onDelete: () => {
+                                      if (!selectedMainFilterId) return;
+                                      setMainFilterFields((prev) => prev.filter((item) => item.id !== selectedMainFilterId));
+                                      setInspectorTarget({ kind: 'none' });
+                                    },
+                                  },
+                                  undefined,
+                                  { hideActionBar: true },
+                                )}
                                 <div
                                   className="min-h-0 flex-1 overflow-auto outline-none"
                                   tabIndex={0}
                                   onPaste={(e) => handlePasteColumns(e, setMainTableColumns)}
                                 >
-                                  {renderTableBuilder('main', mainTableColumns, setMainTableColumns, selectedMainColId, selectedMainForDelete, setSelectedMainForDelete)}
+                                  {renderTableBuilder('main', mainTableColumns, setMainTableColumns, selectedMainColId, selectedMainForDelete, setSelectedMainForDelete, {
+                                    backgroundSelectable: true,
+                                    tableSelected: selectedTableConfigScope === 'main',
+                                    onSelectTable: () => activateTableConfigSelection('main'),
+                                    canvasLabel: '点击配置主表属性',
+                                  })}
                                 </div>
                               </div>
 
                               <div className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/70 bg-white/88 shadow-[0_24px_44px_-34px_rgba(15,23,42,0.3)] dark:border-slate-700 dark:bg-slate-800/88">
-                                <div className="flex items-center justify-between border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.76))] px-5 py-4 dark:border-slate-700 dark:bg-slate-800/70">
+                                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/70">
                                   <div className="flex items-center gap-3">
-                                    <div className="flex size-9 items-center justify-center rounded-2xl bg-blue-500/12 text-blue-500">
-                                      <span className="material-symbols-outlined text-[18px]">tab_group</span>
+                                    <div className="flex size-8 items-center justify-center rounded-xl bg-blue-500/12 text-blue-500">
+                                      <span className="material-symbols-outlined text-[16px]">tab_group</span>
                                     </div>
                                     <div>
-                                      <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-200">明细页签配置</h4>
-                                      <p className="mt-0.5 text-[12px] text-slate-400">把页签新增、选中和填充类型选择集中到同一工作区</p>
+                                      <h4 className="text-[12px] font-semibold text-slate-800 dark:text-slate-200">明细页签配置</h4>
+                                      <p className="mt-0.5 text-[11px] text-slate-400">页签与填充方式集中在这里</p>
                                     </div>
                                   </div>
-                                  <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold text-blue-500 dark:bg-blue-500/10">明细页签</span>
+                                  <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-semibold text-blue-500 dark:bg-blue-500/10">明细页签</span>
                                 </div>
                                 {renderDetailTabsWorkspace('builder')}
                               </div>
@@ -4070,14 +4311,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
               {/* Bottom Action Bar */}
               <div
-                className={`shrink-0 border-t border-white/70 bg-white/85 backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/85 shadow-[0_-10px_40px_rgba(15,23,42,0.08)] ${
-                  isConfigFullscreenActive ? 'px-8 lg:px-10' : 'px-12 lg:px-16'
+                className={`shrink-0 border-t border-slate-200 bg-white/92 backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/88 shadow-[0_-8px_24px_rgba(15,23,42,0.04)] ${
+                  isConfigFullscreenActive ? 'px-6 lg:px-8' : 'px-6 lg:px-8'
                 }`}
               >
-                <div className="flex h-28 items-center justify-between gap-6">
+                <div className="flex h-20 items-center justify-between gap-4">
                   <button
                     onClick={() => setConfigStep(Math.max(1, configStep - 1))}
-                    className={`inline-flex items-center gap-2 rounded-2xl border px-6 py-3 text-[15px] font-semibold transition-all ${
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[12px] font-semibold transition-all ${
                       configStep === 1
                         ? 'cursor-not-allowed border-slate-200/80 bg-slate-100/70 text-slate-300 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-600'
                         : 'border-slate-200/80 bg-white/80 text-slate-600 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200'
@@ -4095,7 +4336,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           setCompletedSteps([...completedSteps, configStep]);
                         }
                       }}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/80 px-6 py-3 text-[15px] font-semibold text-slate-600 shadow-[0_12px_32px_rgba(15,23,42,0.06)] transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-4 py-2 text-[12px] font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200"
                     >
                       <span className="material-symbols-outlined text-[20px]">save</span>
                       保存本页
@@ -4104,7 +4345,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     {configStep === 4 && (
                       <button
                         onClick={() => setIsFullscreenConfig((prev) => !prev)}
-                        className={`inline-flex items-center gap-2 rounded-2xl border px-6 py-3 text-[15px] font-semibold transition-all ${
+                        className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[12px] font-semibold transition-all ${
                           isConfigFullscreenActive
                             ? 'border-primary/30 bg-primary/10 text-primary shadow-[0_16px_36px_rgba(49,98,255,0.18)]'
                             : 'border-slate-200/80 bg-white/80 text-slate-600 shadow-[0_12px_32px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200'
@@ -4138,7 +4379,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           setIsConfigOpen(false);
                         }
                       }}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-primary px-7 py-3 text-[15px] font-semibold text-white shadow-[0_18px_40px_rgba(49,98,255,0.28)] transition-all hover:-translate-y-0.5 hover:bg-erp-blue"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2 text-[12px] font-semibold text-white shadow-[0_12px_24px_rgba(49,98,255,0.2)] transition-all hover:-translate-y-0.5 hover:bg-erp-blue"
                     >
                       {configStep === 5 ? '完成配置' : '下一步'}
                       {configStep !== 5 && <span className="material-symbols-outlined text-[20px]">arrow_forward</span>}
@@ -4153,4 +4394,3 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     </div>
   );
 }
-
