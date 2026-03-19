@@ -1,6 +1,7 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDeferredValue, useMemo } from 'react';
+import BrandLogo from './BrandLogo';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -1603,7 +1604,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     };
 
     return (
-      <div style={workspaceThemeVars} className={`cloudy-glass-panel flex min-h-0 flex-col overflow-hidden rounded-[30px] border border-white/75 ${workspaceThemeStyles.tableSurface}`}>
+      <div style={workspaceThemeVars} className={`cloudy-glass-panel flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-white/75 ${workspaceThemeStyles.tableSurface}`}>
         <div className="cloudy-glass-toolbar flex items-center justify-between gap-3 px-4 py-4">
           <div className="flex items-center gap-3">
             <div className="cloudy-glass-orb flex size-10 items-center justify-center rounded-2xl text-[color:var(--workspace-accent)]">
@@ -1666,7 +1667,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 ...getBillFieldLayout(currentLength + index, BILL_FORM_DEFAULT_WIDTH),
               }),
             })}
-            className={`cloudy-cloud-grid scrollbar-none relative h-full overflow-auto rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.66),rgba(248,250,252,0.8))] p-5 outline-none transition-colors ${inspectorTarget.kind === 'main-grid' ? 'shadow-[inset_0_0_0_2px_var(--workspace-accent-border-strong)]' : ''}`}
+            className={`cloudy-cloud-grid scrollbar-none relative h-full overflow-auto rounded-[16px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.66),rgba(248,250,252,0.8))] p-5 outline-none transition-colors ${inspectorTarget.kind === 'main-grid' ? 'shadow-[inset_0_0_0_2px_var(--workspace-accent-border-strong)]' : ''}`}
           >
             <div className="pointer-events-none absolute right-5 top-5 inline-flex items-center gap-1.5 rounded-full border border-[color:var(--workspace-accent-border)] bg-white/84 px-3 py-1 text-[11px] font-bold text-[color:var(--workspace-accent)] shadow-[0_16px_28px_-24px_rgba(15,23,42,0.16)]">
               <span className="material-symbols-outlined text-[14px]">content_paste</span>
@@ -1757,7 +1758,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const detailCols = billDetailColumns;
 
     return (
-      <div style={workspaceThemeVars} className={`cloudy-glass-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[30px] border border-white/75 ${workspaceThemeStyles.tableSurface}`}>
+      <div style={workspaceThemeVars} className={`cloudy-glass-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-white/75 ${workspaceThemeStyles.tableSurface}`}>
         <div className="cloudy-glass-toolbar flex items-center justify-between gap-3 px-4 py-4">
           <div className="flex items-center gap-3">
             <div className="cloudy-glass-orb flex size-10 items-center justify-center rounded-2xl text-[color:var(--workspace-accent)]">
@@ -2874,17 +2875,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   const renderColumnOperationPanel = () => {
   const fieldClass = 'w-full rounded-[18px] border border-slate-200/80 bg-slate-50/92 px-3.5 py-2.5 text-[12px] text-slate-700 outline-none transition shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] focus:border-[color:var(--workspace-accent-border-strong)] focus:bg-white focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-100';
-    const textareaClass = `${fieldClass} min-h-[92px] resize-none font-mono text-[11px] leading-5`;
+    const textareaClass = `${fieldClass} min-h-[92px] resize-none font-mono text-[12px] leading-5`;
     const isCommonPanelTab = inspectorPanelTab === 'common';
-    const panelShellClass = 'cloudy-glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70';
+    const panelShellClass = 'cloudy-glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[20px] border border-white/70';
     const panelHeaderClass = 'cloudy-glass-toolbar shrink-0 px-4 py-4';
     const panelTitleClass = 'text-[15px] font-bold leading-6 text-slate-800 break-words dark:text-slate-100';
-    const panelBadgeClass = 'cloudy-glass-chip inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:text-slate-300';
+    const panelBadgeClass = 'cloudy-glass-chip inline-flex items-center rounded-full px-2.5 py-1 text-[12px] font-semibold text-slate-500 dark:text-slate-300';
     const panelIconShellClass = 'cloudy-glass-orb flex size-10 shrink-0 items-center justify-center rounded-[16px]';
     const compactInfoCardClass = 'cloudy-glass-panel-soft rounded-[18px] px-3.5 py-3';
     const compactCardClass = 'cloudy-glass-panel-soft rounded-[20px] p-4';
     const sectionTitleClass = 'mb-3 flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100';
-    const mutedLabelClass = 'mb-1.5 block text-[11px] font-bold tracking-[0.06em] text-slate-400';
+    const mutedLabelClass = 'mb-1.5 block text-[12px] font-semibold tracking-[0.04em] text-slate-500';
     const inspectorTabs: Array<{ id: 'common' | 'advanced'; label: string; icon: string }> = [
       { id: 'common', label: '核心配置', icon: 'dashboard_customize' },
       { id: 'advanced', label: '扩展配置', icon: 'network_node' },
@@ -4024,19 +4025,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className={compactInfoCardClass}>
-              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{isConditionConfig ? '条件标识' : '字段标识'}</div>
+              <div className="text-[12px] font-semibold tracking-[0.06em] text-slate-500">{isConditionConfig ? '条件标识' : '字段标识'}</div>
               <div className="mt-1 break-all font-mono text-[12px] leading-5 text-slate-600 dark:text-slate-200">{currentColumn.id}</div>
             </div>
             <div className={compactInfoCardClass}>
-              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前类型</div>
+              <div className="text-[12px] font-semibold tracking-[0.06em] text-slate-500">当前类型</div>
               <div className="mt-1 break-words text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">{currentColumn.type}</div>
             </div>
             <div className={compactInfoCardClass}>
-              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前宽度</div>
+              <div className="text-[12px] font-semibold tracking-[0.06em] text-slate-500">当前宽度</div>
               <div className="mt-1 break-words text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">{Math.round(currentColumn.width)}px</div>
             </div>
             <div className={compactInfoCardClass}>
-              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">对齐方式</div>
+              <div className="text-[12px] font-semibold tracking-[0.06em] text-slate-500">对齐方式</div>
               <div className="mt-1 break-words text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">{currentColumn.align}</div>
             </div>
           </div>
@@ -4499,7 +4500,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       <div style={workspaceThemeVars} className="shrink-0">
         <div className="cloudy-glass-toolbar relative px-4 py-3">
           {activeFilterResize && (
-            <div className="pointer-events-none absolute right-3 top-2 z-10 inline-flex items-center gap-2 rounded-full border border-[color:var(--workspace-accent-border)] bg-white/96 px-3 py-1 text-[11px] font-bold text-[color:var(--workspace-accent)] shadow-[0_18px_32px_-24px_rgba(15,23,42,0.24)] dark:bg-slate-900/92">
+            <div className="pointer-events-none absolute right-3 top-2 z-10 inline-flex items-center gap-2 rounded-full border border-[color:var(--workspace-accent-border)] bg-white/96 px-3 py-1 text-[12px] font-semibold text-[color:var(--workspace-accent)] shadow-[0_18px_32px_-24px_rgba(15,23,42,0.24)] dark:bg-slate-900/92">
               <span className="material-symbols-outlined text-[13px]">tune</span>
               <span className="max-w-[140px] truncate">{activeFilterResize.label}</span>
               <span className="rounded-full bg-[color:var(--workspace-accent-soft)] px-2 py-0.5">{Math.round(activeFilterResize.width)}px</span>
@@ -4556,7 +4557,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     <button
                       type="button"
                       onClick={filterConfig.onAdd}
-                    className="cloudy-glass-chip inline-flex h-9 shrink-0 items-center justify-center rounded-[14px] border border-[color:var(--workspace-accent-border)] px-3 text-[11px] font-semibold text-[color:var(--workspace-accent)] transition-colors hover:bg-[color:var(--workspace-accent-soft)]"
+                    className="cloudy-glass-chip inline-flex h-9 shrink-0 items-center justify-center rounded-[14px] border border-[color:var(--workspace-accent-border)] px-3 text-[12px] font-semibold text-[color:var(--workspace-accent)] transition-colors hover:bg-[color:var(--workspace-accent-soft)]"
                   >
                       <span className="material-symbols-outlined text-[15px]">playlist_add</span>
                       条件
@@ -5068,14 +5069,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       {/* Sidebar Navigation */}
       <aside className="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0">
         {/* Brand Logo */}
-        <div className="p-6 flex items-center gap-3">
-          <div className="size-10 bg-primary rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary/20">
-            <span className="material-symbols-outlined text-2xl">rocket_launch</span>
-          </div>
-          <div className="flex flex-col">
-            <h1 className="text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-tight">朗速 AI</h1>
-            <p className="text-primary text-[10px] font-bold tracking-wider">模块工作台</p>
-          </div>
+        <div className="p-6">
+          <BrandLogo size="sm" showTagline tagline="AI模块工作台" />
         </div>
 
         {/* Nav Links */}
@@ -5815,7 +5810,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       className="flex min-h-0 flex-1 flex-col overflow-hidden"
                     >
                       {businessType === 'document' ? (
-                        <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex flex-1 min-h-0 overflow-hidden rounded-[36px] p-3 ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'h-full' : 'min-h-[780px]'}`}>
+                        <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex flex-1 min-h-0 overflow-hidden rounded-[24px] p-3 ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'h-full' : 'min-h-[780px]'}`}>
                           {isTreePaneVisible && (
                             <>
                               <div className="flex min-h-0 shrink-0 flex-col" style={{ width: documentLeftPaneWidth }}>

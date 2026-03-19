@@ -1,5 +1,6 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import BrandLogo from './BrandLogo';
 import GlassIcon from './GlassIcon';
 
 interface LoginProps {
@@ -68,8 +69,11 @@ export default function Login({ onLogin }: LoginProps) {
 
       <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-5 py-8 md:px-10 md:py-12">
         <div className="mb-10 flex flex-col items-center text-center md:mb-12">
-          <div className="glass-chip mb-5 px-4 py-3">
-            <div className="glass-panel-soft flex h-12 w-12 items-center justify-center rounded-2xl">
+          <div className="glass-chip relative mb-5 min-h-[92px] px-6 py-4 md:px-7">
+            <div className="absolute inset-0 flex items-center justify-center px-5">
+              <BrandLogo align="center" size="md" showTagline tagline="AI模块工作台" />
+            </div>
+            <div className="pointer-events-none opacity-0 glass-panel-soft flex h-12 w-12 items-center justify-center rounded-2xl">
               <svg className="h-7 w-7 text-primary" fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
                 <path
                   clipRule="evenodd"
@@ -79,8 +83,8 @@ export default function Login({ onLogin }: LoginProps) {
                 />
               </svg>
             </div>
-            <div className="flex flex-col text-left">
-              <span className="type-h3 font-bold text-slate-900">LANGSU AI</span>
+            <div className="hidden" aria-hidden="true">
+              <span className="type-h3 font-bold text-slate-900">lumsoft</span>
               <span className="type-meta font-bold uppercase tracking-[0.24em] text-primary">AI 开发平台</span>
             </div>
           </div>
