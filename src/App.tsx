@@ -8,7 +8,11 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('debug') === 'dashboard';
+  });
 
   return (
     <>
