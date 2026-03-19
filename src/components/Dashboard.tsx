@@ -9,6 +9,42 @@ interface DashboardProps {
 
 type Subsystem = 'finance' | 'hr' | 'supply';
 type BusinessType = 'document' | 'table' | 'tree';
+type BillCanvasFieldScope = 'main' | 'meta';
+type BillFieldGuideLine = {
+  orientation: 'vertical' | 'horizontal';
+  position: number;
+  start: number;
+  end: number;
+  kind: 'align' | 'spacing';
+};
+type BillFieldGapGuide = {
+  orientation: 'horizontal' | 'vertical';
+  start: number;
+  end: number;
+  cross: number;
+  label: string;
+};
+type BillFieldGuideState = {
+  lines: BillFieldGuideLine[];
+  gap: BillFieldGapGuide | null;
+};
+type BillFieldBounds = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  right: number;
+  bottom: number;
+  centerX: number;
+  centerY: number;
+};
+type BillSnapCandidate = {
+  value: number;
+  line: BillFieldGuideLine | null;
+  gap: BillFieldGapGuide | null;
+  priority: number;
+};
 const DETAIL_BOARD_CLIPBOARD_PREFIX = '__LS_DETAIL_BOARD_COLUMNS__';
 const BUSINESS_TYPE_OPTIONS: Array<{ value: BusinessType; label: string; icon: string }> = [
   { value: 'document', label: '基础档案', icon: 'inventory_2' },
@@ -22,14 +58,23 @@ const TABLE_TYPE_OPTIONS = ['普通表格', '多表头', '树表格'];
 const TABLE_COLUMN_MIN_WIDTH = 48;
 const TABLE_COLUMN_AUTO_FIT_MAX_WIDTH = 680;
 const TABLE_COLUMN_RESIZE_MAX_WIDTH = 2000;
-const BILL_FORM_DEFAULT_WIDTH = 272;
-const BILL_FORM_DEFAULT_LABEL_WIDTH = 82;
+const BILL_FORM_DEFAULT_WIDTH = 236;
+const BILL_FORM_MIN_WIDTH = 168;
+const BILL_FORM_MAX_WIDTH = 560;
+const BILL_FORM_DEFAULT_LABEL_WIDTH = 72;
 const BILL_FORM_DEFAULT_FONT_SIZE = 12;
 const BILL_FORM_LAYOUT_PADDING_X = 28;
 const BILL_FORM_LAYOUT_PADDING_Y = 28;
 const BILL_FORM_LAYOUT_GAP_X = 24;
 const BILL_FORM_LAYOUT_GAP_Y = 18;
 const BILL_FORM_LAYOUT_COLUMNS = 3;
+const BILL_FORM_ROW_HEIGHT = 56;
+const BILL_FORM_SNAP_SIZE = 8;
+const BILL_FORM_ALIGN_THRESHOLD = 10;
+const EMPTY_BILL_FIELD_GUIDES: BillFieldGuideState = {
+  lines: [],
+  gap: null,
+};
 
 const DETAIL_FILL_TYPE_OPTIONS = [
   { value: '表格', label: '表格', icon: 'table_rows', description: '适合字段型明细维护' },
@@ -130,6 +175,36 @@ const DETAIL_BOARD_THEME_VARS: Record<string, Record<string, string>> = {
     '--workspace-accent-shadow': 'rgba(5,150,105,0.28)',
   },
 };
+const MODULE_INTRO_DEFAULT_TITLE = '成本控制模块详细说明';
+const MODULE_INTRO_DEFAULT_HTML = `
+  <p class="module-intro-lead">成本控制模块是财务管理子系统的核心组件，面向企业经营分析、预算约束和执行监控场景，提供从业务发生到经营复盘的一体化成本治理能力。</p>
+  <div class="module-intro-highlight">
+    <div class="module-intro-highlight-eyebrow">模块价值</div>
+    <p>围绕成本核算、预算控制、差异分析与预测预警形成闭环，让单据、台账、报表和决策建议在同一套业务模型里协同流转。</p>
+    <div class="module-intro-pill-row">
+      <span>成本核算</span>
+      <span>预算控制</span>
+      <span>预测预警</span>
+    </div>
+  </div>
+  <h3>核心功能</h3>
+  <ul>
+    <li><strong>成本核算：</strong>支持标准成本法、实际成本法和作业成本法，自动归集并分配成本费用。</li>
+    <li><strong>预算控制：</strong>建立多维预算体系，实时监控执行进度，并提供超预算预警。</li>
+    <li><strong>成本分析：</strong>支持趋势、结构、差异等多视角分析，帮助快速识别异常波动。</li>
+    <li><strong>成本预测：</strong>结合历史数据和 AI 模型，提供面向管理层的预测与建议。</li>
+  </ul>
+  <h3>应用价值</h3>
+  <p>模块可与采购、库存、生产、财务等环节联动，把分散的成本数据汇总到统一业务语义下，提升核算效率、分析准确性和经营响应速度。</p>
+`;
+
+function escapeHtmlAttribute(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 function getWorkspaceThemeVars(theme?: string): React.CSSProperties {
   return DETAIL_BOARD_THEME_VARS[theme || 'aurora'] ?? DETAIL_BOARD_THEME_VARS.aurora;
@@ -140,7 +215,7 @@ function getBillFieldLayout(index: number, width = BILL_FORM_DEFAULT_WIDTH) {
   const rowIndex = Math.floor(index / BILL_FORM_LAYOUT_COLUMNS);
   return {
     canvasX: BILL_FORM_LAYOUT_PADDING_X + columnIndex * (width + BILL_FORM_LAYOUT_GAP_X),
-    canvasY: BILL_FORM_LAYOUT_PADDING_Y + rowIndex * (56 + BILL_FORM_LAYOUT_GAP_Y),
+    canvasY: BILL_FORM_LAYOUT_PADDING_Y + rowIndex * (BILL_FORM_ROW_HEIGHT + BILL_FORM_LAYOUT_GAP_Y),
     labelWidth: BILL_FORM_DEFAULT_LABEL_WIDTH,
     fontSize: BILL_FORM_DEFAULT_FONT_SIZE,
     sourceTable: 'bill-source',
@@ -184,22 +259,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   // Step 2: Editor
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && editorRef.current) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = document.createElement('img');
-        img.src = event.target?.result as string;
-        img.className = 'max-w-full h-auto rounded-xl my-4 border border-slate-200 dark:border-slate-700 shadow-sm';
-        editorRef.current?.appendChild(img);
-        const p = document.createElement('p');
-        p.innerHTML = '<br/>';
-        editorRef.current?.appendChild(p);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  const titleEditorRef = useRef<HTMLHeadingElement>(null);
+  const moduleIntroSelectionRef = useRef<Range | null>(null);
+  const moduleIntroSelectedImageRef = useRef<HTMLElement | null>(null);
+  const moduleIntroImageResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const moduleIntroTitleValueRef = useRef(MODULE_INTRO_DEFAULT_TITLE);
+  const moduleIntroBodyValueRef = useRef(MODULE_INTRO_DEFAULT_HTML);
+  const [moduleIntroBlockType, setModuleIntroBlockType] = useState<'paragraph' | 'h1' | 'h2' | 'h3'>('paragraph');
+  const [moduleIntroSelectedImageWidth, setModuleIntroSelectedImageWidth] = useState<number | null>(null);
 
   // Step 3: Survey
   const [surveyStep, setSurveyStep] = useState(0);
@@ -220,6 +287,354 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
+
+  const execRichTextCommand = (command: string, value?: string) => {
+    const richDocument = document as Document & {
+      execCommand?: (commandId: string, showUI?: boolean, value?: string) => boolean;
+    };
+    return richDocument.execCommand ? richDocument.execCommand(command, false, value) : false;
+  };
+  const getModuleIntroSelectionAnchor = (node: Node | null) => {
+    if (!node) return null;
+    return node instanceof HTMLElement ? node : node.parentElement;
+  };
+  const updateModuleIntroBlockType = (node: Node | null) => {
+    const anchor = getModuleIntroSelectionAnchor(node);
+    const block = anchor?.closest('h1, h2, h3, p');
+    const tagName = block?.tagName.toLowerCase();
+    if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3') {
+      setModuleIntroBlockType(tagName);
+      return;
+    }
+    setModuleIntroBlockType('paragraph');
+  };
+  const clampModuleIntroImageWidth = (width: number) => {
+    const availableWidth = editorRef.current?.clientWidth ?? 860;
+    return Math.max(180, Math.min(width, Math.max(220, availableWidth - 12)));
+  };
+  const buildModuleIntroImageHtml = (src: string, imageName: string, width = 420) => {
+    const nextWidth = clampModuleIntroImageWidth(width);
+    return `
+      <figure class="module-intro-figure" data-module-intro-image="true" contenteditable="false" style="width:${nextWidth}px">
+        <div class="module-intro-image-frame">
+          <img src="${src}" alt="${imageName}" />
+          <span class="module-intro-image-resize-handle" data-module-intro-image-resize-handle="true"></span>
+        </div>
+      </figure>
+      <p><br></p>
+    `;
+  };
+  const ensureModuleIntroImageStructure = (image: HTMLImageElement) => {
+    const figure = image.closest('figure');
+    if (!(figure instanceof HTMLElement)) return null;
+    figure.classList.add('module-intro-figure');
+    figure.dataset.moduleIntroImage = 'true';
+    figure.setAttribute('contenteditable', 'false');
+
+    let frame = figure.querySelector('.module-intro-image-frame');
+    if (!(frame instanceof HTMLElement)) {
+      frame = document.createElement('div');
+      frame.className = 'module-intro-image-frame';
+      image.parentNode?.insertBefore(frame, image);
+      frame.appendChild(image);
+    }
+
+    if (!figure.querySelector('[data-module-intro-image-resize-handle="true"]')) {
+      const handle = document.createElement('span');
+      handle.className = 'module-intro-image-resize-handle';
+      handle.dataset.moduleIntroImageResizeHandle = 'true';
+      frame.appendChild(handle);
+    }
+
+    if (!figure.style.width) {
+      figure.style.width = `${clampModuleIntroImageWidth(image.naturalWidth || image.width || 420)}px`;
+    }
+
+    return figure;
+  };
+  const normalizeModuleIntroImages = () => {
+    if (!editorRef.current) return;
+    editorRef.current.querySelectorAll('img').forEach((node) => {
+      if (node instanceof HTMLImageElement) {
+        ensureModuleIntroImageStructure(node);
+      }
+    });
+  };
+  const clearModuleIntroImageSelection = () => {
+    if (moduleIntroSelectedImageRef.current) {
+      moduleIntroSelectedImageRef.current.dataset.selected = 'false';
+    }
+    moduleIntroSelectedImageRef.current = null;
+    setModuleIntroSelectedImageWidth(null);
+  };
+  const syncModuleIntroSelectedImageWidth = () => {
+    if (!moduleIntroSelectedImageRef.current) {
+      setModuleIntroSelectedImageWidth(null);
+      return;
+    }
+    setModuleIntroSelectedImageWidth(Math.round(moduleIntroSelectedImageRef.current.getBoundingClientRect().width));
+  };
+  const selectModuleIntroImage = (figure: HTMLElement) => {
+    if (moduleIntroSelectedImageRef.current && moduleIntroSelectedImageRef.current !== figure) {
+      moduleIntroSelectedImageRef.current.dataset.selected = 'false';
+    }
+    moduleIntroSelectedImageRef.current = figure;
+    figure.dataset.selected = 'true';
+    syncModuleIntroSelectedImageWidth();
+  };
+  const applyModuleIntroImageWidth = (nextWidth: number) => {
+    if (!moduleIntroSelectedImageRef.current) return;
+    const width = clampModuleIntroImageWidth(nextWidth);
+    moduleIntroSelectedImageRef.current.style.width = `${width}px`;
+    syncModuleIntroSelectedImageWidth();
+    syncModuleIntroDraft();
+  };
+  const handleModuleIntroImagePreset = (preset: 'small' | 'medium' | 'large' | 'full') => {
+    if (!editorRef.current) return;
+    if (preset === 'small') {
+      applyModuleIntroImageWidth(280);
+      return;
+    }
+    if (preset === 'medium') {
+      applyModuleIntroImageWidth(420);
+      return;
+    }
+    if (preset === 'large') {
+      applyModuleIntroImageWidth(620);
+      return;
+    }
+    applyModuleIntroImageWidth(editorRef.current.clientWidth - 12);
+  };
+  const syncModuleIntroDraft = () => {
+    if (titleEditorRef.current) {
+      const nextTitle = titleEditorRef.current.innerText.replace(/\s+/g, ' ').trim();
+      moduleIntroTitleValueRef.current = nextTitle || MODULE_INTRO_DEFAULT_TITLE;
+      if (!nextTitle) {
+        titleEditorRef.current.innerText = MODULE_INTRO_DEFAULT_TITLE;
+      }
+    }
+    if (editorRef.current) {
+      normalizeModuleIntroImages();
+      const nextHtml = editorRef.current.innerHTML.trim();
+      moduleIntroBodyValueRef.current = nextHtml || '<p><br></p>';
+      if (!nextHtml) {
+        editorRef.current.innerHTML = '<p><br></p>';
+      }
+    }
+  };
+  const hydrateModuleIntroEditor = () => {
+    if (titleEditorRef.current && !titleEditorRef.current.innerText.trim()) {
+      titleEditorRef.current.innerText = moduleIntroTitleValueRef.current;
+    }
+    if (editorRef.current && !editorRef.current.innerHTML.trim()) {
+      editorRef.current.innerHTML = moduleIntroBodyValueRef.current;
+    }
+    normalizeModuleIntroImages();
+  };
+  const focusModuleIntroEditorEnd = () => {
+    if (!editorRef.current) return;
+    const selection = window.getSelection();
+    if (!selection) return;
+    editorRef.current.focus();
+    const range = document.createRange();
+    range.selectNodeContents(editorRef.current);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    moduleIntroSelectionRef.current = range.cloneRange();
+    updateModuleIntroBlockType(range.startContainer);
+  };
+  const saveModuleIntroSelection = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !editorRef.current) return;
+    const range = selection.getRangeAt(0);
+    if (!editorRef.current.contains(range.commonAncestorContainer)) return;
+    moduleIntroSelectionRef.current = range.cloneRange();
+    updateModuleIntroBlockType(range.startContainer);
+  };
+  const restoreModuleIntroSelection = () => {
+    if (!editorRef.current) return false;
+    const selection = window.getSelection();
+    if (!selection) return false;
+    editorRef.current.focus();
+    if (moduleIntroSelectionRef.current) {
+      selection.removeAllRanges();
+      selection.addRange(moduleIntroSelectionRef.current);
+      updateModuleIntroBlockType(moduleIntroSelectionRef.current.startContainer);
+      return true;
+    }
+    focusModuleIntroEditorEnd();
+    return true;
+  };
+  const applyModuleIntroCommand = (command: string, value?: string) => {
+    if (!editorRef.current) return;
+    restoreModuleIntroSelection();
+    execRichTextCommand(command, value);
+    syncModuleIntroDraft();
+    saveModuleIntroSelection();
+  };
+  const insertModuleIntroHtml = (html: string) => {
+    if (!editorRef.current) return;
+    restoreModuleIntroSelection();
+    execRichTextCommand('insertHTML', html);
+    syncModuleIntroDraft();
+    saveModuleIntroSelection();
+  };
+  const openModuleIntroImagePicker = () => {
+    saveModuleIntroSelection();
+    fileInputRef.current?.click();
+  };
+  const handleModuleIntroImageFiles = (files: Iterable<File> | null | undefined) => {
+    const imageFile = Array.from(files ?? []).find((file) => file.type.startsWith('image/'));
+    if (!imageFile) {
+      showToast('请选择 PNG、JPG、SVG 等图片文件');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const src = event.target?.result;
+      if (typeof src !== 'string') return;
+      const imageName = escapeHtmlAttribute(imageFile.name.replace(/\.[^.]+$/, '') || '流程图');
+      insertModuleIntroHtml(buildModuleIntroImageHtml(src, imageName));
+      window.requestAnimationFrame(() => {
+        if (!editorRef.current) return;
+        const images = Array.from(editorRef.current.querySelectorAll('[data-module-intro-image="true"]'));
+        const lastImage = images.at(-1);
+        if (lastImage instanceof HTMLElement) {
+          selectModuleIntroImage(lastImage);
+          syncModuleIntroDraft();
+        }
+      });
+      showToast('图片已插入模块介绍');
+    };
+    reader.readAsDataURL(imageFile);
+  };
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleModuleIntroImageFiles(event.target.files);
+    event.target.value = '';
+  };
+  const handleModuleIntroFormatChange = (nextType: 'paragraph' | 'h1' | 'h2' | 'h3') => {
+    setModuleIntroBlockType(nextType);
+    const formatValue = nextType === 'paragraph' ? '<p>' : `<${nextType}>`;
+    applyModuleIntroCommand('formatBlock', formatValue);
+  };
+  const handleModuleIntroLinkInsert = () => {
+    const selectedText = window.getSelection()?.toString().trim();
+    if (!selectedText) {
+      showToast('先选中文本，再插入链接');
+      return;
+    }
+    const url = window.prompt('请输入链接地址', 'https://');
+    if (!url) return;
+    applyModuleIntroCommand('createLink', url);
+  };
+  const handleModuleIntroTableInsert = () => {
+    insertModuleIntroHtml(
+      `
+        <div class="module-intro-table-wrap">
+          <table class="module-intro-table">
+            <thead>
+              <tr><th>阶段</th><th>目标</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>核算</td><td>统一口径</td><td>建立跨部门一致的成本归集规则。</td></tr>
+              <tr><td>分析</td><td>识别异常</td><td>通过差异分析快速定位波动来源。</td></tr>
+              <tr><td>预测</td><td>辅助决策</td><td>结合历史数据输出经营预警与建议。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><br></p>
+      `,
+    );
+  };
+  const polishModuleIntroContent = () => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    if (!editor.querySelector('.module-intro-highlight')) {
+      const leadParagraph = editor.querySelector('p');
+      const summary = (leadParagraph?.textContent || '围绕成本核算、预算控制与预测预警，形成结构化业务介绍。').trim();
+      editor.insertAdjacentHTML(
+        'afterbegin',
+        `
+          <div class="module-intro-highlight">
+            <div class="module-intro-highlight-eyebrow">AI 润色摘要</div>
+            <p>${escapeHtmlAttribute(summary.length > 96 ? `${summary.slice(0, 96)}...` : summary)}</p>
+            <div class="module-intro-pill-row">
+              <span>业务全景</span>
+              <span>执行闭环</span>
+              <span>经营分析</span>
+            </div>
+          </div>
+        `,
+      );
+    }
+    syncModuleIntroDraft();
+    showToast('已优化模块介绍的结构层次');
+  };
+  const handleModuleIntroEditorMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+
+    const resizeHandle = target.closest('[data-module-intro-image-resize-handle="true"]');
+    if (resizeHandle instanceof HTMLElement) {
+      const figure = resizeHandle.closest('[data-module-intro-image="true"]');
+      if (!(figure instanceof HTMLElement)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      selectModuleIntroImage(figure);
+      moduleIntroImageResizeRef.current = {
+        startX: event.clientX,
+        startWidth: figure.getBoundingClientRect().width,
+      };
+      return;
+    }
+
+    const figure = target.closest('[data-module-intro-image="true"]');
+    if (figure instanceof HTMLElement) {
+      event.preventDefault();
+      selectModuleIntroImage(figure);
+      return;
+    }
+
+    clearModuleIntroImageSelection();
+  };
+
+  useEffect(() => {
+    if (configStep !== 2) return;
+    const frameId = window.requestAnimationFrame(() => {
+      hydrateModuleIntroEditor();
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [configStep, isFullscreenEditor]);
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      saveModuleIntroSelection();
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!moduleIntroImageResizeRef.current || !moduleIntroSelectedImageRef.current) return;
+      event.preventDefault();
+      const delta = event.clientX - moduleIntroImageResizeRef.current.startX;
+      applyModuleIntroImageWidth(moduleIntroImageResizeRef.current.startWidth + delta);
+    };
+    const handleMouseUp = () => {
+      if (!moduleIntroImageResizeRef.current) return;
+      moduleIntroImageResizeRef.current = null;
+      syncModuleIntroDraft();
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   const resetSurveyFlow = () => {
     setSurveyStep(0);
@@ -456,11 +871,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   });
   const [leftTableColumns, setLeftTableColumns] = useState<any[]>([]);
   const [mainTableColumns, setMainTableColumns] = useState([
-    { id: 'm_col1', name: '物料编码', type: '文本', width: 252, sourceField: 'material_code', ...getBillFieldLayout(0, 252) },
-    { id: 'm_col2', name: '物料名称', type: '文本', width: 288, sourceField: 'material_name', ...getBillFieldLayout(1, 288) },
-    { id: 'm_col3', name: '规格型号', type: '文本', width: 252, sourceField: 'material_spec', ...getBillFieldLayout(2, 252) },
-    { id: 'm_col4', name: '单位', type: '下拉框', width: 224, sourceField: 'material_unit', ...getBillFieldLayout(3, 224) },
-    { id: 'm_col5', name: '单价', type: '数字', width: 228, sourceField: 'material_price', ...getBillFieldLayout(4, 228) },
+    { id: 'm_col1', name: '物料编码', type: '文本', width: BILL_FORM_DEFAULT_WIDTH, sourceField: 'material_code', ...getBillFieldLayout(0, BILL_FORM_DEFAULT_WIDTH) },
+    { id: 'm_col2', name: '物料名称', type: '文本', width: BILL_FORM_DEFAULT_WIDTH, sourceField: 'material_name', ...getBillFieldLayout(1, BILL_FORM_DEFAULT_WIDTH) },
+    { id: 'm_col3', name: '规格型号', type: '文本', width: BILL_FORM_DEFAULT_WIDTH, sourceField: 'material_spec', ...getBillFieldLayout(2, BILL_FORM_DEFAULT_WIDTH) },
+    { id: 'm_col4', name: '单位', type: '下拉框', width: BILL_FORM_DEFAULT_WIDTH, sourceField: 'material_unit', ...getBillFieldLayout(3, BILL_FORM_DEFAULT_WIDTH) },
+    { id: 'm_col5', name: '单价', type: '数字', width: BILL_FORM_DEFAULT_WIDTH, sourceField: 'material_price', ...getBillFieldLayout(4, BILL_FORM_DEFAULT_WIDTH) },
   ]);
   const [detailTabs, setDetailTabs] = useState([{ id: 'tab1', name: '关联附件' }, { id: 'tab2', name: '操作日志' }]);
   const [activeTab, setActiveTab] = useState('tab1');
@@ -574,9 +989,49 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       detailBoard: buildDetailBoardConfig([], { enabled: false }),
     }),
   );
+  const [billMetaFields, setBillMetaFields] = useState<any[]>([
+    {
+      id: 'bill_meta_date',
+      name: '单据时间',
+      type: '日期框',
+      width: BILL_FORM_DEFAULT_WIDTH,
+      readonly: true,
+      defaultValue: new Date().toISOString().slice(0, 10),
+      canvasX: 540,
+      canvasY: 100,
+      labelWidth: 64,
+      fontSize: BILL_FORM_DEFAULT_FONT_SIZE,
+    },
+    {
+      id: 'bill_meta_operator',
+      name: '操作人员',
+      type: '文本',
+      width: BILL_FORM_DEFAULT_WIDTH,
+      readonly: true,
+      defaultValue: '系统管理员',
+      canvasX: 540,
+      canvasY: 160,
+      labelWidth: 64,
+      fontSize: BILL_FORM_DEFAULT_FONT_SIZE,
+    },
+    {
+      id: 'bill_meta_operate_time',
+      name: '操作时间',
+      type: '日期框',
+      width: BILL_FORM_DEFAULT_WIDTH,
+      readonly: true,
+      defaultValue: new Date().toISOString().slice(0, 10),
+      canvasX: 540,
+      canvasY: 220,
+      labelWidth: 64,
+      fontSize: BILL_FORM_DEFAULT_FONT_SIZE,
+    },
+  ]);
   const [documentLeftPaneWidth, setDocumentLeftPaneWidth] = useState(198);
   const [documentDetailPaneWidth, setDocumentDetailPaneWidth] = useState(332);
   const [documentTopPaneHeight, setDocumentTopPaneHeight] = useState(414);
+  const [billDocumentTone, setBillDocumentTone] = useState<'blue' | 'red'>('blue');
+  const [billDocumentScale, setBillDocumentScale] = useState(1);
   const [activeResize, setActiveResize] = useState<{
     id: string;
     label: string;
@@ -608,15 +1063,21 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     y: number;
     ids: string[];
   } | null>(null);
+  const [activeBillDragId, setActiveBillDragId] = useState<string | null>(null);
+  const [activeBillResizeId, setActiveBillResizeId] = useState<string | null>(null);
+  const [billFieldSnapGuides, setBillFieldSnapGuides] = useState<BillFieldGuideState>(EMPTY_BILL_FIELD_GUIDES);
   const layoutDragRef = useRef<{
     type: 'document-left-width' | 'document-detail-width' | 'document-top-height';
     startX: number;
     startY: number;
     startValue: number;
   } | null>(null);
+  const billDocumentViewportRef = useRef<HTMLDivElement | null>(null);
+  const billDocumentPaperRef = useRef<HTMLDivElement | null>(null);
   const billHeaderCanvasRef = useRef<HTMLDivElement | null>(null);
   const billFieldDragRef = useRef<{
     id: string;
+    scope: BillCanvasFieldScope;
     startX: number;
     startY: number;
     startCanvasX: number;
@@ -624,6 +1085,30 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     fieldWidth: number;
     boardWidth: number;
     boardHeight: number;
+  } | null>(null);
+  const billFieldResizeRef = useRef<{
+    id: string;
+    scope: BillCanvasFieldScope;
+    startX: number;
+    startWidth: number;
+    startCanvasX: number;
+    boardWidth: number;
+  } | null>(null);
+  const billCanvasFieldsRef = useRef<any[]>([...mainTableColumns, ...billMetaFields]);
+  const billDragFrameRef = useRef<number | null>(null);
+  const billResizeFrameRef = useRef<number | null>(null);
+  const billHeaderAutoFillRef = useRef(false);
+  const pendingBillDragPositionRef = useRef<{
+    id: string;
+    scope: BillCanvasFieldScope;
+    x: number;
+    y: number;
+    guides: BillFieldGuideState;
+  } | null>(null);
+  const pendingBillResizeRef = useRef<{
+    id: string;
+    scope: BillCanvasFieldScope;
+    width: number;
   } | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
   const detailBoardResizeFrameRef = useRef<number | null>(null);
@@ -645,6 +1130,297 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     setSelectedMainFiltersForDelete((prev) => (activeScope === 'main' || prev.length === 0 ? prev : []));
     setSelectedDetailFiltersForDelete((prev) => (activeScope === 'detail' || prev.length === 0 ? prev : []));
   };
+  const clampValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+  const buildBillFieldBounds = (column: any): BillFieldBounds => {
+    const normalizedColumn = normalizeColumn(column);
+    const width = Math.max(BILL_FORM_MIN_WIDTH, normalizedColumn.width || BILL_FORM_DEFAULT_WIDTH);
+    const height = BILL_FORM_ROW_HEIGHT;
+    const x = normalizedColumn.canvasX ?? BILL_FORM_LAYOUT_PADDING_X;
+    const y = normalizedColumn.canvasY ?? BILL_FORM_LAYOUT_PADDING_Y;
+
+    return {
+      id: String(column.id),
+      x,
+      y,
+      width,
+      height,
+      right: x + width,
+      bottom: y + height,
+      centerX: x + width / 2,
+      centerY: y + height / 2,
+    };
+  };
+  const snapBillPositionToGrid = (value: number, padding: number) => (
+    padding + Math.round((value - padding) / BILL_FORM_SNAP_SIZE) * BILL_FORM_SNAP_SIZE
+  );
+  const buildGuideLine = (
+    orientation: 'vertical' | 'horizontal',
+    position: number,
+    start: number,
+    end: number,
+    kind: 'align' | 'spacing' = 'align',
+  ): BillFieldGuideLine => ({
+    orientation,
+    position: Math.round(position),
+    start: Math.round(Math.min(start, end)),
+    end: Math.round(Math.max(start, end)),
+    kind,
+  });
+  const buildGapGuide = (
+    orientation: 'horizontal' | 'vertical',
+    start: number,
+    end: number,
+    cross: number,
+    label: string,
+  ): BillFieldGapGuide => ({
+    orientation,
+    start: Math.round(Math.min(start, end)),
+    end: Math.round(Math.max(start, end)),
+    cross: Math.round(cross),
+    label,
+  });
+  const findClosestBillGuide = (value: number, candidates: BillSnapCandidate[]) => {
+    let closest: (BillSnapCandidate & { distance: number }) | null = null;
+
+    candidates.forEach((candidate) => {
+      const distance = Math.abs(value - candidate.value);
+      if (distance > BILL_FORM_ALIGN_THRESHOLD) return;
+      if (!closest || distance < closest.distance || (distance === closest.distance && candidate.priority < closest.priority)) {
+        closest = { ...candidate, distance };
+      }
+    });
+
+    return closest;
+  };
+  const resolveBillFieldSnap = (
+    columnId: string,
+    rawX: number,
+    rawY: number,
+    boardWidth: number,
+    fieldWidth: number,
+    boardHeight: number,
+  ) => {
+    const maxX = Math.max(BILL_FORM_LAYOUT_PADDING_X, boardWidth - fieldWidth - BILL_FORM_LAYOUT_PADDING_X);
+    const clampedRawX = clampValue(rawX, BILL_FORM_LAYOUT_PADDING_X, maxX);
+    const clampedRawY = Math.max(BILL_FORM_LAYOUT_PADDING_Y, rawY);
+    let nextX = Math.max(BILL_FORM_LAYOUT_PADDING_X, Math.min(maxX, snapBillPositionToGrid(clampedRawX, BILL_FORM_LAYOUT_PADDING_X)));
+    let nextY = Math.max(BILL_FORM_LAYOUT_PADDING_Y, snapBillPositionToGrid(clampedRawY, BILL_FORM_LAYOUT_PADDING_Y));
+
+    const draftBounds: BillFieldBounds = {
+      id: columnId,
+      x: clampedRawX,
+      y: clampedRawY,
+      width: fieldWidth,
+      height: BILL_FORM_ROW_HEIGHT,
+      right: clampedRawX + fieldWidth,
+      bottom: clampedRawY + BILL_FORM_ROW_HEIGHT,
+      centerX: clampedRawX + fieldWidth / 2,
+      centerY: clampedRawY + BILL_FORM_ROW_HEIGHT / 2,
+    };
+    const otherColumns = billCanvasFieldsRef.current
+      .filter((column) => column.id !== columnId)
+      .map((column) => buildBillFieldBounds(column));
+    const xCandidates: BillSnapCandidate[] = [
+      {
+        value: BILL_FORM_LAYOUT_PADDING_X,
+        line: buildGuideLine('vertical', BILL_FORM_LAYOUT_PADDING_X, Math.max(10, draftBounds.y - 20), Math.min(boardHeight - 10, draftBounds.bottom + 20), 'spacing'),
+        gap: buildGapGuide('horizontal', 0, BILL_FORM_LAYOUT_PADDING_X, draftBounds.y + 14, `${BILL_FORM_LAYOUT_PADDING_X}`),
+        priority: 5,
+      },
+      {
+        value: maxX,
+        line: buildGuideLine('vertical', boardWidth - BILL_FORM_LAYOUT_PADDING_X, Math.max(10, draftBounds.y - 20), Math.min(boardHeight - 10, draftBounds.bottom + 20), 'spacing'),
+        gap: buildGapGuide('horizontal', maxX + fieldWidth, boardWidth - BILL_FORM_LAYOUT_PADDING_X, draftBounds.y + 14, `${BILL_FORM_LAYOUT_PADDING_X}`),
+        priority: 5,
+      },
+    ];
+    const yCandidates: BillSnapCandidate[] = [
+      {
+        value: BILL_FORM_LAYOUT_PADDING_Y,
+        line: buildGuideLine('horizontal', BILL_FORM_LAYOUT_PADDING_Y, Math.max(10, draftBounds.x - 20), Math.min(boardWidth - 10, draftBounds.right + 20), 'spacing'),
+        gap: buildGapGuide('vertical', 0, BILL_FORM_LAYOUT_PADDING_Y, draftBounds.x + 18, `${BILL_FORM_LAYOUT_PADDING_Y}`),
+        priority: 5,
+      },
+    ];
+
+    otherColumns.forEach((column) => {
+      const verticalLineStart = Math.max(12, Math.min(column.y, draftBounds.y) - 10);
+      const verticalLineEnd = Math.min(boardHeight - 12, Math.max(column.bottom, draftBounds.bottom) + 10);
+      const horizontalLineStart = Math.max(12, Math.min(column.x, draftBounds.x) - 10);
+      const horizontalLineEnd = Math.min(boardWidth - 12, Math.max(column.right, draftBounds.right) + 10);
+      const sharedY = Math.max(Math.min((Math.max(column.y, draftBounds.y) + Math.min(column.bottom, draftBounds.bottom)) / 2, Math.max(column.y, draftBounds.y) + 18), Math.min(column.bottom, draftBounds.bottom) - 18);
+      const sharedX = Math.max(Math.min((Math.max(column.x, draftBounds.x) + Math.min(column.right, draftBounds.right)) / 2, Math.max(column.x, draftBounds.x) + 22), Math.min(column.right, draftBounds.right) - 22);
+
+      xCandidates.push(
+        {
+          value: column.x,
+          line: buildGuideLine('vertical', column.x, verticalLineStart, verticalLineEnd),
+          gap: null,
+          priority: 2,
+        },
+        {
+          value: column.right - fieldWidth,
+          line: buildGuideLine('vertical', column.right, verticalLineStart, verticalLineEnd),
+          gap: null,
+          priority: 2,
+        },
+        {
+          value: column.centerX - fieldWidth / 2,
+          line: buildGuideLine('vertical', column.centerX, verticalLineStart, verticalLineEnd),
+          gap: null,
+          priority: 3,
+        },
+        {
+          value: column.right + BILL_FORM_LAYOUT_GAP_X,
+          line: buildGuideLine('vertical', column.right + BILL_FORM_LAYOUT_GAP_X / 2, verticalLineStart, verticalLineEnd, 'spacing'),
+          gap: buildGapGuide('horizontal', column.right, column.right + BILL_FORM_LAYOUT_GAP_X, Number.isFinite(sharedY) ? sharedY : column.centerY, `${BILL_FORM_LAYOUT_GAP_X}`),
+          priority: 1,
+        },
+        {
+          value: column.x - fieldWidth - BILL_FORM_LAYOUT_GAP_X,
+          line: buildGuideLine('vertical', column.x - BILL_FORM_LAYOUT_GAP_X / 2, verticalLineStart, verticalLineEnd, 'spacing'),
+          gap: buildGapGuide('horizontal', column.x - BILL_FORM_LAYOUT_GAP_X, column.x, Number.isFinite(sharedY) ? sharedY : column.centerY, `${BILL_FORM_LAYOUT_GAP_X}`),
+          priority: 1,
+        },
+      );
+      yCandidates.push(
+        {
+          value: column.y,
+          line: buildGuideLine('horizontal', column.y, horizontalLineStart, horizontalLineEnd),
+          gap: null,
+          priority: 2,
+        },
+        {
+          value: column.bottom - BILL_FORM_ROW_HEIGHT,
+          line: buildGuideLine('horizontal', column.bottom, horizontalLineStart, horizontalLineEnd),
+          gap: null,
+          priority: 2,
+        },
+        {
+          value: column.centerY - BILL_FORM_ROW_HEIGHT / 2,
+          line: buildGuideLine('horizontal', column.centerY, horizontalLineStart, horizontalLineEnd),
+          gap: null,
+          priority: 3,
+        },
+        {
+          value: column.bottom + BILL_FORM_LAYOUT_GAP_Y,
+          line: buildGuideLine('horizontal', column.bottom + BILL_FORM_LAYOUT_GAP_Y / 2, horizontalLineStart, horizontalLineEnd, 'spacing'),
+          gap: buildGapGuide('vertical', column.bottom, column.bottom + BILL_FORM_LAYOUT_GAP_Y, Number.isFinite(sharedX) ? sharedX : column.centerX, `${BILL_FORM_LAYOUT_GAP_Y}`),
+          priority: 1,
+        },
+        {
+          value: column.y - BILL_FORM_ROW_HEIGHT - BILL_FORM_LAYOUT_GAP_Y,
+          line: buildGuideLine('horizontal', column.y - BILL_FORM_LAYOUT_GAP_Y / 2, horizontalLineStart, horizontalLineEnd, 'spacing'),
+          gap: buildGapGuide('vertical', column.y - BILL_FORM_LAYOUT_GAP_Y, column.y, Number.isFinite(sharedX) ? sharedX : column.centerX, `${BILL_FORM_LAYOUT_GAP_Y}`),
+          priority: 1,
+        },
+      );
+    });
+
+    const closestX = findClosestBillGuide(clampedRawX, xCandidates.filter((candidate) => candidate.value >= BILL_FORM_LAYOUT_PADDING_X && candidate.value <= maxX));
+    const closestY = findClosestBillGuide(clampedRawY, yCandidates.filter((candidate) => candidate.value >= BILL_FORM_LAYOUT_PADDING_Y));
+    const lines: BillFieldGuideLine[] = [];
+    let gapGuide: BillFieldGapGuide | null = null;
+
+    if (closestX) {
+      nextX = Math.round(clampValue(closestX.value, BILL_FORM_LAYOUT_PADDING_X, maxX));
+      if (closestX.line) {
+        lines.push(closestX.line);
+      }
+      if (closestX.gap) {
+        gapGuide = closestX.gap;
+      }
+    }
+    if (closestY) {
+      nextY = Math.round(Math.max(BILL_FORM_LAYOUT_PADDING_Y, closestY.value));
+      if (closestY.line) {
+        lines.push(closestY.line);
+      }
+      if (!gapGuide && closestY.gap) {
+        gapGuide = closestY.gap;
+      }
+    }
+
+    return {
+      x: nextX,
+      y: nextY,
+      guides: lines.length > 0 || gapGuide ? { lines, gap: gapGuide } : EMPTY_BILL_FIELD_GUIDES,
+    };
+  };
+
+  useEffect(() => {
+    billCanvasFieldsRef.current = [...mainTableColumns, ...billMetaFields];
+  }, [mainTableColumns, billMetaFields]);
+
+  useEffect(() => {
+    if (businessType !== 'table') return;
+    const fullscreenActive = isConfigOpen && configStep === 4 && isFullscreenConfig;
+
+    const viewport = billDocumentViewportRef.current;
+    const paper = billDocumentPaperRef.current;
+    if (!viewport || !paper || typeof ResizeObserver === 'undefined') return;
+
+    const measure = () => {
+      const viewportPadding = fullscreenActive ? 4 : 16;
+      const viewportWidth = viewport.clientWidth - viewportPadding;
+      const viewportHeight = viewport.clientHeight - viewportPadding;
+      const paperWidth = paper.scrollWidth || 1480;
+      const paperHeight = paper.scrollHeight || 920;
+
+      if (viewportWidth <= 0 || viewportHeight <= 0 || paperWidth <= 0 || paperHeight <= 0) return;
+
+      const scaleLimit = fullscreenActive ? 1.08 : 1;
+      const nextScale = Math.min(scaleLimit, viewportWidth / paperWidth, viewportHeight / paperHeight);
+      setBillDocumentScale((prev) => (Math.abs(prev - nextScale) < 0.01 ? prev : nextScale));
+    };
+
+    const observer = new ResizeObserver(() => {
+      window.requestAnimationFrame(measure);
+    });
+    observer.observe(viewport);
+    observer.observe(paper);
+    window.requestAnimationFrame(measure);
+
+    return () => observer.disconnect();
+  }, [businessType, billDetailColumns.length, billMetaFields.length, isConfigOpen, configStep, isFullscreenConfig, mainTableColumns.length]);
+
+  useEffect(() => {
+    const fullscreenActive = isConfigOpen && configStep === 4 && isFullscreenConfig;
+    if (businessType !== 'table' || fullscreenActive || billHeaderAutoFillRef.current) return;
+    if (mainTableColumns.length === 0) return;
+
+    const mainLayoutMatches = mainTableColumns.every((field, index) => {
+      const normalizedField = normalizeColumn(field);
+      const width = Math.max(BILL_FORM_MIN_WIDTH, normalizedField.width || BILL_FORM_DEFAULT_WIDTH);
+      const expectedLayout = getBillFieldLayout(index, width);
+      return Math.abs((normalizedField.canvasX ?? expectedLayout.canvasX) - expectedLayout.canvasX) <= 4
+        && Math.abs((normalizedField.canvasY ?? expectedLayout.canvasY) - expectedLayout.canvasY) <= 4;
+    });
+    const legacyMetaLayout = [
+      { id: 'bill_meta_date', x: 540, y: 100 },
+      { id: 'bill_meta_operator', x: 540, y: 160 },
+      { id: 'bill_meta_operate_time', x: 540, y: 220 },
+    ];
+    const metaLayoutMatches = billMetaFields.every((field, index) => {
+      const expectedLayout = legacyMetaLayout[index];
+      return Boolean(expectedLayout)
+        && field.id === expectedLayout.id
+        && Math.abs((field.canvasX ?? expectedLayout.x) - expectedLayout.x) <= 4
+        && Math.abs((field.canvasY ?? expectedLayout.y) - expectedLayout.y) <= 4;
+    });
+
+    if (!mainLayoutMatches || !metaLayoutMatches) {
+      billHeaderAutoFillRef.current = true;
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      billHeaderAutoFillRef.current = true;
+      autoArrangeBillHeaderFields();
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [businessType, billMetaFields, configStep, isConfigOpen, isFullscreenConfig, mainTableColumns]);
 
   useEffect(() => {
     setInspectorPanelTab('common');
@@ -962,7 +1738,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
     if (scope === 'main') {
       setMainTableColumns((prev) => prev.filter((column) => !targetIds.includes(column.id)));
+      if (businessType === 'table') {
+        setBillMetaFields((prev) => prev.filter((column) => !targetIds.includes(column.id)));
+      }
       setSelectedMainForDelete([]);
+      setActiveBillDragId((prev) => (prev && targetIds.includes(prev) ? null : prev));
+      setActiveBillResizeId((prev) => (prev && targetIds.includes(prev) ? null : prev));
     }
 
     if (scope === 'detail') {
@@ -1482,22 +2263,15 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const previewValue = getPreviewCellValue(field, rowIndex) || field.placeholder || `${field.name}示例`;
     const fontSize = Math.max(11, Math.min(18, Number(field.fontSize) || BILL_FORM_DEFAULT_FONT_SIZE));
     const shellStyle = { fontSize };
-    const shellClass = 'flex h-10 w-full items-center justify-between gap-2 rounded-[12px] border border-white/80 bg-white/90 px-3 text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_14px_26px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-200';
-    const trailingIcon = field.type === '日期框'
-      ? 'calendar_month'
-      : field.type === '下拉框' || field.type === '多选框'
-        ? 'expand_more'
-        : field.type === '搜索框'
-          ? 'search'
-          : '';
+    const shellClass = 'bill-designer-control-shell flex h-9 w-full items-center gap-2 rounded-[12px] px-3.5 text-slate-700 dark:text-slate-200';
 
     if (field.type === '单选框') {
       const radioValues = (optionValues.length > 0 ? optionValues : ['是', '否']).slice(0, 2);
       return (
-        <div className="flex flex-wrap items-center gap-3" style={shellStyle}>
+        <div className={`${shellClass} flex-wrap gap-4`} style={shellStyle}>
           {radioValues.map((option, index) => (
-            <div key={option} className="inline-flex items-center gap-1.5 text-slate-600 dark:text-slate-200">
-              <span className={`inline-flex size-3 rounded-full border ${index === 0 ? 'border-[color:var(--workspace-accent)] bg-[color:var(--workspace-accent)] shadow-[0_0_0_2px_var(--workspace-accent-soft)]' : 'border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900'}`} />
+            <div key={option} className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
+              <span className={`inline-flex size-3 rounded-full border ${index === 0 ? 'border-[color:var(--workspace-accent)] bg-[color:var(--workspace-accent)]' : 'border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900'}`} />
               <span>{option}</span>
             </div>
           ))}
@@ -1511,12 +2285,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         <div className={shellClass} style={shellStyle}>
           <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
             {tags.map((tag) => (
-              <span key={tag} className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+              <span key={tag} className="inline-flex items-center rounded-full border border-white/80 bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] dark:bg-slate-800/80 dark:text-slate-300">
                 {tag}
               </span>
             ))}
           </div>
-          <span className="material-symbols-outlined text-[15px] text-slate-300 dark:text-slate-500">expand_more</span>
         </div>
       );
     }
@@ -1524,10 +2297,28 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     if (field.type === '搜索框') {
       return (
         <div className={shellClass} style={shellStyle}>
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="material-symbols-outlined text-[15px] text-slate-300 dark:text-slate-500">search</span>
-            <span className="truncate">{previewValue}</span>
-          </div>
+          <span className="material-symbols-outlined text-[15px] text-slate-400">search</span>
+          <div className="min-w-0 flex-1 truncate">{previewValue}</div>
+          <span className="material-symbols-outlined text-[15px] text-slate-300">arrow_drop_down</span>
+        </div>
+      );
+    }
+
+    if (field.type === '下拉框') {
+      const optionLabel = optionValues[0] || previewValue;
+      return (
+        <div className={shellClass} style={shellStyle}>
+          <div className="min-w-0 flex-1 truncate">{optionLabel}</div>
+          <span className="material-symbols-outlined text-[16px] text-slate-400">arrow_drop_down</span>
+        </div>
+      );
+    }
+
+    if (field.type === '日期框') {
+      return (
+        <div className={shellClass} style={shellStyle}>
+          <div className="min-w-0 flex-1 truncate">{previewValue}</div>
+          <span className="material-symbols-outlined text-[15px] text-slate-400">calendar_month</span>
         </div>
       );
     }
@@ -1543,40 +2334,72 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     return (
       <div className={shellClass} style={shellStyle}>
         <div className="min-w-0 flex-1 truncate">{previewValue}</div>
-        {trailingIcon ? (
-          <span className="material-symbols-outlined text-[15px] text-slate-300 dark:text-slate-500">
-            {trailingIcon}
-          </span>
-        ) : null}
       </div>
     );
   };
 
   const autoArrangeBillHeaderFields = () => {
-    setMainTableColumns((prev) => prev.map((column, index) => {
-      const normalizedColumn = normalizeColumn(column);
-      const nextWidth = Math.max(220, normalizedColumn.width || BILL_FORM_DEFAULT_WIDTH);
-      return {
-        ...column,
-        ...getBillFieldLayout(index, nextWidth),
+    const boardWidth = billHeaderCanvasRef.current?.clientWidth ?? 1080;
+    const usableWidth = Math.max(760, boardWidth - BILL_FORM_LAYOUT_PADDING_X * 2);
+    const flowItems = [...mainTableColumns, ...billMetaFields]
+      .map((field, index) => ({
+        ...field,
+        __order: index,
+      }));
+
+    let cursorX = BILL_FORM_LAYOUT_PADDING_X;
+    let cursorY = BILL_FORM_LAYOUT_PADDING_Y;
+    let rowHeight = BILL_FORM_ROW_HEIGHT;
+
+    const arranged = flowItems.map((field) => {
+      const normalizedField = normalizeColumn(field);
+      const nextWidth = Math.max(BILL_FORM_MIN_WIDTH, normalizedField.width || BILL_FORM_DEFAULT_WIDTH);
+      const nextHeight = BILL_FORM_ROW_HEIGHT;
+
+      if (cursorX > BILL_FORM_LAYOUT_PADDING_X && cursorX + nextWidth > BILL_FORM_LAYOUT_PADDING_X + usableWidth) {
+        cursorX = BILL_FORM_LAYOUT_PADDING_X;
+        cursorY += rowHeight + BILL_FORM_LAYOUT_GAP_Y;
+        rowHeight = nextHeight;
+      } else {
+        rowHeight = Math.max(rowHeight, nextHeight);
+      }
+
+      const positioned = {
+        ...field,
+        canvasX: cursorX,
+        canvasY: cursorY,
         width: nextWidth,
       };
-    }));
+
+      cursorX += nextWidth + BILL_FORM_LAYOUT_GAP_X;
+      return positioned;
+    });
+
+    const arrangedMain = arranged
+      .filter((field) => !String(field.id).startsWith('bill_meta_'))
+      .map(({ __order, __x, __y, ...field }) => field);
+    const arrangedMeta = arranged
+      .filter((field) => String(field.id).startsWith('bill_meta_'))
+      .map(({ __order, __x, __y, ...field }) => field);
+
+    setMainTableColumns(arrangedMain);
+    setBillMetaFields(arrangedMeta);
   };
 
-  const startBillFieldDrag = (event: React.MouseEvent<HTMLDivElement>, columnId: string) => {
+  const startBillFieldDrag = (event: React.MouseEvent<HTMLDivElement>, columnId: string, scope: BillCanvasFieldScope = 'main') => {
     event.preventDefault();
     event.stopPropagation();
 
     const canvasRect = billHeaderCanvasRef.current?.getBoundingClientRect();
-    const targetColumn = mainTableColumns.find((column) => column.id === columnId);
+    const targetColumn = (scope === 'main' ? mainTableColumns : billMetaFields).find((column) => column.id === columnId);
     if (!canvasRect || !targetColumn) return;
 
     const normalizedColumn = normalizeColumn(targetColumn);
-    const fieldWidth = Math.max(220, normalizedColumn.width || BILL_FORM_DEFAULT_WIDTH);
+    const fieldWidth = Math.max(BILL_FORM_MIN_WIDTH, normalizedColumn.width || BILL_FORM_DEFAULT_WIDTH);
 
     billFieldDragRef.current = {
       id: columnId,
+      scope,
       startX: event.clientX,
       startY: event.clientY,
       startCanvasX: normalizedColumn.canvasX ?? BILL_FORM_LAYOUT_PADDING_X,
@@ -1585,7 +2408,33 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       boardWidth: canvasRect.width,
       boardHeight: canvasRect.height,
     };
+    setActiveBillDragId(columnId);
+    setActiveBillResizeId(null);
+    setBillFieldSnapGuides(EMPTY_BILL_FIELD_GUIDES);
     document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+  };
+  const startBillFieldResize = (event: React.MouseEvent<HTMLDivElement>, columnId: string, scope: BillCanvasFieldScope = 'main') => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const canvasRect = billHeaderCanvasRef.current?.getBoundingClientRect();
+    const targetColumn = (scope === 'main' ? mainTableColumns : billMetaFields).find((column) => column.id === columnId);
+    if (!canvasRect || !targetColumn) return;
+
+    const normalizedColumn = normalizeColumn(targetColumn);
+    billFieldResizeRef.current = {
+      id: columnId,
+      scope,
+      startX: event.clientX,
+      startWidth: Math.max(BILL_FORM_MIN_WIDTH, normalizedColumn.width || BILL_FORM_DEFAULT_WIDTH),
+      startCanvasX: normalizedColumn.canvasX ?? BILL_FORM_LAYOUT_PADDING_X,
+      boardWidth: canvasRect.width,
+    };
+    setActiveBillDragId(null);
+    setActiveBillResizeId(columnId);
+    setBillFieldSnapGuides(EMPTY_BILL_FIELD_GUIDES);
+    document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
   };
 
@@ -1713,7 +2562,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               const normalizedColumn = normalizeColumn(column);
               const isActive = selectedMainColId === column.id;
               const isMarkedForDelete = selectedMainForDelete.includes(column.id);
-              const fieldWidth = Math.max(220, normalizedColumn.width || BILL_FORM_DEFAULT_WIDTH);
+              const fieldWidth = Math.max(BILL_FORM_MIN_WIDTH, normalizedColumn.width || BILL_FORM_DEFAULT_WIDTH);
               const labelWidth = Math.max(58, Math.min(112, Number(normalizedColumn.labelWidth) || BILL_FORM_DEFAULT_LABEL_WIDTH));
               const fontSize = Math.max(11, Math.min(18, Number(normalizedColumn.fontSize) || BILL_FORM_DEFAULT_FONT_SIZE));
 
@@ -1851,6 +2700,380 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     );
   };
 
+  const renderBillDocumentWorkbench = () => {
+    const detailCols = billDetailColumns;
+    const billViewportPaddingClass = isConfigFullscreenActive ? 'p-1.5' : 'p-3';
+    const billPaperWrapClass = 'justify-stretch';
+    const billPaperShellClass = isConfigFullscreenActive
+      ? 'flex min-h-full flex-1 flex-col rounded-[24px] border border-[#d9e4f0] bg-white shadow-none'
+      : 'flex min-h-full flex-1 flex-col rounded-[28px] border border-[#d9e4f0] bg-white shadow-[0_44px_90px_-68px_rgba(15,23,42,0.42)]';
+    const billHeaderPaddingClass = isConfigFullscreenActive ? 'px-8 pb-3 pt-4' : 'px-10 pb-4 pt-5';
+    const billBodyPaddingClass = isConfigFullscreenActive ? 'gap-5 px-8 pb-6 pt-3' : 'gap-8 px-10 pb-8 pt-4';
+    const billCanvasFields = [
+      ...billMetaFields.map((field) => ({ ...field, __scope: 'meta' as BillCanvasFieldScope })),
+      ...mainTableColumns.map((field) => ({ ...field, __scope: 'main' as BillCanvasFieldScope })),
+    ];
+    const canvasHeight = Math.max(
+      320,
+      billCanvasFields.reduce((maxHeight, column) => {
+        const normalizedColumn = normalizeColumn(column);
+        return Math.max(maxHeight, (normalizedColumn.canvasY ?? BILL_FORM_LAYOUT_PADDING_Y) + 78);
+      }, BILL_FORM_LAYOUT_PADDING_Y) + 32,
+    );
+    const buildSelectedIds = (columnId: string, append: boolean) => (
+      selectedMainForDelete.includes(columnId)
+        ? selectedMainForDelete
+        : append
+          ? Array.from(new Set([...selectedMainForDelete, columnId]))
+          : [columnId]
+    );
+    const getFieldRowSelectionClass = (isActive: boolean, isMarkedForDelete: boolean, isDragging: boolean) => (
+      isDragging
+        ? 'z-20 border-[#e1a5b1] shadow-[0_0_0_1px_rgba(246,215,220,0.96)]'
+        : isActive
+          ? 'z-10 border-[#e4b1bb] shadow-[0_0_0_1px_rgba(247,224,228,0.98)]'
+          : isMarkedForDelete
+            ? 'z-10 border-[#efd8dd] shadow-[0_0_0_1px_rgba(251,241,243,0.98)]'
+            : 'border-transparent hover:border-[#dbe5f2] hover:shadow-[0_0_0_1px_rgba(219,229,242,0.74)]'
+    );
+    const toggleBillFieldSelection = (columnId: string) => {
+      const nextSelectedIds = selectedMainForDelete.includes(columnId)
+        ? selectedMainForDelete.filter((item) => item !== columnId)
+        : [...selectedMainForDelete, columnId];
+
+      setSelectedMainForDelete(nextSelectedIds);
+      if (
+        nextSelectedIds.length === 1
+        && [...mainTableColumns, ...billMetaFields].some((column) => column.id === nextSelectedIds[0])
+      ) {
+        activateColumnSelection('main', nextSelectedIds[0]);
+      }
+    };
+    const handleBillFieldSelect = (event: React.MouseEvent<HTMLDivElement>, columnId: string, scope: BillCanvasFieldScope) => {
+      setBuilderSelectionContextMenu(null);
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleBillFieldSelection(columnId);
+        return;
+      }
+
+      setSelectedMainForDelete([columnId]);
+      activateColumnSelection('main', columnId);
+    };
+    const handleBillFieldContextMenu = (event: React.MouseEvent<HTMLDivElement>, columnId: string, scope: BillCanvasFieldScope) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const nextSelectedIds = buildSelectedIds(columnId, event.ctrlKey || event.metaKey);
+      setSelectedMainForDelete(nextSelectedIds);
+      activateColumnSelection('main', columnId);
+      setBuilderSelectionContextMenu({
+        kind: 'column',
+        scope: 'main',
+        x: event.clientX,
+        y: event.clientY,
+        ids: nextSelectedIds,
+      });
+    };
+    const handleBillFieldMouseDownCapture = (
+      event: React.MouseEvent<HTMLDivElement>,
+      columnId: string,
+      scope: BillCanvasFieldScope,
+    ) => {
+      if (event.button !== 0) return;
+      if ((event.target as HTMLElement | null)?.closest('[data-bill-resize-handle="true"]')) return;
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        return;
+      }
+      startBillFieldDrag(event, columnId, scope);
+    };
+    const appendBillHeaderField = () => {
+      setMainTableColumns((prev) => [
+        ...prev,
+        buildColumn('m_col', prev.length + 1, {
+          width: BILL_FORM_DEFAULT_WIDTH,
+          ...getBillFieldLayout(prev.length, BILL_FORM_DEFAULT_WIDTH),
+        }),
+      ]);
+    };
+    const billDocumentTitle = activeMenuName ? `${activeMenuName} - 制单` : '单据制单';
+    const isBlueBillTone = billDocumentTone === 'blue';
+    const billToneMeta = isBlueBillTone
+      ? {
+          strip: 'bg-[linear-gradient(90deg,#2f6fed_0%,#5e90ff_40%,#8db5ff_100%)]',
+          title: 'text-[#334e7d]',
+          divider: 'bg-[linear-gradient(90deg,transparent,rgba(96,165,250,0.88),transparent)]',
+          radioActiveBorder: 'border-[#7db2ff]',
+          radioActiveDot: 'bg-[#2f6fed]',
+          radioActiveText: 'text-[#2f6fed]',
+        }
+      : {
+          strip: 'bg-[linear-gradient(90deg,#d84a63_0%,#ef6c7f_42%,#f6a5b3_100%)]',
+          title: 'text-[#a63f53]',
+          divider: 'bg-[linear-gradient(90deg,transparent,rgba(251,113,133,0.82),transparent)]',
+          radioActiveBorder: 'border-[#f3a3b0]',
+          radioActiveDot: 'bg-[#e35b74]',
+          radioActiveText: 'text-[#d84a63]',
+        };
+    const documentGuideStyle: React.CSSProperties = {
+      backgroundImage: 'linear-gradient(rgba(226,232,240,0.52) 1px, transparent 1px), linear-gradient(90deg, rgba(226,232,240,0.52) 1px, transparent 1px)',
+      backgroundSize: '24px 24px',
+    };
+    const actionRailItems = [
+      { icon: 'database', label: '来源表', action: () => activateSourceGridSelection() },
+      { icon: 'auto_awesome_motion', label: '整理', action: () => autoArrangeBillHeaderFields() },
+      { icon: 'add_box', label: '控件', action: appendBillHeaderField },
+      { icon: 'save', label: '暂存', action: () => showToast('已暂存单据模板布局') },
+    ];
+
+    return (
+      <div
+        style={workspaceThemeVars}
+        className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-[34px] border border-white/70 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.96),rgba(242,247,253,0.88)_38%,rgba(233,241,251,0.78)_100%)] ${isConfigFullscreenActive ? 'shadow-none' : 'shadow-[0_46px_110px_-64px_rgba(15,23,42,0.42)]'} ${workspaceThemeStyles.tableSurface}`}
+      >
+        <div ref={billDocumentViewportRef} className={`min-h-0 flex-1 overflow-hidden ${billViewportPaddingClass}`}>
+          <div className={`flex h-full min-h-0 items-stretch overflow-hidden ${billPaperWrapClass}`}>
+            <div
+              ref={billDocumentPaperRef}
+              className="flex min-h-full w-full shrink-0 flex-col max-w-none"
+              style={{ zoom: billDocumentScale } as React.CSSProperties}
+            >
+              <div className={billPaperShellClass}>
+            <div className={`h-3 ${isConfigFullscreenActive ? 'rounded-t-[24px]' : 'rounded-t-[28px]'} ${billToneMeta.strip}`} />
+
+            <div className={`border-b border-[#e8eef6] ${billHeaderPaddingClass}`}>
+              <div className="relative">
+                <div className="absolute right-0 top-0 flex size-[58px] items-center justify-center rounded-[10px] border border-[#dde7f3] bg-white">
+                  <div className="grid h-7 w-7 grid-cols-3 gap-[2px]">
+                    {Array.from({ length: 9 }).map((_, index) => (
+                      <span
+                        key={index}
+                        className={`rounded-[2px] ${[0, 1, 2, 3, 5, 6, 7].includes(index) ? 'bg-slate-700' : 'bg-slate-300'}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="px-20 text-center">
+                  <div className={`text-[31px] font-black tracking-[0.22em] transition-colors ${billToneMeta.title}`}>{billDocumentTitle}</div>
+                  <div className={`mx-auto mt-3 h-px w-[54%] transition-colors ${billToneMeta.divider}`} />
+                  <div className="mt-4 flex items-center justify-center">
+                    <div className="inline-flex items-center gap-5 rounded-full border border-[#dbe6f2] bg-[linear-gradient(180deg,#ffffff,#f7fbff)] px-5 py-2 text-[12px] shadow-[0_14px_28px_-24px_rgba(15,23,42,0.16)]">
+                      <button
+                        type="button"
+                        onClick={() => setBillDocumentTone('blue')}
+                        className={`inline-flex items-center gap-2 transition-colors ${isBlueBillTone ? billToneMeta.radioActiveText : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        <span className={`inline-flex h-4 w-4 items-center justify-center rounded-full border bg-white transition-colors ${isBlueBillTone ? billToneMeta.radioActiveBorder : 'border-slate-300'}`}>
+                          {isBlueBillTone ? <span className={`h-2 w-2 rounded-full ${billToneMeta.radioActiveDot}`} /> : null}
+                        </span>
+                        蓝字单据
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBillDocumentTone('red')}
+                        className={`inline-flex items-center gap-2 transition-colors ${!isBlueBillTone ? billToneMeta.radioActiveText : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        <span className={`inline-flex h-4 w-4 items-center justify-center rounded-full border bg-white transition-colors ${!isBlueBillTone ? billToneMeta.radioActiveBorder : 'border-slate-300'}`}>
+                          {!isBlueBillTone ? <span className={`h-2 w-2 rounded-full ${billToneMeta.radioActiveDot}`} /> : null}
+                        </span>
+                        红字单据
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className={`flex flex-1 ${billBodyPaddingClass}`}>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div
+                  ref={billHeaderCanvasRef}
+                  tabIndex={0}
+                  style={{ ...documentGuideStyle, minHeight: canvasHeight }}
+                  onClick={() => {
+                    setSelectedMainForDelete([]);
+                    activateTableConfigSelection('main');
+                  }}
+                  onPaste={(event) => handlePasteColumns(event, setMainTableColumns, {
+                    createColumn: (name, index, currentLength) => buildColumn('m_col', currentLength + index + 1, {
+                      name,
+                      width: BILL_FORM_DEFAULT_WIDTH,
+                      ...getBillFieldLayout(currentLength + index, BILL_FORM_DEFAULT_WIDTH),
+                    }),
+                  })}
+                  className={`relative overflow-hidden rounded-[12px] border border-[#dce5f0] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(250,252,255,0.96))] px-5 py-5 outline-none transition-shadow ${
+                    inspectorTarget.kind === 'main-grid' ? 'shadow-[inset_0_0_0_2px_rgba(47,111,237,0.28)]' : ''
+                  }`}
+                >
+                  {billFieldSnapGuides.lines.map((line, guideIndex) => (
+                    <div
+                      key={`${line.orientation}-${guideIndex}-${line.position}`}
+                      className={`bill-designer-guide-line pointer-events-none absolute z-10 ${line.kind === 'spacing' ? 'bill-designer-guide-line-spacing' : ''} ${line.orientation === 'vertical' ? 'w-px' : 'h-px'}`}
+                      style={line.orientation === 'vertical'
+                        ? { left: line.position, top: line.start, height: Math.max(18, line.end - line.start) }
+                        : { top: line.position, left: line.start, width: Math.max(18, line.end - line.start) }}
+                    />
+                  ))}
+                  {billFieldSnapGuides.gap ? (
+                    billFieldSnapGuides.gap.orientation === 'horizontal' ? (
+                      <div
+                        className="pointer-events-none absolute z-20"
+                        style={{
+                          left: billFieldSnapGuides.gap.start,
+                          top: billFieldSnapGuides.gap.cross,
+                          width: Math.max(12, billFieldSnapGuides.gap.end - billFieldSnapGuides.gap.start),
+                        }}
+                      >
+                        <div className="bill-designer-gap-axis absolute left-0 right-0 top-1/2 -translate-y-1/2" />
+                        <div className="bill-designer-gap-cap absolute left-0 top-1/2 h-3 w-px -translate-y-1/2" />
+                        <div className="bill-designer-gap-cap absolute right-0 top-1/2 h-3 w-px -translate-y-1/2" />
+                        <span className="bill-designer-gap-label absolute left-1/2 top-[-18px] -translate-x-1/2">
+                          {billFieldSnapGuides.gap.label}
+                        </span>
+                      </div>
+                    ) : (
+                      <div
+                        className="pointer-events-none absolute z-20"
+                        style={{
+                          left: billFieldSnapGuides.gap.cross,
+                          top: billFieldSnapGuides.gap.start,
+                          height: Math.max(12, billFieldSnapGuides.gap.end - billFieldSnapGuides.gap.start),
+                        }}
+                      >
+                        <div className="bill-designer-gap-axis absolute bottom-0 left-1/2 top-0 w-px -translate-x-1/2" />
+                        <div className="bill-designer-gap-cap absolute left-1/2 top-0 h-px w-3 -translate-x-1/2" />
+                        <div className="bill-designer-gap-cap absolute bottom-0 left-1/2 h-px w-3 -translate-x-1/2" />
+                        <span className="bill-designer-gap-label absolute left-[10px] top-1/2 -translate-y-1/2">
+                          {billFieldSnapGuides.gap.label}
+                        </span>
+                      </div>
+                    )
+                  ) : null}
+
+                  {billCanvasFields.length > 0 ? billCanvasFields.map((column, index) => {
+                    const normalizedColumn = normalizeColumn(column);
+                    const columnScope = column.__scope;
+                    const isActive = selectedMainForDelete.length <= 1
+                      && selectedMainForDelete.includes(column.id)
+                      && selectedMainColId === column.id;
+                    const isMarkedForDelete = selectedMainForDelete.includes(column.id);
+                    const isDragging = activeBillDragId === column.id || activeBillResizeId === column.id;
+                    const fieldWidth = Math.max(BILL_FORM_MIN_WIDTH, normalizedColumn.width || BILL_FORM_DEFAULT_WIDTH);
+                    const labelWidth = Math.max(68, Math.min(92, Number(normalizedColumn.labelWidth) || BILL_FORM_DEFAULT_LABEL_WIDTH));
+                    const fontSize = Math.max(11, Math.min(18, Number(normalizedColumn.fontSize) || BILL_FORM_DEFAULT_FONT_SIZE));
+
+                    return (
+                      <div
+                        key={column.id}
+                        role="button"
+                        tabIndex={0}
+                        data-bill-field-id={column.id}
+                        data-bill-field-scope={columnScope}
+                        data-active={isActive}
+                        data-dragging={isDragging}
+                        data-marked={isMarkedForDelete}
+                        style={{
+                          left: normalizedColumn.canvasX ?? BILL_FORM_LAYOUT_PADDING_X,
+                          top: normalizedColumn.canvasY ?? BILL_FORM_LAYOUT_PADDING_Y,
+                          width: fieldWidth,
+                          willChange: isDragging ? 'left, top' : 'auto',
+                        }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleBillFieldSelect(event, column.id, columnScope);
+                        }}
+                        onContextMenu={(event) => {
+                          handleBillFieldContextMenu(event, column.id, columnScope);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setSelectedMainForDelete([column.id]);
+                            activateColumnSelection('main', column.id);
+                          }
+                        }}
+                        onMouseDownCapture={(event) => handleBillFieldMouseDownCapture(event, column.id, columnScope)}
+                        className={`bill-designer-field absolute select-none rounded-[12px] px-2 py-1.5 pr-5 ${isDragging ? 'cursor-grabbing transition-none' : 'cursor-grab transition-[border-color,background-color] duration-150'} ${getFieldRowSelectionClass(isActive, isMarkedForDelete, isDragging)}`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className={`bill-designer-field-label shrink-0 truncate ${normalizedColumn.required ? 'font-bold text-[#8c4854]' : 'font-semibold text-[#4b5567]'}`}
+                            style={{ width: labelWidth, fontSize: fontSize + 1 }}
+                            title={normalizedColumn.name}
+                          >
+                            {normalizedColumn.name}
+                            {normalizedColumn.required ? <span className="ml-1 text-[#ef4444]">*</span> : null}
+                          </div>
+                          <div className="min-w-0 flex-1">{renderBillFormControlPreview(normalizedColumn, index)}</div>
+                        </div>
+                        <button
+                          type="button"
+                          data-bill-resize-handle="true"
+                          onMouseDown={(event) => startBillFieldResize(event, column.id, columnScope)}
+                          className={`bill-designer-resize-handle absolute bottom-0 right-0 top-0 flex w-3 items-center justify-center rounded-r-[12px] ${isDragging ? 'cursor-ew-resize' : 'cursor-ew-resize'}`}
+                          aria-label="调整控件宽度"
+                        />
+                      </div>
+                    );
+                  }) : (
+                    <div className="flex min-h-[260px] items-center justify-center">
+                      <div className="rounded-[16px] border border-dashed border-[#cbd9eb] bg-[#fbfdff] px-8 py-10 text-center">
+                        <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-[#eef4ff] text-[#2f6fed]">
+                          <span className="material-symbols-outlined text-[22px]">fact_check</span>
+                        </div>
+                        <div className="mt-4 text-[15px] font-bold text-slate-700">将 Excel 字段复制到单据抬头</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-5 flex flex-1 flex-col overflow-hidden rounded-[10px] border border-[#dce5f0] bg-white px-3 pb-3 pt-3">
+                  <div className="min-h-0 flex-1">
+                    {renderTableBuilder(
+                      'detail',
+                      detailCols,
+                      setBillDetailColumns,
+                      selectedDetailColId,
+                      selectedDetailForDelete,
+                      setSelectedDetailForDelete,
+                      {
+                        backgroundSelectable: true,
+                        tableSelected: selectedTableConfigScope === 'detail',
+                        onSelectTable: () => activateTableConfigSelection('detail'),
+                        canvasLabel: '点击配置单据明细表',
+                      },
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <aside className="w-[96px] shrink-0 border-l border-[#edf2f8] pl-5 pt-1">
+                <div className="rounded-[14px] border border-[#e3ebf4] bg-[linear-gradient(180deg,#fbfdff,#f7faff)] p-3 shadow-[0_20px_36px_-32px_rgba(15,23,42,0.22)]">
+                  <div className="flex flex-col gap-3">
+                    {actionRailItems.map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={item.action}
+                      className="flex h-[86px] flex-col items-center justify-center gap-2.5 rounded-[10px] border border-[#dfe7f1] bg-white text-slate-500 shadow-[0_18px_30px_-28px_rgba(15,23,42,0.2)] transition-all hover:-translate-y-0.5 hover:border-[#bcd0ea] hover:text-[#2f6fed]"
+                    >
+                      <span className="material-symbols-outlined text-[24px]">{item.icon}</span>
+                      <span className="text-[12px] font-semibold leading-5">{item.label}</span>
+                    </button>
+                    ))}
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderTableBuilder = (
     scope: 'left' | 'main' | 'detail',
     cols: any[],
@@ -1937,29 +3160,29 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const headerDividerClass = tableSelected ? 'border-[color:var(--workspace-accent-border)]' : 'border-slate-200/70 dark:border-slate-700/80';
     const getHeaderButtonClass = (isActive: boolean, isMarkedForDelete: boolean) => (
       isActive
-        ? 'bg-[color:var(--workspace-accent-soft)]'
+        ? 'bg-[linear-gradient(180deg,rgba(255,241,244,0.98),rgba(255,247,249,1))] shadow-[inset_0_0_0_1px_rgba(228,177,187,0.52)]'
         : isMarkedForDelete
-          ? 'bg-[color:var(--workspace-accent-soft)]'
+          ? 'bg-[linear-gradient(180deg,rgba(255,246,248,0.98),rgba(255,250,251,1))]'
           : tableSelected
-            ? 'bg-transparent hover:bg-white/35 dark:hover:bg-white/5'
+            ? 'bg-[linear-gradient(180deg,rgba(255,248,250,0.9),rgba(255,251,252,0.98))] hover:bg-white/35 dark:hover:bg-white/5'
             : 'bg-white/92 hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
     );
-    const getHeaderLabelClass = (isActive: boolean, isMarkedForDelete: boolean, isRequired: boolean) => {
+    const getHeaderLabelClass = (isActive: boolean, isMarkedForDelete: boolean) => {
+      if (isActive) {
+        return 'bg-[#d86a80] text-white shadow-[0_14px_24px_-20px_rgba(216,106,128,0.92)]';
+      }
       if (isMarkedForDelete) {
-        return 'bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]';
+        return 'bg-[#f9e9ed] text-[#bf5a70]';
       }
-
-      if (isRequired) {
-        return isActive
-          ? 'bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]'
-          : 'bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]';
-      }
-
-      return isActive
-        ? 'bg-white text-[color:var(--workspace-accent-strong)]'
-        : tableSelected
-          ? 'bg-white/72 text-[color:var(--workspace-accent)] dark:bg-white/8'
-          : 'bg-transparent text-slate-700 dark:text-slate-100';
+      return tableSelected
+        ? 'bg-[#fff7f9] text-[#ba566d] dark:bg-white/8 dark:text-[#f4b5c1]'
+        : 'bg-transparent text-slate-700 dark:text-slate-100';
+    };
+    const getHeaderRequiredMarkClass = (isActive: boolean, isMarkedForDelete: boolean, isRequired: boolean) => {
+      if (!isRequired) return 'hidden';
+      if (isActive) return 'text-white/88';
+      if (isMarkedForDelete || tableSelected) return 'text-[#d15b75]';
+      return 'text-[color:var(--workspace-accent-strong)]';
     };
     const getHeaderResizeRailClass = (isActive: boolean) => (
       isActive
@@ -2048,10 +3271,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       >
                           <div className="flex min-w-0 flex-1 items-center">
                             <div
-                              className={`inline-flex max-w-full items-center rounded-full px-2.5 py-1 font-semibold tracking-[0.01em] transition-all ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, normalizedCol.required)}`}
+                              className={`inline-flex max-w-full items-center rounded-full px-2.5 py-1 font-semibold tracking-[0.01em] transition-all ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete)}`}
                               title={normalizedCol.name}
                             >
                               <span className="truncate">{normalizedCol.name}</span>
+                              <span className={`ml-1 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required)}`}>*</span>
                             </div>
                           </div>
                         </button>
@@ -2156,10 +3380,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     >
                       <div className="flex min-w-0 flex-1 items-center">
                         <div
-                          className={`inline-flex max-w-full items-center rounded-full px-2.5 py-1 font-semibold tracking-[0.01em] transition-all ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, normalizedCol.required)}`}
+                          className={`inline-flex max-w-full items-center rounded-full px-2.5 py-1 font-semibold tracking-[0.01em] transition-all ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete)}`}
                           title={normalizedCol.name}
                         >
                           <span className="truncate">{normalizedCol.name}</span>
+                          <span className={`ml-1 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required)}`}>*</span>
                         </div>
                       </div>
                     </button>
@@ -2330,21 +3555,71 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   useEffect(() => {
     const handlePointerMove = (event: MouseEvent) => {
+      if (billFieldResizeRef.current) {
+        const resize = billFieldResizeRef.current;
+        const maxWidth = Math.max(
+          BILL_FORM_MIN_WIDTH,
+          Math.min(BILL_FORM_MAX_WIDTH, resize.boardWidth - resize.startCanvasX - BILL_FORM_LAYOUT_PADDING_X),
+        );
+        const rawWidth = resize.startWidth + (event.clientX - resize.startX);
+        const snappedWidth = Math.max(BILL_FORM_MIN_WIDTH, snapBillPositionToGrid(rawWidth, 0));
+        const nextWidth = Math.max(BILL_FORM_MIN_WIDTH, Math.min(maxWidth, snappedWidth));
+
+        pendingBillResizeRef.current = {
+          id: resize.id,
+          scope: resize.scope,
+          width: nextWidth,
+        };
+
+        if (billResizeFrameRef.current !== null) return;
+        billResizeFrameRef.current = window.requestAnimationFrame(() => {
+          billResizeFrameRef.current = null;
+          const nextResize = pendingBillResizeRef.current;
+          if (!nextResize) return;
+
+          const updateFields = nextResize.scope === 'main' ? setMainTableColumns : setBillMetaFields;
+          updateFields((prev: any[]) => prev.map((column) => (
+            column.id === nextResize.id
+              ? { ...column, width: nextResize.width }
+              : column
+          )));
+        });
+        return;
+      }
+
       if (billFieldDragRef.current) {
         const drag = billFieldDragRef.current;
         const deltaX = event.clientX - drag.startX;
         const deltaY = event.clientY - drag.startY;
-        const nextX = Math.max(
+        const rawX = Math.max(
           BILL_FORM_LAYOUT_PADDING_X,
           Math.min(drag.boardWidth - drag.fieldWidth - BILL_FORM_LAYOUT_PADDING_X, drag.startCanvasX + deltaX),
         );
-        const nextY = Math.max(BILL_FORM_LAYOUT_PADDING_Y, drag.startCanvasY + deltaY);
+        const rawY = Math.max(BILL_FORM_LAYOUT_PADDING_Y, drag.startCanvasY + deltaY);
+        const snappedPosition = resolveBillFieldSnap(drag.id, rawX, rawY, drag.boardWidth, drag.fieldWidth, drag.boardHeight);
 
-        setMainTableColumns((prev) => prev.map((column) => (
-          column.id === drag.id
-            ? { ...column, canvasX: nextX, canvasY: nextY }
-            : column
-        )));
+        pendingBillDragPositionRef.current = {
+          id: drag.id,
+          scope: drag.scope,
+          x: snappedPosition.x,
+          y: snappedPosition.y,
+          guides: snappedPosition.guides,
+        };
+
+        if (billDragFrameRef.current !== null) return;
+        billDragFrameRef.current = window.requestAnimationFrame(() => {
+          billDragFrameRef.current = null;
+          const nextDrag = pendingBillDragPositionRef.current;
+          if (!nextDrag) return;
+
+          setBillFieldSnapGuides(nextDrag.guides);
+          const updateFields = nextDrag.scope === 'main' ? setMainTableColumns : setBillMetaFields;
+          updateFields((prev: any[]) => prev.map((column) => (
+            column.id === nextDrag.id
+              ? { ...column, canvasX: nextDrag.x, canvasY: nextDrag.y }
+              : column
+          )));
+        });
         return;
       }
 
@@ -2368,7 +3643,43 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     };
 
     const stopDrag = () => {
+      if (billFieldResizeRef.current) {
+        if (billResizeFrameRef.current !== null) {
+          window.cancelAnimationFrame(billResizeFrameRef.current);
+          billResizeFrameRef.current = null;
+        }
+        const nextResize = pendingBillResizeRef.current;
+        if (nextResize) {
+          const updateFields = nextResize.scope === 'main' ? setMainTableColumns : setBillMetaFields;
+          updateFields((prev: any[]) => prev.map((column) => (
+            column.id === nextResize.id
+              ? { ...column, width: nextResize.width }
+              : column
+          )));
+        }
+        pendingBillResizeRef.current = null;
+        setActiveBillResizeId(null);
+        billFieldResizeRef.current = null;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
       if (billFieldDragRef.current) {
+        if (billDragFrameRef.current !== null) {
+          window.cancelAnimationFrame(billDragFrameRef.current);
+          billDragFrameRef.current = null;
+        }
+        const nextDrag = pendingBillDragPositionRef.current;
+        if (nextDrag) {
+          const updateFields = nextDrag.scope === 'main' ? setMainTableColumns : setBillMetaFields;
+          updateFields((prev: any[]) => prev.map((column) => (
+            column.id === nextDrag.id
+              ? { ...column, canvasX: nextDrag.x, canvasY: nextDrag.y }
+              : column
+          )));
+        }
+        pendingBillDragPositionRef.current = null;
+        setBillFieldSnapGuides(EMPTY_BILL_FIELD_GUIDES);
+        setActiveBillDragId(null);
         billFieldDragRef.current = null;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
@@ -2854,7 +4165,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     }
 
     if (deferredSelectedMainColId) {
-      const column = mainTableColumns.find((item) => item.id === deferredSelectedMainColId);
+      const column = mainTableColumns.find((item) => item.id === deferredSelectedMainColId)
+        ?? billMetaFields.find((item) => item.id === deferredSelectedMainColId);
       return column
         ? {
             kind: 'column' as const,
@@ -2864,7 +4176,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             icon: businessType === 'table' ? 'touch_app' : 'table_rows',
             iconClass: 'bg-emerald-500/12 text-emerald-500',
             column,
-            setCols: setMainTableColumns,
+            setCols: mainTableColumns.some((item) => item.id === deferredSelectedMainColId) ? setMainTableColumns : setBillMetaFields,
             removeLabel: '删除列',
           }
         : null;
@@ -2896,6 +4208,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     businessType,
     leftTableColumns,
     mainTableColumns,
+    billMetaFields,
     detailTableColumns,
     billDetailColumns,
     mainFilterFields,
@@ -2957,6 +4270,39 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         <div className="mt-4 text-[14px] font-bold text-slate-700 dark:text-slate-100">{title}</div>
       </section>
     );
+
+    if (!selectedColumnContext) {
+      return (
+        <div style={workspaceThemeVars} className={panelShellClass}>
+          <div className={panelHeaderClass}>
+            <div className="flex items-start gap-3">
+              <div className="flex size-10 items-center justify-center rounded-[16px] bg-[#eef6ff] text-[#1686e3] shadow-[0_18px_30px_-24px_rgba(22,134,227,0.4)] dark:bg-[#1686e3]/14 dark:text-[#7cc0ff]">
+                <span className="material-symbols-outlined text-[20px]">tune</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={panelBadgeClass}>右侧检查器</span>
+                </div>
+                <h3 className="mt-2 text-[17px] font-bold tracking-[0.01em] text-slate-800 dark:text-slate-100">详细配置</h3>
+              </div>
+            </div>
+          </div>
+          <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-4">
+            <div className="w-full rounded-[22px] border border-slate-200/75 bg-[radial-gradient(circle_at_top_left,rgba(22,134,227,0.08),transparent_40%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-4 shadow-[0_24px_44px_-36px_rgba(15,23,42,0.24)] dark:border-slate-700 dark:bg-[radial-gradient(circle_at_top_left,rgba(22,134,227,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.76),rgba(15,23,42,0.56))]">
+              <div className="flex items-start gap-3 rounded-[18px] border border-white/80 bg-white/86 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-slate-700 dark:bg-slate-900/45">
+                <div className="flex size-11 shrink-0 items-center justify-center rounded-[16px] bg-[#eef6ff] text-[#1686e3] dark:bg-[#1686e3]/14 dark:text-[#7cc0ff]">
+                  <span className="material-symbols-outlined text-[22px]">touch_app</span>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[15px] font-bold text-slate-800 dark:text-slate-100">先选中一个配置对象</div>
+                  <div className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-300">在画布或表格上点击字段、条件、表格、页签后，这里会出现对应配置项。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     if (selectedColumnContext.kind === 'workspace-theme') {
       return (
@@ -3147,38 +4493,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   </div>
                 </div>
               </section>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (!selectedColumnContext) {
-      return (
-        <div style={workspaceThemeVars} className={panelShellClass}>
-          <div className={panelHeaderClass}>
-            <div className="flex items-start gap-3">
-              <div className="flex size-10 items-center justify-center rounded-[16px] bg-[#eef6ff] text-[#1686e3] shadow-[0_18px_30px_-24px_rgba(22,134,227,0.4)] dark:bg-[#1686e3]/14 dark:text-[#7cc0ff]">
-                <span className="material-symbols-outlined text-[20px]">tune</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={panelBadgeClass}>右侧检查器</span>
-                </div>
-                <h3 className="mt-2 text-[17px] font-bold tracking-[0.01em] text-slate-800 dark:text-slate-100">详细配置</h3>
-              </div>
-            </div>
-          </div>
-          <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-4">
-            <div className="w-full rounded-[22px] border border-slate-200/75 bg-[radial-gradient(circle_at_top_left,rgba(22,134,227,0.08),transparent_40%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-4 shadow-[0_24px_44px_-36px_rgba(15,23,42,0.24)] dark:border-slate-700 dark:bg-[radial-gradient(circle_at_top_left,rgba(22,134,227,0.12),transparent_42%),linear-gradient(180deg,rgba(15,23,42,0.76),rgba(15,23,42,0.56))]">
-              <div className="flex items-start gap-3 rounded-[18px] border border-white/80 bg-white/86 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-slate-700 dark:bg-slate-900/45">
-                <div className="flex size-11 shrink-0 items-center justify-center rounded-[16px] bg-[#eef6ff] text-[#1686e3] dark:bg-[#1686e3]/14 dark:text-[#7cc0ff]">
-                  <span className="material-symbols-outlined text-[22px]">touch_app</span>
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[15px] font-bold text-slate-800 dark:text-slate-100">先选中一个配置对象</div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -4309,9 +5623,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         <label className={mutedLabelClass}>{isConditionConfig ? '控件宽度 (px)' : isBillHeaderField ? '控件宽度 (px)' : '列宽 (px)'}</label>
                         <input
                           type="number"
-                          min={TABLE_COLUMN_MIN_WIDTH}
+                          min={isBillHeaderField ? BILL_FORM_MIN_WIDTH : TABLE_COLUMN_MIN_WIDTH}
                           value={Math.round(currentColumn.width)}
-                          onChange={(e) => updateColumn({ width: Math.max(TABLE_COLUMN_MIN_WIDTH, Number(e.target.value) || TABLE_COLUMN_MIN_WIDTH) })}
+                          onChange={(e) => updateColumn({
+                            width: Math.max(
+                              isBillHeaderField ? BILL_FORM_MIN_WIDTH : TABLE_COLUMN_MIN_WIDTH,
+                              Number(e.target.value) || (isBillHeaderField ? BILL_FORM_MIN_WIDTH : TABLE_COLUMN_MIN_WIDTH),
+                            ),
+                          })}
                           className={fieldClass}
                         />
                       </div>
@@ -5959,79 +7278,152 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   )}
 
                   {configStep === 2 && (
-                    <motion.div 
+                    <motion.div
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ duration: 0.4 }}
-                      className={`flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col overflow-hidden min-h-[600px] ${
+                      className={`module-intro-shell flex flex-1 flex-col overflow-hidden min-h-[600px] ${
                         isFullscreenEditor ? 'fixed inset-4 z-[200] shadow-2xl' : ''
                       }`}
                     >
-                      {/* Editor Toolbar */}
-                      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex items-center gap-2 flex-wrap">
-                        <div className="flex items-center gap-1 pr-4 border-r border-slate-200 dark:border-slate-700">
-                          <select className="bg-transparent border-none text-[13px] font-bold text-slate-700 dark:text-slate-300 focus:ring-0 cursor-pointer">
-                            <option>正文</option>
-                            <option>标题 1</option>
-                            <option>标题 2</option>
-                            <option>标题 3</option>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+                        className="hidden"
+                        onChange={handleImageUpload}
+                      />
+
+                      <div className="module-intro-toolbar">
+                        <div className="module-intro-toolbar-group">
+                          <select
+                            value={moduleIntroBlockType}
+                            onChange={(event) => handleModuleIntroFormatChange(event.target.value as 'paragraph' | 'h1' | 'h2' | 'h3')}
+                            className="module-intro-format-select"
+                          >
+                            <option value="paragraph">正文</option>
+                            <option value="h1">标题 1</option>
+                            <option value="h2">标题 2</option>
+                            <option value="h3">标题 3</option>
                           </select>
                         </div>
-                        <div className="flex items-center gap-1 px-4 border-r border-slate-200 dark:border-slate-700">
-                          <button className="size-8 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors"><span className="material-symbols-outlined text-[18px]">format_bold</span></button>
-                          <button className="size-8 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors"><span className="material-symbols-outlined text-[18px]">format_italic</span></button>
-                          <button className="size-8 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors"><span className="material-symbols-outlined text-[18px]">format_underlined</span></button>
-                          <button className="size-8 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors"><span className="material-symbols-outlined text-[18px]">format_strikethrough</span></button>
+                        <div className="module-intro-toolbar-group">
+                          <button type="button" onMouseDown={(event) => { event.preventDefault(); applyModuleIntroCommand('bold'); }} className="module-intro-toolbar-button" title="加粗">
+                            <span className="material-symbols-outlined text-[18px]">format_bold</span>
+                          </button>
+                          <button type="button" onMouseDown={(event) => { event.preventDefault(); applyModuleIntroCommand('italic'); }} className="module-intro-toolbar-button" title="斜体">
+                            <span className="material-symbols-outlined text-[18px]">format_italic</span>
+                          </button>
+                          <button type="button" onMouseDown={(event) => { event.preventDefault(); applyModuleIntroCommand('underline'); }} className="module-intro-toolbar-button" title="下划线">
+                            <span className="material-symbols-outlined text-[18px]">format_underlined</span>
+                          </button>
+                          <button type="button" onMouseDown={(event) => { event.preventDefault(); applyModuleIntroCommand('strikeThrough'); }} className="module-intro-toolbar-button" title="删除线">
+                            <span className="material-symbols-outlined text-[18px]">format_strikethrough</span>
+                          </button>
                         </div>
-                        <div className="flex items-center gap-1 px-4 border-r border-slate-200 dark:border-slate-700">
-                          <button className="size-8 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors"><span className="material-symbols-outlined text-[18px]">format_list_bulleted</span></button>
-                          <button className="size-8 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors"><span className="material-symbols-outlined text-[18px]">format_list_numbered</span></button>
-                          <button className="size-8 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors"><span className="material-symbols-outlined text-[18px]">format_quote</span></button>
+                        <div className="module-intro-toolbar-group">
+                          <button type="button" onMouseDown={(event) => { event.preventDefault(); applyModuleIntroCommand('insertUnorderedList'); }} className="module-intro-toolbar-button" title="无序列表">
+                            <span className="material-symbols-outlined text-[18px]">format_list_bulleted</span>
+                          </button>
+                          <button type="button" onMouseDown={(event) => { event.preventDefault(); applyModuleIntroCommand('insertOrderedList'); }} className="module-intro-toolbar-button" title="有序列表">
+                            <span className="material-symbols-outlined text-[18px]">format_list_numbered</span>
+                          </button>
+                          <button type="button" onMouseDown={(event) => { event.preventDefault(); applyModuleIntroCommand('formatBlock', '<blockquote>'); }} className="module-intro-toolbar-button" title="引用">
+                            <span className="material-symbols-outlined text-[18px]">format_quote</span>
+                          </button>
                         </div>
-                        <div className="flex items-center gap-1 pl-4">
-                          <button className="size-8 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors"><span className="material-symbols-outlined text-[18px]">link</span></button>
-                          <button className="size-8 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors"><span className="material-symbols-outlined text-[18px]">image</span></button>
-                          <button className="size-8 rounded hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 transition-colors"><span className="material-symbols-outlined text-[18px]">table_chart</span></button>
+                        <div className="module-intro-toolbar-group">
+                          <button type="button" onMouseDown={(event) => { event.preventDefault(); handleModuleIntroLinkInsert(); }} className="module-intro-toolbar-button" title="插入链接">
+                            <span className="material-symbols-outlined text-[18px]">link</span>
+                          </button>
+                          <button type="button" onMouseDown={(event) => { event.preventDefault(); openModuleIntroImagePicker(); }} className="module-intro-toolbar-button" title="插入图片">
+                            <span className="material-symbols-outlined text-[18px]">image</span>
+                          </button>
+                          <button type="button" onMouseDown={(event) => { event.preventDefault(); handleModuleIntroTableInsert(); }} className="module-intro-toolbar-button" title="插入表格">
+                            <span className="material-symbols-outlined text-[18px]">table_chart</span>
+                          </button>
                         </div>
+                        {moduleIntroSelectedImageWidth !== null && (
+                          <div className="module-intro-toolbar-group module-intro-toolbar-group-image">
+                            <span className="module-intro-image-size-label">图片 {moduleIntroSelectedImageWidth}px</span>
+                            <button type="button" onMouseDown={(event) => { event.preventDefault(); handleModuleIntroImagePreset('small'); }} className="module-intro-image-size-button">小</button>
+                            <button type="button" onMouseDown={(event) => { event.preventDefault(); handleModuleIntroImagePreset('medium'); }} className="module-intro-image-size-button">中</button>
+                            <button type="button" onMouseDown={(event) => { event.preventDefault(); handleModuleIntroImagePreset('large'); }} className="module-intro-image-size-button">大</button>
+                            <button type="button" onMouseDown={(event) => { event.preventDefault(); handleModuleIntroImagePreset('full'); }} className="module-intro-image-size-button">铺满</button>
+                          </div>
+                        )}
                         <div className="ml-auto flex items-center gap-2">
-                          <button 
-                            onClick={() => setIsFullscreenEditor(!isFullscreenEditor)}
-                            className="text-[13px] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors font-bold flex items-center gap-1.5"
-                          >
+                          <div className="module-intro-status-chip">
+                            <span className="material-symbols-outlined text-[15px]">gesture_select</span>
+                            先选中文字，再应用格式
+                          </div>
+                          <button type="button" onClick={() => setIsFullscreenEditor(!isFullscreenEditor)} className="module-intro-action-button">
                             <span className="material-symbols-outlined text-[16px]">
                               {isFullscreenEditor ? 'fullscreen_exit' : 'fullscreen'}
-                            </span> 
+                            </span>
                             {isFullscreenEditor ? '退出全屏' : '全屏编辑'}
                           </button>
-                          <button className="text-[13px] text-primary hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors font-bold flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-[16px]">auto_awesome</span> AI 润色
+                          <button type="button" onClick={polishModuleIntroContent} className="module-intro-primary-button">
+                            <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+                            AI 润色
                           </button>
                         </div>
                       </div>
-                      
-                      {/* Editor Content Area */}
-                      <div className="flex-1 p-8 bg-white dark:bg-slate-900 overflow-y-auto">
-                        <div className="w-full h-full mx-auto">
-                          <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-6 outline-none" contentEditable suppressContentEditableWarning>成本控制模块详细说明</h1>
-                          <div className="prose prose-slate dark:prose-invert max-w-none outline-none min-h-[400px]" contentEditable suppressContentEditableWarning>
-                            <p className="text-slate-600 dark:text-slate-300 leading-relaxed mb-4">
-                              成本控制模块是财务管理子系统的核心组件，旨在为企业提供全方位的成本核算、分析与控制能力。该模块通过整合各业务环节的数据，实现成本的精细化管理。                            </p>
-                            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 mt-8 mb-4">核心功能</h3>
-                            <ul className="list-disc pl-5 space-y-2 text-slate-600 dark:text-slate-300 mb-6">
-                              <li><strong>成本核算:</strong> 支持多种成本核算方法，如标准成本法、实际成本法和作业成本法，自动归集和分配各项成本费用。</li>
-                              <li><strong>预算控制:</strong> 建立多维度的成本预算体系，实时监控预算执行情况，并提供超预算预警能力。</li>
-                              <li><strong>成本分析:</strong> 提供丰富的成本分析报表，支持多维度、多视角的成本构成分析、趋势分析和差异分析。</li>
-                              <li><strong>成本预测:</strong> 基于历史数据和业务模型，利用 AI 算法进行成本预测，辅助管理层决策。</li>
-                            </ul>
-                            
-                            <div className="mt-8 p-6 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 dark:bg-slate-800/30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer group">
-                              <div className="size-12 rounded-full bg-white dark:bg-slate-700 shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                                <span className="material-symbols-outlined text-[24px] text-slate-400 group-hover:text-primary">add_photo_alternate</span>
-                              </div>
-                              <span className="text-[14px] font-medium group-hover:text-primary transition-colors">拖拽或点击上传流程图/架构图</span>
-                              <span className="text-[12px] mt-1 opacity-70">支持 PNG、JPG、SVG 格式</span>
+
+                      <div className="module-intro-body">
+                        <div className="module-intro-paper">
+                          <div className="module-intro-paper-head">
+                            <div className="min-w-0 flex-1">
+                              <div className="module-intro-eyebrow">模块介绍</div>
+                              <h1
+                                ref={titleEditorRef}
+                                className="module-intro-title"
+                                contentEditable
+                                suppressContentEditableWarning
+                                spellCheck={false}
+                                onInput={syncModuleIntroDraft}
+                                onBlur={syncModuleIntroDraft}
+                              />
                             </div>
                           </div>
+
+                          <div
+                            ref={editorRef}
+                            className="module-intro-prose"
+                            contentEditable
+                            suppressContentEditableWarning
+                            spellCheck={false}
+                            onInput={syncModuleIntroDraft}
+                            onBlur={syncModuleIntroDraft}
+                            onFocus={saveModuleIntroSelection}
+                            onKeyUp={saveModuleIntroSelection}
+                            onMouseUp={saveModuleIntroSelection}
+                            onMouseDown={handleModuleIntroEditorMouseDown}
+                            onPaste={(event) => {
+                              const imageItems = Array.from(event.clipboardData.files ?? []) as File[];
+                              const imageFiles = imageItems.filter((file) => file.type.startsWith('image/'));
+                              if (imageFiles.length === 0) return;
+                              event.preventDefault();
+                              handleModuleIntroImageFiles(imageFiles);
+                            }}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={openModuleIntroImagePicker}
+                            onDragOver={(event) => event.preventDefault()}
+                            onDrop={(event) => {
+                              event.preventDefault();
+                              handleModuleIntroImageFiles(event.dataTransfer.files);
+                            }}
+                            className="module-intro-upload-card"
+                          >
+                            <div className="module-intro-upload-icon">
+                              <span className="material-symbols-outlined text-[24px]">add_photo_alternate</span>
+                            </div>
+                            <span className="module-intro-upload-title">拖拽或点击上传流程图 / 架构图</span>
+                            <span className="module-intro-upload-desc">支持 PNG、JPG、SVG、WebP，上传后会直接插入到当前光标位置。</span>
+                          </button>
                         </div>
                       </div>
                     </motion.div>
@@ -6142,11 +7534,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           </div>
                         </div>
                       ) : businessType === 'table' ? (
-                        <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex flex-1 min-h-0 overflow-hidden rounded-[36px] p-3 ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'h-full' : 'min-h-[780px]'}`}>
-                          <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-                            <div className="grid min-h-0 gap-4 xl:grid-rows-[minmax(360px,0.92fr)_minmax(0,1.08fr)]">
-                              {renderBillHeaderWorkbench()}
-                              {renderBillDetailWorkbench()}
+                        <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex flex-1 min-h-0 overflow-hidden rounded-[36px] ${isConfigFullscreenActive ? 'h-full p-1.5' : 'min-h-[780px] p-3'} ${workspaceThemeStyles.tableSurface}`}>
+                          <div className={`grid min-h-0 flex-1 ${isConfigFullscreenActive ? 'gap-3 xl:grid-cols-[minmax(0,1fr)_392px]' : 'gap-4 xl:grid-cols-[minmax(0,1fr)_360px]'}`}>
+                            <div className="flex min-h-0">
+                              {renderBillDocumentWorkbench()}
                             </div>
                             <div className="flex min-h-0 shrink-0 flex-col">
                               {columnOperationPanel}
