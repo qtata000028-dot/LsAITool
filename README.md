@@ -2,7 +2,7 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# Run and deploy your MiniMax app
 
 This contains everything you need to run your app locally.
 
@@ -26,6 +26,12 @@ GitHub collaboration files are available in:
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Set the `MINIMAX_API_KEY` in [.env.local](.env.local) to your MiniMax API key
 3. Run the app:
    `npm run dev`
+
+## MiniMax Integration
+
+- The frontend now calls `/api/ai/survey-plan`.
+- API keys stay on the server side in `.env.local`.
+- The default model is `MiniMax-M2.1`. You can override it with `MINIMAX_MODEL`.

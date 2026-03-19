@@ -1,6 +1,7 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDeferredValue, useMemo } from 'react';
+import { requestIdentifierTranslation, requestSqlDraft, requestSurveyPlan, type SurveyPlan } from '../lib/minimax';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -204,6 +205,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [surveyStep, setSurveyStep] = useState(0);
   const [surveyAnswers, setSurveyAnswers] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [surveyPlan, setSurveyPlan] = useState<SurveyPlan | null>(null);
+  const [surveyPlanModel, setSurveyPlanModel] = useState('');
+  const [surveyError, setSurveyError] = useState<string | null>(null);
+  const [isGeneratingSqlDraft, setIsGeneratingSqlDraft] = useState(false);
+  const [isTranslatingIdentifiers, setIsTranslatingIdentifiers] = useState(false);
 
   // Step 4: Table Builder
   const [isFullscreenEditor, setIsFullscreenEditor] = useState(false);
@@ -213,6 +219,36 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const resetSurveyFlow = () => {
+    setSurveyStep(0);
+    setSurveyAnswers([]);
+    setIsGenerating(false);
+    setSurveyPlan(null);
+    setSurveyPlanModel('');
+    setSurveyError(null);
+  };
+
+  const generateSurveyPlan = async (mode: string, dataSource: string) => {
+    setSurveyStep(2);
+    setSurveyAnswers([mode, dataSource]);
+    setSurveyPlan(null);
+    setSurveyPlanModel('');
+    setSurveyError(null);
+    setIsGenerating(true);
+
+    try {
+      const response = await requestSurveyPlan(mode, dataSource);
+      setSurveyPlan(response.plan);
+      setSurveyPlanModel(response.model);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'MiniMax 生成失败，请稍后再试。';
+      setSurveyError(message);
+      showToast(message);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const buildColumn = (prefix: string, index: number, overrides: Record<string, any> = {}) => ({
@@ -267,6 +303,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const buildGridConfig = (mainSql: string, defaultQuery: string, overrides: Record<string, any> = {}) => ({
     mainSql,
     defaultQuery,
+    sqlPrompt: '',
     tableType: '普通表格',
     contextMenuEnabled: false,
     contextMenuItems: [buildContextMenuItem(1, { label: '查看详情', actionKey: 'open-detail' })],
@@ -2787,12 +2824,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         description: '',
         icon: 'table_chart',
         iconClass: 'bg-sky-500/12 text-sky-500',
-        column: detailTableConfigs[panelTabId] ?? { mainSql: '', defaultQuery: '', tableType: '普通表格' },
+                      column: detailTableConfigs[panelTabId] ?? { mainSql: '', defaultQuery: '', sqlPrompt: '', tableType: '普通表格' },
         availableColumns: detailTableColumns[panelTabId] ?? [],
         setCols: (updater: React.SetStateAction<any>) => {
           setDetailTableConfigs((prev) => ({
             ...prev,
-            [panelTabId]: typeof updater === 'function' ? updater(prev[panelTabId] ?? { mainSql: '', defaultQuery: '', tableType: '普通表格' }) : updater,
+                        [panelTabId]: typeof updater === 'function' ? updater(prev[panelTabId] ?? { mainSql: '', defaultQuery: '', sqlPrompt: '', tableType: '普通表格' }) : updater,
           }));
         },
         removeLabel: '',
@@ -3587,6 +3624,184 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       };
       const detailGroupCount = currentDetailBoard.groups.length;
       const assignedFieldCount = currentDetailBoard.groups.reduce((sum: number, group: any) => sum + group.columnIds.length, 0);
+      const updateGridColumns = (updater: React.SetStateAction<any[]>) => {
+        if (selectedColumnContext.scope === 'main-grid') {
+          setMainTableColumns((prev) => (typeof updater === 'function' ? updater(prev) : updater));
+          return;
+        }
+
+        if (businessType === 'table') {
+          setBillDetailColumns((prev) => (typeof updater === 'function' ? updater(prev) : updater));
+          return;
+        }
+
+        setDetailTableColumns((prev) => ({
+          ...prev,
+          [activeTab]: typeof updater === 'function' ? updater(prev[activeTab] || []) : updater,
+        }));
+      };
+      const translatableColumns = availableGridColumns.filter((column: any) => {
+        const normalizedColumn = normalizeColumn(column);
+        return /[\u4e00-\u9fff]/.test(normalizedColumn.name || '') && !/[A-Za-z]/.test(normalizedColumn.sourceField || '');
+      });
+      const generateGridSqlDraft = async () => {
+        setIsGeneratingSqlDraft(true);
+
+        try {
+          const response = await requestSqlDraft({
+            title: selectedColumnContext.title,
+            description: currentGridConfig.sqlPrompt || '',
+            tableType: currentGridConfig.tableType || '普通表格',
+            columns: availableGridColumns.map((column: any) => {
+              const normalizedColumn = normalizeColumn(column);
+              return {
+                id: normalizedColumn.id,
+                name: normalizedColumn.name,
+                type: normalizedColumn.type,
+                identifier: normalizedColumn.sourceField || '',
+              };
+            }),
+          });
+
+          updateGridConfig({
+            mainSql: response.draft.mainSql,
+            defaultQuery: response.draft.defaultQuery,
+          });
+          showToast('已通过 MiniMax 生成主 SQL 草案');
+        } catch (error) {
+          showToast(error instanceof Error ? error.message : 'MiniMax 生成主 SQL 失败');
+        } finally {
+          setIsGeneratingSqlDraft(false);
+        }
+      };
+      const translateGridIdentifiers = async () => {
+        if (translatableColumns.length === 0) {
+          showToast('当前表格没有需要翻译的中文字段');
+          return;
+        }
+
+        setIsTranslatingIdentifiers(true);
+
+        try {
+          const response = await requestIdentifierTranslation(
+            translatableColumns.map((column: any) => {
+              const normalizedColumn = normalizeColumn(column);
+              return {
+                id: normalizedColumn.id,
+                name: normalizedColumn.name,
+                identifier: normalizedColumn.sourceField || '',
+              };
+            }),
+          );
+          const identifierMap = new Map(response.items.map((item) => [item.id, item.identifier]));
+
+          updateGridColumns((prev) => prev.map((column) => (
+            identifierMap.has(column.id)
+              ? { ...column, sourceField: identifierMap.get(column.id) }
+              : column
+          )));
+          showToast(`已翻译 ${response.items.length} 个字段标识`);
+        } catch (error) {
+          showToast(error instanceof Error ? error.message : 'MiniMax 翻译字段标识失败');
+        } finally {
+          setIsTranslatingIdentifiers(false);
+        }
+      };
+      const renderSqlConfigSection = () => (
+        <section className={compactCardClass}>
+          <div className={sectionTitleClass}>
+            <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">frame_source</span>
+            <h4>主 SQL 配置</h4>
+          </div>
+          <div className="grid gap-4">
+            <div>
+              <label className={mutedLabelClass}>生成描述</label>
+              <textarea
+                rows={3}
+                value={currentGridConfig.sqlPrompt || ''}
+                onChange={(e) => updateGridConfig({ sqlPrompt: e.target.value })}
+                placeholder="例如：生成一个物料主档列表，支持名称、规格、单位和单价查询。"
+                className={textareaClass}
+              />
+            </div>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <label className={`${mutedLabelClass} mb-0`}>主 SQL</label>
+                <button
+                  type="button"
+                  onClick={generateGridSqlDraft}
+                  disabled={isGeneratingSqlDraft}
+                  className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[12px] px-3 text-[11px] font-bold transition-colors ${
+                    isGeneratingSqlDraft
+                      ? 'cursor-wait bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
+                      : 'bg-[color:var(--workspace-accent)] text-white shadow-[0_16px_28px_-24px_var(--workspace-accent-shadow)] hover:bg-[color:var(--workspace-accent-strong)]'
+                  }`}
+                >
+                  <span className={`material-symbols-outlined text-[14px] ${isGeneratingSqlDraft ? 'animate-spin' : ''}`}>
+                    {isGeneratingSqlDraft ? 'progress_activity' : 'auto_awesome'}
+                  </span>
+                  AI 生成
+                </button>
+              </div>
+              <textarea
+                rows={6}
+                value={currentGridConfig.mainSql || ''}
+                onChange={(e) => updateGridConfig({ mainSql: e.target.value })}
+                placeholder="SELECT ... FROM ..."
+                className={textareaClass}
+              />
+            </div>
+            <div>
+              <label className={mutedLabelClass}>默认查询</label>
+              <input
+                type="text"
+                value={currentGridConfig.defaultQuery || ''}
+                onChange={(e) => updateGridConfig({ defaultQuery: e.target.value })}
+                placeholder="例如：status = 1"
+                className={fieldClass}
+              />
+            </div>
+          </div>
+        </section>
+      );
+      const renderIdentifierTranslationSection = () => (
+        <section className={compactCardClass}>
+          <div className="flex items-start justify-between gap-3">
+            <div className={sectionTitleClass}>
+              <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">translate</span>
+              <h4>字段标识</h4>
+            </div>
+            <button
+              type="button"
+              onClick={translateGridIdentifiers}
+              disabled={isTranslatingIdentifiers}
+              className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[12px] px-3 text-[11px] font-bold transition-colors ${
+                isTranslatingIdentifiers
+                  ? 'cursor-wait bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
+                  : 'border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)] hover:bg-[color:var(--workspace-accent-tint)]'
+              }`}
+            >
+              <span className={`material-symbols-outlined text-[14px] ${isTranslatingIdentifiers ? 'animate-spin' : ''}`}>
+                {isTranslatingIdentifiers ? 'progress_activity' : 'translate'}
+              </span>
+              一键翻译
+            </button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className={compactInfoCardClass}>
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前列数</div>
+              <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{availableGridColumns.length} 个</div>
+            </div>
+            <div className={compactInfoCardClass}>
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">待翻译</div>
+              <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{translatableColumns.length} 个</div>
+            </div>
+          </div>
+          <div className="rounded-[16px] border border-slate-200/70 bg-white/80 px-3.5 py-3 text-[12px] leading-6 text-slate-500 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-300">
+            会把只有中文名称、还没有英文标识的列翻译成 snake_case，并回填到“字段标识”。
+          </div>
+        </section>
+      );
 
       return (
         <div className={panelShellClass}>
@@ -3675,6 +3890,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       </div>
                     </div>
                   </section>
+                  {renderSqlConfigSection()}
+                  {renderIdentifierTranslationSection()}
                 </div>
               ) : isBillDetailGridConfig ? (
                 <div className="space-y-4">
@@ -3708,6 +3925,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       </div>
                     </div>
                   </section>
+                  {renderSqlConfigSection()}
+                  {renderIdentifierTranslationSection()}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -3752,6 +3971,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       </label>
                     </div>
                   </section>
+                  {renderSqlConfigSection()}
+                  {renderIdentifierTranslationSection()}
 
                   <section className={`overflow-hidden rounded-[18px] border p-4 shadow-[0_18px_30px_-26px_rgba(15,23,42,0.18)] ${detailBoardTheme.groupShell}`}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -4025,7 +4246,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className={compactInfoCardClass}>
               <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{isConditionConfig ? '条件标识' : '字段标识'}</div>
-              <div className="mt-1 break-all font-mono text-[12px] leading-5 text-slate-600 dark:text-slate-200">{currentColumn.id}</div>
+              <div className="mt-1 break-all font-mono text-[12px] leading-5 text-slate-600 dark:text-slate-200">{currentColumn.sourceField || '未设置'}</div>
             </div>
             <div className={compactInfoCardClass}>
               <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前类型</div>
@@ -4057,6 +4278,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         value={currentColumn.name}
                         onChange={(e) => updateColumn({ name: e.target.value })}
                         className={fieldClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={mutedLabelClass}>{isConditionConfig ? '条件标识' : '字段标识'}</label>
+                      <input
+                        type="text"
+                        value={currentColumn.sourceField || ''}
+                        onChange={(e) => updateColumn({ sourceField: e.target.value })}
+                        placeholder={isConditionConfig ? '例如：status_keyword' : '例如：material_code'}
+                        className={`${fieldClass} font-mono text-[12px]`}
                       />
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -6137,12 +6368,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                               {['手工录入为主', '外部系统对接 (API)', 'Excel 批量导入'].map((opt) => (
                                 <button
                                   key={opt}
-                                  onClick={() => {
-                                    setSurveyAnswers((prev) => [...prev, opt]);
-                                    setSurveyStep(2);
-                                    setIsGenerating(true);
-                                    setTimeout(() => setIsGenerating(false), 3000);
-                                  }}
+                                  onClick={() => generateSurveyPlan(surveyAnswers[0], opt)}
                                   className="rounded-xl border border-primary/20 bg-primary/5 px-5 py-2.5 text-[14px] font-bold text-primary shadow-sm transition-all hover:bg-primary hover:text-white"
                                 >
                                   {opt}
@@ -6177,11 +6403,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         {surveyStep > 1 && (
                           <div className="border-t border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-800/50">
                             <button
-                              onClick={() => {
-                                setSurveyStep(0);
-                                setSurveyAnswers([]);
-                                setIsGenerating(false);
-                              }}
+                              onClick={resetSurveyFlow}
                               className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3 text-[14px] font-bold text-slate-600 shadow-sm transition-all hover:text-primary dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:text-primary"
                             >
                               <span className="material-symbols-outlined text-[18px]">refresh</span>
@@ -6221,7 +6443,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                 </div>
                                 <div>
                                   <div className="text-[15px] font-bold text-slate-200">解析业务需求</div>
-                                  <div className="mt-2 text-[14px] leading-relaxed text-slate-400">已提取核心诉求：模式为“{surveyAnswers[0]}”，数据来源为“{surveyAnswers[1]}”。</div>
+                                  <div className="mt-2 text-[14px] leading-relaxed text-slate-400">
+                                    {surveyPlan?.summary || `已提取核心诉求：模式为“${surveyAnswers[0]}”，数据来源为“${surveyAnswers[1]}”。`}
+                                  </div>
+                                  {surveyPlanModel && (
+                                    <div className="mt-3 inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-bold text-emerald-300">
+                                      模型：{surveyPlanModel}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 
@@ -6234,23 +6463,29 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                 </div>
                                 <div>
                                   <div className="text-[15px] font-bold text-slate-200">构建领域模型 (Domain Model)</div>
-                                  <div className="mt-2 text-[14px] leading-relaxed text-slate-400">生成数据表结构草案，建立表间关联关系。</div>
+                                  <div className="mt-2 text-[14px] leading-relaxed text-slate-400">基于 MiniMax 返回结果生成主档、明细与关联建议。</div>
                                   <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/80 p-4 font-mono text-[13px] leading-relaxed text-emerald-400/80 shadow-inner">
-                                    <span className="mr-2 text-slate-500">$</span> Table CostCenter created<br />
-                                    <span className="mr-2 text-slate-500">$</span> Table BOM_Cost_Rollup created<br />
-                                    <span className="mr-2 text-slate-500">$</span> Relations mapped successfully
+                                    {(surveyPlan?.domainModel?.length ? surveyPlan.domainModel : [
+                                      '建议补充主表、明细表和日志表。',
+                                      '建议建立主从关系与基础状态字段。',
+                                    ]).map((item, index) => (
+                                      <div key={`domain-model-${index}`}>
+                                        <span className="mr-2 text-slate-500">$</span>
+                                        {item}
+                                      </div>
+                                    ))}
                                   </div>
                                 </div>
                               </motion.div>
 
-                              {!isGenerating && (
+                              {!isGenerating && !surveyError && (
                                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex gap-5">
                                   <div className="mt-0.5 relative">
                                     <span className="material-symbols-outlined relative z-10 bg-slate-900 text-[24px] text-emerald-500">check_circle</span>
                                   </div>
                                   <div className="w-full">
                                     <div className="text-[15px] font-bold text-slate-200">生成交互原型与架构评估</div>
-                                    <div className="mt-2 text-[14px] leading-relaxed text-slate-400">基于“{surveyAnswers[0]}”生成了对应的页面布局与表单，并输出架构评估报告。</div>
+                                    <div className="mt-2 text-[14px] leading-relaxed text-slate-400">已输出架构方案、复杂度和开发周期建议。</div>
 
                                     <div className="mt-4 space-y-3 rounded-xl border border-slate-800 bg-slate-950/80 p-5 font-mono text-[13px] leading-relaxed text-emerald-400/90 shadow-inner">
                                       <div className="mb-3 flex items-center gap-2 border-b border-slate-800 pb-2 text-white/90">
@@ -6259,23 +6494,46 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                       </div>
                                       <p><span className="text-slate-500"># 核心模式:</span> {surveyAnswers[0]}</p>
                                       <p><span className="text-slate-500"># 数据来源:</span> {surveyAnswers[1]}</p>
-                                      <p><span className="text-slate-500"># 复杂度评估:</span> <span className="text-amber-400">High (高)</span></p>
-                                      <p><span className="text-slate-500"># 预计开发周期:</span> 2.5 Weeks</p>
+                                      <p><span className="text-slate-500"># 复杂度评估:</span> <span className="text-amber-400">{surveyPlan?.complexity || '中'}</span></p>
+                                      <p><span className="text-slate-500"># 预计开发周期:</span> {surveyPlan?.duration || '2-3 周'}</p>
                                       <div className="border-t border-slate-800/50 pt-2">
                                         <p className="mb-1 text-slate-400">推荐技术栈与中间件:</p>
                                         <ul className="list-disc space-y-1 pl-5 text-emerald-500/80">
-                                          <li>前端: React 18 + TailwindCSS + Framer Motion</li>
-                                          <li>后端: Node.js (NestJS) + Prisma ORM</li>
-                                          <li>存储: PostgreSQL (支持复杂 BOM 树形查询)</li>
-                                          <li>缓存: Redis (应对高并发查询压力)</li>
+                                          {(surveyPlan?.architecture?.length ? surveyPlan.architecture : [
+                                            '前端: React + Vite + TailwindCSS',
+                                            '后端: Node.js 代理 MiniMax API',
+                                            '存储: PostgreSQL 或 SQL Server',
+                                            '缓存: Redis 或本地缓存层',
+                                          ]).map((item, index) => (
+                                            <li key={`architecture-${index}`}>{item}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                      <div className="border-t border-slate-800/50 pt-2">
+                                        <p className="mb-1 text-slate-400">实施建议:</p>
+                                        <ul className="list-disc space-y-1 pl-5 text-emerald-300">
+                                          {(surveyPlan?.recommendations?.length ? surveyPlan.recommendations : [
+                                            '先完成主档与明细结构定义。',
+                                            '把 AI 结果作为配置建议，不直接覆盖业务规则。',
+                                          ]).map((item, index) => (
+                                            <li key={`recommendation-${index}`}>{item}</li>
+                                          ))}
                                         </ul>
                                       </div>
                                       <div className="border-t border-slate-800/50 pt-2 text-emerald-300">
-                                        <span className="mr-2 text-slate-500">$</span> System ready for code generation.
+                                        <span className="mr-2 text-slate-500">$</span> MiniMax plan ready for follow-up configuration.
                                       </div>
                                     </div>
                                   </div>
                                 </motion.div>
+                              )}
+
+                              {!isGenerating && surveyError && (
+                                <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4 text-[13px] leading-6 text-rose-200">
+                                  <div className="font-bold">MiniMax 调用失败</div>
+                                  <div className="mt-2 break-words text-rose-100/90">{surveyError}</div>
+                                  <div className="mt-3 text-rose-100/70">请先在 `.env.local` 中放入一个新的可用 API Key，再重新开始调研。</div>
+                                </div>
                               )}
                             </motion.div>
                           )}

@@ -6,18 +6,21 @@ import { spawn } from 'node:child_process';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
-const serverUrl = 'http://127.0.0.1:3000';
-const stdoutLog = path.join(projectRoot, 'vite.log');
-const stderrLog = path.join(projectRoot, 'vite.err.log');
+const clientUrl = 'http://127.0.0.1:3000';
+const apiUrl = 'http://127.0.0.1:3001/api/ai/health';
+const clientStdoutLog = path.join(projectRoot, 'vite.log');
+const clientStderrLog = path.join(projectRoot, 'vite.err.log');
+const apiStdoutLog = path.join(projectRoot, 'minimax-api.log');
+const apiStderrLog = path.join(projectRoot, 'minimax-api.err.log');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function isServerReady() {
+async function isUrlReady(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 1000);
 
   try {
-    const response = await fetch(serverUrl, { signal: controller.signal });
+    const response = await fetch(url, { signal: controller.signal });
     return response.ok;
   } catch {
     return false;
@@ -26,11 +29,16 @@ async function isServerReady() {
   }
 }
 
-async function waitForServer(timeoutMs = 60000) {
+async function waitForServices(timeoutMs = 60000) {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
-    if (await isServerReady()) {
+    const [clientReady, apiReady] = await Promise.all([
+      isUrlReady(clientUrl),
+      isUrlReady(apiUrl),
+    ]);
+
+    if (clientReady && apiReady) {
       return true;
     }
 
@@ -40,13 +48,11 @@ async function waitForServer(timeoutMs = 60000) {
   return false;
 }
 
-function startDevServer() {
-  const command = process.platform === 'win32' ? 'cmd.exe' : 'npm';
-  const args = process.platform === 'win32' ? ['/d', '/c', 'npm run dev'] : ['run', 'dev'];
-  const stdout = openSync(stdoutLog, 'a');
-  const stderr = openSync(stderrLog, 'a');
+function startDetached(scriptCommand, stdoutPath, stderrPath) {
+  const stdout = openSync(stdoutPath, 'a');
+  const stderr = openSync(stderrPath, 'a');
 
-  const child = spawn(command, args, {
+  const child = spawn(process.platform === 'win32' ? 'cmd.exe' : 'sh', process.platform === 'win32' ? ['/d', '/c', scriptCommand] : ['-lc', scriptCommand], {
     cwd: projectRoot,
     detached: true,
     stdio: ['ignore', stdout, stderr],
@@ -56,20 +62,32 @@ function startDevServer() {
 }
 
 async function main() {
-  if (await isServerReady()) {
-    console.log(`Dev server is already running at ${serverUrl}`);
+  const [clientReady, apiReady] = await Promise.all([
+    isUrlReady(clientUrl),
+    isUrlReady(apiUrl),
+  ]);
+
+  if (clientReady && apiReady) {
+    console.log(`Dev stack is already running at ${clientUrl}`);
     return;
   }
 
-  console.log('Starting Vite dev server...');
-  startDevServer();
+  if (!clientReady) {
+    console.log('Starting Vite dev server...');
+    startDetached('npm run dev:client', clientStdoutLog, clientStderrLog);
+  }
 
-  if (await waitForServer()) {
-    console.log(`Dev server is ready at ${serverUrl}`);
+  if (!apiReady) {
+    console.log('Starting MiniMax API server...');
+    startDetached('npm run dev:api', apiStdoutLog, apiStderrLog);
+  }
+
+  if (await waitForServices()) {
+    console.log(`Dev stack is ready at ${clientUrl}`);
     return;
   }
 
-  console.error(`Dev server did not start within 60 seconds. Check ${stdoutLog} and ${stderrLog}.`);
+  console.error(`Dev stack did not start within 60 seconds. Check ${clientStdoutLog}, ${clientStderrLog}, ${apiStdoutLog}, and ${apiStderrLog}.`);
   process.exit(1);
 }
 
