@@ -9,6 +9,14 @@ interface DashboardProps {
 
 type Subsystem = 'finance' | 'hr' | 'supply';
 type BusinessType = 'document' | 'table' | 'tree';
+type BillSourceEntry = {
+  id: string;
+  configType: string;
+  sourceName: string;
+  sourceSql: string;
+  sourceDetail: string;
+  sourceType: string;
+};
 type BillCanvasFieldScope = 'main' | 'meta';
 type BillFieldGuideLine = {
   orientation: 'vertical' | 'horizontal';
@@ -55,6 +63,8 @@ const BUSINESS_TYPE_OPTIONS: Array<{ value: BusinessType; label: string; icon: s
 const FIELD_TYPE_OPTIONS = ['文本', '数字', '下拉框', '搜索框', '日期框', '单选框', '多选框', '树形节点关联'];
 const COLUMN_ALIGN_OPTIONS = ['左对齐', '居中', '右对齐'];
 const TABLE_TYPE_OPTIONS = ['普通表格', '多表头', '树表格'];
+const BILL_SOURCE_CONFIG_TYPE_OPTIONS = ['普通来源', '弹窗来源', '明细来源'];
+const BILL_SOURCE_TYPE_OPTIONS = ['SQL', '视图', '接口'];
 const TABLE_COLUMN_MIN_WIDTH = 48;
 const TABLE_COLUMN_AUTO_FIT_MAX_WIDTH = 680;
 const TABLE_COLUMN_RESIZE_MAX_WIDTH = 2000;
@@ -197,6 +207,21 @@ const MODULE_INTRO_DEFAULT_HTML = `
   <h3>应用价值</h3>
   <p>模块可与采购、库存、生产、财务等环节联动，把分散的成本数据汇总到统一业务语义下，提升核算效率、分析准确性和经营响应速度。</p>
 `;
+const DEFAULT_BILL_SOURCE_DETAIL = [
+  'material_code',
+  'material_name',
+  'material_spec',
+  'material_unit',
+  'material_price',
+].join('\n');
+const INITIAL_BILL_SOURCE: BillSourceEntry = {
+  id: 'bill-source',
+  configType: '普通来源',
+  sourceName: '物料基础来源表',
+  sourceSql: 'SELECT * FROM material_archive_source',
+  sourceDetail: DEFAULT_BILL_SOURCE_DETAIL,
+  sourceType: 'SQL',
+};
 
 function escapeHtmlAttribute(value: string) {
   return value
@@ -958,22 +983,59 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [selectedDetailForDelete, setSelectedDetailForDelete] = useState<string[]>([]);
   const [selectedDetailFiltersForDelete, setSelectedDetailFiltersForDelete] = useState<string[]>([]);
   const [selectedArchiveNodeId, setSelectedArchiveNodeId] = useState('archive-main');
-  const [billSourceColumns, setBillSourceColumns] = useState<any[]>([
-    { id: 'src_col1', name: 'material_code', type: '文本', width: 132 },
-    { id: 'src_col2', name: 'material_name', type: '文本', width: 168 },
-    { id: 'src_col3', name: 'material_spec', type: '文本', width: 156 },
-    { id: 'src_col4', name: 'material_unit', type: '下拉框', width: 112 },
-    { id: 'src_col5', name: 'material_price', type: '数字', width: 118 },
-  ]);
-  const [billSourceConfig, setBillSourceConfig] = useState(
-    buildGridConfig('SELECT * FROM material_archive_source', 'enable = 1', {
-      tableName: '物料基础来源表',
-      relationKey: 'material_id',
-      contextMenuEnabled: false,
-      contextMenuItems: [],
-      detailBoard: buildDetailBoardConfig([], { enabled: false }),
-    }),
-  );
+  const [billSources, setBillSources] = useState<BillSourceEntry[]>([INITIAL_BILL_SOURCE]);
+  const [activeBillSourceId, setActiveBillSourceId] = useState(INITIAL_BILL_SOURCE.id);
+  const [billSourceDraft, setBillSourceDraft] = useState<BillSourceEntry>(INITIAL_BILL_SOURCE);
+  const [billSourceDraftMode, setBillSourceDraftMode] = useState<'create' | 'edit'>('edit');
+  const activeBillSource = billSources.find((item) => item.id === activeBillSourceId) ?? billSources[0] ?? null;
+  const parseBillSourceDetailFields = (sourceDetail?: string) => {
+    if (!sourceDetail) return [];
+    return sourceDetail
+      .split(/[\n,，;；|]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  };
+  const billSourceFieldMap = billSources.reduce<Record<string, string[]>>((accumulator, item) => {
+    accumulator[item.id] = parseBillSourceDetailFields(item.sourceDetail);
+    return accumulator;
+  }, {});
+  const buildBillSourceEntry = (index: number, overrides: Partial<BillSourceEntry> = {}): BillSourceEntry => ({
+    id: `bill-source-${Date.now()}-${index}`,
+    configType: '普通来源',
+    sourceName: `来源 ${index}`,
+    sourceSql: '',
+    sourceDetail: '',
+    sourceType: 'SQL',
+    ...overrides,
+  });
+  const selectBillSourceDraft = (source: BillSourceEntry) => {
+    setActiveBillSourceId(source.id);
+    setBillSourceDraft({ ...source });
+    setBillSourceDraftMode('edit');
+  };
+  const createBillSourceDraft = () => {
+    const nextDraft = buildBillSourceEntry(billSources.length + 1);
+    setActiveBillSourceId(nextDraft.id);
+    setBillSourceDraft(nextDraft);
+    setBillSourceDraftMode('create');
+  };
+  const saveBillSourceDraft = () => {
+    const normalizedDraft = {
+      ...billSourceDraft,
+      sourceName: billSourceDraft.sourceName.trim() || `来源 ${billSources.length + (billSourceDraftMode === 'create' ? 1 : 0)}`,
+      sourceSql: billSourceDraft.sourceSql.trim(),
+      sourceDetail: billSourceDraft.sourceDetail.trim(),
+    };
+    setBillSources((prev) => (
+      prev.some((item) => item.id === normalizedDraft.id)
+        ? prev.map((item) => (item.id === normalizedDraft.id ? normalizedDraft : item))
+        : [...prev, normalizedDraft]
+    ));
+    setActiveBillSourceId(normalizedDraft.id);
+    setBillSourceDraft(normalizedDraft);
+    setBillSourceDraftMode('edit');
+    showToast('来源配置已保存');
+  };
   const [billDetailColumns, setBillDetailColumns] = useState<any[]>([
     buildColumn('bill_line', 1, { name: '物料编码', width: 132, sourceField: 'material_code' }),
     buildColumn('bill_line', 2, { name: '物料名称', width: 168, sourceField: 'material_name' }),
@@ -4090,9 +4152,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         description: '',
         icon: 'database',
         iconClass: 'bg-sky-500/12 text-sky-500',
-        column: billSourceConfig,
-        availableColumns: billSourceColumns,
-        setCols: setBillSourceConfig,
+        column: billSourceDraft,
+        availableColumns: billSources,
+        setCols: setBillSourceDraft,
         removeLabel: '',
       };
     }
@@ -4217,8 +4279,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     detailTableConfigs,
     detailTabConfigs,
     billDetailConfig,
-    billSourceConfig,
-    billSourceColumns,
+    billSourceDraft,
+    billSources,
     workspaceTheme,
   ]);
 
@@ -4379,9 +4441,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     }
 
     if (selectedColumnContext.kind === 'source-grid') {
-      const currentSourceConfig = selectedColumnContext.column;
+      const currentSourceConfig = billSourceDraft;
+      const currentSourceFields = parseBillSourceDetailFields(currentSourceConfig.sourceDetail);
       const updateSourceConfig = (patch: Record<string, any>) => {
-        setBillSourceConfig((prev) => ({ ...prev, ...patch }));
+        setBillSourceDraft((prev) => ({ ...prev, ...patch }));
       };
 
       return (
@@ -4394,7 +4457,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className={panelTitleClass}>{selectedColumnContext.title}</h3>
-                  <span className={panelBadgeClass}>{billSourceColumns.length} 个字段</span>
+                  <span className={panelBadgeClass}>{billSources.length} 个来源</span>
                 </div>
               </div>
             </div>
@@ -4403,93 +4466,137 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
             <div className="space-y-4">
               <section className={compactCardClass}>
-                <div className={sectionTitleClass}>
-                  <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">database</span>
-                  <h4>来源表属性</h4>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className={sectionTitleClass}>
+                    <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">database</span>
+                    <h4>来源列表</h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={createBillSourceDraft}
+                    className="inline-flex h-8 items-center gap-1 rounded-[12px] bg-[color:var(--workspace-accent)] px-3 text-[11px] font-bold text-white"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">add</span>
+                    新增来源
+                  </button>
                 </div>
-                <div className="grid gap-4">
-                  <div>
-                    <label className={mutedLabelClass}>来源表名称</label>
-                    <input
-                      type="text"
-                      value={currentSourceConfig.tableName || ''}
-                      onChange={(e) => updateSourceConfig({ tableName: e.target.value })}
-                      className={fieldClass}
-                    />
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className={mutedLabelClass}>表格类型</label>
-                      <select
-                        value={currentSourceConfig.tableType || '普通表格'}
-                        onChange={(e) => updateSourceConfig({ tableType: e.target.value })}
-                        className={fieldClass}
+                <div className="space-y-2">
+                  {billSources.map((source) => {
+                    const isActive = source.id === activeBillSourceId && billSourceDraftMode === 'edit';
+                    const fieldCount = parseBillSourceDetailFields(source.sourceDetail).length;
+                    return (
+                      <button
+                        key={source.id}
+                        type="button"
+                        onClick={() => selectBillSourceDraft(source)}
+                        className={`w-full rounded-[18px] border px-3.5 py-3 text-left transition-colors ${
+                          isActive
+                            ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-soft)]'
+                            : 'border-slate-200/80 bg-white/88 hover:border-[color:var(--workspace-accent-border)] dark:border-slate-700 dark:bg-slate-900/56'
+                        }`}
                       >
-                        {TABLE_TYPE_OPTIONS.map((type) => (
-                          <option key={type} value={type}>{type}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={mutedLabelClass}>关联键</label>
-                      <input
-                        type="text"
-                        value={currentSourceConfig.relationKey || ''}
-                        onChange={(e) => updateSourceConfig({ relationKey: e.target.value })}
-                        className={fieldClass}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className={mutedLabelClass}>来源 SQL</label>
-                    <textarea
-                      rows={4}
-                      value={currentSourceConfig.mainSql || ''}
-                      onChange={(e) => updateSourceConfig({ mainSql: e.target.value })}
-                      className={textareaClass}
-                    />
-                  </div>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[13px] font-bold text-slate-800 dark:text-slate-100">
+                              {source.sourceName || '未命名来源'}
+                            </div>
+                            <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                              {source.configType} · {source.sourceType} · {fieldCount} 项明细
+                            </div>
+                          </div>
+                          {isActive && (
+                            <span className="inline-flex rounded-full bg-[color:var(--workspace-accent-soft)] px-2 py-0.5 text-[10px] font-bold text-[color:var(--workspace-accent)]">
+                              编辑中
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
 
               <section className={compactCardClass}>
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div className={sectionTitleClass}>
-                    <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">view_column</span>
-                    <h4>来源字段</h4>
+                    <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">edit_square</span>
+                    <h4>{billSourceDraftMode === 'create' ? '新增来源' : '编辑来源'}</h4>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setBillSourceColumns((prev) => [...prev, buildColumn('src_col', prev.length + 1, { width: 132 })])}
+                    onClick={saveBillSourceDraft}
                     className="inline-flex h-8 items-center gap-1 rounded-[12px] bg-[color:var(--workspace-accent)] px-3 text-[11px] font-bold text-white"
                   >
-                    <span className="material-symbols-outlined text-[14px]">add</span>
-                    新增
+                    <span className="material-symbols-outlined text-[14px]">save</span>
+                    保存来源
                   </button>
                 </div>
-                <div
-                  tabIndex={0}
-                  onPaste={(event) => handlePasteColumns(event, setBillSourceColumns, {
-                    createColumn: (name, index, currentLength) => buildColumn('src_col', currentLength + index + 1, { name, width: 132 }),
-                  })}
-                  className="min-h-[132px] rounded-[18px] border border-dashed border-[color:var(--workspace-accent-border)] bg-white/80 p-3 outline-none focus:border-[color:var(--workspace-accent-border-strong)] dark:bg-slate-900/56"
-                >
-                  <div className="flex flex-wrap gap-2">
-                    {billSourceColumns.map((column) => (
-                      <div
-                        key={column.id}
-                        className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-200/80 bg-white/92 px-3 shadow-[0_10px_18px_-16px_rgba(15,23,42,0.14)] dark:border-slate-700 dark:bg-slate-900/72"
+                <div className="grid gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className={mutedLabelClass}>配置类型</label>
+                      <select
+                        value={currentSourceConfig.configType}
+                        onChange={(e) => updateSourceConfig({ configType: e.target.value })}
+                        className={fieldClass}
                       >
-                        <span className="truncate text-[11px] font-bold text-slate-700 dark:text-slate-100">{column.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => setBillSourceColumns((prev) => prev.filter((item) => item.id !== column.id))}
-                          className="inline-flex size-5 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                        {BILL_SOURCE_CONFIG_TYPE_OPTIONS.map((type) => (
+                          <option key={type} value={type}>{type}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={mutedLabelClass}>类型</label>
+                      <select
+                        value={currentSourceConfig.sourceType}
+                        onChange={(e) => updateSourceConfig({ sourceType: e.target.value })}
+                        className={fieldClass}
+                      >
+                        {BILL_SOURCE_TYPE_OPTIONS.map((type) => (
+                          <option key={type} value={type}>{type}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className={mutedLabelClass}>来源名称</label>
+                    <input
+                      type="text"
+                      value={currentSourceConfig.sourceName}
+                      onChange={(e) => updateSourceConfig({ sourceName: e.target.value })}
+                      className={fieldClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={mutedLabelClass}>来源 SQL</label>
+                    <textarea
+                      rows={4}
+                      value={currentSourceConfig.sourceSql}
+                      onChange={(e) => updateSourceConfig({ sourceSql: e.target.value })}
+                      className={textareaClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={mutedLabelClass}>来源明细</label>
+                    <textarea
+                      rows={5}
+                      value={currentSourceConfig.sourceDetail}
+                      onChange={(e) => updateSourceConfig({ sourceDetail: e.target.value })}
+                      placeholder="一行一个字段，或用逗号分隔"
+                      className={textareaClass}
+                    />
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {currentSourceFields.length > 0 ? currentSourceFields.map((fieldName) => (
+                        <span
+                          key={fieldName}
+                          className="inline-flex h-8 items-center rounded-full border border-slate-200/80 bg-white/92 px-3 text-[11px] font-bold text-slate-700 shadow-[0_10px_18px_-16px_rgba(15,23,42,0.14)] dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-100"
                         >
-                          <span className="material-symbols-outlined text-[12px]">close</span>
-                        </button>
-                      </div>
-                    ))}
+                          {fieldName}
+                        </span>
+                      )) : (
+                        <span className="text-[11px] text-slate-400">保存后这里会自动成为字段绑定可选项</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </section>
@@ -5179,18 +5286,18 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       </div>
                       <div className={compactInfoCardClass}>
                         <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">来源表</div>
-                        <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{billSourceConfig.tableName || '未配置'}</div>
+                        <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{activeBillSource?.sourceName || '未配置'}</div>
                       </div>
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
-                        <label className={mutedLabelClass}>来源关联键</label>
-                        <input
-                          type="text"
-                          value={billSourceConfig.relationKey || ''}
-                          onChange={(e) => setBillSourceConfig((prev) => ({ ...prev, relationKey: e.target.value }))}
-                          className={fieldClass}
-                        />
+                        <label className={mutedLabelClass}>已配置来源</label>
+                        <div className="rounded-[18px] border border-slate-200/80 bg-slate-50/92 px-3.5 py-3 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200">
+                          {billSources.length} 个来源
+                          <div className="mt-1 truncate text-[11px] text-slate-400">
+                            {billSources.map((item) => item.sourceName || '未命名来源').join(' / ')}
+                          </div>
+                        </div>
                       </div>
                       <div className="flex items-end">
                         <button
@@ -5716,7 +5823,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                             className={fieldClass}
                           >
                             <option value="">未绑定</option>
-                            <option value="bill-source">{billSourceConfig.tableName || '来源表'}</option>
+                            {billSources.map((source) => (
+                              <option key={source.id} value={source.id}>
+                                {source.sourceName || '未命名来源'}
+                              </option>
+                            ))}
                           </select>
                           <button
                             type="button"
@@ -5730,18 +5841,18 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       </div>
                       <div>
                         <label className={mutedLabelClass}>来源字段</label>
-                        <select
+                        <input
+                          list={`bill-source-fields-${currentColumn.id}`}
                           value={currentColumn.sourceField || ''}
                           onChange={(e) => updateColumn({ sourceField: e.target.value })}
                           className={fieldClass}
-                        >
-                          <option value="">未绑定</option>
-                          {billSourceColumns.map((column) => (
-                            <option key={column.id} value={column.name}>
-                              {column.name}
-                            </option>
+                          placeholder="填写或选择来源字段"
+                        />
+                        <datalist id={`bill-source-fields-${currentColumn.id}`}>
+                          {(billSourceFieldMap[currentColumn.sourceTable || ''] || []).map((fieldName) => (
+                            <option key={fieldName} value={fieldName} />
                           ))}
-                        </select>
+                        </datalist>
                       </div>
                     </div>
                   </section>
