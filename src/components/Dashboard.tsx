@@ -1,13 +1,19 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDeferredValue, useMemo } from 'react';
+import {
+  fetchSubsystemMenuTree,
+  fetchSubsystemSecondLevelMenus,
+  type BackendMenuNode,
+  type BackendSubsystemNode,
+} from '../lib/backend-menus';
 import { requestIdentifierTranslation, requestSqlDraft, requestSurveyPlan, type SurveyPlan } from '../lib/minimax';
 
 interface DashboardProps {
+  currentUserName: string;
   onLogout: () => void;
 }
 
-type Subsystem = 'finance' | 'hr' | 'supply';
 type BusinessType = 'document' | 'table' | 'tree';
 type BillSourceEntry = {
   id: string;
@@ -76,6 +82,39 @@ type ModuleMenuSectionSchema = {
   description: string;
   fields: ModuleMenuFieldSchema[];
 };
+
+function getDashboardErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return '菜单加载失败，请稍后重试。';
+}
+
+function normalizeMenuTitle(value?: string) {
+  return value?.trim() || '';
+}
+
+function normalizeMenuCode(value?: string) {
+  return value?.trim() || '';
+}
+
+function getEnabledMenuNodes<T extends { enabled: boolean }>(nodes: T[] | undefined) {
+  return (nodes ?? []).filter((node) => node.enabled !== false);
+}
+
+function isUseflagEnabled(useflag: number | string | undefined, enabled: boolean) {
+  if (useflag === 1 || useflag === '1') {
+    return true;
+  }
+
+  if (useflag === 0 || useflag === '0') {
+    return false;
+  }
+
+  return enabled;
+}
+
 const DETAIL_BOARD_CLIPBOARD_PREFIX = '__LS_DETAIL_BOARD_COLUMNS__';
 const BUSINESS_TYPE_OPTIONS: Array<{ value: BusinessType; label: string; icon: string }> = [
   { value: 'document', label: '单表', icon: 'table_view' },
@@ -459,8 +498,9 @@ function getBillFieldLayout(index: number, width = BILL_FORM_DEFAULT_WIDTH) {
   };
 }
 
-export default function Dashboard({ onLogout }: DashboardProps) {
+export default function Dashboard({ currentUserName, onLogout }: DashboardProps) {
   const debugParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const currentUserAvatarText = currentUserName.trim().slice(0, 1) || '人';
   const debugStepParam = Number(debugParams?.get('step') || 1);
   const initialConfigStep = Number.isFinite(debugStepParam) ? Math.min(6, Math.max(1, debugStepParam)) : 1;
   const initialConfigOpen = debugParams?.get('config') === '1' || debugParams?.has('step') || false;
@@ -472,8 +512,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     ? String(debugParams?.get('theme'))
     : 'aurora';
   const [isSubsystemOpen, setIsSubsystemOpen] = useState(true);
-  const [activeSubsystem, setActiveSubsystem] = useState<Subsystem>('finance');
-  const [activeMenu, setActiveMenu] = useState('cost');
+  const [expandedSubsystemId, setExpandedSubsystemId] = useState<string | null>(null);
+  const [subsystemMenus, setSubsystemMenus] = useState<BackendSubsystemNode[]>([]);
+  const [activeSubsystem, setActiveSubsystem] = useState('');
+  const [activeFirstLevelMenuId, setActiveFirstLevelMenuId] = useState('');
+  const [secondLevelMenus, setSecondLevelMenus] = useState<BackendMenuNode[]>([]);
+  const [isLoadingSubsystemMenus, setIsLoadingSubsystemMenus] = useState(true);
+  const [isLoadingSecondLevelMenus, setIsLoadingSecondLevelMenus] = useState(false);
+  const [menuLoadError, setMenuLoadError] = useState<string | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(initialConfigOpen);
   const [configStep, setConfigStep] = useState(initialConfigStep);
@@ -3972,36 +4018,150 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     { id: 5, title: '模块设置', desc: '字段、表单与流程编排' },
     { id: 6, title: '模块预览', desc: '实时交互效果演示' }
   ];
+  const selectedSubsystem = useMemo(
+    () => subsystemMenus.find((item) => item.id === activeSubsystem) ?? null,
+    [activeSubsystem, subsystemMenus],
+  );
+  const firstLevelMenus = useMemo(
+    () => getEnabledMenuNodes(selectedSubsystem?.children),
+    [selectedSubsystem],
+  );
+  const activeFirstLevelMenu = useMemo(
+    () => firstLevelMenus.find((item) => item.id === activeFirstLevelMenuId) ?? null,
+    [activeFirstLevelMenuId, firstLevelMenus],
+  );
 
-  const subsystems = [
-    { id: 'finance', name: '财务管理' },
-    { id: 'hr', name: '人力资源' },
-    { id: 'supply', name: '供应链管理' }
-  ];
+  const loadSubsystemMenus = async () => {
+    setIsLoadingSubsystemMenus(true);
+    setMenuLoadError(null);
 
-  const menuData = {
-    finance: [
-      { id: 'cost', name: '成本控制', icon: 'payments' },
-      { id: 'fund', name: '资金结算', icon: 'account_balance_wallet' },
-      { id: 'tax', name: '税务申报', icon: 'receipt_long' }
-    ],
-    hr: [
-      { id: 'employee', name: '员工管理', icon: 'badge' },
-      { id: 'payroll', name: '薪酬管理', icon: 'monetization_on' },
-      { id: 'performance', name: '绩效考核', icon: 'trending_up' }
-    ],
-    supply: [
-      { id: 'procurement', name: '采购管理', icon: 'shopping_cart' },
-      { id: 'inventory', name: '库存管理', icon: 'inventory' },
-      { id: 'logistics', name: '物流跟踪', icon: 'local_shipping' }
-    ]
+    try {
+      const data = getEnabledMenuNodes(await fetchSubsystemMenuTree());
+      setSubsystemMenus(data);
+
+      const nextSubsystem = data.find((item) => getEnabledMenuNodes(item.children).length > 0) ?? data[0] ?? null;
+      const nextFirstLevelMenu = getEnabledMenuNodes(nextSubsystem?.children)[0] ?? null;
+
+      setExpandedSubsystemId(nextSubsystem?.id ?? null);
+      setActiveSubsystem(nextSubsystem?.id ?? '');
+      setActiveFirstLevelMenuId(nextFirstLevelMenu?.id ?? '');
+      setSecondLevelMenus([]);
+    } catch (error) {
+      setMenuLoadError(getDashboardErrorMessage(error));
+      setSubsystemMenus([]);
+      setExpandedSubsystemId(null);
+      setActiveSubsystem('');
+      setActiveFirstLevelMenuId('');
+      setSecondLevelMenus([]);
+    } finally {
+      setIsLoadingSubsystemMenus(false);
+    }
   };
 
-  const handleMenuClick = (menuId: string) => {
-    setActiveMenu(menuId);
+  useEffect(() => {
+    void loadSubsystemMenus();
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadSecondLevelMenus = async () => {
+      if (!selectedSubsystem || !activeFirstLevelMenu?.menuId) {
+        setSecondLevelMenus([]);
+        setIsLoadingSecondLevelMenus(false);
+        return;
+      }
+
+      setIsLoadingSecondLevelMenus(true);
+
+      try {
+        const data = getEnabledMenuNodes(
+          await fetchSubsystemSecondLevelMenus({
+            menuId: activeFirstLevelMenu.menuId,
+            subsysId: selectedSubsystem.subsysId,
+          }),
+        );
+
+        if (!isActive) {
+          return;
+        }
+
+        setSecondLevelMenus(data);
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setMenuLoadError(getDashboardErrorMessage(error));
+        setSecondLevelMenus([]);
+      } finally {
+        if (isActive) {
+          setIsLoadingSecondLevelMenus(false);
+        }
+      }
+    };
+
+    void loadSecondLevelMenus();
+
+    return () => {
+      isActive = false;
+    };
+  }, [activeFirstLevelMenu?.menuId, selectedSubsystem]);
+
+  const toggleSubsystemExpansion = (subsystemId: string) => {
+    setExpandedSubsystemId((prev) => (prev === subsystemId ? null : subsystemId));
   };
 
-  const activeMenuName = menuData[activeSubsystem].find(m => m.id === activeMenu)?.name || '';
+  const handleFirstLevelMenuClick = (subsystemId: string, menu: BackendMenuNode) => {
+    setActiveSubsystem(subsystemId);
+    setActiveFirstLevelMenuId(menu.id);
+    setSecondLevelMenus([]);
+    setMenuLoadError(null);
+    setExpandedSubsystemId(subsystemId);
+  };
+
+  const activeMenu = activeFirstLevelMenu?.id ?? selectedSubsystem?.id ?? 'workspace';
+  const activeMenuName =
+    normalizeMenuTitle(activeFirstLevelMenu?.title) ||
+    normalizeMenuTitle(selectedSubsystem?.title) ||
+    '模块工作台';
+  const activeMenuCode =
+    normalizeMenuCode(activeFirstLevelMenu?.code) ||
+    normalizeMenuCode(selectedSubsystem?.subsysCode ?? selectedSubsystem?.code) ||
+    'MODULE';
+  const activeMenuCodePrefix = activeMenuCode.replace(/\s+/g, '').toUpperCase().slice(0, 2) || 'MO';
+  const activeSubsystemName = normalizeMenuTitle(selectedSubsystem?.title) || '未选择子系统';
+  const activeFirstLevelMenuName = normalizeMenuTitle(activeFirstLevelMenu?.title);
+  const secondLevelMenuCount = secondLevelMenus.length;
+  const secondLevelMenuCardStyles = [
+    {
+      icon: 'account_balance',
+      iconClass:
+        'bg-primary/5 text-primary border-primary/10 group-hover:bg-primary group-hover:text-white',
+      actionClass: 'hover:text-primary',
+      badgeClass:
+        'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50',
+      badgeDotClass: 'bg-emerald-500',
+    },
+    {
+      icon: 'groups',
+      iconClass:
+        'bg-indigo-50 text-indigo-500 dark:bg-indigo-950/30 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50 group-hover:bg-indigo-500 group-hover:text-white',
+      actionClass: 'hover:text-indigo-600',
+      badgeClass:
+        'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400 border-amber-100 dark:border-amber-900/50',
+      badgeDotClass: 'bg-amber-500',
+    },
+    {
+      icon: 'inventory_2',
+      iconClass:
+        'bg-cyan-50 text-cyan-500 dark:bg-cyan-950/30 dark:text-cyan-400 border-cyan-100 dark:border-cyan-900/50 group-hover:bg-cyan-500 group-hover:text-white',
+      actionClass: 'hover:text-cyan-600',
+      badgeClass:
+        'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50',
+      badgeDotClass: 'bg-emerald-500',
+    },
+  ] as const;
   const isModuleSettingStep = isConfigOpen && configStep === 5;
   const isConfigFullscreenActive = isModuleSettingStep && isFullscreenConfig;
   const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
@@ -7234,40 +7394,82 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   exit={{ height: 0, opacity: 0 }}
                   className="ml-4 pl-4 border-l border-slate-200 dark:border-slate-800 space-y-1 overflow-hidden"
                 >
-                  <div className="relative">
-                    <select 
-                      value={activeSubsystem}
-                      onChange={(e) => {
-                        const newSubsystem = e.target.value as Subsystem;
-                        setActiveSubsystem(newSubsystem);
-                        setActiveMenu(menuData[newSubsystem][0].id);
-                      }}
-                      className="w-full appearance-none bg-primary/5 text-primary text-sm font-semibold px-3 py-2 rounded-lg outline-none cursor-pointer"
-                    >
-                      {subsystems.map(sub => (
-                        <option key={sub.id} value={sub.id}>{sub.name}</option>
-                      ))}
-                    </select>
-                    <span className="material-symbols-outlined text-sm absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-primary">
-                      expand_more
-                    </span>
-                  </div>
-
-                  <div className="ml-2 space-y-0.5 mt-2">
-                    {menuData[activeSubsystem].map(menu => (
+                  {menuLoadError ? (
+                    <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-600">
+                      <div>{menuLoadError}</div>
                       <button
-                        key={menu.id}
-                        onClick={() => handleMenuClick(menu.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                          activeMenu === menu.id 
-                            ? 'bg-primary text-white shadow-sm' 
-                            : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-                        }`}
+                        type="button"
+                        onClick={() => void loadSubsystemMenus()}
+                        className="mt-2 font-semibold text-rose-700 transition-colors hover:text-rose-800"
                       >
-                        <span className="material-symbols-outlined text-lg">{menu.icon}</span>
-                        <span className="text-sm font-medium">{menu.name}</span>
+                        重新加载
                       </button>
-                    ))}
+                    </div>
+                  ) : null}
+
+                  <div className="ml-2 mt-2 space-y-1">
+                    {subsystemMenus.map((subsystem) => {
+                      const isExpanded = expandedSubsystemId === subsystem.id;
+                      const subsystemFirstLevelMenus = getEnabledMenuNodes(subsystem.children);
+                      const isCurrentSubsystem = activeSubsystem === subsystem.id;
+
+                      return (
+                        <div key={subsystem.id} className="space-y-1">
+                          <button
+                            onClick={() => toggleSubsystemExpansion(subsystem.id)}
+                            className={`w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2 transition-colors ${
+                              isCurrentSubsystem || isExpanded
+                                ? 'bg-primary/5 text-primary'
+                                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span className="material-symbols-outlined text-lg">account_tree</span>
+                              <span className="truncate text-sm font-semibold">{normalizeMenuTitle(subsystem.title)}</span>
+                            </div>
+                            <span className="material-symbols-outlined text-base">
+                              {isExpanded ? 'expand_more' : 'chevron_right'}
+                            </span>
+                          </button>
+
+                          {isExpanded ? (
+                            <div className="ml-4 space-y-1 border-l border-slate-200 pl-3 dark:border-slate-800">
+                              {subsystemFirstLevelMenus.length > 0 ? (
+                                subsystemFirstLevelMenus.map((menu) => {
+                                  const isFirstLevelActive =
+                                    activeSubsystem === subsystem.id && activeFirstLevelMenuId === menu.id;
+
+                                  return (
+                                    <button
+                                      key={menu.id}
+                                      onClick={() => handleFirstLevelMenuClick(subsystem.id, menu)}
+                                      className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${
+                                        isFirstLevelActive
+                                          ? 'bg-primary text-white shadow-sm'
+                                          : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                      }`}
+                                    >
+                                      <span className="material-symbols-outlined text-base">folder_open</span>
+                                      <span className="truncate text-sm font-medium">{normalizeMenuTitle(menu.title)}</span>
+                                    </button>
+                                  );
+                                })
+                              ) : (
+                                <div className="px-3 py-2 text-xs text-slate-400">当前子系统下暂无一级菜单</div>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+
+                    {isLoadingSubsystemMenus ? (
+                      <div className="px-3 py-2 text-xs text-slate-400">正在加载子系统菜单...</div>
+                    ) : null}
+
+                    {!isLoadingSubsystemMenus && subsystemMenus.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-slate-400">暂无子系统菜单</div>
+                    ) : null}
                   </div>
                 </motion.div>
               )}
@@ -7296,12 +7498,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             onClick={() => setIsProfileOpen(!isProfileOpen)}
             className="w-full flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
-            <div className="flex items-center gap-3">
-              <div className="size-9 bg-slate-300 rounded-full bg-cover bg-center shrink-0 border border-white dark:border-slate-700 shadow-sm" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuAo89enNkqzoYdkb9ONwNeNg_myQ4q-s-AcgWsD1eYBfqrihZEHP9XvBAWfpzZHcKPOC8i1cd__r8V2W1wGzPzmj59sA9o_niCTnnQg-8KIDFB4Z5nHC3L1XKoqviq4CeqGnT_vVcMINVjckGM9cJBCbRpTKiis2JptKHUao34Tw_QwL6E1VjOld7ZtAa-jnHwT9Jo5nqwYn7Jwgf-i1w7ShT_MqoeIDOWWcMgFpmJza6ow1ncBHKcr67RoEEFBP3P-ffT7A_Izs0OM')" }}></div>
-              <div className="flex flex-col min-w-0 text-left">
-                <span className="text-xs font-bold text-slate-900 dark:text-white truncate">系统管理员</span>
-                <span className="text-[10px] text-slate-500 truncate">admin@langsu.ai</span>
+            <div className="flex min-w-0 items-center gap-3 text-left">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-white bg-[linear-gradient(135deg,#eff6ff,#dbeafe)] text-sm font-black text-primary shadow-sm dark:border-slate-700 dark:bg-[linear-gradient(135deg,#1e293b,#334155)] dark:text-sky-200">
+                {currentUserAvatarText}
               </div>
+              <span className="block truncate text-sm font-bold text-slate-900 dark:text-white">{currentUserName}</span>
             </div>
             <span className="material-symbols-outlined text-slate-400 text-sm">more_vert</span>
           </button>
@@ -7336,12 +7537,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
             <nav className="flex items-center gap-2 text-[13px] text-slate-500">
               <span className="hover:text-primary transition-colors cursor-pointer">
-                {subsystems.find(s => s.id === activeSubsystem)?.name}
+                {activeSubsystemName}
               </span>
-              <span className="material-symbols-outlined text-[16px] text-slate-400">chevron_right</span>
-              <span className="text-slate-900 dark:text-slate-200 font-semibold tracking-tight">
-                {activeMenuName}
-              </span>
+              {activeFirstLevelMenuName ? (
+                <>
+                  <span className="material-symbols-outlined text-[16px] text-slate-400">chevron_right</span>
+                  <span className="text-slate-900 dark:text-slate-200 font-semibold tracking-tight">
+                    {activeFirstLevelMenuName}
+                  </span>
+                </>
+              ) : null}
             </nav>
           </div>
 
@@ -7377,10 +7582,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               <div className="flex justify-between items-start mb-10 shrink-0">
                 <div className="space-y-2">
                   <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                    {activeMenuName} <span className="text-primary/40 ml-1 text-2xl">/</span> <span className="text-slate-400 font-medium text-lg capitalize">{activeMenu}</span>
+                    {activeMenuName} <span className="text-primary/40 ml-1 text-2xl">/</span> <span className="text-slate-400 font-medium text-lg">{activeMenuCode}</span>
                   </h3>
                   <p className="text-slate-500 text-sm max-w-2xl leading-relaxed">
-                    管理{subsystems.find(s => s.id === activeSubsystem)?.name}子系统下的{activeMenuName}相关业务模块。在这里您可以进行精细化核算配置、数据模型定义以及 AI 增强逻辑的导入。
+                    管理{activeSubsystemName}子系统下的{activeMenuName}相关业务模块。在这里您可以进行精细化核算配置、数据模型定义以及 AI 增强逻辑的导入。
                   </p>
                 </div>
                 <button onClick={openNewModuleGuide} className="flex items-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-xl shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 transition-all">
@@ -7390,107 +7595,92 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               </div>
 
               {/* Grid of Module Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-8">
-                {/* Card 1 */}
-                <div className="group relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-black/50 transition-all duration-300 flex flex-col">
-                  <div className="p-6 pb-0 flex justify-between items-start">
-                    <div className="size-14 rounded-2xl bg-primary/5 text-primary flex items-center justify-center border border-primary/10 group-hover:bg-primary group-hover:text-white transition-all duration-300">
-                      <span className="material-symbols-outlined text-3xl">account_balance</span>
-                    </div>
-                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50">
-                      <span className="status-dot bg-emerald-500"></span>
-                      <span className="text-[11px] font-bold tracking-wide uppercase">已启用</span>
-                    </div>
+              <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                {isLoadingSecondLevelMenus ? (
+                  <div className="col-span-full flex min-h-[280px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/60 px-8 py-12 text-center text-slate-400 dark:border-slate-800 dark:bg-slate-900/40">
+                    正在加载二级菜单明细...
                   </div>
-                  <div className="p-6 pt-5 flex-1">
-                    <h4 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight mb-1 group-hover:text-primary transition-colors">{activeMenuName}模块 A</h4>
-                    <div className="flex items-center gap-2 mb-4">
-                      <code className="text-[11px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-slate-200/50 dark:border-slate-700 font-mono">FM-{activeMenu.toUpperCase().substring(0, 2)}-001</code>
-                    </div>
-                    <p className="text-[13px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3">核心{activeMenuName}核算系统，包含凭证处理、账簿查询、报表生成等基础控制能力，支持跨部门自动结算。</p>
-                  </div>
-                  <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 rounded-b-2xl flex items-center justify-between">
-                    <div className="flex gap-4">
-                      <button onClick={() => setIsConfigOpen(true)} className="text-slate-500 hover:text-primary text-[13px] font-bold flex items-center gap-1.5 transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">tune</span> 配置
-                      </button>
-                      <button className="text-slate-500 hover:text-primary text-[13px] font-bold flex items-center gap-1.5 transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">visibility</span> 详情
-                      </button>
-                    </div>
-                    <button className="size-8 rounded-lg text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-600 dark:hover:text-slate-200 transition-all flex items-center justify-center border border-transparent hover:border-slate-200 dark:hover:border-slate-600">
-                      <span className="material-symbols-outlined text-lg">more_horiz</span>
-                    </button>
-                  </div>
-                </div>
+                ) : secondLevelMenuCount > 0 ? (
+                  secondLevelMenus.map((menu, index) => {
+                    const cardStyle = secondLevelMenuCardStyles[index % secondLevelMenuCardStyles.length];
+                    const isMenuEnabled = isUseflagEnabled(menu.useflag, menu.enabled);
+                    const menuCodeLabel = normalizeMenuCode(menu.code) || `${activeMenuCodePrefix}-${index + 1}`;
+                    const menuStructLabel = normalizeMenuCode(menu.menuStruct) || '未配置';
+                    const purviewLabel = normalizeMenuCode(menu.purviewId) || '未配置';
+                    const statusBadgeClass = isMenuEnabled
+                      ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50'
+                      : 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400 border-amber-100 dark:border-amber-900/50';
+                    const statusDotClass = isMenuEnabled ? 'bg-emerald-500' : 'bg-amber-500';
+                    const statusText = isMenuEnabled ? '已启用' : '已禁用';
 
-                {/* Card 2 */}
-                <div className="group relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col">
-                  <div className="p-6 pb-0 flex justify-between items-start">
-                    <div className="size-14 rounded-2xl bg-indigo-50 text-indigo-500 dark:bg-indigo-950/30 dark:text-indigo-400 flex items-center justify-center border border-indigo-100 dark:border-indigo-900/50 group-hover:bg-indigo-500 group-hover:text-white transition-all duration-300">
-                      <span className="material-symbols-outlined text-3xl">groups</span>
+                    return (
+                      <div
+                        key={menu.id}
+                        className="group relative flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:shadow-xl hover:shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900 dark:hover:shadow-black/50"
+                      >
+                        <div className="flex items-start justify-between p-6 pb-0">
+                          <div className={`size-14 rounded-2xl border flex items-center justify-center transition-all duration-300 ${cardStyle.iconClass}`}>
+                            <span className="material-symbols-outlined text-3xl">{cardStyle.icon}</span>
+                          </div>
+                          <div className={`flex items-center gap-2 rounded-full border px-2.5 py-1 ${statusBadgeClass}`}>
+                            <span className={`status-dot ${statusDotClass}`}></span>
+                            <span className="text-[11px] font-bold uppercase tracking-wide">
+                              {statusText}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex-1 p-6 pt-5">
+                          <h4 className="mb-1 text-lg font-bold tracking-tight text-slate-900 transition-colors group-hover:text-primary dark:text-white">
+                            {normalizeMenuTitle(menu.title)}
+                          </h4>
+                          <div className="mb-4 flex items-center gap-2">
+                            <code className="rounded border border-slate-200/50 bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                              {menuCodeLabel}
+                            </code>
+                          </div>
+                          <p className="line-clamp-3 text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
+                            隶属 {activeSubsystemName} / {activeMenuName}，菜单结构 {menuStructLabel}，权限标识 {purviewLabel}。
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-between rounded-b-2xl border-t border-slate-100 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-800/30">
+                          <div className="flex gap-4">
+                            <button
+                              onClick={() => setIsConfigOpen(true)}
+                              className={`flex items-center gap-1.5 text-[13px] font-bold text-slate-500 transition-colors ${cardStyle.actionClass}`}
+                            >
+                              <span className="material-symbols-outlined text-[18px]">tune</span>
+                              配置
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => showToast(`菜单「${normalizeMenuTitle(menu.title)}」详情待接入。`)}
+                              className={`flex items-center gap-1.5 text-[13px] font-bold text-slate-500 transition-colors ${cardStyle.actionClass}`}
+                            >
+                              <span className="material-symbols-outlined text-[18px]">visibility</span>
+                              详情
+                            </button>
+                          </div>
+                          <button className={`size-8 rounded-lg border border-transparent text-slate-400 transition-all flex items-center justify-center hover:bg-white dark:hover:bg-slate-700 hover:border-slate-200 dark:hover:border-slate-600 ${cardStyle.actionClass}`}>
+                            <span className="material-symbols-outlined text-lg">more_horiz</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="col-span-full flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/50 px-8 py-12 text-center dark:border-slate-800 dark:bg-slate-900/40">
+                    <div className="mb-5 flex size-16 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800">
+                      <span className="material-symbols-outlined text-4xl">view_module</span>
                     </div>
-                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-100 dark:border-amber-900/50">
-                      <span className="status-dot bg-amber-500"></span>
-                      <span className="text-[11px] font-bold tracking-wide uppercase">维护中</span>
-                    </div>
+                    <div className="text-lg font-bold text-slate-900 dark:text-white">暂无二级菜单卡片</div>
+                    <p className="mt-2 max-w-md text-[13px] leading-relaxed text-slate-500 dark:text-slate-400">
+                      {activeFirstLevelMenuName
+                        ? `当前一级菜单「${activeFirstLevelMenuName}」下还没有返回二级菜单数据。`
+                        : '请先从左侧选择一级菜单，右侧会加载对应的二级菜单明细卡片。'}
+                    </p>
                   </div>
-                  <div className="p-6 pt-5 flex-1">
-                    <h4 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight mb-1 group-hover:text-indigo-600 transition-colors">{activeMenuName}模块 B</h4>
-                    <div className="flex items-center gap-2 mb-4">
-                      <code className="text-[11px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-slate-200/50 dark:border-slate-700 font-mono">HR-{activeMenu.toUpperCase().substring(0, 2)}-002</code>
-                    </div>
-                    <p className="text-[13px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3">成本分析与管控，涉及薪酬计算、社保公积金支出控制，以及人力外包服务成本模型分析。</p>
-                  </div>
-                  <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 rounded-b-2xl flex items-center justify-between">
-                    <div className="flex gap-4">
-                      <button onClick={() => setIsConfigOpen(true)} className="text-slate-500 hover:text-indigo-600 text-[13px] font-bold flex items-center gap-1.5 transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">tune</span> 配置
-                      </button>
-                      <button className="text-slate-500 hover:text-indigo-600 text-[13px] font-bold flex items-center gap-1.5 transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">visibility</span> 详情
-                      </button>
-                    </div>
-                    <button className="size-8 rounded-lg text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-indigo-600 transition-all flex items-center justify-center border border-transparent hover:border-slate-200 dark:hover:border-slate-600">
-                      <span className="material-symbols-outlined text-lg">more_horiz</span>
-                    </button>
-                  </div>
-                </div>
+                )}
 
-                {/* Card 3 */}
-                <div className="group relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col">
-                  <div className="p-6 pb-0 flex justify-between items-start">
-                    <div className="size-14 rounded-2xl bg-cyan-50 text-cyan-500 dark:bg-cyan-950/30 dark:text-cyan-400 flex items-center justify-center border border-cyan-100 dark:border-cyan-900/50 group-hover:bg-cyan-500 group-hover:text-white transition-all duration-300">
-                      <span className="material-symbols-outlined text-3xl">inventory_2</span>
-                    </div>
-                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50">
-                      <span className="status-dot bg-emerald-500"></span>
-                      <span className="text-[11px] font-bold tracking-wide uppercase">已启用</span>
-                    </div>
-                  </div>
-                  <div className="p-6 pt-5 flex-1">
-                    <h4 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight mb-1 group-hover:text-cyan-600 transition-colors">{activeMenuName}模块 C</h4>
-                    <div className="flex items-center gap-2 mb-4">
-                      <code className="text-[11px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-slate-200/50 dark:border-slate-700 font-mono">AM-{activeMenu.toUpperCase().substring(0, 2)}-003</code>
-                    </div>
-                    <p className="text-[13px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3">覆盖固定资产与低值易耗品的折旧、维修、处置成本全生命周期跟踪，并集成智能折旧预测算法。</p>
-                  </div>
-                  <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 rounded-b-2xl flex items-center justify-between">
-                    <div className="flex gap-4">
-                      <button onClick={() => setIsConfigOpen(true)} className="text-slate-500 hover:text-cyan-600 text-[13px] font-bold flex items-center gap-1.5 transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">tune</span> 配置
-                      </button>
-                      <button className="text-slate-500 hover:text-cyan-600 text-[13px] font-bold flex items-center gap-1.5 transition-colors">
-                        <span className="material-symbols-outlined text-[18px]">visibility</span> 详情
-                      </button>
-                    </div>
-                    <button className="size-8 rounded-lg text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-cyan-600 transition-all flex items-center justify-center border border-transparent hover:border-slate-200 dark:hover:border-slate-600">
-                      <span className="material-symbols-outlined text-lg">more_horiz</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Add New Module Card (Distinct) */}
                 <button onClick={openNewModuleGuide} className="group relative rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 p-8 flex flex-col items-center justify-center bg-white/40 dark:bg-slate-900/40 hover:bg-primary/5 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 min-h-[320px]">
                   <div className="size-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-6 group-hover:bg-primary group-hover:scale-110 transition-all duration-300 shadow-inner">
                     <span className="material-symbols-outlined text-4xl text-slate-400 group-hover:text-white transition-colors">add</span>
@@ -7509,22 +7699,18 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               {/* Footer / Status Summary */}
               <div className="mt-auto pt-8 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-sm text-slate-500">
                 <div className="flex items-center gap-6">
-                  <p>展示 <span className="font-bold text-slate-900 dark:text-white">4</span> 个活跃业务模块</p>
+                  <p>展示 <span className="font-bold text-slate-900 dark:text-white">{secondLevelMenuCount}</span> 个菜单明细卡片</p>
                   <div className="flex items-center gap-4 text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                    <div className="flex items-center gap-1.5"><span className="status-dot bg-emerald-500"></span> 3 已启用</div>
-                    <div className="flex items-center gap-1.5"><span className="status-dot bg-amber-500"></span> 1 维护中</div>
+                    <div className="flex items-center gap-1.5"><span className="status-dot bg-emerald-500"></span> {secondLevelMenuCount} 已加载</div>
+                    {isLoadingSecondLevelMenus ? (
+                      <div className="flex items-center gap-1.5"><span className="status-dot bg-amber-500"></span> 同步中</div>
+                    ) : null}
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button className="size-9 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center hover:bg-white dark:hover:bg-slate-800 hover:border-primary/30 transition-all">
-                    <span className="material-symbols-outlined text-lg">chevron_left</span>
-                  </button>
-                  <button className="size-9 rounded-xl bg-primary text-white flex items-center justify-center font-bold shadow-md shadow-primary/20">1</button>
-                  <button className="size-9 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center hover:bg-white dark:hover:bg-slate-800 hover:border-primary/30 transition-all font-medium">2</button>
-                  <button className="size-9 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center hover:bg-white dark:hover:bg-slate-800 hover:border-primary/30 transition-all font-medium">3</button>
-                  <button className="size-9 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center hover:bg-white dark:hover:bg-slate-800 hover:border-primary/30 transition-all">
-                    <span className="material-symbols-outlined text-lg">chevron_right</span>
-                  </button>
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-4 py-2 text-[12px] font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300">
+                  <span className="material-symbols-outlined text-[16px] text-primary">folder_managed</span>
+                  {activeSubsystemName}
+                  {activeFirstLevelMenuName ? ` / ${activeFirstLevelMenuName}` : ''}
                 </div>
               </div>
             </motion.div>

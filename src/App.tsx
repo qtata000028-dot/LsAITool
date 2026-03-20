@@ -4,23 +4,35 @@
  */
 
 import { useState } from 'react';
-import Login from './components/Login';
 import Dashboard from './components/Dashboard';
+import Login from './components/Login';
+import type { AuthSession } from './lib/backend-auth';
+import { clearAuthSession, getStoredAuthSession } from './lib/auth-session';
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    if (typeof window === 'undefined') return false;
+  const [isDebugDashboard, setIsDebugDashboard] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
     const params = new URLSearchParams(window.location.search);
     return params.get('debug') === 'dashboard';
   });
 
-  return (
-    <>
-      {isLoggedIn ? (
-        <Dashboard onLogout={() => setIsLoggedIn(false)} />
-      ) : (
-        <Login onLogin={() => setIsLoggedIn(true)} />
-      )}
-    </>
+  const [session, setSession] = useState<AuthSession | null>(() => getStoredAuthSession());
+
+  const handleLogout = () => {
+    clearAuthSession();
+    setSession(null);
+    setIsDebugDashboard(false);
+  };
+
+  return isDebugDashboard || session ? (
+    <Dashboard
+      currentUserName={session?.employeeName || session?.username || '当前用户'}
+      onLogout={handleLogout}
+    />
+  ) : (
+    <Login onLogin={setSession} />
   );
 }
