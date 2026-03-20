@@ -310,9 +310,26 @@ const BILLTYPE_MENU_SECTIONS: ModuleMenuSectionSchema[] = [
   },
 ];
 
+const MENU_DEFAULT_COMMON_FIELD_KEYS: Record<BusinessType, string[]> = {
+  document: ['moduleCode', 'moduleName', 'templateType', 'mainTableName', 'mainSql', 'formKey', 'condKey'],
+  table: ['typeCode', 'typeName', 'prefix', 'masterTable', 'detailTable', 'masterSql', 'detailSql', 'formKey'],
+  tree: ['moduleCode', 'moduleName', 'templateType', 'mainTableName', 'mainSql', 'formKey', 'condKey'],
+};
+
+function filterMenuSectionsByKeys(sections: ModuleMenuSectionSchema[], keys: string[]) {
+  const keySet = new Set(keys);
+  return sections
+    .map((section) => ({
+      ...section,
+      fields: section.fields.filter((field) => keySet.has(field.key)),
+    }))
+    .filter((section) => section.fields.length > 0);
+}
+
 const FIELD_TYPE_OPTIONS = ['文本', '数字', '下拉框', '搜索框', '日期框', '单选框', '多选框', '树形节点关联'];
 const COLUMN_ALIGN_OPTIONS = ['左对齐', '居中', '右对齐'];
 const TABLE_TYPE_OPTIONS = ['普通表格', '多表头', '树表格'];
+const GRID_COLOR_RULE_OPERATOR_OPTIONS = ['等于', '包含', '大于', '小于', '大于等于', '小于等于'];
 const BILL_SOURCE_CONFIG_TYPE_OPTIONS = ['普通来源', '弹窗来源', '明细来源'];
 const BILL_SOURCE_TYPE_OPTIONS = ['SQL', '视图', '接口'];
 const TABLE_COLUMN_MIN_WIDTH = 48;
@@ -529,6 +546,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const [commonFuncs, setCommonFuncs] = useState<string[]>(['import', 'export']);
   const [isFuncPopoverOpen, setIsFuncPopoverOpen] = useState(false);
   const [businessType, setBusinessType] = useState<BusinessType>(initialBusinessType);
+  const [menuInfoTab, setMenuInfoTab] = useState<'common' | 'advanced'>('common');
+  const [menuPinnedFields, setMenuPinnedFields] = useState<Record<BusinessType, string[]>>(() => ({
+    document: [...MENU_DEFAULT_COMMON_FIELD_KEYS.document],
+    table: [...MENU_DEFAULT_COMMON_FIELD_KEYS.table],
+    tree: [...MENU_DEFAULT_COMMON_FIELD_KEYS.tree],
+  }));
   const [documentMenuDraft, setDocumentMenuDraft] = useState<ModuleMenuDraft>(DOCUMENT_MENU_DEFAULTS);
   const [billtypeMenuDraft, setBilltypeMenuDraft] = useState<ModuleMenuDraft>(BILLTYPE_MENU_DEFAULTS);
   const currentModuleGuide = MODULE_GUIDE_PROFILES[businessType] ?? MODULE_GUIDE_PROFILES.document;
@@ -542,14 +565,65 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   ];
   const currentMenuSections = businessType === 'table' ? BILLTYPE_MENU_SECTIONS : DOCUMENT_MENU_SECTIONS;
   const currentMenuDraft = businessType === 'table' ? billtypeMenuDraft : documentMenuDraft;
-  const currentConfigTableName = businessType === 'table' ? 'p_systembilltype' : 'p_systemdlltab';
+  const isMenuFieldFilled = (field: ModuleMenuFieldSchema, value: ModuleMenuValue | undefined) => {
+    if (field.kind === 'switch') return value === 'true';
+    return String(value ?? '').trim().length > 0;
+  };
   const filledMenuFieldCount = currentMenuSections.reduce((total, section) => {
     return total + section.fields.filter((field) => {
       const value = currentMenuDraft[field.key];
-      if (field.kind === 'switch') return value === 'true';
-      return String(value ?? '').trim().length > 0;
+      return isMenuFieldFilled(field, value);
     }).length;
   }, 0);
+  const currentMenuFieldEntries = useMemo(
+    () =>
+      currentMenuSections.flatMap((section) =>
+        section.fields.map((field) => ({
+          sectionTitle: section.title,
+          sectionDescription: section.description,
+          field,
+        })),
+      ),
+    [currentMenuSections],
+  );
+  const currentMenuFieldMap = useMemo(
+    () => new Map(currentMenuFieldEntries.map((entry) => [entry.field.key, entry.field])),
+    [currentMenuFieldEntries],
+  );
+  const currentPinnedMenuKeys = useMemo(() => {
+    const defaultKeys = MENU_DEFAULT_COMMON_FIELD_KEYS[businessType] ?? MENU_DEFAULT_COMMON_FIELD_KEYS.document;
+    const preferredKeys = menuPinnedFields[businessType] ?? defaultKeys;
+    const availableKeys = new Set(currentMenuFieldEntries.map((entry) => entry.field.key));
+    return preferredKeys.filter((key, index) => availableKeys.has(key) && preferredKeys.indexOf(key) === index);
+  }, [businessType, currentMenuFieldEntries, menuPinnedFields]);
+  const currentPinnedMenuKeySet = useMemo(() => new Set(currentPinnedMenuKeys), [currentPinnedMenuKeys]);
+  const currentAdvancedMenuKeys = useMemo(() => {
+    return currentMenuFieldEntries
+      .map((entry) => entry.field.key)
+      .filter((key) => !currentPinnedMenuKeySet.has(key));
+  }, [currentMenuFieldEntries, currentPinnedMenuKeySet]);
+  const currentCommonMenuSections = useMemo(
+    () => filterMenuSectionsByKeys(currentMenuSections, currentPinnedMenuKeys),
+    [currentMenuSections, currentPinnedMenuKeys],
+  );
+  const currentAdvancedMenuSections = useMemo(
+    () => filterMenuSectionsByKeys(currentMenuSections, currentAdvancedMenuKeys),
+    [currentAdvancedMenuKeys, currentMenuSections],
+  );
+  const commonFilledMenuFieldCount = useMemo(() => {
+    return currentPinnedMenuKeys.reduce((total, key) => {
+      const field = currentMenuFieldMap.get(key);
+      if (!field) return total;
+      return total + (isMenuFieldFilled(field, currentMenuDraft[key]) ? 1 : 0);
+    }, 0);
+  }, [currentMenuDraft, currentMenuFieldMap, currentPinnedMenuKeys]);
+  const advancedFilledMenuFieldCount = useMemo(() => {
+    return currentAdvancedMenuKeys.reduce((total, key) => {
+      const field = currentMenuFieldMap.get(key);
+      if (!field) return total;
+      return total + (isMenuFieldFilled(field, currentMenuDraft[key]) ? 1 : 0);
+    }, 0);
+  }, [currentAdvancedMenuKeys, currentMenuDraft, currentMenuFieldMap]);
 
   // Step 2: Editor
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -575,7 +649,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   // Step 4: Table Builder
   const [isFullscreenEditor, setIsFullscreenEditor] = useState(false);
-  const [isFullscreenConfig, setIsFullscreenConfig] = useState(false);
+  const [isFullscreenConfig, setIsFullscreenConfig] = useState(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -1002,11 +1076,85 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     ...overrides,
   });
 
-  const buildContextMenuItem = (index: number, overrides: Record<string, any> = {}) => ({
-    id: `ctx_${Date.now()}_${index}`,
-    label: `右键功能 ${index}`,
-    actionKey: `action_${index}`,
-    disabledCondition: '',
+  const normalizePopupMenuNumber = (value: any, fallback = 0) => {
+    const nextValue = Number(value);
+    return Number.isFinite(nextValue) ? nextValue : fallback;
+  };
+
+  const normalizeContextMenuItem = (item: Record<string, any> = {}, index = 1) => {
+    const menuName = item.menuname ?? item.label ?? `右键功能 ${index}`;
+    const templateName = item.dllname ?? item.actionKey ?? `action_${index}`;
+    const conditionValue = item.menuCond ?? item.disabledCondition ?? '';
+
+    return {
+      id: item.id ?? `ctx_${Date.now()}_${index}`,
+      tab: item.tab ?? '',
+      label: menuName,
+      menuname: menuName,
+      dllname: templateName,
+      actionKey: templateName,
+      dllpar1: item.dllpar1 ?? '',
+      dllpar2: item.dllpar2 ?? '',
+      dllpar3: item.dllpar3 ?? '',
+      dllpar4: item.dllpar4 ?? '',
+      dllpar5: item.dllpar5 ?? '',
+      dllpar6: item.dllpar6 ?? '',
+      dllpar7: item.dllpar7 ?? '',
+      dllpar8: item.dllpar8 ?? '',
+      dllpar9: item.dllpar9 ?? '',
+      dllpar10: item.dllpar10 ?? '',
+      visible: normalizePopupMenuNumber(item.visible, 0),
+      action: item.action ?? '',
+      actiontype: normalizePopupMenuNumber(item.actiontype, 0),
+      orderid: normalizePopupMenuNumber(item.orderid, index),
+      beforeMsg: item.beforeMsg ?? '',
+      msgSuccess: item.msgSuccess ?? '',
+      msgError: item.msgError ?? '',
+      menuid: item.menuid ?? '',
+      menuCond: conditionValue,
+      disabledCondition: conditionValue,
+      menuType: normalizePopupMenuNumber(item.menuType, 0),
+      visible1: normalizePopupMenuNumber(item.visible1, 0),
+      visible2: normalizePopupMenuNumber(item.visible2, 0),
+      maxwindow: normalizePopupMenuNumber(item.maxwindow, 0),
+      ifRefresh: normalizePopupMenuNumber(item.ifRefresh, 0),
+      showMobile: normalizePopupMenuNumber(item.showMobile, 0),
+      privilegeOper: item.privilegeOper ?? '',
+      DBClickEvent: normalizePopupMenuNumber(item.DBClickEvent, 0),
+      ifMoreClick: normalizePopupMenuNumber(item.ifMoreClick, 0),
+      ShowToolBar: normalizePopupMenuNumber(item.ShowToolBar, 0),
+      defailtimage: item.defailtimage ?? '',
+      showMode: normalizePopupMenuNumber(item.showMode, 0),
+      addShowMode: normalizePopupMenuNumber(item.addShowMode, 0),
+      stepcode: item.stepcode ?? '',
+      Fremark: item.Fremark ?? '',
+      mergeExec: normalizePopupMenuNumber(item.mergeExec, 0),
+      isCopy: normalizePopupMenuNumber(item.isCopy, 0),
+      beforeTab: item.beforeTab ?? '',
+      isStartRun: normalizePopupMenuNumber(item.isStartRun, 0),
+      isMrpClickBtn: normalizePopupMenuNumber(item.isMrpClickBtn, 0),
+      disabled: Boolean(item.disabled),
+    };
+  };
+
+  const buildContextMenuItem = (index: number, overrides: Record<string, any> = {}) =>
+    normalizeContextMenuItem({
+      id: `ctx_${Date.now()}_${index}`,
+      orderid: index,
+      ...overrides,
+    }, index);
+
+  const buildGridColorRule = (index: number, overrides: Record<string, any> = {}) => ({
+    id: `color_${Date.now()}_${index}`,
+    label: `颜色规则 ${index}`,
+    disabled: false,
+    field: '',
+    operator: '等于',
+    value: '',
+    tab: '',
+    textColor: '#9f1239',
+    backgroundColor: '#ffe4e6',
+    note: '',
     ...overrides,
   });
 
@@ -1017,6 +1165,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     tableType: '普通表格',
     contextMenuEnabled: false,
     contextMenuItems: [buildContextMenuItem(1, { label: '查看详情', actionKey: 'open-detail' })],
+    colorRulesEnabled: false,
+    colorRules: [],
     detailBoard: buildDetailBoardConfig(),
     ...overrides,
   });
@@ -1165,6 +1315,18 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     ...field,
   });
   const [leftTableColumns, setLeftTableColumns] = useState<any[]>([]);
+  const [leftTableConfig, setLeftTableConfig] = useState(
+    buildGridConfig('', '', {
+      tableType: '树表格',
+      contextMenuItems: [],
+      colorRules: [],
+      detailBoard: buildDetailBoardConfig([], { enabled: false }),
+    }),
+  );
+  const [leftFilterFields, setLeftFilterFields] = useState<any[]>([
+    buildConditionField(1, { name: '节点名称', placeholder: '请输入节点名称', width: 220 }),
+    buildConditionField(2, { name: '父节点', placeholder: '请输入父节点', width: 200 }),
+  ]);
   const [mainTableColumns, setMainTableColumns] = useState([
     { id: 'm_col1', name: '物料编码', type: '文本', width: BILL_FORM_DEFAULT_WIDTH, sourceField: 'material_code', ...getBillFieldLayout(0, BILL_FORM_DEFAULT_WIDTH) },
     { id: 'm_col2', name: '物料名称', type: '文本', width: BILL_FORM_DEFAULT_WIDTH, sourceField: 'material_name', ...getBillFieldLayout(1, BILL_FORM_DEFAULT_WIDTH) },
@@ -1181,6 +1343,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       contextMenuItems: [
         buildContextMenuItem(1, { label: '查看档案详情', actionKey: 'open-archive-detail' }),
         buildContextMenuItem(2, { label: '打开附件列表', actionKey: 'open-attachments' }),
+      ],
+      colorRulesEnabled: true,
+      colorRules: [
+        buildGridColorRule(1, { label: '高价物料', field: 'material_price', operator: '大于', value: '1000', textColor: '#9a3412', backgroundColor: '#ffedd5' }),
+        buildGridColorRule(2, { label: '公斤单位', field: 'material_unit', operator: '等于', value: '公斤', textColor: '#1d4ed8', backgroundColor: '#dbeafe' }),
       ],
       detailBoard: buildDetailBoardConfig(mainTableColumns, {
         enabled: true,
@@ -1223,9 +1390,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       | 'left-col'
       | 'main-col'
       | 'detail-col'
+      | 'left-filter'
       | 'main-filter'
       | 'detail-filter'
       | 'detail-tab'
+      | 'left-grid'
       | 'main-grid'
       | 'detail-grid'
       | 'source-grid'
@@ -1234,9 +1403,16 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       | 'detail-context';
     id?: string | null;
   }>({ kind: 'main-grid' });
-  const [inspectorPanelTab, setInspectorPanelTab] = useState<'common' | 'advanced'>('common');
+  const [inspectorPanelTab, setInspectorPanelTab] = useState<'common' | 'advanced' | 'contextmenu' | 'color'>('common');
+  const [selectedLeftContextMenuId, setSelectedLeftContextMenuId] = useState<string | null>(null);
+  const [selectedMainContextMenuId, setSelectedMainContextMenuId] = useState<string | null>(null);
+  const [selectedLeftColorRuleId, setSelectedLeftColorRuleId] = useState<string | null>(null);
+  const [selectedMainColorRuleId, setSelectedMainColorRuleId] = useState<string | null>(null);
+  const [selectedPopupMenuParamKey, setSelectedPopupMenuParamKey] = useState<string>('dllpar1');
+  const selectedPopupMenuOwnerRef = useRef<string | null>(null);
   const [selectedLeftForDelete, setSelectedLeftForDelete] = useState<string[]>([]);
   const [selectedMainForDelete, setSelectedMainForDelete] = useState<string[]>([]);
+  const [selectedLeftFiltersForDelete, setSelectedLeftFiltersForDelete] = useState<string[]>([]);
   const [selectedMainFiltersForDelete, setSelectedMainFiltersForDelete] = useState<string[]>([]);
 
   const [detailTableColumns, setDetailTableColumns] = useState<Record<string, any[]>>({
@@ -1359,7 +1535,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       fontSize: BILL_FORM_DEFAULT_FONT_SIZE,
     },
   ]);
-  const [documentLeftPaneWidth, setDocumentLeftPaneWidth] = useState(198);
+  const [documentLeftPaneWidth, setDocumentLeftPaneWidth] = useState(328);
   const [documentDetailPaneWidth, setDocumentDetailPaneWidth] = useState(332);
   const [documentTopPaneHeight, setDocumentTopPaneHeight] = useState(414);
   const [billDocumentTone, setBillDocumentTone] = useState<'blue' | 'red'>('blue');
@@ -1394,6 +1570,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     x: number;
     y: number;
     ids: string[];
+  } | null>(null);
+  const [longTextEditorState, setLongTextEditorState] = useState<{
+    title: string;
+    placeholder?: string;
+    draft: string;
+    onSave: (value: string) => void;
   } | null>(null);
   const [activeBillDragId, setActiveBillDragId] = useState<string | null>(null);
   const [activeBillResizeId, setActiveBillResizeId] = useState<string | null>(null);
@@ -1430,6 +1612,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const billDragFrameRef = useRef<number | null>(null);
   const billResizeFrameRef = useRef<number | null>(null);
   const billHeaderAutoFillRef = useRef(false);
+  const moduleSettingFullscreenInitRef = useRef(false);
   const pendingBillDragPositionRef = useRef<{
     id: string;
     scope: BillCanvasFieldScope;
@@ -1448,17 +1631,25 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const selectedLeftColId = inspectorTarget.kind === 'left-col' ? inspectorTarget.id ?? null : null;
   const selectedMainColId = inspectorTarget.kind === 'main-col' ? inspectorTarget.id ?? null : null;
   const selectedDetailColId = inspectorTarget.kind === 'detail-col' ? inspectorTarget.id ?? null : null;
+  const selectedLeftFilterId = inspectorTarget.kind === 'left-filter' ? inspectorTarget.id ?? null : null;
   const selectedMainFilterId = inspectorTarget.kind === 'main-filter' ? inspectorTarget.id ?? null : null;
   const selectedDetailFilterId = inspectorTarget.kind === 'detail-filter' ? inspectorTarget.id ?? null : null;
   const selectedDetailTabId = inspectorTarget.kind === 'detail-tab' ? inspectorTarget.id ?? null : null;
-  const selectedTableConfigScope = inspectorTarget.kind === 'main-grid' ? 'main' : inspectorTarget.kind === 'detail-grid' ? 'detail' : null;
+  const selectedTableConfigScope = inspectorTarget.kind === 'left-grid'
+    ? 'left'
+    : inspectorTarget.kind === 'main-grid'
+      ? 'main'
+      : inspectorTarget.kind === 'detail-grid'
+        ? 'detail'
+        : null;
   const selectedContextMenuScope = inspectorTarget.kind === 'main-context' ? 'main' : inspectorTarget.kind === 'detail-context' ? 'detail' : null;
   const syncScopedDeleteSelection = (activeScope?: 'left' | 'main' | 'detail') => {
     setSelectedLeftForDelete((prev) => (activeScope === 'left' || prev.length === 0 ? prev : []));
     setSelectedMainForDelete((prev) => (activeScope === 'main' || prev.length === 0 ? prev : []));
     setSelectedDetailForDelete((prev) => (activeScope === 'detail' || prev.length === 0 ? prev : []));
   };
-  const syncScopedFilterDeleteSelection = (activeScope?: 'main' | 'detail') => {
+  const syncScopedFilterDeleteSelection = (activeScope?: 'left' | 'main' | 'detail') => {
+    setSelectedLeftFiltersForDelete((prev) => (activeScope === 'left' || prev.length === 0 ? prev : []));
     setSelectedMainFiltersForDelete((prev) => (activeScope === 'main' || prev.length === 0 ? prev : []));
     setSelectedDetailFiltersForDelete((prev) => (activeScope === 'detail' || prev.length === 0 ? prev : []));
   };
@@ -1844,8 +2035,10 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   const handleBusinessTypeChange = (nextType: BusinessType) => {
     setBusinessType(nextType);
+    setMenuInfoTab('common');
     setBuilderSelectionContextMenu(null);
     setSelectedLeftForDelete([]);
+    setSelectedLeftFiltersForDelete([]);
     setSelectedMainForDelete([]);
     setSelectedDetailForDelete([]);
     setSelectedMainFiltersForDelete([]);
@@ -1863,64 +2056,120 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setDocumentMenuDraft((prev) => ({ ...prev, [fieldKey]: value }));
   };
 
-  const renderMenuInfoField = (field: ModuleMenuFieldSchema) => {
+  const toggleMenuPinnedField = (fieldKey: string, shouldPin?: boolean) => {
+    setMenuPinnedFields((prev) => {
+      const defaultKeys = MENU_DEFAULT_COMMON_FIELD_KEYS[businessType] ?? MENU_DEFAULT_COMMON_FIELD_KEYS.document;
+      const currentKeys = prev[businessType] ?? defaultKeys;
+      const nextShouldPin = shouldPin ?? !currentKeys.includes(fieldKey);
+      const nextKeys = nextShouldPin
+        ? currentKeys.includes(fieldKey)
+          ? currentKeys
+          : [...currentKeys, fieldKey]
+        : currentKeys.filter((key) => key !== fieldKey);
+
+      return {
+        ...prev,
+        [businessType]: nextKeys,
+      };
+    });
+  };
+
+  const renderMenuInfoField = (
+    field: ModuleMenuFieldSchema,
+    options: {
+      isPinned: boolean;
+      onTogglePinned: () => void;
+    },
+  ) => {
     const value = currentMenuDraft[field.key] ?? '';
     const wrapperClass = field.span === 'full' ? 'md:col-span-2' : '';
-    const baseInputClass = 'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] text-slate-700 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-100';
+    const cardClass = 'cloudy-glass-panel-soft rounded-[22px] border border-white/75 p-4 shadow-[0_20px_44px_-32px_rgba(15,23,42,0.28)]';
+    const baseInputClass = 'w-full rounded-[18px] border border-slate-200/80 bg-slate-50/92 px-3.5 py-2.5 text-[12px] text-slate-700 outline-none transition shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] focus:border-[#1686e3]/70 focus:bg-white focus:ring-4 focus:ring-[#1686e3]/10 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-100';
+    const pinButtonClass = options.isPinned
+      ? 'border-rose-200/80 bg-rose-50/90 text-rose-600 hover:border-rose-300 hover:bg-rose-100/80 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200'
+      : 'border-sky-200/80 bg-sky-50/90 text-sky-700 hover:border-sky-300 hover:bg-sky-100/80 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200';
 
     return (
-      <div key={field.key} className={`space-y-2.5 ${wrapperClass}`.trim()}>
-        <div className="flex items-center justify-between gap-3">
-          <label className="text-[13px] font-bold text-slate-700 dark:text-slate-300">{field.label}</label>
-          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500">
-            {field.tableField}
-          </span>
-        </div>
-
-        {field.kind === 'textarea' ? (
-          <textarea
-            rows={field.rows ?? 4}
-            value={String(value)}
-            placeholder={field.placeholder}
-            onChange={(event) => updateCurrentMenuDraft(field.key, event.target.value)}
-            className={`${baseInputClass} resize-y leading-6`}
-          />
-        ) : field.kind === 'select' ? (
-          <select
-            value={String(value)}
-            onChange={(event) => updateCurrentMenuDraft(field.key, event.target.value)}
-            className={`${baseInputClass} cursor-pointer appearance-none`}
-          >
-            {(field.options ?? []).map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        ) : field.kind === 'switch' ? (
-          <label className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/60">
-            <div>
-              <div className="text-[14px] font-semibold text-slate-700 dark:text-slate-100">{value === 'true' ? '已开启' : '未开启'}</div>
-              <div className="mt-1 text-[12px] text-slate-400">{field.hint || '布尔开关字段'}</div>
+      <div key={field.key} className={`${wrapperClass}`.trim()}>
+        <div className={cardClass}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-[13px] font-bold text-slate-700 dark:text-slate-200">{field.label}</label>
+                <code className="rounded-full border border-slate-200/80 bg-white/85 px-2.5 py-1 text-[10px] font-bold text-slate-400 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-500">
+                  {field.tableField}
+                </code>
+              </div>
+              {field.hint && field.kind === 'switch' && (
+                <p className="mt-1 text-[11px] leading-5 text-slate-400">{field.hint}</p>
+              )}
             </div>
-            <input
-              type="checkbox"
-              checked={value === 'true'}
-              onChange={(event) => updateCurrentMenuDraft(field.key, event.target.checked ? 'true' : 'false')}
-              className="h-5 w-5 rounded border-slate-300 text-primary focus:ring-primary/20"
-            />
-          </label>
-        ) : (
-          <input
-            type={field.kind === 'number' ? 'number' : 'text'}
-            value={String(value)}
-            placeholder={field.placeholder}
-            onChange={(event) => updateCurrentMenuDraft(field.key, event.target.value)}
-            className={baseInputClass}
-          />
-        )}
+            <button
+              type="button"
+              onClick={options.onTogglePinned}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${pinButtonClass}`}
+            >
+              <span className="material-symbols-outlined text-[15px]">
+                {options.isPinned ? 'remove_circle' : 'add_circle'}
+              </span>
+              {options.isPinned ? '移出常用' : '加入常用'}
+            </button>
+          </div>
 
-        {field.hint && field.kind !== 'switch' && (
-          <p className="text-[12px] leading-5 text-slate-400">{field.hint}</p>
-        )}
+          <div className="mt-3">
+            {field.kind === 'textarea' ? (
+              <textarea
+                rows={field.rows ?? 4}
+                value={String(value)}
+                placeholder={field.placeholder}
+                onChange={(event) => updateCurrentMenuDraft(field.key, event.target.value)}
+                className={`${baseInputClass} min-h-[112px] resize-y font-mono text-[11px] leading-5`}
+              />
+            ) : field.kind === 'select' ? (
+              <div className="relative">
+                <select
+                  value={String(value)}
+                  onChange={(event) => updateCurrentMenuDraft(field.key, event.target.value)}
+                  className={`${baseInputClass} cursor-pointer appearance-none pr-10`}
+                >
+                  {(field.options ?? []).map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
+                  expand_more
+                </span>
+              </div>
+            ) : field.kind === 'switch' ? (
+              <label className="flex cursor-pointer items-center justify-between rounded-[18px] border border-slate-200/80 bg-white/82 px-4 py-3.5 transition-colors hover:border-[#1686e3]/30 dark:border-slate-700 dark:bg-slate-900/60">
+                <div className="text-[13px] font-semibold text-slate-700 dark:text-slate-100">
+                  {value === 'true' ? '已开启' : '未开启'}
+                </div>
+                <span className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${value === 'true' ? 'bg-[#f3afb7]' : 'bg-slate-200 dark:bg-slate-700'}`}>
+                  <input
+                    type="checkbox"
+                    checked={value === 'true'}
+                    onChange={(event) => updateCurrentMenuDraft(field.key, event.target.checked ? 'true' : 'false')}
+                    className="sr-only"
+                  />
+                  <span className={`absolute left-1 size-5 rounded-full bg-white shadow-[0_6px_16px_-8px_rgba(15,23,42,0.45)] transition-transform ${value === 'true' ? 'translate-x-5' : ''}`}></span>
+                </span>
+              </label>
+            ) : (
+              <input
+                type={field.kind === 'number' ? 'number' : 'text'}
+                value={String(value)}
+                placeholder={field.placeholder}
+                onChange={(event) => updateCurrentMenuDraft(field.key, event.target.value)}
+                className={baseInputClass}
+              />
+            )}
+          </div>
+
+          {field.hint && field.kind !== 'switch' && (
+            <p className="mt-2 text-[11px] leading-5 text-slate-400">{field.hint}</p>
+          )}
+        </div>
       </div>
     );
   };
@@ -1930,7 +2179,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setConfigStep(1);
     setCompletedSteps([]);
     setBusinessType('document');
-    setIsFullscreenConfig(false);
+    setIsFullscreenConfig(true);
     setIsFullscreenEditor(false);
     setSurveyStep(0);
     setSurveyAnswers([]);
@@ -1940,178 +2189,301 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setSurveyError(null);
   };
 
-  const renderMenuInfoStep = () => (
-    <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1fr)_360px] flex-1">
-      <div className="space-y-8">
-        <div className="rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_right,rgba(49,98,255,0.1),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,250,255,0.98))] p-8 shadow-[0_26px_80px_-52px_rgba(15,23,42,0.34)] dark:border-slate-700 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(15,23,42,0.98))]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-3xl space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] font-bold tracking-[0.24em] text-primary">
-                菜单信息
+  const renderMenuInfoStep = () => {
+    const panelShellClass = 'cloudy-glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70';
+    const panelHeaderClass = 'cloudy-glass-toolbar shrink-0 px-5 py-5';
+    const panelTitleClass = 'text-[15px] font-bold leading-6 text-slate-800 break-words dark:text-slate-100';
+    const panelBadgeClass = 'cloudy-glass-chip inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:text-slate-300';
+    const panelIconShellClass = 'cloudy-glass-orb flex size-10 shrink-0 items-center justify-center rounded-[16px]';
+    const compactInfoCardClass = 'cloudy-glass-panel-soft rounded-[18px] px-3.5 py-3';
+    const compactCardClass = 'cloudy-glass-panel-soft rounded-[20px] p-4';
+    const sectionTitleClass = 'mb-3 flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100';
+    const menuTabs: Array<{ id: 'common' | 'advanced'; label: string; icon: string }> = [
+      { id: 'common', label: '常用', icon: 'folder_managed' },
+      { id: 'advanced', label: '不常用', icon: 'inventory_2' },
+    ];
+    const activeSections = menuInfoTab === 'common' ? currentCommonMenuSections : currentAdvancedMenuSections;
+    const activeFieldCount = menuInfoTab === 'common' ? currentPinnedMenuKeys.length : currentAdvancedMenuKeys.length;
+    const activeFilledCount = menuInfoTab === 'common' ? commonFilledMenuFieldCount : advancedFilledMenuFieldCount;
+
+    return (
+      <div className="grid flex-1 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className={panelShellClass}>
+          <div className={panelHeaderClass}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-3">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#1686e3]/15 bg-[#1686e3]/5 px-3 py-1 text-[11px] font-bold tracking-[0.24em] text-[#1686e3]">
+                  菜单信息
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-[24px] font-black tracking-tight text-slate-900 dark:text-white">
+                    常用字段先配，不常用按需收进目录
+                  </h3>
+                  <p className="max-w-3xl text-[13px] leading-6 text-slate-500 dark:text-slate-300">
+                    当前 {currentModuleGuide.label} 共 {currentMenuFieldEntries.length} 项配置，先维护高频入口字段，剩余字段放到不常用页签里分流。
+                  </p>
+                </div>
               </div>
-              <h3 className="text-[28px] font-black tracking-tight text-slate-900 dark:text-white">
-                按 {currentConfigTableName} 结构配置模块入口
-              </h3>
-              <p className="text-[14px] leading-7 text-slate-500 dark:text-slate-300">
-                当前菜单信息已经改成直接按旧系统主配置表字段构建。后续数据库接入时，这一页就按这里的字段名去查询、映射和回填。
-              </p>
+
+              <button
+                type="button"
+                onClick={() => setConfigStep(1)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-[12px] font-bold text-slate-500 transition-colors hover:border-[#1686e3]/30 hover:text-[#1686e3] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
+                返回切换类型
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setConfigStep(1)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-[12px] font-bold text-slate-500 transition-colors hover:border-primary/30 hover:text-primary dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-            >
-              <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
-              返回切换类型
-            </button>
-          </div>
-
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <span className="inline-flex items-center gap-2 rounded-full bg-primary px-3 py-1 text-[11px] font-bold text-white shadow-[0_12px_24px_-16px_rgba(49,98,255,0.48)]">
-              <span className="material-symbols-outlined text-[15px]">
-                {businessType === 'table' ? 'receipt_long' : 'table_view'}
+            <div className="mt-4 flex flex-wrap items-center gap-2.5">
+              <span className="inline-flex items-center gap-2 rounded-full bg-[#1686e3] px-3 py-1 text-[11px] font-bold text-white shadow-[0_12px_24px_-16px_rgba(22,134,227,0.52)]">
+                <span className="material-symbols-outlined text-[15px]">
+                  {businessType === 'table' ? 'receipt_long' : 'table_view'}
+                </span>
+                {currentModuleGuide.label}
               </span>
-              {currentModuleGuide.label}
-            </span>
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-              主配置表：{currentModuleGuide.configTable}
-            </span>
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-              已填写字段：{filledMenuFieldCount}
-            </span>
-          </div>
-        </div>
-
-        {currentMenuSections.map((section) => (
-          <section key={section.title} className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_70px_-58px_rgba(15,23,42,0.4)] dark:border-slate-700 dark:bg-slate-900/96">
-            <div className="border-b border-slate-100 bg-slate-50/70 px-7 py-5 dark:border-slate-800 dark:bg-slate-800/60">
-              <h4 className="text-[18px] font-black tracking-tight text-slate-900 dark:text-white">{section.title}</h4>
-              <p className="mt-2 text-[13px] leading-6 text-slate-500 dark:text-slate-300">{section.description}</p>
+              <span className={panelBadgeClass}>配置表 {currentModuleGuide.configTable}</span>
+              <span className={panelBadgeClass}>已填写 {filledMenuFieldCount}/{currentMenuFieldEntries.length}</span>
+              <span className={panelBadgeClass}>{menuInfoTab === 'common' ? '常用目录' : '不常用目录'} {activeFilledCount}/{activeFieldCount}</span>
             </div>
-            <div className="grid gap-5 p-7 md:grid-cols-2">
-              {section.fields.map(renderMenuInfoField)}
-            </div>
-          </section>
-        ))}
 
-        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_70px_-58px_rgba(15,23,42,0.4)] dark:border-slate-700 dark:bg-slate-900/96">
-          <div className="border-b border-slate-100 bg-slate-50/70 px-7 py-5 dark:border-slate-800 dark:bg-slate-800/60">
-            <h4 className="text-[18px] font-black tracking-tight text-slate-900 dark:text-white">扩展能力关联</h4>
-            <p className="mt-2 text-[13px] leading-6 text-slate-500 dark:text-slate-300">
-              这部分先保留功能开关选择，后面继续映射到右键、审批流、附件和附加模块等复用表。
-            </p>
-          </div>
-          <div className="p-7">
-            <div className="flex flex-wrap gap-3 relative">
-              {commonFuncs.map((funcId) => {
-                const func = funcOptions.find((item) => item.id === funcId);
-                if (!func) return null;
+            <div className="mt-4 flex items-center gap-2 rounded-[18px] border border-slate-200/70 bg-white/82 p-1.5 dark:border-slate-700 dark:bg-slate-900/50">
+              {menuTabs.map((tab) => {
+                const isActive = menuInfoTab === tab.id;
+
                 return (
-                  <div key={func.id} className="px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-[13px] font-bold flex items-center gap-2 shadow-sm">
-                    <span className="material-symbols-outlined text-[18px]">{func.icon}</span>
-                    {func.name}
-                    <button onClick={() => toggleFunc(func.id)} className="ml-1 hover:text-rose-500 transition-colors flex items-center justify-center">
-                      <span className="material-symbols-outlined text-[16px]">close</span>
-                    </button>
-                  </div>
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setMenuInfoTab(tab.id)}
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-[14px] px-3 py-2 text-[12px] font-bold transition-all ${
+                      isActive
+                        ? 'bg-white text-slate-800 shadow-[0_14px_28px_-22px_rgba(22,134,227,0.36)] dark:bg-slate-900/92 dark:text-slate-100'
+                        : 'text-slate-500 hover:bg-white/80 dark:text-slate-400 dark:hover:bg-slate-900/72'
+                    }`}
+                  >
+                    <span className={`material-symbols-outlined text-[16px] ${isActive ? 'text-[#1686e3]' : 'text-slate-400 dark:text-slate-500'}`}>{tab.icon}</span>
+                    <span>{tab.label}</span>
+                  </button>
                 );
               })}
-              <div className="relative">
-                <button onClick={() => setIsFuncPopoverOpen(!isFuncPopoverOpen)} className="px-4 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-slate-500 hover:text-primary hover:border-primary/50 hover:bg-primary/5 text-[13px] font-bold flex items-center gap-2 transition-all">
-                  <span className="material-symbols-outlined text-[18px]">add</span>
-                  添加功能
-                </button>
-                <AnimatePresence>
-                  {isFuncPopoverOpen && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setIsFuncPopoverOpen(false)}></div>
-                      <motion.div
-                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        className="absolute top-full left-0 mt-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 p-2"
-                      >
-                        <div className="text-[12px] font-bold text-slate-400 mb-2 px-2 pt-1">选择扩展功能</div>
-                        <div className="space-y-1">
-                          {funcOptions.map((func) => {
-                            const isSelected = commonFuncs.includes(func.id);
-                            return (
-                              <button
-                                key={func.id}
-                                onClick={() => toggleFunc(func.id)}
-                                className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between text-[13px] transition-colors ${isSelected ? 'bg-primary/10 text-primary font-bold' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <span className="material-symbols-outlined text-[18px]">{func.icon}</span>
-                                  {func.name}
-                                </div>
-                                {isSelected && <span className="material-symbols-outlined text-[16px]">check</span>}
-                              </button>
-                            );
-                          })}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 md:p-5">
+            {activeSections.length > 0 ? (
+              <div className="space-y-4">
+                {activeSections.map((section) => (
+                  <section key={`${menuInfoTab}-${section.title}`} className={compactCardClass}>
+                    <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/60 pb-4 dark:border-slate-700/70">
+                      <div>
+                        <div className={sectionTitleClass}>
+                          <span className="material-symbols-outlined text-[16px] text-[#1686e3]">dashboard_customize</span>
+                          <span>{section.title}</span>
                         </div>
-                      </motion.div>
-                    </>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div className="flex flex-col gap-6">
-        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_70px_-58px_rgba(15,23,42,0.4)] dark:border-slate-700 dark:bg-slate-900/96">
-          <div className="border-b border-slate-100 bg-slate-50/70 px-6 py-5 dark:border-slate-800 dark:bg-slate-800/60">
-            <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">当前菜单信息写入表</h3>
-          </div>
-          <div className="p-6 space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-              <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">LEGACY TABLE</div>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <code className="rounded-xl bg-slate-900 px-3 py-2 text-[13px] font-bold text-cyan-300 dark:bg-slate-950">
-                  {currentModuleGuide.configTable}
-                </code>
-                <span className="text-[13px] font-semibold text-slate-600 dark:text-slate-300">{currentModuleGuide.configTableDesc}</span>
-              </div>
-              <p className="mt-3 text-[12px] leading-6 text-slate-500 dark:text-slate-400">
-                第二步所有表单项都按旧系统字段名映射展示，后端接数据库时直接对照这些字段即可。
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/30">
-              <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">主键摘要</div>
-              <div className="mt-3 space-y-3">
-                {currentMenuSections.slice(0, 2).flatMap((section) => section.fields.slice(0, 3)).map((field) => (
-                  <div key={`summary-${field.key}`} className="rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-[12px] font-bold text-slate-500 dark:text-slate-300">{field.label}</span>
-                      <code className="text-[10px] font-bold text-slate-400">{field.tableField}</code>
+                        <p className="text-[12px] leading-6 text-slate-500 dark:text-slate-300">{section.description}</p>
+                      </div>
+                      <span className={panelBadgeClass}>{section.fields.length} 项</span>
                     </div>
-                    <div className="mt-2 break-all text-[13px] font-semibold text-slate-800 dark:text-slate-100">
-                      {String(currentMenuDraft[field.key] ?? '') || '未填写'}
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {section.fields.map((field) =>
+                        renderMenuInfoField(field, {
+                          isPinned: currentPinnedMenuKeySet.has(field.key),
+                          onTogglePinned: () => toggleMenuPinnedField(field.key, !currentPinnedMenuKeySet.has(field.key)),
+                        }),
+                      )}
                     </div>
-                  </div>
+                  </section>
                 ))}
               </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/30">
-              <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">后续关联表</div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {currentModuleGuide.relatedTables.map((tableName) => (
-                  <span key={tableName} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    {tableName}
+            ) : (
+              <div className="flex min-h-[280px] items-center justify-center">
+                <div className="cloudy-glass-panel-soft max-w-md rounded-[24px] border border-dashed border-slate-300/70 px-6 py-8 text-center dark:border-slate-700">
+                  <span className="material-symbols-outlined text-[34px] text-[#1686e3]">
+                    {menuInfoTab === 'common' ? 'folder_off' : 'done_all'}
                   </span>
-                ))}
+                  <h4 className="mt-4 text-[18px] font-black tracking-tight text-slate-900 dark:text-white">
+                    {menuInfoTab === 'common' ? '常用目录还是空的' : '不常用字段已经清空'}
+                  </h4>
+                  <p className="mt-2 text-[13px] leading-6 text-slate-500 dark:text-slate-300">
+                    {menuInfoTab === 'common'
+                      ? '先去不常用页签把要常看的字段加进来，目录会自动更新。'
+                      : '当前字段已经全部收进常用目录，后续可以在常用页签继续精简。'}
+                  </p>
+                  {menuInfoTab === 'common' && (
+                    <button
+                      type="button"
+                      onClick={() => setMenuInfoTab('advanced')}
+                      className="mt-5 inline-flex items-center gap-2 rounded-full border border-[#1686e3]/20 bg-[#1686e3]/8 px-4 py-2 text-[12px] font-bold text-[#1686e3] transition-colors hover:bg-[#1686e3]/12"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">add_box</span>
+                      去不常用添加字段
+                    </button>
+                  )}
+                </div>
               </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-6">
+          <div className={panelShellClass}>
+            <div className={panelHeaderClass}>
+              <div className="flex items-start gap-3">
+                <div className={panelIconShellClass}>
+                  <span className="material-symbols-outlined text-[18px] text-[#1686e3]">folder_managed</span>
+                </div>
+                <div>
+                  <div className={panelTitleClass}>常用目录</div>
+                  <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-300">
+                    从不常用收进来的字段会直接出现在这里，也可以在这里精简。
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 p-4">
+              <section className={compactCardClass}>
+                <div className={sectionTitleClass}>
+                  <span className="material-symbols-outlined text-[16px] text-[#1686e3]">list_alt</span>
+                  <span>当前常用字段</span>
+                </div>
+                {currentPinnedMenuKeys.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {currentPinnedMenuKeys.map((key) => {
+                      const field = currentMenuFieldMap.get(key);
+                      if (!field) return null;
+
+                      return (
+                        <button
+                          key={`pinned-${key}`}
+                          type="button"
+                          onClick={() => toggleMenuPinnedField(key, false)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/88 px-3 py-1.5 text-[11px] font-bold text-slate-600 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-rose-500/30 dark:hover:bg-rose-500/10 dark:hover:text-rose-200"
+                        >
+                          {field.label}
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-[18px] border border-dashed border-slate-300/70 px-4 py-4 text-[12px] leading-6 text-slate-500 dark:border-slate-700 dark:text-slate-300">
+                    这里会显示你保留的高频字段。
+                  </div>
+                )}
+              </section>
+
+              <section className={compactCardClass}>
+                <div className={sectionTitleClass}>
+                  <span className="material-symbols-outlined text-[16px] text-[#1686e3]">insights</span>
+                  <span>配置概览</span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                  <div className={compactInfoCardClass}>
+                    <div className="text-[11px] font-bold tracking-[0.06em] text-slate-400">常用字段</div>
+                    <div className="mt-2 text-[22px] font-black tracking-tight text-slate-900 dark:text-white">{currentPinnedMenuKeys.length}</div>
+                    <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">已填写 {commonFilledMenuFieldCount}</div>
+                  </div>
+                  <div className={compactInfoCardClass}>
+                    <div className="text-[11px] font-bold tracking-[0.06em] text-slate-400">不常用字段</div>
+                    <div className="mt-2 text-[22px] font-black tracking-tight text-slate-900 dark:text-white">{currentAdvancedMenuKeys.length}</div>
+                    <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">已填写 {advancedFilledMenuFieldCount}</div>
+                  </div>
+                  <div className={compactInfoCardClass}>
+                    <div className="text-[11px] font-bold tracking-[0.06em] text-slate-400">配置表</div>
+                    <div className="mt-2 break-all text-[13px] font-bold text-slate-800 dark:text-slate-100">{currentModuleGuide.configTable}</div>
+                    <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">{currentModuleGuide.configTableDesc}</div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div className={panelShellClass}>
+            <div className={panelHeaderClass}>
+              <div className="flex items-start gap-3">
+                <div className={panelIconShellClass}>
+                  <span className="material-symbols-outlined text-[18px] text-[#1686e3]">tune</span>
+                </div>
+                <div>
+                  <div className={panelTitleClass}>扩展能力</div>
+                  <p className="mt-1 text-[12px] leading-5 text-slate-500 dark:text-slate-300">
+                    保留常用功能开关，后面继续映射右键、审批流和附件配置。
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4">
+              <section className={compactCardClass}>
+                <div className="flex flex-wrap gap-3 relative">
+                  {commonFuncs.map((funcId) => {
+                    const func = funcOptions.find((item) => item.id === funcId);
+                    if (!func) return null;
+                    return (
+                      <div key={func.id} className="inline-flex items-center gap-2 rounded-[16px] border border-[#1686e3]/18 bg-[#1686e3]/8 px-3.5 py-2 text-[12px] font-bold text-[#1686e3]">
+                        <span className="material-symbols-outlined text-[16px]">{func.icon}</span>
+                        {func.name}
+                        <button type="button" onClick={() => toggleFunc(func.id)} className="flex items-center justify-center transition-colors hover:text-rose-500">
+                          <span className="material-symbols-outlined text-[15px]">close</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsFuncPopoverOpen(!isFuncPopoverOpen)}
+                      className="inline-flex items-center gap-2 rounded-[16px] border border-dashed border-slate-300 px-3.5 py-2 text-[12px] font-bold text-slate-500 transition-all hover:border-[#1686e3]/40 hover:bg-[#1686e3]/6 hover:text-[#1686e3] dark:border-slate-600 dark:text-slate-300"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">add</span>
+                      添加功能
+                    </button>
+                    <AnimatePresence>
+                      {isFuncPopoverOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setIsFuncPopoverOpen(false)}></div>
+                          <motion.div
+                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                            className="absolute left-0 top-full z-50 mt-2 w-64 rounded-[18px] border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-800"
+                          >
+                            <div className="mb-2 px-2 pt-1 text-[12px] font-bold text-slate-400">选择扩展功能</div>
+                            <div className="space-y-1">
+                              {funcOptions.map((func) => {
+                                const isSelected = commonFuncs.includes(func.id);
+                                return (
+                                  <button
+                                    key={func.id}
+                                    type="button"
+                                    onClick={() => toggleFunc(func.id)}
+                                    className={`flex w-full items-center justify-between rounded-[14px] px-3 py-2 text-left text-[13px] transition-colors ${isSelected ? 'bg-[#1686e3]/10 text-[#1686e3] font-bold' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700'}`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="material-symbols-outlined text-[18px]">{func.icon}</span>
+                                      {func.name}
+                                    </div>
+                                    {isSelected && <span className="material-symbols-outlined text-[16px]">check</span>}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const parseDetailBoardClipboardColumnIds = (text: string, availableColumns: any[]) => {
     const availableIds = new Set(availableColumns.map((column) => column.id));
@@ -2149,19 +2521,23 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     });
   };
 
-  const activateConditionSelection = (conditionId: string | null) => {
+  const activateConditionSelection = (scope: 'left' | 'main' | 'detail', conditionId: string | null) => {
     setBuilderSelectionContextMenu(null);
-    setInspectorTarget(conditionId ? { kind: 'main-filter', id: conditionId } : { kind: 'none' });
+    setInspectorTarget(conditionId ? {
+      kind: scope === 'left' ? 'left-filter' : scope === 'main' ? 'main-filter' : 'detail-filter',
+      id: conditionId,
+    } : { kind: 'none' });
   };
 
   const activateDetailConditionSelection = (conditionId: string | null) => {
-    setBuilderSelectionContextMenu(null);
-    setInspectorTarget(conditionId ? { kind: 'detail-filter', id: conditionId } : { kind: 'none' });
+    activateConditionSelection('detail', conditionId);
   };
 
-  const activateTableConfigSelection = (scope: 'main' | 'detail') => {
+  const activateTableConfigSelection = (scope: 'left' | 'main' | 'detail') => {
     setBuilderSelectionContextMenu(null);
-    setInspectorTarget({ kind: scope === 'main' ? 'main-grid' : 'detail-grid' });
+    setInspectorTarget({
+      kind: scope === 'left' ? 'left-grid' : scope === 'main' ? 'main-grid' : 'detail-grid',
+    });
   };
 
   const activateContextMenuSelection = (scope: 'main' | 'detail') => {
@@ -2332,9 +2708,14 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     });
   };
 
-  const deleteSelectedConditions = (scope: 'main' | 'detail', ids: string[]) => {
+  const deleteSelectedConditions = (scope: 'left' | 'main' | 'detail', ids: string[]) => {
     const targetIds = Array.from(new Set(ids.filter(Boolean)));
     if (targetIds.length === 0) return;
+
+    if (scope === 'left') {
+      setLeftFilterFields((prev) => prev.filter((field) => !targetIds.includes(field.id)));
+      setSelectedLeftFiltersForDelete([]);
+    }
 
     if (scope === 'main') {
       setMainFilterFields((prev) => prev.filter((field) => !targetIds.includes(field.id)));
@@ -2351,6 +2732,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
     setBuilderSelectionContextMenu(null);
     setInspectorTarget((prev) => {
+      if (scope === 'left' && prev.kind === 'left-filter' && prev.id && targetIds.includes(prev.id)) {
+        return { kind: 'none' };
+      }
       if (scope === 'main' && prev.kind === 'main-filter' && prev.id && targetIds.includes(prev.id)) {
         return { kind: 'none' };
       }
@@ -4167,7 +4551,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
   const workspaceThemeVars = getWorkspaceThemeVars(workspaceTheme);
   const workspaceThemeStyles = getDetailBoardTheme(workspaceTheme);
-  const inspectorPaneWidth = isConfigFullscreenActive ? 392 : 356;
+  const inspectorPaneWidth = isConfigFullscreenActive ? 448 : 388;
   const currentDetailFillType = DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === tabFillTypes[activeTab])
     ? tabFillTypes[activeTab]
     : DETAIL_FILL_TYPE_OPTIONS[0].value;
@@ -4202,11 +4586,17 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   useEffect(() => {
     if (!treeRelationColumn) {
-      setInspectorTarget((prev) => (prev.kind === 'left-col' ? { kind: 'none' } : prev));
+      setInspectorTarget((prev) => (
+        prev.kind === 'left-col' || prev.kind === 'left-filter' || prev.kind === 'left-grid'
+          ? { kind: 'none' }
+          : prev
+      ));
       return;
     }
 
     const sourceFields = parsedTreeSourceFields.length > 0 ? parsedTreeSourceFields : ['node_id', 'node_name', 'parent_id'];
+    const ownerField = normalizeColumn(treeRelationColumn);
+    const ownerFieldKey = ownerField.sourceField || treeRelationColumn.id;
     setLeftTableColumns((prev) => sourceFields.map((fieldName, index) => {
       const existing = prev.find((item) => item.sourceField === fieldName);
       if (existing) {
@@ -4219,13 +4609,95 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         width: index === 1 ? 176 : 148,
       });
     }));
+    setLeftTableConfig((prev) => ({
+      ...prev,
+      tableType: '树表格',
+      mainSql: ownerField.dynamicSql || prev.mainSql || '',
+      contextMenuItems: (prev.contextMenuItems ?? []).map((item: any, index: number) => normalizeContextMenuItem({
+        ...item,
+        tab: ownerFieldKey,
+      }, index + 1)),
+      colorRules: (prev.colorRules ?? []).map((rule: any) => ({
+        ...rule,
+        tab: ownerFieldKey,
+      })),
+    }));
+    setLeftFilterFields((prev) => prev.map((field) => ({
+      ...field,
+      sourceid: treeRelationColumn.id,
+      formKey: ownerFieldKey,
+    })));
   }, [parsedTreeSourceFields, treeRelationColumn]);
 
   useEffect(() => {
-    if (!isConfigOpen || configStep !== 5) {
-      setIsFullscreenConfig(false);
+    if (!isConfigOpen) {
+      moduleSettingFullscreenInitRef.current = false;
+      return;
+    }
+
+    if (configStep === 5 && !moduleSettingFullscreenInitRef.current) {
+      moduleSettingFullscreenInitRef.current = true;
+      setIsFullscreenConfig(true);
     }
   }, [configStep, isConfigOpen]);
+
+  useEffect(() => {
+    const contextMenuItems = leftTableConfig.contextMenuItems ?? [];
+    if (!contextMenuItems.some((item: any) => item.id === selectedLeftContextMenuId)) {
+      setSelectedLeftContextMenuId(contextMenuItems[0]?.id ?? null);
+    }
+  }, [leftTableConfig.contextMenuItems, selectedLeftContextMenuId]);
+
+  useEffect(() => {
+    const colorRules = leftTableConfig.colorRules ?? [];
+    if (!colorRules.some((rule: any) => rule.id === selectedLeftColorRuleId)) {
+      setSelectedLeftColorRuleId(colorRules[0]?.id ?? null);
+    }
+  }, [leftTableConfig.colorRules, selectedLeftColorRuleId]);
+
+  useEffect(() => {
+    const contextMenuItems = mainTableConfig.contextMenuItems ?? [];
+    if (!contextMenuItems.some((item: any) => item.id === selectedMainContextMenuId)) {
+      setSelectedMainContextMenuId(contextMenuItems[0]?.id ?? null);
+    }
+  }, [mainTableConfig.contextMenuItems, selectedMainContextMenuId]);
+
+  useEffect(() => {
+    const useLeftMenuScope = inspectorTarget.kind === 'left-grid';
+    const contextMenuItems = ((useLeftMenuScope ? leftTableConfig : mainTableConfig).contextMenuItems ?? [])
+      .map((item: any, index: number) => normalizeContextMenuItem(item, index + 1));
+    const selectedMenuId = useLeftMenuScope ? selectedLeftContextMenuId : selectedMainContextMenuId;
+    const selectedMenu = contextMenuItems.find((item: any) => item.id === selectedMenuId) ?? contextMenuItems[0] ?? null;
+    const popupParamKeys = Array.from({ length: 10 }, (_, index) => `dllpar${index + 1}`);
+
+    setSelectedPopupMenuParamKey((prev) => {
+      if (!selectedMenu) {
+        selectedPopupMenuOwnerRef.current = null;
+        return 'dllpar1';
+      }
+
+      const isMenuChanged = selectedPopupMenuOwnerRef.current !== selectedMenu.id;
+      selectedPopupMenuOwnerRef.current = selectedMenu.id;
+
+      if (!popupParamKeys.includes(prev)) return 'dllpar1';
+      if (!isMenuChanged) return prev;
+
+      return popupParamKeys.find((key) => String(selectedMenu[key] ?? '').trim().length > 0) ?? 'dllpar1';
+    });
+  }, [
+    inspectorTarget.kind,
+    leftTableConfig.contextMenuItems,
+    mainTableConfig.contextMenuItems,
+    selectedLeftContextMenuId,
+    selectedMainContextMenuId,
+  ]);
+
+  useEffect(() => {
+    const colorRules = mainTableConfig.colorRules ?? [];
+    if (!colorRules.some((rule: any) => rule.id === selectedMainColorRuleId)) {
+      setSelectedMainColorRuleId(colorRules[0]?.id ?? null);
+    }
+  }, [mainTableConfig.colorRules, selectedMainColorRuleId]);
 
   useEffect(() => {
     const handlePointerMove = (event: MouseEvent) => {
@@ -4302,7 +4774,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       const drag = layoutDragRef.current;
       if (drag.type === 'document-left-width') {
         const delta = event.clientX - drag.startX;
-        setDocumentLeftPaneWidth(Math.min(280, Math.max(170, drag.startValue + delta)));
+        setDocumentLeftPaneWidth(Math.min(460, Math.max(280, drag.startValue + delta)));
       }
 
       if (drag.type === 'document-detail-width') {
@@ -4636,13 +5108,21 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const selectedColumnContext = useMemo(() => {
     const panelTabId = deferredActiveTab;
     const activeDetailTabName = detailTabs.find((tab) => tab.id === panelTabId)?.name || '当前明细';
+    const currentDetailFillTypeMeta = getDetailFillTypeMeta(tabFillTypes[panelTabId]);
     const deferredSelectedLeftColId = deferredInspectorTarget.kind === 'left-col' ? deferredInspectorTarget.id ?? null : null;
+    const deferredSelectedLeftFilterId = deferredInspectorTarget.kind === 'left-filter' ? deferredInspectorTarget.id ?? null : null;
     const deferredSelectedMainColId = deferredInspectorTarget.kind === 'main-col' ? deferredInspectorTarget.id ?? null : null;
     const deferredSelectedDetailColId = deferredInspectorTarget.kind === 'detail-col' ? deferredInspectorTarget.id ?? null : null;
     const deferredSelectedMainFilterId = deferredInspectorTarget.kind === 'main-filter' ? deferredInspectorTarget.id ?? null : null;
     const deferredSelectedDetailFilterId = deferredInspectorTarget.kind === 'detail-filter' ? deferredInspectorTarget.id ?? null : null;
     const deferredSelectedDetailTabId = deferredInspectorTarget.kind === 'detail-tab' ? deferredInspectorTarget.id ?? null : null;
-    const deferredSelectedTableConfigScope = deferredInspectorTarget.kind === 'main-grid' ? 'main' : deferredInspectorTarget.kind === 'detail-grid' ? 'detail' : null;
+    const deferredSelectedTableConfigScope = deferredInspectorTarget.kind === 'left-grid'
+      ? 'left'
+      : deferredInspectorTarget.kind === 'main-grid'
+        ? 'main'
+        : deferredInspectorTarget.kind === 'detail-grid'
+          ? 'detail'
+          : null;
     const deferredSelectedContextMenuScope = deferredInspectorTarget.kind === 'main-context' ? 'main' : deferredInspectorTarget.kind === 'detail-context' ? 'detail' : null;
     const makeDetailSetter = (updater: React.SetStateAction<any[]>) => {
       setDetailTableColumns((prev) => ({
@@ -4663,6 +5143,23 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             iconClass: 'bg-amber-500/12 text-amber-500',
             column: condition,
             setCols: setMainFilterFields,
+            removeLabel: '删除条件',
+          }
+        : null;
+    }
+
+    if (deferredSelectedLeftFilterId) {
+      const condition = leftFilterFields.find((item) => item.id === deferredSelectedLeftFilterId);
+      return condition
+        ? {
+            kind: 'condition' as const,
+            scope: 'left-filter' as const,
+            title: '左侧条件',
+            description: '控制左侧树表顶部条件区，配置会写入左边条件表并关联到所属树形字段。',
+            icon: 'filter_alt',
+            iconClass: 'bg-indigo-500/12 text-indigo-500',
+            column: condition,
+            setCols: setLeftFilterFields,
             removeLabel: '删除条件',
           }
         : null;
@@ -4771,6 +5268,21 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       };
     }
 
+    if (deferredSelectedTableConfigScope === 'left') {
+      return {
+        kind: 'grid' as const,
+        scope: 'left-grid' as const,
+        title: '左侧树表',
+        description: '',
+        icon: 'account_tree',
+        iconClass: 'bg-indigo-500/12 text-indigo-500',
+        column: leftTableConfig,
+        availableColumns: leftTableColumns,
+        setCols: setLeftTableConfig,
+        removeLabel: '',
+      };
+    }
+
     if (deferredSelectedTableConfigScope === 'main') {
       return {
         kind: 'grid' as const,
@@ -4805,16 +5317,18 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       return {
         kind: 'grid' as const,
         scope: 'detail-grid' as const,
-        title: `明细表配置 · ${activeDetailTabName}`,
+        title: currentDetailFillTypeMeta.value === '表格'
+          ? `明细表配置 · ${activeDetailTabName}`
+          : `明细${currentDetailFillTypeMeta.label}配置 · ${activeDetailTabName}`,
         description: '',
-        icon: 'table_chart',
+        icon: currentDetailFillTypeMeta.icon,
         iconClass: 'bg-sky-500/12 text-sky-500',
-                      column: detailTableConfigs[panelTabId] ?? { mainSql: '', defaultQuery: '', sqlPrompt: '', tableType: '普通表格' },
+        column: detailTableConfigs[panelTabId] ?? { mainSql: '', defaultQuery: '', sqlPrompt: '', tableType: '普通表格' },
         availableColumns: detailTableColumns[panelTabId] ?? [],
         setCols: (updater: React.SetStateAction<any>) => {
           setDetailTableConfigs((prev) => ({
             ...prev,
-                        [panelTabId]: typeof updater === 'function' ? updater(prev[panelTabId] ?? { mainSql: '', defaultQuery: '', sqlPrompt: '', tableType: '普通表格' }) : updater,
+            [panelTabId]: typeof updater === 'function' ? updater(prev[panelTabId] ?? { mainSql: '', defaultQuery: '', sqlPrompt: '', tableType: '普通表格' }) : updater,
           }));
         },
         removeLabel: '',
@@ -4880,7 +5394,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     deferredInspectorTarget,
     detailTabs,
     businessType,
+    leftFilterFields,
     leftTableColumns,
+    leftTableConfig,
     mainTableColumns,
     billMetaFields,
     detailTableColumns,
@@ -4893,13 +5409,13 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     billDetailConfig,
     billSourceDraft,
     billSources,
+    tabFillTypes,
     workspaceTheme,
   ]);
 
   const renderColumnOperationPanel = () => {
-  const fieldClass = 'w-full rounded-[18px] border border-slate-200/80 bg-slate-50/92 px-3.5 py-2.5 text-[12px] text-slate-700 outline-none transition shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] focus:border-[color:var(--workspace-accent-border-strong)] focus:bg-white focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-100';
+    const fieldClass = 'w-full rounded-[18px] border border-slate-200/80 bg-slate-50/92 px-3.5 py-2.5 text-[12px] text-slate-700 outline-none transition shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] focus:border-[color:var(--workspace-accent-border-strong)] focus:bg-white focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-100';
     const textareaClass = `${fieldClass} min-h-[92px] resize-none font-mono text-[11px] leading-5`;
-    const isCommonPanelTab = inspectorPanelTab === 'common';
     const panelShellClass = 'cloudy-glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70';
     const panelHeaderClass = 'cloudy-glass-toolbar shrink-0 px-4 py-4';
     const panelTitleClass = 'text-[15px] font-bold leading-6 text-slate-800 break-words dark:text-slate-100';
@@ -4909,21 +5425,43 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const compactCardClass = 'cloudy-glass-panel-soft rounded-[20px] p-4';
     const sectionTitleClass = 'mb-3 flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100';
     const mutedLabelClass = 'mb-1.5 block text-[11px] font-bold tracking-[0.06em] text-slate-400';
-    const inspectorTabs: Array<{ id: 'common' | 'advanced'; label: string; icon: string }> = [
-      { id: 'common', label: '核心配置', icon: 'dashboard_customize' },
-      { id: 'advanced', label: '扩展配置', icon: 'network_node' },
-    ];
+    const isDocumentScopedGridInspector = selectedColumnContext?.kind === 'grid'
+      && businessType !== 'table'
+      && (selectedColumnContext.scope === 'main-grid' || selectedColumnContext.scope === 'left-grid');
+    const documentScopedGridContextMenuCount = isDocumentScopedGridInspector
+      ? (selectedColumnContext?.column?.contextMenuItems ?? []).length
+      : 0;
+    const documentScopedGridColorRuleCount = isDocumentScopedGridInspector
+      ? (selectedColumnContext?.column?.colorRules ?? []).length
+      : 0;
+    const documentScopedGridLabel = selectedColumnContext?.scope === 'left-grid' ? '左表' : '主表';
+    const inspectorTabs: Array<{ id: 'common' | 'advanced' | 'contextmenu' | 'color'; label: string; icon: string; count?: number }> = isDocumentScopedGridInspector
+      ? [
+          { id: 'common', label: documentScopedGridLabel, icon: 'dashboard_customize' },
+          { id: 'advanced', label: '布局', icon: 'view_stream' },
+          { id: 'contextmenu', label: '右键', icon: 'right_click', count: documentScopedGridContextMenuCount },
+          { id: 'color', label: '颜色', icon: 'palette', count: documentScopedGridColorRuleCount },
+        ]
+      : [
+          { id: 'common', label: '核心配置', icon: 'dashboard_customize' },
+          { id: 'advanced', label: '扩展配置', icon: 'network_node' },
+        ];
+    const currentInspectorTab = inspectorTabs.some((tab) => tab.id === inspectorPanelTab) ? inspectorPanelTab : 'common';
+    const isCommonPanelTab = currentInspectorTab === 'common';
+    const isContextMenuPanelTab = currentInspectorTab === 'contextmenu';
+    const isColorPanelTab = currentInspectorTab === 'color';
     const renderInspectorTabs = () => (
       <div className="mt-3 flex items-center gap-2 rounded-[18px] border border-slate-200/70 bg-white/82 p-1.5 dark:border-slate-700 dark:bg-slate-900/50">
         {inspectorTabs.map((tab) => {
-          const isActive = inspectorPanelTab === tab.id;
+          const isActive = currentInspectorTab === tab.id;
+          const hasCountBadge = typeof tab.count === 'number' && tab.count > 0;
 
           return (
             <button
               key={tab.id}
               type="button"
               onClick={() => setInspectorPanelTab(tab.id)}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-[14px] px-3 py-2 text-[12px] font-bold transition-all ${
+              className={`relative flex flex-1 items-center justify-center gap-2 rounded-[14px] px-3 py-2 text-[12px] font-bold transition-all ${
                 isActive
                   ? 'bg-white text-slate-800 shadow-[0_14px_28px_-22px_rgba(22,134,227,0.36)] dark:bg-slate-900/92 dark:text-slate-100'
                   : 'text-slate-500 hover:bg-white/80 dark:text-slate-400 dark:hover:bg-slate-900/72'
@@ -4931,6 +5469,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             >
               <span className={`material-symbols-outlined text-[16px] ${isActive ? 'text-[#1686e3]' : 'text-slate-400 dark:text-slate-500'}`}>{tab.icon}</span>
               <span>{tab.label}</span>
+              {hasCountBadge && (
+                <span className="absolute right-2 top-1.5 inline-flex min-w-[16px] items-center justify-center rounded-full bg-[#e04f5f] px-1.5 py-0.5 text-[9px] font-black leading-none text-white shadow-[0_10px_18px_-14px_rgba(224,79,95,0.78)]">
+                  {tab.count! > 9 ? '9+' : tab.count}
+                </span>
+              )}
             </button>
           );
         })}
@@ -5322,8 +5865,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           ...patch,
         }));
       };
-      const menuItems = currentContextConfig.contextMenuItems ?? [];
-      const enabledMenuCount = menuItems.filter((item: any) => !item.disabledCondition).length;
+      const menuItems = (currentContextConfig.contextMenuItems ?? []).map((item: any, index: number) => normalizeContextMenuItem(item, index + 1));
+      const enabledMenuCount = menuItems.filter((item: any) => !item.disabled).length;
 
       return (
         <div className={panelShellClass}>
@@ -5387,7 +5930,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                         <div className="mx-auto max-w-[260px] rounded-[18px] border border-white/80 bg-white/96 p-2 shadow-[0_24px_54px_-28px_rgba(15,23,42,0.38)] dark:border-slate-700 dark:bg-slate-900/96">
                           {menuItems.length > 0 ? (
                             menuItems.map((item: any) => {
-                              const isDisabled = Boolean(item.disabledCondition);
+                              const isDisabled = Boolean(item.disabled) || Boolean(item.disabledCondition);
 
                               return (
                                 <div
@@ -5526,9 +6069,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                         <div className="mb-3 flex items-center gap-2">
                           <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">菜单 {index + 1}</div>
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                            item.disabledCondition ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300'
+                                  item.disabled || item.disabledCondition ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300'
                           }`}>
-                            {item.disabledCondition ? '已配置禁用条件' : '默认可用'}
+                                {item.disabled || item.disabledCondition ? '已禁用' : '默认可用'}
                           </span>
                         </div>
                         <div>
@@ -5563,14 +6106,55 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       const currentGridConfig = selectedColumnContext.column;
       const currentDetailBoard = normalizeDetailBoardConfig(currentGridConfig.detailBoard, availableGridColumns);
       const detailBoardTheme = getDetailBoardTheme(workspaceTheme);
+      const treeOwnerField = treeRelationColumn ? normalizeColumn(treeRelationColumn) : null;
+      const treeOwnerFieldKey = treeOwnerField?.sourceField || treeRelationColumn?.id || '';
       const isMainGridConfig = selectedColumnContext.scope === 'main-grid';
+      const isLeftGridConfig = selectedColumnContext.scope === 'left-grid';
       const isBillHeadGridConfig = businessType === 'table' && selectedColumnContext.scope === 'main-grid';
       const isBillDetailGridConfig = businessType === 'table' && selectedColumnContext.scope === 'detail-grid';
+      const isDocumentArchiveGrid = businessType !== 'table' && (isMainGridConfig || isLeftGridConfig);
+      const detailGridFillTypeMeta = !isBillHeadGridConfig && !isBillDetailGridConfig && selectedColumnContext.scope === 'detail-grid'
+        ? getDetailFillTypeMeta(currentDetailFillType)
+        : null;
+      const detailGridLegacyTable = detailGridFillTypeMeta?.value === '图表' ? 'p_systemdlltabchart' : null;
+      const contextMenuItems = (currentGridConfig.contextMenuItems ?? []).map((item: any, index: number) => normalizeContextMenuItem(item, index + 1));
+      const enabledMenuCount = contextMenuItems.filter((item: any) => !item.disabled).length;
+      const colorRules = currentGridConfig.colorRules ?? [];
+      const enabledColorRuleCount = colorRules.filter((rule: any) => !rule.disabled).length;
+      const activeContextMenuSelectionId = isLeftGridConfig ? selectedLeftContextMenuId : selectedMainContextMenuId;
+      const activeColorRuleSelectionId = isLeftGridConfig ? selectedLeftColorRuleId : selectedMainColorRuleId;
+      const setActiveContextMenuSelectionId = isLeftGridConfig ? setSelectedLeftContextMenuId : setSelectedMainContextMenuId;
+      const setActiveColorRuleSelectionId = isLeftGridConfig ? setSelectedLeftColorRuleId : setSelectedMainColorRuleId;
       const updateGridConfig = (patch: Record<string, any>) => {
         selectedColumnContext.setCols((prev: Record<string, any>) => ({
           ...prev,
           ...patch,
         }));
+      };
+      const setGridContextMenuItems = (updater: any[] | ((items: any[]) => any[])) => {
+        const nextItems = (typeof updater === 'function' ? updater(contextMenuItems) : updater)
+          .map((item: any, index: number) => normalizeContextMenuItem(
+            isLeftGridConfig
+              ? { ...item, tab: treeOwnerFieldKey }
+              : item,
+            index + 1,
+          ));
+        updateGridConfig({
+          contextMenuItems: nextItems,
+          contextMenuEnabled: nextItems.length > 0,
+        });
+      };
+      const setGridColorRules = (updater: any[] | ((rules: any[]) => any[])) => {
+        const nextRules = (typeof updater === 'function' ? updater(colorRules) : updater)
+          .map((rule: any) => (
+            isLeftGridConfig
+              ? { ...rule, tab: treeOwnerFieldKey }
+              : rule
+          ));
+        updateGridConfig({
+          colorRules: nextRules,
+          colorRulesEnabled: nextRules.some((rule: any) => !rule.disabled),
+        });
       };
       const updateDetailBoard = (patch: Record<string, any> | ((current: any) => any)) => {
         updateGridConfig({
@@ -5657,7 +6241,19 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       };
       const detailGroupCount = currentDetailBoard.groups.length;
       const assignedFieldCount = currentDetailBoard.groups.reduce((sum: number, group: any) => sum + group.columnIds.length, 0);
+      const detailBoardReady = detailGroupCount > 0;
+      const selectedPopupMenuItem = isDocumentArchiveGrid
+        ? contextMenuItems.find((item: any) => item.id === activeContextMenuSelectionId) ?? contextMenuItems[0] ?? null
+        : null;
+      const selectedColorRule = isDocumentArchiveGrid
+        ? colorRules.find((rule: any) => rule.id === activeColorRuleSelectionId) ?? colorRules[0] ?? null
+        : null;
       const updateGridColumns = (updater: React.SetStateAction<any[]>) => {
+        if (selectedColumnContext.scope === 'left-grid') {
+          setLeftTableColumns((prev) => (typeof updater === 'function' ? updater(prev) : updater));
+          return;
+        }
+
         if (selectedColumnContext.scope === 'main-grid') {
           if (businessType === 'table') {
             const metaIdSet = new Set(billMetaFields.map((field) => field.id));
@@ -5845,6 +6441,772 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           </div>
         </section>
       );
+      const renderDocumentTableMappingSection = () => (
+        <section className={`${compactCardClass} space-y-3`}>
+          <div className="flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100">
+            <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">schema</span>
+            <h4>主表落表</h4>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/92 px-3 py-1.5 text-[11px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200">
+              主配置 · p_systemdlltab
+            </span>
+            <span className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/92 px-3 py-1.5 text-[11px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200">
+              条件 · p_systembillsourcecond
+            </span>
+            <button
+              type="button"
+              onClick={() => setInspectorPanelTab('contextmenu')}
+              className="inline-flex items-center gap-2 rounded-full border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-1.5 text-[11px] font-bold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
+            >
+              右键 · p_systempopupmenu
+              <span className="rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-black text-[color:var(--workspace-accent-strong)]">
+                {contextMenuItems.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setInspectorPanelTab('color')}
+              className="inline-flex items-center gap-2 rounded-full border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-1.5 text-[11px] font-bold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
+            >
+              颜色 · p_systemwordbookcolor
+              <span className="rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-black text-[color:var(--workspace-accent-strong)]">
+                {colorRules.length}
+              </span>
+            </button>
+          </div>
+        </section>
+      );
+      const renderLeftGridMappingSection = () => (
+        <section className={`${compactCardClass} space-y-4`}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100">
+              <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">account_tree</span>
+              <h4>左侧树表映射</h4>
+            </div>
+            {treeRelationColumn && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMainForDelete([treeRelationColumn.id]);
+                  activateColumnSelection('main', treeRelationColumn.id);
+                  setInspectorPanelTab('common');
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-1.5 text-[11px] font-bold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
+              >
+                <span className="material-symbols-outlined text-[14px]">ads_click</span>
+                定位所属字段
+              </button>
+            )}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className={compactInfoCardClass}>
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">所属字段</div>
+              <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{treeOwnerField?.name || '未配置树形字段'}</div>
+              <div className="mt-1 break-all font-mono text-[11px] text-slate-400">{treeOwnerFieldKey || '未设置 fieldkey'}</div>
+            </div>
+            <div className={compactInfoCardClass}>
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">关联条件</div>
+              <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{leftFilterFields.length} 条</div>
+              <div className="mt-1 break-all font-mono text-[11px] text-slate-400">sourceid = {treeRelationColumn?.id || '未设置'}</div>
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <div className="flex flex-wrap gap-2">
+              <span className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/92 px-3 py-1.5 text-[11px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200">
+                左侧列 · p_systemwordbookgrid
+              </span>
+              <span className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/92 px-3 py-1.5 text-[11px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200">
+                左边条件 · p_systembillsourcecond
+              </span>
+              <button
+                type="button"
+                onClick={() => setInspectorPanelTab('contextmenu')}
+                className="inline-flex items-center gap-2 rounded-full border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-1.5 text-[11px] font-bold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
+              >
+                左边右键 · p_systempopupmenu
+                <span className="rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-black text-[color:var(--workspace-accent-strong)]">
+                  {contextMenuItems.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInspectorPanelTab('color')}
+                className="inline-flex items-center gap-2 rounded-full border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-1.5 text-[11px] font-bold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
+              >
+                左边颜色 · p_systemwordbookcolor
+                <span className="rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-black text-[color:var(--workspace-accent-strong)]">
+                  {colorRules.length}
+                </span>
+              </button>
+            </div>
+            <div className="rounded-[16px] border border-slate-200/70 bg-white/80 px-3.5 py-3 text-[12px] leading-6 text-slate-500 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-300">
+              左侧条件使用 `sourceid = {treeRelationColumn?.id || '字段 id'}`，`formKey / tab = {treeOwnerFieldKey || 'fieldkey'}`，右键和颜色都挂在所属字段的 `fieldkey` 上。
+            </div>
+          </div>
+        </section>
+      );
+      const renderDetailChartTableMappingSection = () => (
+        <section className={compactCardClass}>
+          <div className={sectionTitleClass}>
+            <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">bar_chart</span>
+            <h4>图表落点</h4>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className={compactInfoCardClass}>
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前填充</div>
+              <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{detailGridFillTypeMeta?.label}</div>
+              <div className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-300">当前页签已经切到图表承载模式，右侧配置不再按普通明细表理解。</div>
+            </div>
+            <div className={compactInfoCardClass}>
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">图表配置表</div>
+              <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">p_systemdlltabchart</div>
+              <div className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-300">图表加载、展示入口和当前明细页签的图表关系统一写入这张表。</div>
+            </div>
+          </div>
+        </section>
+      );
+      const managerSectionClass = 'rounded-[24px] border border-slate-200/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.92))] p-4 shadow-[0_24px_52px_-36px_rgba(15,23,42,0.28)] dark:border-slate-700 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.84),rgba(15,23,42,0.68))]';
+      const managerHeaderClass = 'mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 pb-3.5 dark:border-slate-700/80';
+      const managerTitleWrapClass = 'flex min-w-0 items-center gap-3';
+      const managerTitleIconClass = 'inline-flex size-10 shrink-0 items-center justify-center rounded-[14px] border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]';
+      const managerActionButtonClass = 'inline-flex items-center gap-1 rounded-xl border border-[color:var(--workspace-accent)] bg-[color:var(--workspace-accent)] px-3 py-1.5 text-[12px] font-bold text-white shadow-[0_18px_32px_-24px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]';
+      const managerListSurfaceClass = 'space-y-2.5 rounded-[20px] border border-white/70 bg-white/62 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)] dark:border-white/8 dark:bg-slate-950/20';
+      const managerDetailNameClass = 'inline-flex max-w-full items-center rounded-full border border-slate-200/80 bg-white/88 px-3 py-1.5 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-300';
+      const managerHeaderToolsClass = 'ml-auto flex flex-wrap items-center justify-end gap-2';
+      const managerMetricCardClass = 'min-w-[64px] rounded-[14px] border border-slate-200/80 bg-white/88 px-3 py-2 text-right shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:border-slate-700 dark:bg-slate-900/62';
+      const renderPopupMenuManagerSection = () => {
+        const popupMenuParamFields = Array.from({ length: 10 }, (_, index) => ({
+          key: `dllpar${index + 1}` as const,
+          label: `参数 ${index + 1}`,
+        }));
+        const detailCardClass = 'rounded-[22px] border border-slate-200/80 bg-white/84 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] dark:border-slate-700 dark:bg-slate-900/44';
+        const detailSectionTitleClass = 'mb-4 flex items-center justify-between gap-3';
+        const detailSectionLabelClass = 'text-[12px] font-bold tracking-[0.08em] text-slate-500 dark:text-slate-300';
+        const popupMenuDisplayName = selectedPopupMenuItem?.menuname || selectedPopupMenuItem?.label || '未命名菜单';
+        const getPopupMenuIconName = (value: unknown) => {
+          if (typeof value !== 'string') return 'right_click';
+          const trimmed = value.trim();
+          return trimmed && !/[/.:\\]/.test(trimmed) && !/\s/.test(trimmed) ? trimmed : 'right_click';
+        };
+        const updateSelectedPopupMenuItem = (patch: Record<string, any>) => {
+          if (!selectedPopupMenuItem) return;
+
+          const mirroredPatch = {
+            ...patch,
+            ...(patch.menuname !== undefined ? { label: patch.menuname } : {}),
+            ...(patch.label !== undefined ? { menuname: patch.label } : {}),
+            ...(patch.dllname !== undefined ? { actionKey: patch.dllname } : {}),
+            ...(patch.actionKey !== undefined ? { dllname: patch.actionKey } : {}),
+            ...(patch.menuCond !== undefined ? { disabledCondition: patch.menuCond } : {}),
+            ...(patch.disabledCondition !== undefined ? { menuCond: patch.disabledCondition } : {}),
+          };
+
+          setGridContextMenuItems((menus: any[]) => menus.map((menu: any) => (
+            menu.id === selectedPopupMenuItem.id ? { ...menu, ...mirroredPatch } : menu
+          )));
+        };
+        const updateSelectedPopupMenuNumber = (key: string, value: string, fallback = 0) => {
+          updateSelectedPopupMenuItem({ [key]: value === '' ? fallback : normalizePopupMenuNumber(value, fallback) });
+        };
+        const activePopupMenuParamField = popupMenuParamFields.find((field) => field.key === selectedPopupMenuParamKey) ?? popupMenuParamFields[0];
+        const activePopupMenuParamValue = selectedPopupMenuItem ? String(selectedPopupMenuItem[activePopupMenuParamField.key] ?? '') : '';
+        const configuredPopupMenuParamCount = selectedPopupMenuItem
+          ? popupMenuParamFields.filter((field) => String(selectedPopupMenuItem[field.key] ?? '').trim().length > 0).length
+          : 0;
+        const getPopupMenuParamPreview = (value: string) => {
+          const normalized = value.replace(/\s+/g, ' ').trim();
+          return normalized.length > 22 ? `${normalized.slice(0, 22)}...` : normalized;
+        };
+        const popupMenuTabValue = isLeftGridConfig ? treeOwnerFieldKey : String(currentMenuDraft.moduleCode ?? '');
+
+        return (
+        <div className="space-y-4">
+          <section className={managerSectionClass}>
+            <div className={managerHeaderClass}>
+              <div className={managerTitleWrapClass}>
+                <span className={managerTitleIconClass}>
+                  <span className="material-symbols-outlined text-[18px]">list_alt</span>
+                </span>
+                <div>
+                  <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-100">菜单列表</h4>
+                </div>
+              </div>
+              <div className="flex w-full items-center justify-between gap-3 pt-1">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                <div className={managerMetricCardClass}>
+                  <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">总数</div>
+                  <div className="mt-1 text-[15px] font-black text-slate-800 dark:text-slate-100">{contextMenuItems.length}</div>
+                </div>
+                <div className={managerMetricCardClass}>
+                  <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">可用</div>
+                  <div className="mt-1 text-[15px] font-black text-emerald-500">{enabledMenuCount}</div>
+                </div>
+                <div className={managerMetricCardClass}>
+                  <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">禁用</div>
+                  <div className="mt-1 text-[15px] font-black text-amber-500">{Math.max(0, contextMenuItems.length - enabledMenuCount)}</div>
+                </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextItem = buildContextMenuItem(contextMenuItems.length + 1, {
+                      tab: popupMenuTabValue,
+                    });
+                    setGridContextMenuItems([...contextMenuItems, nextItem]);
+                    setActiveContextMenuSelectionId(nextItem.id);
+                  }}
+                  className={`${managerActionButtonClass} shrink-0`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">add</span>
+                  新增菜单
+                </button>
+              </div>
+            </div>
+            <div className={`${managerListSurfaceClass} max-h-[332px] overflow-y-auto pr-1`}>
+              {contextMenuItems.length > 0 ? contextMenuItems.map((item: any, index: number) => {
+                const isSelected = selectedPopupMenuItem?.id === item.id;
+                const iconName = getPopupMenuIconName(item.defailtimage);
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`group flex items-center gap-3 rounded-[20px] border px-3.5 py-3 transition-all ${
+                      isSelected
+                        ? 'border-[color:var(--workspace-accent-border-strong)] bg-[linear-gradient(180deg,var(--workspace-accent-surface),rgba(255,255,255,0.96))] shadow-[0_22px_36px_-28px_var(--workspace-accent-shadow)] dark:bg-[linear-gradient(180deg,rgba(36,53,83,0.92),rgba(15,23,42,0.7))]'
+                        : 'border-slate-200/75 bg-white/94 hover:border-[color:var(--workspace-accent-border)] hover:bg-white dark:border-slate-700 dark:bg-slate-900/56 dark:hover:bg-slate-900/72'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setActiveContextMenuSelectionId(item.id)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    >
+                      <div className={`flex size-11 shrink-0 items-center justify-center rounded-[18px] border transition-colors ${
+                        isSelected
+                          ? 'border-[color:var(--workspace-accent)] bg-[color:var(--workspace-accent)] text-white'
+                          : 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]'
+                      }`}>
+                        <span className="material-symbols-outlined text-[18px]">{iconName}</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-bold text-slate-700 dark:text-slate-100">
+                          {item.menuname || item.label || `菜单 ${index + 1}`}
+                        </div>
+                      </div>
+                    </button>
+                    <label
+                      className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200/80 bg-white/90 px-3 py-1.5 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-300"
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <span>禁用</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(item.disabled)}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setGridContextMenuItems((menus: any[]) => menus.map((menu: any) => (
+                            menu.id === item.id ? { ...menu, disabled: checked } : menu
+                          )));
+                        }}
+                        className="h-4 w-4 rounded accent-[color:var(--workspace-accent)]"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setGridContextMenuItems((menus: any[]) => menus.filter((menu: any) => menu.id !== item.id))}
+                      className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                      title="删除菜单"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">delete</span>
+                    </button>
+                  </div>
+                );
+              }) : (
+                <div className="rounded-[22px] border border-dashed border-slate-200/80 px-4 py-10 text-center text-[12px] text-slate-400 dark:border-slate-700">
+                  还没有配置右键菜单
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className={`${managerSectionClass} min-w-0`}>
+            <div className={managerHeaderClass}>
+              <div className={managerTitleWrapClass}>
+                <span className={managerTitleIconClass}>
+                  <span className="material-symbols-outlined text-[18px]">edit_note</span>
+                </span>
+                <div>
+                  <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-100">菜单详情</h4>
+                </div>
+              </div>
+              {selectedPopupMenuItem && (
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                  <span className={`${managerDetailNameClass} max-w-[320px] truncate`}>
+                    {popupMenuDisplayName}
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/92 px-3 py-1.5 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-300">
+                    顺序 {selectedPopupMenuItem.orderid ?? 0}
+                  </span>
+                </div>
+              )}
+            </div>
+            {selectedPopupMenuItem ? (
+              <div className="space-y-3.5">
+                <section className={detailCardClass}>
+                  <div className={detailSectionTitleClass}>
+                    <div className={detailSectionLabelClass}>核心配置</div>
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500">保留常用项，减少滚动</span>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <label className={mutedLabelClass}>菜单名称</label>
+                      <input
+                        type="text"
+                        value={selectedPopupMenuItem.menuname ?? selectedPopupMenuItem.label ?? ''}
+                        onChange={(e) => updateSelectedPopupMenuItem({ menuname: e.target.value })}
+                        placeholder="菜单名称"
+                        className={fieldClass}
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className={mutedLabelClass}>调用模板名</label>
+                      <input
+                        type="text"
+                        value={selectedPopupMenuItem.dllname ?? ''}
+                        onChange={(e) => updateSelectedPopupMenuItem({ dllname: e.target.value })}
+                        placeholder="例如：open_archive_detail"
+                        className={`${fieldClass} font-mono text-[12px]`}
+                      />
+                    </div>
+                    <div>
+                      <label className={mutedLabelClass}>右键类型</label>
+                      <input
+                        type="number"
+                        value={selectedPopupMenuItem.menuType ?? 0}
+                        onChange={(e) => updateSelectedPopupMenuNumber('menuType', e.target.value, 0)}
+                        className={fieldClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={mutedLabelClass}>加载方式</label>
+                      <input
+                        type="number"
+                        value={selectedPopupMenuItem.showMode ?? 0}
+                        onChange={(e) => updateSelectedPopupMenuNumber('showMode', e.target.value, 0)}
+                        className={fieldClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={mutedLabelClass}>添加方式</label>
+                      <input
+                        type="number"
+                        value={selectedPopupMenuItem.addShowMode ?? 0}
+                        onChange={(e) => updateSelectedPopupMenuNumber('addShowMode', e.target.value, 0)}
+                        className={fieldClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={mutedLabelClass}>事件类型</label>
+                      <input
+                        type="number"
+                        value={selectedPopupMenuItem.actiontype ?? 0}
+                        onChange={(e) => updateSelectedPopupMenuNumber('actiontype', e.target.value, 0)}
+                        className={fieldClass}
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section className={detailCardClass}>
+                  <div className={detailSectionTitleClass}>
+                    <div className={detailSectionLabelClass}>参数配置</div>
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500">已配置 {configuredPopupMenuParamCount}/10</span>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {popupMenuParamFields.map((field, index) => {
+                      const hasValue = Boolean(String(selectedPopupMenuItem[field.key] ?? '').trim());
+                      const isActive = activePopupMenuParamField.key === field.key;
+                      const previewValue = getPopupMenuParamPreview(String(selectedPopupMenuItem[field.key] ?? ''));
+
+                      return (
+                        <button
+                          key={field.key}
+                          type="button"
+                          onClick={() => setSelectedPopupMenuParamKey(field.key)}
+                          aria-pressed={isActive}
+                          className={`group flex min-w-0 items-center justify-between gap-3 rounded-[18px] border px-3.5 py-3 text-left transition-all duration-150 ${
+                            isActive
+                              ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)]'
+                              : hasValue
+                                ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)]/55 hover:border-[color:var(--workspace-accent-border-strong)]'
+                                : 'border-slate-200/80 bg-white/88 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/68'
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[12px] font-bold ${isActive ? 'text-[color:var(--workspace-accent-strong)] dark:text-white' : 'text-slate-700 dark:text-slate-100'}`}>
+                                参数 {index + 1}
+                              </span>
+                              {hasValue && (
+                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                  isActive
+                                    ? 'bg-[color:var(--workspace-accent)] text-white'
+                                    : 'bg-emerald-500/12 text-emerald-600 dark:bg-emerald-500/18 dark:text-emerald-300'
+                                }`}
+                                >
+                                  已填
+                                </span>
+                              )}
+                            </div>
+                            <div className={`mt-1 truncate text-[11px] ${hasValue ? (isActive ? 'text-[color:var(--workspace-accent-strong)]/80 dark:text-slate-200/90' : 'text-slate-500 dark:text-slate-300') : 'text-slate-400 dark:text-slate-500'}`}>
+                              {hasValue ? previewValue : '未填写'}
+                            </div>
+                          </div>
+                          <span className={`material-symbols-outlined shrink-0 text-[16px] transition-colors ${
+                            isActive
+                              ? 'text-[color:var(--workspace-accent-strong)] dark:text-white'
+                              : 'text-slate-300 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-300'
+                          }`}
+                          >
+                            chevron_right
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 rounded-[18px] border border-slate-200/80 bg-slate-50/72 p-3.5 dark:border-slate-700 dark:bg-slate-900/46">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="text-[12px] font-bold text-slate-700 dark:text-slate-100">{activePopupMenuParamField.label}</div>
+                      <button
+                        type="button"
+                        onClick={() => updateSelectedPopupMenuItem({ [activePopupMenuParamField.key]: '' })}
+                        className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/88 px-3 py-1.5 text-[11px] font-bold text-slate-500 transition-colors hover:border-rose-200 hover:text-rose-500 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">ink_eraser</span>
+                        清空当前
+                      </button>
+                    </div>
+                    <textarea
+                      rows={3}
+                      value={activePopupMenuParamValue}
+                      onChange={(e) => updateSelectedPopupMenuItem({ [activePopupMenuParamField.key]: e.target.value })}
+                      placeholder={activePopupMenuParamField.label}
+                      className={`${textareaClass} min-h-[96px] resize-y font-mono text-[12px]`}
+                    />
+                  </div>
+                </section>
+
+                <section className={detailCardClass}>
+                  <div className={detailSectionTitleClass}>
+                    <div className={detailSectionLabelClass}>事件脚本与提示</div>
+                  </div>
+                  <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                    <div>
+                      <label className={mutedLabelClass}>事件脚本</label>
+                      <textarea
+                        rows={8}
+                        value={selectedPopupMenuItem.action ?? ''}
+                        onChange={(e) => updateSelectedPopupMenuItem({ action: e.target.value })}
+                        placeholder="脚本 / 事件表达式"
+                        className={`${textareaClass} min-h-[184px]`}
+                      />
+                    </div>
+                    <div className="grid gap-3">
+                      <div>
+                        <label className={mutedLabelClass}>执行前提示</label>
+                        <textarea
+                          rows={2}
+                          value={selectedPopupMenuItem.beforeMsg ?? ''}
+                          onChange={(e) => updateSelectedPopupMenuItem({ beforeMsg: e.target.value })}
+                          className={`${textareaClass} min-h-[78px] font-sans text-[12px]`}
+                        />
+                      </div>
+                      <div>
+                        <label className={mutedLabelClass}>成功提示</label>
+                        <textarea
+                          rows={2}
+                          value={selectedPopupMenuItem.msgSuccess ?? ''}
+                          onChange={(e) => updateSelectedPopupMenuItem({ msgSuccess: e.target.value })}
+                          className={`${textareaClass} min-h-[78px] font-sans text-[12px]`}
+                        />
+                      </div>
+                      <div>
+                        <label className={mutedLabelClass}>错误提示</label>
+                        <textarea
+                          rows={2}
+                          value={selectedPopupMenuItem.msgError ?? ''}
+                          onChange={(e) => updateSelectedPopupMenuItem({ msgError: e.target.value })}
+                          className={`${textareaClass} min-h-[78px] font-sans text-[12px]`}
+                        />
+                      </div>
+                      <div>
+                        <label className={mutedLabelClass}>补充说明</label>
+                        <textarea
+                          rows={2}
+                          value={selectedPopupMenuItem.Fremark ?? ''}
+                          onChange={(e) => updateSelectedPopupMenuItem({ Fremark: e.target.value })}
+                          className={`${textareaClass} min-h-[78px] font-sans text-[12px]`}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            ) : (
+              <div className="rounded-[20px] border border-dashed border-slate-200/80 px-4 py-12 text-center text-[12px] text-slate-400 dark:border-slate-700">
+                先从左侧选择一个菜单项，再继续配置 p_systempopupmenu。
+              </div>
+            )}
+          </section>
+        </div>
+      );
+      };
+      const renderColorRuleManagerSection = () => (
+        <div className="space-y-4">
+          <section className={managerSectionClass}>
+            <div className={managerHeaderClass}>
+              <div className={managerTitleWrapClass}>
+                <span className={managerTitleIconClass}>
+                  <span className="material-symbols-outlined text-[18px]">format_paint</span>
+                </span>
+                <div>
+                  <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-100">规则列表</h4>
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">列表保持精简，颜色条件和样式在详情区集中调整。</p>
+                </div>
+              </div>
+              <div className={managerHeaderToolsClass}>
+                <div className={managerMetricCardClass}>
+                  <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">总数</div>
+                  <div className="mt-1 text-[15px] font-black text-slate-800 dark:text-slate-100">{colorRules.length}</div>
+                </div>
+                <div className={managerMetricCardClass}>
+                  <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">生效</div>
+                  <div className="mt-1 text-[15px] font-black text-[color:var(--workspace-accent-strong)]">{enabledColorRuleCount}</div>
+                </div>
+                <div className={managerMetricCardClass}>
+                  <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">停用</div>
+                  <div className="mt-1 text-[15px] font-black text-amber-500">{Math.max(0, colorRules.length - enabledColorRuleCount)}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextRule = buildGridColorRule(colorRules.length + 1, isLeftGridConfig ? { tab: treeOwnerFieldKey } : {});
+                    setGridColorRules([...colorRules, nextRule]);
+                    setActiveColorRuleSelectionId(nextRule.id);
+                  }}
+                  className={managerActionButtonClass}
+                >
+                  <span className="material-symbols-outlined text-[14px]">add</span>
+                  新增规则
+                </button>
+              </div>
+            </div>
+            <div className={managerListSurfaceClass}>
+              {colorRules.length > 0 ? colorRules.map((rule: any, index: number) => (
+                <div
+                  key={rule.id}
+                  className={`flex items-center gap-3 rounded-[18px] border px-3.5 py-2.5 transition-all ${
+                    selectedColorRule?.id === rule.id
+                      ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)]'
+                      : 'border-slate-200/75 bg-white/92 hover:border-[color:var(--workspace-accent-border)] dark:border-slate-700 dark:bg-slate-900/55'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setActiveColorRuleSelectionId(rule.id)}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                  >
+                    <div
+                      className="flex size-10 shrink-0 items-center justify-center rounded-[16px] border"
+                      style={{ color: rule.textColor || '#9f1239', backgroundColor: rule.backgroundColor || '#ffe4e6', borderColor: rule.backgroundColor || '#ffe4e6' }}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">palette</span>
+                    </div>
+                    <div className="min-w-0 flex-1 truncate text-[13px] font-bold text-slate-700 dark:text-slate-100">
+                      {rule.label || `规则 ${index + 1}`}
+                    </div>
+                  </button>
+                  <label
+                    className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200/80 bg-white/90 px-3 py-1.5 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-300"
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <span>禁用</span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(rule.disabled)}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setGridColorRules((rules: any[]) => rules.map((item: any) => (
+                          item.id === rule.id ? { ...item, disabled: checked } : item
+                        )));
+                      }}
+                      className="h-4 w-4 rounded accent-[color:var(--workspace-accent)]"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setGridColorRules((rules: any[]) => rules.filter((item: any) => item.id !== rule.id))}
+                    className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                    title="删除规则"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                  </button>
+                </div>
+              )) : (
+                <div className="rounded-[22px] border border-dashed border-slate-200/80 px-4 py-8 text-center text-[12px] text-slate-400 dark:border-slate-700">
+                  还没有颜色规则
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className={managerSectionClass}>
+            <div className={managerHeaderClass}>
+              <div className={managerTitleWrapClass}>
+                <span className={managerTitleIconClass}>
+                  <span className="material-symbols-outlined text-[18px]">edit_note</span>
+                </span>
+                <div>
+                  <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-100">规则详情</h4>
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">这里统一维护匹配字段、颜色值和规则说明。</p>
+                </div>
+              </div>
+              {selectedColorRule && (
+                <span className={`${managerDetailNameClass} truncate`}>
+                  {selectedColorRule.label || '未命名规则'}
+                </span>
+              )}
+            </div>
+            {selectedColorRule ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={mutedLabelClass}>规则名称</label>
+                  <input
+                    type="text"
+                    value={selectedColorRule.label ?? ''}
+                    onChange={(e) => setGridColorRules((rules: any[]) => rules.map((item: any) => (
+                      item.id === selectedColorRule.id ? { ...item, label: e.target.value } : item
+                    )))}
+                    placeholder="例如：停用记录 / 高价物料"
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={mutedLabelClass}>匹配字段</label>
+                  <select
+                    value={selectedColorRule.field ?? ''}
+                    onChange={(e) => setGridColorRules((rules: any[]) => rules.map((item: any) => (
+                      item.id === selectedColorRule.id ? { ...item, field: e.target.value } : item
+                    )))}
+                    className={fieldClass}
+                  >
+                    <option value="">请选择字段</option>
+                    {availableGridColumns.map((column: any) => {
+                      const normalizedColumn = normalizeColumn(column);
+                      return (
+                        <option key={`rule-field-${selectedColorRule.id}-${column.id}`} value={normalizedColumn.sourceField || normalizedColumn.name}>
+                          {normalizedColumn.name} ({normalizedColumn.sourceField || '未配置标识'})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div>
+                  <label className={mutedLabelClass}>匹配方式</label>
+                  <select
+                    value={selectedColorRule.operator ?? '等于'}
+                    onChange={(e) => setGridColorRules((rules: any[]) => rules.map((item: any) => (
+                      item.id === selectedColorRule.id ? { ...item, operator: e.target.value } : item
+                    )))}
+                    className={fieldClass}
+                  >
+                    {GRID_COLOR_RULE_OPERATOR_OPTIONS.map((operator) => (
+                      <option key={operator} value={operator}>{operator}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={mutedLabelClass}>匹配值</label>
+                  <input
+                    type="text"
+                    value={selectedColorRule.value ?? ''}
+                    onChange={(e) => setGridColorRules((rules: any[]) => rules.map((item: any) => (
+                      item.id === selectedColorRule.id ? { ...item, value: e.target.value } : item
+                    )))}
+                    placeholder="例如：停用 / 1000"
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={mutedLabelClass}>字体颜色</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={/^#[0-9a-fA-F]{6}$/.test(selectedColorRule.textColor || '') ? selectedColorRule.textColor : '#9f1239'}
+                      onChange={(e) => setGridColorRules((rules: any[]) => rules.map((item: any) => (
+                        item.id === selectedColorRule.id ? { ...item, textColor: e.target.value } : item
+                      )))}
+                      className="h-10 w-14 rounded-[14px] border border-slate-200 bg-white px-1 dark:border-slate-700 dark:bg-slate-900"
+                    />
+                    <input
+                      type="text"
+                      value={selectedColorRule.textColor ?? '#9f1239'}
+                      onChange={(e) => setGridColorRules((rules: any[]) => rules.map((item: any) => (
+                        item.id === selectedColorRule.id ? { ...item, textColor: e.target.value } : item
+                      )))}
+                      className={`${fieldClass} font-mono text-[12px]`}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={mutedLabelClass}>背景颜色</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="color"
+                      value={/^#[0-9a-fA-F]{6}$/.test(selectedColorRule.backgroundColor || '') ? selectedColorRule.backgroundColor : '#ffe4e6'}
+                      onChange={(e) => setGridColorRules((rules: any[]) => rules.map((item: any) => (
+                        item.id === selectedColorRule.id ? { ...item, backgroundColor: e.target.value } : item
+                      )))}
+                      className="h-10 w-14 rounded-[14px] border border-slate-200 bg-white px-1 dark:border-slate-700 dark:bg-slate-900"
+                    />
+                    <input
+                      type="text"
+                      value={selectedColorRule.backgroundColor ?? '#ffe4e6'}
+                      onChange={(e) => setGridColorRules((rules: any[]) => rules.map((item: any) => (
+                        item.id === selectedColorRule.id ? { ...item, backgroundColor: e.target.value } : item
+                      )))}
+                      className={`${fieldClass} font-mono text-[12px]`}
+                    />
+                  </div>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={mutedLabelClass}>规则说明</label>
+                  <textarea
+                    rows={4}
+                    value={selectedColorRule.note ?? ''}
+                    onChange={(e) => setGridColorRules((rules: any[]) => rules.map((item: any) => (
+                      item.id === selectedColorRule.id ? { ...item, note: e.target.value } : item
+                    )))}
+                    placeholder="说明这条颜色规则的触发场景，方便后续排查和维护。"
+                    className={textareaClass}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-[18px] border border-dashed border-slate-200/80 px-4 py-8 text-center text-[12px] text-slate-400 dark:border-slate-700">
+                先从上面选择一条颜色规则，再继续配置细节。
+              </div>
+            )}
+          </section>
+        </div>
+      );
 
       return (
         <div className={panelShellClass}>
@@ -5857,12 +7219,17 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className={panelTitleClass}>{selectedColumnContext.title}</h3>
                   <span className={panelBadgeClass}>表格级配置</span>
+                  {detailGridLegacyTable && (
+                    <span className="inline-flex items-center rounded-full border border-[#1686e3]/18 bg-[#1686e3]/8 px-2.5 py-1 text-[10px] font-bold text-[#1686e3]">
+                      {detailGridLegacyTable}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {!isBillHeadGridConfig && !isBillDetailGridConfig && (
+                <div className="flex flex-wrap items-center gap-2">
+                {!isBillHeadGridConfig && !isBillDetailGridConfig && !isLeftGridConfig && (
                   <button
                     type="button"
                     onClick={applySuggestedDetailLayout}
@@ -5876,9 +7243,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                   <button
                     type="button"
                     onClick={() => openDetailBoardPreview(1, currentDetailBoard.sortColumnId)}
-                    disabled={!currentDetailBoard.enabled}
+                    disabled={!detailBoardReady}
                     className={`inline-flex h-9 items-center gap-1.5 rounded-[14px] px-3 text-[12px] font-bold transition-colors ${
-                      currentDetailBoard.enabled
+                      detailBoardReady
                         ? 'bg-[color:var(--workspace-accent)] text-white shadow-[0_16px_28px_-22px_rgba(15,23,42,0.24)] hover:bg-[color:var(--workspace-accent-strong)]'
                         : 'cursor-not-allowed bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600'
                     }`}
@@ -5893,7 +7260,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
-            {isCommonPanelTab ? (
+            {isContextMenuPanelTab && isDocumentArchiveGrid ? (
+              renderPopupMenuManagerSection()
+            ) : isColorPanelTab && isDocumentArchiveGrid ? (
+              renderColorRuleManagerSection()
+            ) : isCommonPanelTab ? (
               isBillHeadGridConfig ? (
                 <div className="space-y-4">
                   <section className={compactCardClass}>
@@ -5971,24 +7342,31 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                   {renderSqlConfigSection()}
                   {renderIdentifierTranslationSection()}
                 </div>
-              ) : (
+              ) : isLeftGridConfig ? (
                 <div className="space-y-4">
+                  {renderLeftGridMappingSection()}
                   <section className={compactCardClass}>
                     <div className={sectionTitleClass}>
-                      <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">table_chart</span>
-                      <h4>表格属性</h4>
+                      <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">table_view</span>
+                      <h4>左侧树表属性</h4>
                     </div>
                     <div className="grid gap-3">
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div className={compactInfoCardClass}>
-                          <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前表格</div>
-                          <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{selectedColumnContext.title}</div>
+                          <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">列数量</div>
+                          <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{leftTableColumns.length} 个</div>
                         </div>
                         <div className={compactInfoCardClass}>
-                          <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">菜单状态</div>
-                          <div className={`mt-1 text-[13px] font-bold ${currentGridConfig.contextMenuEnabled ? 'text-[color:var(--workspace-accent)]' : 'text-slate-500 dark:text-slate-300'}`}>
-                            {currentGridConfig.contextMenuEnabled ? '已启用右键菜单' : '未启用右键菜单'}
-                          </div>
+                          <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">表格类型</div>
+                          <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{currentGridConfig.tableType}</div>
+                        </div>
+                        <div className={compactInfoCardClass}>
+                          <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">右键菜单</div>
+                          <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{contextMenuItems.length} 项</div>
+                        </div>
+                        <div className={compactInfoCardClass}>
+                          <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">颜色规则</div>
+                          <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{enabledColorRuleCount} 条生效</div>
                         </div>
                       </div>
                       <div>
@@ -6003,65 +7381,53 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                           ))}
                         </select>
                       </div>
-                      <label className="flex items-center justify-between rounded-[18px] border border-slate-200/75 bg-slate-50/75 px-3.5 py-3 text-[12px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-200">
-                        <div>启用右键菜单</div>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(currentGridConfig.contextMenuEnabled)}
-                          onChange={(e) => updateGridConfig({ contextMenuEnabled: e.target.checked })}
-                          className="h-4 w-4 rounded accent-[color:var(--workspace-accent)]"
-                        />
-                      </label>
+                    </div>
+                  </section>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {isDocumentArchiveGrid && renderDocumentTableMappingSection()}
+                  {detailGridLegacyTable && renderDetailChartTableMappingSection()}
+                  <section className={compactCardClass}>
+                    <div className={sectionTitleClass}>
+                      <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">
+                        {detailGridFillTypeMeta?.icon || 'table_chart'}
+                      </span>
+                      <h4>{detailGridFillTypeMeta?.value === '图表' ? '图表加载属性' : '主表属性'}</h4>
+                    </div>
+                    <div className="grid gap-3">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div className={compactInfoCardClass}>
+                          <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">
+                            {detailGridFillTypeMeta?.value === '图表' ? '当前填充' : '当前表格'}
+                          </div>
+                          <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{selectedColumnContext.title}</div>
+                        </div>
+                        <div className={compactInfoCardClass}>
+                          <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">右键数量</div>
+                          <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{contextMenuItems.length} 项</div>
+                        </div>
+                        <div className={compactInfoCardClass}>
+                          <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">颜色规则</div>
+                          <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{enabledColorRuleCount} 条生效</div>
+                        </div>
+                      </div>
+                      <div>
+                        <label className={mutedLabelClass}>表格类型</label>
+                        <select
+                          value={currentGridConfig.tableType}
+                          onChange={(e) => updateGridConfig({ tableType: e.target.value })}
+                          className={fieldClass}
+                        >
+                          {TABLE_TYPE_OPTIONS.map((type) => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   </section>
                   {renderSqlConfigSection()}
                   {renderIdentifierTranslationSection()}
-
-                  <section className={`overflow-hidden rounded-[18px] border p-4 shadow-[0_18px_30px_-26px_rgba(15,23,42,0.18)] ${detailBoardTheme.groupShell}`}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className={sectionTitleClass}>
-                        <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">gesture</span>
-                        <h4>详情展示</h4>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {isMainGridConfig && (
-                          <button
-                            type="button"
-                            onClick={() => openDetailBoardPreview(1, currentDetailBoard.sortColumnId)}
-                            disabled={!currentDetailBoard.enabled}
-                            className={`inline-flex h-9 items-center gap-1.5 rounded-[14px] px-3 text-[12px] font-bold transition-colors ${
-                              currentDetailBoard.enabled
-                                ? 'bg-[color:var(--workspace-accent)] text-white shadow-[0_16px_28px_-22px_rgba(15,23,42,0.24)] hover:bg-[color:var(--workspace-accent-strong)]'
-                                : 'cursor-not-allowed bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600'
-                            }`}
-                          >
-                            <span className="material-symbols-outlined text-[16px]">preview</span>
-                            预览详情
-                          </button>
-                        )}
-                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-200/80 bg-white/88 px-3 py-2 text-[12px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200">
-                          <span>{currentDetailBoard.enabled ? '已开启' : '未开启'}</span>
-                          <input
-                            type="checkbox"
-                            checked={currentDetailBoard.enabled}
-                            onChange={(e) => updateDetailBoard({ ...currentDetailBoard, enabled: e.target.checked })}
-                            className="h-4 w-4 rounded accent-[color:var(--workspace-accent)]"
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-white/70 bg-white/74 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:border-white/8 dark:bg-slate-900/46">
-                      <div className="flex items-center gap-2">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold ${detailBoardTheme.groupLabel}`}>
-                          {detailGroupCount} 个分组
-                        </span>
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold ${detailBoardTheme.groupMetric}`}>
-                          {assignedFieldCount} 个字段
-                        </span>
-                      </div>
-                    </div>
-                  </section>
                 </div>
               )
             ) : (
@@ -6069,8 +7435,20 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 <div className="space-y-3">
                   {renderAdvancedPlaceholder('当前模式暂无扩展配置')}
                 </div>
+              ) : isLeftGridConfig ? (
+                <div className="space-y-3">
+                  <section className="rounded-[18px] border border-slate-200/75 bg-white/94 p-4 shadow-[0_16px_28px_-24px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900/55">
+                    <div className="flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100">
+                      <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">view_stream</span>
+                      <h4>左侧布局</h4>
+                    </div>
+                    <div className="mt-3 rounded-[16px] border border-dashed border-slate-200/80 bg-slate-50/80 px-4 py-6 text-[12px] leading-6 text-slate-500 dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-300">
+                      左侧树表暂不启用详情分组布局。列、条件、右键和颜色请分别在对应页签维护，动态 SQL 直接在所属树形字段的“基础定义”里配置。
+                    </div>
+                  </section>
+                </div>
               ) : (
-              <div className="space-y-3">
+                <div className="space-y-3">
                 <section className="rounded-[18px] border border-slate-200/75 bg-white/94 p-3.5 shadow-[0_16px_28px_-24px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900/55">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100">
@@ -6227,6 +7605,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         return;
       }
 
+      if (selectedColumnContext.scope === 'left-filter') {
+        deleteSelectedConditions('left', [currentColumn.id]);
+        return;
+      }
+
       if (selectedColumnContext.scope === 'detail-filter') {
         deleteSelectedConditions('detail', [currentColumn.id]);
         return;
@@ -6258,6 +7641,40 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       : FIELD_TYPE_OPTIONS;
     const commonPropertySwitches = propertySwitches.filter((item) => item.key !== 'readonly');
     const advancedPropertySwitches = propertySwitches.filter((item) => item.key === 'readonly');
+    const legacyTableMeta = isConditionConfig
+      ? selectedColumnContext.scope === 'filter'
+        ? {
+            table: 'p_systembillsourcecond',
+            hint: '主表条件的控件、默认值和联动规则统一落这个条件表。',
+          }
+        : selectedColumnContext.scope === 'left-filter'
+          ? {
+              table: 'p_systembillsourcecond',
+              hint: '左侧条件也写入 p_systembillsourcecond，并带上所属树形字段的 sourceid 与 formKey。',
+            }
+        : {
+            table: 'p_systembillsourcecond',
+            hint: '明细条件也按条件配置表维护，方便后续统一拼装查询条件。',
+          }
+      : selectedColumnContext.scope === 'left'
+        ? {
+            table: 'p_systemwordbookgrid',
+            hint: '左侧树节点展开后的列配置、显示字段和宽度统一按树表字段配置表维护。',
+          }
+      : businessType !== 'table'
+        ? {
+            table: 'p_systemwordbooktab',
+            hint: '当前列的名称、标识、交互、联动和展示属性都按字段配置表统一维护。',
+          }
+        : null;
+    const openLongTextEditor = (title: string, value: string, onSave: (nextValue: string) => void, placeholder?: string) => {
+      setLongTextEditorState({
+        title,
+        placeholder,
+        draft: value,
+        onSave,
+      });
+    };
 
     return (
       <div className={panelShellClass}>
@@ -6271,7 +7688,15 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className={panelTitleClass}>{currentColumn.name}</h3>
                   <span className={panelBadgeClass}>{selectedColumnContext.title}</span>
+                  {legacyTableMeta && (
+                    <span className="inline-flex items-center rounded-full border border-[#1686e3]/18 bg-[#1686e3]/8 px-2.5 py-1 text-[10px] font-bold text-[#1686e3]">
+                      {legacyTableMeta.table}
+                    </span>
+                  )}
                 </div>
+                {legacyTableMeta && (
+                  <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-300">{legacyTableMeta.hint}</p>
+                )}
               </div>
             </div>
             <button
@@ -6333,6 +7758,33 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                         className={`${fieldClass} font-mono text-[12px]`}
                       />
                     </div>
+                    {!isConditionConfig && (
+                      <div>
+                        <div className="mb-1.5 flex items-center justify-between gap-3">
+                          <label className={`${mutedLabelClass} mb-0`}>动态 SQL</label>
+                          <button
+                            type="button"
+                            onClick={() => openLongTextEditor(
+                              `${currentColumn.name || '字段'} · 动态 SQL`,
+                              currentColumn.dynamicSql || '',
+                              (nextValue) => updateColumn({ dynamicSql: nextValue }),
+                              '例如：SELECT node_id, node_name, parent_id FROM ...',
+                            )}
+                            className="inline-flex h-7 items-center gap-1 rounded-full border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 text-[10px] font-bold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
+                          >
+                            <span className="material-symbols-outlined text-[13px]">open_in_full</span>
+                            详情编辑
+                          </button>
+                        </div>
+                        <textarea
+                          rows={4}
+                          value={currentColumn.dynamicSql}
+                          onChange={(e) => updateColumn({ dynamicSql: e.target.value })}
+                          placeholder="例如：SELECT node_id, node_name, parent_id FROM ..."
+                          className={`${textareaClass} min-h-[124px]`}
+                        />
+                      </div>
+                    )}
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
                         <label className={mutedLabelClass}>{isConditionConfig ? '控件类型' : '字段类型'}</label>
@@ -6580,16 +8032,18 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                         className={textareaClass}
                       />
                     </div>
-                    <div>
-                      <label className={mutedLabelClass}>{isConditionConfig ? '联动 SQL / 条件表达式' : '动态 SQL / 条件表达式'}</label>
-                      <textarea
-                        rows={3}
-                        value={currentColumn.dynamicSql}
-                        onChange={(e) => updateColumn({ dynamicSql: e.target.value })}
-                        placeholder={isConditionConfig ? 'WHERE org_id = ${orgId} AND enable = 1' : 'WHERE org_id = ${orgId}'}
-                        className={textareaClass}
-                      />
-                    </div>
+                    {isConditionConfig && (
+                      <div>
+                        <label className={mutedLabelClass}>联动 SQL / 条件表达式</label>
+                        <textarea
+                          rows={3}
+                          value={currentColumn.dynamicSql}
+                          onChange={(e) => updateColumn({ dynamicSql: e.target.value })}
+                          placeholder="WHERE org_id = ${orgId} AND enable = 1"
+                          className={textareaClass}
+                        />
+                      </div>
+                    )}
                   </div>
                 </section>
               </>
@@ -6600,70 +8054,69 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     );
   };
 
-  const columnOperationPanel = useMemo(() => renderColumnOperationPanel(), [selectedColumnContext, inspectorPanelTab]);
+  const columnOperationPanel = renderColumnOperationPanel();
 
   const renderDocumentTreePanel = () => {
     if (!treeRelationColumn) return null;
-
-    const sourceFields = leftTableColumns.length > 0 ? leftTableColumns : [
-      buildColumn('tree_col', 1, { name: 'node_id', sourceField: 'node_id', width: 148 }),
-      buildColumn('tree_col', 2, { name: 'node_name', sourceField: 'node_name', width: 176 }),
-      buildColumn('tree_col', 3, { name: 'parent_id', sourceField: 'parent_id', width: 148 }),
-    ];
+    const ownerFieldKey = normalizeColumn(treeRelationColumn).sourceField || treeRelationColumn.id;
 
     return (
-      <div className="cloudy-glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70">
-        <div className="cloudy-glass-toolbar px-4 py-4">
-          <div className="flex items-start gap-3">
-            <div className="cloudy-glass-orb flex size-10 items-center justify-center rounded-[16px] text-[#2563eb] dark:text-primary">
-              <span className="material-symbols-outlined text-[18px]">account_tree</span>
-            </div>
-            <div className="min-w-0">
-              <div className="text-[14px] font-bold text-slate-800 dark:text-slate-100">左侧树节点</div>
-              <div className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-                已从“{treeRelationColumn.name}”的动态 SQL 自动解析字段，点节点字段可直接改中文名。
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="cloudy-glass-toolbar px-4 py-3">
-          <div className="cloudy-glass-panel-soft rounded-[18px] px-3.5 py-3">
-            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">动态 SQL</div>
-            <div className="mt-2 line-clamp-3 font-mono text-[11px] leading-5 text-slate-500 dark:text-slate-300">
-              {treeRelationColumn.dynamicSql || '未配置动态 SQL，当前按默认树节点字段生成。'}
-            </div>
-          </div>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto px-3 py-4">
-          <div className="cloudy-glass-panel-soft rounded-[22px] p-3">
-            <div className="cloudy-glass-chip flex items-center gap-2 rounded-[16px] px-3.5 py-3 text-[12px] font-bold text-[#2563eb] dark:text-primary">
-              <span className="material-symbols-outlined text-[18px]">folder_open</span>
-              <span className="truncate">{activeMenuName || '基础档案树'}</span>
-            </div>
-            <div className="mt-3 ml-4 border-l border-dashed border-slate-200 pl-3.5 dark:border-slate-700">
-              {sourceFields.map((field, index) => {
-                const isActive = selectedLeftColId === field.id;
-
-                return (
-                  <button
-                    key={field.id}
-                    type="button"
-                    onClick={() => activateColumnSelection('left', field.id)}
-                    className={`group mt-1.5 flex w-full items-center gap-2.5 rounded-[16px] px-3 py-2.5 text-left transition-all ${
-                      isActive
-                        ? 'bg-[#eef4ff] text-[#2563eb] shadow-[inset_0_0_0_1px_rgba(37,99,235,0.16),0_18px_30px_-24px_rgba(37,99,235,0.24)] dark:bg-primary/10 dark:text-primary'
-                        : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-800/70'
-                    }`}
-                  >
-                    <span className={`material-symbols-outlined text-[16px] ${isActive ? 'text-[#2563eb]' : 'text-slate-400'}`}>subdirectory_arrow_right</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[12px] font-bold">{field.name}</div>
-                      <div className="mt-1 truncate font-mono text-[10px] text-slate-400">{field.sourceField || `field_${index + 1}`}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+      <div style={workspaceThemeVars} className="cloudy-glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70">
+        <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
+          {renderDocumentGridToolbar(
+            leftTableColumns,
+            '左侧树表',
+            selectedLeftForDelete.length,
+            () => deleteSelectedColumns('left', selectedLeftForDelete),
+            () => setLeftTableColumns((prev) => [...prev, buildColumn('tree_col', prev.length + 1, { name: `树字段 ${prev.length + 1}` })]),
+            undefined,
+            {
+              fields: leftFilterFields,
+              selectedId: selectedLeftFilterId,
+              selectedIds: selectedLeftFiltersForDelete,
+              setSelectedIds: setSelectedLeftFiltersForDelete,
+              setFields: setLeftFilterFields,
+              scope: 'left',
+              onActivate: (id) => {
+                setSelectedArchiveNodeId('archive-left-filter');
+                activateConditionSelection('left', id);
+              },
+              onAdd: () => {
+                const next = buildConditionField(leftFilterFields.length + 1, {
+                  name: `左侧条件 ${leftFilterFields.length + 1}`,
+                  sourceid: treeRelationColumn.id,
+                  formKey: ownerFieldKey,
+                });
+                setLeftFilterFields((prev) => [...prev, next]);
+                setSelectedLeftFiltersForDelete([next.id]);
+                setSelectedArchiveNodeId('archive-left-filter');
+                activateConditionSelection('left', next.id);
+              },
+              onDelete: () => deleteSelectedConditions('left', selectedLeftFiltersForDelete),
+            },
+            {
+              active: selectedTableConfigScope === 'left',
+              onSelect: () => {
+                setSelectedArchiveNodeId('archive-left-grid');
+                activateTableConfigSelection('left');
+              },
+            },
+            { hideActionBar: true },
+          )}
+          <div
+            className="scrollbar-none min-h-0 flex-1 overflow-auto bg-white/70 px-3 py-3 outline-none dark:bg-slate-900/88"
+            tabIndex={0}
+            onPaste={(event) => handlePasteColumns(event, setLeftTableColumns)}
+          >
+            {renderTableBuilder('left', leftTableColumns, setLeftTableColumns, selectedLeftColId, selectedLeftForDelete, setSelectedLeftForDelete, {
+              backgroundSelectable: true,
+              tableSelected: selectedTableConfigScope === 'left',
+              onSelectTable: () => {
+                setSelectedArchiveNodeId('archive-left-grid');
+                activateTableConfigSelection('left');
+              },
+              canvasLabel: '点击配置左侧树表',
+            })}
           </div>
         </div>
       </div>
@@ -6686,7 +8139,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       onAdd: () => void;
       onDelete: () => void;
       setFields: React.Dispatch<React.SetStateAction<any[]>>;
-      scope: 'main' | 'detail';
+      scope: 'left' | 'main' | 'detail';
     },
     tableConfigAction?: {
       active?: boolean;
@@ -6697,6 +8150,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     },
   ) => {
     const filterFields = filterConfig?.fields ?? columns.slice(0, 3);
+    const hideLeftFilterQuickActions = filterConfig?.scope === 'left';
     const activeFilterResize = activeResize?.mode === 'filter' && filterFields.some((field) => field.id === activeResize.id)
       ? activeResize
       : null;
@@ -6835,7 +8289,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                     </div>
                   );
                 })}
-                {filterConfig && (
+                {filterConfig && !hideLeftFilterQuickActions && (
                     <button
                       type="button"
                       onClick={filterConfig.onAdd}
@@ -6848,7 +8302,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               </div>
             </div>
             <div className="cloudy-glass-chip flex shrink-0 items-center self-center rounded-[18px] border border-[color:var(--workspace-accent-border)] px-2 py-1.5">
-              {filterConfig && (
+              {filterConfig && !hideLeftFilterQuickActions && (
                 <button
                   type="button"
                   onClick={filterConfig.onDelete}
@@ -7035,7 +8489,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   const renderPreviewContextMenu = () => {
     if (!previewContextMenu) return null;
-    const enabledCount = previewContextMenu.items.filter((item: any) => !item.disabledCondition).length;
+    const enabledCount = previewContextMenu.items.filter((item: any) => !item.disabled && !item.disabledCondition).length;
 
     return (
       <div
@@ -7075,7 +8529,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             </div>
             <div className="px-2 py-2">
               {previewContextMenu.items.map((item: any) => {
-                const isDisabled = Boolean(item.disabledCondition);
+                const isDisabled = Boolean(item.disabled) || Boolean(item.disabledCondition);
 
                 return (
                   <button
@@ -7109,7 +8563,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                           {item.actionKey || '未配置动作'}
                         </span>
                         {isDisabled && (
-                          <span className="truncate text-[10px] text-rose-400">禁用: {item.disabledCondition}</span>
+                          <span className="truncate text-[10px] text-rose-400">
+                            禁用: {item.disabledCondition || '手动禁用'}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -7134,9 +8590,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         : builderSelectionContextMenu.scope === 'detail'
           ? '明细列'
           : '主表列'
-      : builderSelectionContextMenu.scope === 'detail'
-        ? '明细条件'
-        : '查询条件';
+      : builderSelectionContextMenu.scope === 'left'
+        ? '左侧条件'
+        : builderSelectionContextMenu.scope === 'detail'
+          ? '明细条件'
+          : '查询条件';
     const title = isColumnMenu ? '字段批量操作' : '条件批量操作';
     const description = `${scopeLabel} · 已选 ${count} 项`;
     const deleteLabel = isColumnMenu ? `删除所选列${count > 1 ? ` (${count})` : ''}` : `删除所选条件${count > 1 ? ` (${count})` : ''}`;
@@ -7146,7 +8604,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         return;
       }
 
-      deleteSelectedConditions(builderSelectionContextMenu.scope === 'detail' ? 'detail' : 'main', builderSelectionContextMenu.ids);
+      deleteSelectedConditions(builderSelectionContextMenu.scope, builderSelectionContextMenu.ids);
     };
 
     return (
@@ -7201,6 +8659,73 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           </div>
         </div>
       </div>
+    );
+  };
+
+  const renderLongTextEditorModal = () => {
+    if (!longTextEditorState) return null;
+
+    return (
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[78] flex items-center justify-center bg-slate-950/40 p-6 backdrop-blur-sm"
+          onClick={() => setLongTextEditorState(null)}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 18, scale: 0.98 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-white/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,250,255,0.99))] shadow-[0_40px_96px_-32px_rgba(15,23,42,0.42)] dark:border-slate-700 dark:bg-slate-900/96"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200/70 px-5 py-4 dark:border-slate-700">
+              <div className="min-w-0">
+                <div className="text-[15px] font-bold text-slate-800 dark:text-slate-100">{longTextEditorState.title}</div>
+                <div className="mt-1 text-[12px] text-slate-400">长内容直接在这里编辑，保存后会回写到当前配置项。</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLongTextEditorState(null)}
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-2xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 px-5 py-4">
+              <textarea
+                rows={20}
+                value={longTextEditorState.draft}
+                onChange={(event) => setLongTextEditorState((prev) => (prev ? { ...prev, draft: event.target.value } : prev))}
+                placeholder={longTextEditorState.placeholder}
+                className="h-full min-h-[420px] w-full resize-none rounded-[22px] border border-slate-200/80 bg-white/94 px-4 py-3 font-mono text-[12px] leading-6 text-slate-700 outline-none transition focus:border-[color:var(--workspace-accent-border-strong)] focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-3 border-t border-slate-200/70 px-5 py-4 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setLongTextEditorState(null)}
+                className="inline-flex h-10 items-center justify-center rounded-[14px] border border-slate-200/80 bg-white px-4 text-[12px] font-bold text-slate-500 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  longTextEditorState.onSave(longTextEditorState.draft);
+                  setLongTextEditorState(null);
+                }}
+                className="inline-flex h-10 items-center justify-center rounded-[14px] bg-[color:var(--workspace-accent)] px-4 text-[12px] font-bold text-white shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+              >
+                保存内容
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
     );
   };
 
@@ -7741,6 +9266,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 </motion.div>
               )}
             </AnimatePresence>
+            {renderLongTextEditorModal()}
             {renderDetailBoardModal()}
             {renderBuilderSelectionContextMenu()}
             {renderPreviewContextMenu()}
@@ -8370,14 +9896,14 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                                       scope: 'main',
                                       onActivate: (id) => {
                                         setSelectedArchiveNodeId('archive-filter');
-                                        activateConditionSelection(id);
+                                        activateConditionSelection('main', id);
                                       },
                                       onAdd: () => {
                                         const next = buildConditionField(mainFilterFields.length + 1);
                                         setMainFilterFields((prev) => [...prev, next]);
                                         setSelectedMainFiltersForDelete([next.id]);
                                         setSelectedArchiveNodeId('archive-filter');
-                                        activateConditionSelection(next.id);
+                                        activateConditionSelection('main', next.id);
                                       },
                                       onDelete: () => deleteSelectedConditions('main', selectedMainFiltersForDelete),
                                     },
@@ -8392,7 +9918,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                                   {renderTableBuilder('main', mainTableColumns, setMainTableColumns, selectedMainColId, selectedMainForDelete, setSelectedMainForDelete, {
                                     contextMenuScope: 'main',
                                     contextMenuConfig: {
-                                      enabled: Boolean(mainTableConfig.contextMenuEnabled),
+                                      enabled: (mainTableConfig.contextMenuItems ?? []).length > 0,
                                       items: mainTableConfig.contextMenuItems ?? [],
                                     },
                                     backgroundSelectable: true,
@@ -8403,7 +9929,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                                     },
                                     detailBoardConfig: mainTableConfig.detailBoard,
                                     onCanvasDoubleClick: () => {
-                                      if (!normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns).enabled) return;
+                                      if (normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns).groups.length === 0) return;
                                       openDetailBoardPreview(1);
                                     },
                                     canvasLabel: '点击配置基础档案主表',
@@ -8431,7 +9957,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                         </div>
                       ) : businessType === 'table' ? (
                         <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex flex-1 min-h-0 overflow-hidden rounded-[36px] ${isConfigFullscreenActive ? 'h-full p-1.5' : 'min-h-[780px] p-3'} ${workspaceThemeStyles.tableSurface}`}>
-                          <div className={`grid min-h-0 flex-1 ${isConfigFullscreenActive ? 'gap-3 xl:grid-cols-[minmax(0,1fr)_392px]' : 'gap-4 xl:grid-cols-[minmax(0,1fr)_360px]'}`}>
+                          <div className={`grid min-h-0 flex-1 ${isConfigFullscreenActive ? 'gap-3 xl:grid-cols-[minmax(0,1fr)_448px]' : 'gap-4 xl:grid-cols-[minmax(0,1fr)_388px]'}`}>
                             <div className="flex min-h-0">
                               {renderBillDocumentWorkbench()}
                             </div>
@@ -8533,14 +10059,14 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                                     scope: 'main',
                                     onActivate: (id) => {
                                       setSelectedArchiveNodeId('archive-filter');
-                                      activateConditionSelection(id);
+                                      activateConditionSelection('main', id);
                                     },
                                     onAdd: () => {
                                       const next = buildConditionField(mainFilterFields.length + 1);
                                       setMainFilterFields((prev) => [...prev, next]);
                                       setSelectedMainFiltersForDelete([next.id]);
                                       setSelectedArchiveNodeId('archive-filter');
-                                      activateConditionSelection(next.id);
+                                      activateConditionSelection('main', next.id);
                                     },
                                     onDelete: () => deleteSelectedConditions('main', selectedMainFiltersForDelete),
                                   },
