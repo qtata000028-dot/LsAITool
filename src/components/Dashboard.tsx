@@ -1,6 +1,7 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDeferredValue, useMemo } from 'react';
+import { FileText, GripVertical, Plus, Printer, QrCode, Save } from 'lucide-react';
 import BrandLogo from './BrandLogo';
 
 interface DashboardProps {
@@ -208,7 +209,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   // Step 4: Table Builder
   const [isFullscreenEditor, setIsFullscreenEditor] = useState(false);
-  const [isFullscreenConfig, setIsFullscreenConfig] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -1446,7 +1446,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const previewValue = getPreviewCellValue(field, rowIndex) || field.placeholder || `${field.name}示例`;
     const fontSize = Math.max(11, Math.min(18, Number(field.fontSize) || BILL_FORM_DEFAULT_FONT_SIZE));
     const shellStyle = { fontSize };
-    const shellClass = 'flex h-10 w-full items-center justify-between gap-2 rounded-[12px] border border-white/80 bg-white/90 px-3 text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_14px_26px_-24px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-200';
+    const shellClass = 'flex h-[38px] w-full items-center justify-between gap-2 rounded-md border border-slate-300/50 bg-white/60 px-3 py-1.5 text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.02)] backdrop-blur-sm transition-all';
     const trailingIcon = field.type === '日期框'
       ? 'calendar_month'
       : field.type === '下拉框' || field.type === '多选框'
@@ -1475,12 +1475,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         <div className={shellClass} style={shellStyle}>
           <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
             {tags.map((tag) => (
-              <span key={tag} className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+              <span key={tag} className="inline-flex items-center rounded bg-white/75 px-2 py-0.5 text-[11px] font-medium text-slate-500">
                 {tag}
               </span>
             ))}
           </div>
-          <span className="material-symbols-outlined text-[15px] text-slate-300 dark:text-slate-500">expand_more</span>
+          <span className="material-symbols-outlined text-[15px] text-slate-500">expand_more</span>
         </div>
       );
     }
@@ -1489,8 +1489,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       return (
         <div className={shellClass} style={shellStyle}>
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="material-symbols-outlined text-[15px] text-slate-300 dark:text-slate-500">search</span>
-            <span className="truncate">{previewValue}</span>
+            <span className="material-symbols-outlined text-[15px] text-slate-400">search</span>
+            <span className={`truncate ${field.placeholder ? 'text-slate-400' : 'text-slate-700'}`}>
+              {field.placeholder || previewValue}
+            </span>
           </div>
         </div>
       );
@@ -1508,7 +1510,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       <div className={shellClass} style={shellStyle}>
         <div className="min-w-0 flex-1 truncate">{previewValue}</div>
         {trailingIcon ? (
-          <span className="material-symbols-outlined text-[15px] text-slate-300 dark:text-slate-500">
+          <span className="material-symbols-outlined text-[15px] text-slate-500">
             {trailingIcon}
           </span>
         ) : null}
@@ -1554,20 +1556,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   const renderBillHeaderWorkbench = () => {
-    const canvasHeight = Math.max(
-      360,
-      mainTableColumns.reduce((maxHeight, column) => {
-        const normalizedColumn = normalizeColumn(column);
-        return Math.max(maxHeight, (normalizedColumn.canvasY ?? BILL_FORM_LAYOUT_PADDING_Y) + 78);
-      }, BILL_FORM_LAYOUT_PADDING_Y) + 40,
-    );
-    const getCardSelectionClass = (isActive: boolean, isMarkedForDelete: boolean) => (
-      isActive
-        ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-tint)] shadow-[0_0_0_3px_var(--workspace-accent-soft),0_24px_44px_-32px_var(--workspace-accent-shadow)]'
-        : isMarkedForDelete
-          ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] shadow-[0_18px_34px_-28px_rgba(15,23,42,0.16)]'
-          : 'border-white/70 bg-white/78 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.16)] hover:border-[color:var(--workspace-accent-border)] hover:bg-white/92'
-    );
+    const controlClass = 'w-full bg-white/60 border border-slate-300/50 rounded-md px-3 py-1.5 text-sm text-slate-800 shadow-[0_1px_2px_rgba(0,0,0,0.02)]';
     const buildSelectedIds = (columnId: string, append: boolean) => (
       selectedMainForDelete.includes(columnId)
         ? selectedMainForDelete
@@ -1602,38 +1591,108 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         ids: nextSelectedIds,
       });
     };
+    const secondaryToolbarButtonClass = 'flex items-center gap-1.5 px-4 py-2 rounded-md bg-white/60 hover:bg-white/75 border border-white/60 text-slate-700 text-sm font-medium transition-all shadow-sm hover:shadow';
+    const primaryToolbarButtonClass = 'flex items-center gap-1.5 px-4 py-2 rounded-md bg-blue-500/80 hover:bg-blue-600/90 border border-blue-400/50 text-white text-sm font-medium transition-all shadow-md hover:shadow-lg';
+    const getFieldSpanClass = (rawColumn: any) => {
+      const normalizedColumn = normalizeColumn(rawColumn);
+      if (normalizedColumn.type === '搜索框' || /备注|说明|描述/.test(normalizedColumn.name || '') || normalizedColumn.width >= 420) {
+        return 'lg:col-span-2';
+      }
+      return '';
+    };
+    const renderReferenceBillControl = (rawField: any, rowIndex: number) => {
+      const field = normalizeColumn(rawField);
+      const previewValue = getPreviewCellValue(field, rowIndex) || field.placeholder || `${field.name}示例`;
+      const optionValues = getFieldOptionValues(field);
 
-    return (
-      <div style={workspaceThemeVars} className={`cloudy-glass-panel flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-white/75 ${workspaceThemeStyles.tableSurface}`}>
-        <div className="cloudy-glass-toolbar flex items-center justify-between gap-3 px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="cloudy-glass-orb flex size-10 items-center justify-center rounded-2xl text-[color:var(--workspace-accent)]">
-              <span className="material-symbols-outlined text-[18px]">dashboard</span>
+      if (field.type === '下拉框' || field.type === '日期框' || field.type === '多选框') {
+        return (
+          <div className="relative pointer-events-none">
+            <div className={controlClass}>
+              <span className="truncate block pr-6">{previewValue}</span>
             </div>
-            <div>
-              <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">单据头部看板</h4>
+            <div className="absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+        );
+      }
+
+      return (
+        <div className="pointer-events-none">
+          <div className={controlClass}>
+            <span className={`block truncate ${field.placeholder ? 'text-slate-400' : ''}`}>
+              {field.placeholder || previewValue}
+            </span>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div style={workspaceThemeVars} className="relative flex min-h-0 flex-col gap-5 xl:gap-6">
+        <div className="pointer-events-none absolute left-[-8%] top-[-8%] h-72 w-72 rounded-full bg-blue-50/12 blur-3xl" />
+        <div className="pointer-events-none absolute right-[-8%] top-[12%] h-72 w-72 rounded-full bg-purple-50/8 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-[-16%] left-[18%] h-72 w-72 rounded-full bg-pink-50/6 blur-3xl" />
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[220px_minmax(0,1fr)_280px] xl:items-start xl:gap-6">
+          <div className="flex items-center justify-center xl:justify-start">
+            <BrandLogo size="sm" className="ml-[10px] mt-[8px]" />
+          </div>
+
+          <div className="min-w-0 text-center">
+            <h3 className="text-[24px] font-bold tracking-[0.18em] text-slate-800 drop-shadow-sm lg:text-[26px] xl:ml-[0.25em] xl:text-[28px] xl:tracking-[0.3em]">
+              采购入库单 - 制单
+            </h3>
+            <div className="mx-auto mt-3 h-px w-full max-w-[520px] bg-gradient-to-r from-transparent via-slate-400/50 to-transparent" />
+          </div>
+
+          <div className="flex flex-col items-center gap-3 xl:items-end">
+            <div className="flex flex-wrap items-center justify-center gap-2 xl:justify-end">
+              <button type="button" className={secondaryToolbarButtonClass}>
+                <Printer size={16} />
+                保存记录
+              </button>
+              <button type="button" className={primaryToolbarButtonClass}>
+                <Save size={16} />
+                保存提交
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-4 xl:justify-end">
+              <label className="flex cursor-pointer items-center gap-1.5 text-sm font-medium text-blue-600 transition-colors hover:text-blue-700">
+                <input type="radio" name="bill-doc-type" defaultChecked className="h-4 w-4 accent-blue-500" />
+                蓝字单据
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-600">NO.:</span>
+                <div className="flex h-8 w-8 items-center justify-center rounded-md border border-white/60 bg-white/40 p-1 shadow-sm">
+                  <QrCode size={20} className="text-slate-700" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 px-1 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h4 className="text-[16px] font-semibold text-slate-800 drop-shadow-sm">单据头部看板</h4>
+            <p className="mt-1 text-[12px] text-slate-500">配置单据抬头字段与业务元数据</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             <button
               type="button"
               onClick={activateSourceGridSelection}
-              className={`cloudy-glass-chip inline-flex h-9 items-center gap-1.5 rounded-[14px] border px-3 text-[12px] font-bold transition-colors ${
+              className={`${
                 inspectorTarget.kind === 'source-grid'
-                  ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent)] text-white'
-                  : 'border-[color:var(--workspace-accent-border)] text-[color:var(--workspace-accent)] hover:bg-[color:var(--workspace-accent-soft)]'
+                  ? primaryToolbarButtonClass
+                  : secondaryToolbarButtonClass
               }`}
             >
-              <span className="material-symbols-outlined text-[15px]">database</span>
-              来源表
-            </button>
-            <button
-              type="button"
-              onClick={autoArrangeBillHeaderFields}
-              className="cloudy-glass-chip inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-white/80 px-3 text-[12px] font-bold text-slate-600 transition-colors hover:bg-white dark:border-white/10 dark:text-slate-200"
-            >
-              <span className="material-symbols-outlined text-[15px]">auto_awesome_motion</span>
-              自动整理
+              <Plus size={16} />
+              添加来源
             </button>
             <button
               type="button"
@@ -1644,111 +1703,80 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   ...getBillFieldLayout(prev.length, BILL_FORM_DEFAULT_WIDTH),
                 }),
               ])}
-              className="inline-flex h-9 items-center gap-1.5 rounded-[14px] bg-[color:var(--workspace-accent)] px-3 text-[12px] font-bold text-white shadow-[0_18px_32px_-24px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+              className={secondaryToolbarButtonClass}
             >
-              <span className="material-symbols-outlined text-[15px]">add</span>
-              新增控件
+              <Plus size={16} />
+              添加控件
+            </button>
+            <button
+              type="button"
+              onClick={autoArrangeBillHeaderFields}
+              className={primaryToolbarButtonClass}
+            >
+              <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+              自动排列
             </button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 px-4 pb-4">
-          <div
-            ref={billHeaderCanvasRef}
-            tabIndex={0}
-            style={{ minHeight: canvasHeight }}
-            onClick={() => {
-              setSelectedMainForDelete([]);
-              activateTableConfigSelection('main');
-            }}
-            onPaste={(event) => handlePasteColumns(event, setMainTableColumns, {
-              createColumn: (name, index, currentLength) => buildColumn('m_col', currentLength + index + 1, {
-                name,
-                width: BILL_FORM_DEFAULT_WIDTH,
-                ...getBillFieldLayout(currentLength + index, BILL_FORM_DEFAULT_WIDTH),
-              }),
-            })}
-            className={`cloudy-cloud-grid scrollbar-none relative h-full overflow-auto rounded-[16px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.66),rgba(248,250,252,0.8))] p-5 outline-none transition-colors ${inspectorTarget.kind === 'main-grid' ? 'shadow-[inset_0_0_0_2px_var(--workspace-accent-border-strong)]' : ''}`}
-          >
-            <div className="pointer-events-none absolute right-5 top-5 inline-flex items-center gap-1.5 rounded-full border border-[color:var(--workspace-accent-border)] bg-white/84 px-3 py-1 text-[11px] font-bold text-[color:var(--workspace-accent)] shadow-[0_16px_28px_-24px_rgba(15,23,42,0.16)]">
-              <span className="material-symbols-outlined text-[14px]">content_paste</span>
-              Excel 复制后直接 Ctrl+V
-            </div>
-            {mainTableColumns.length > 0 ? mainTableColumns.map((column, index) => {
-              const normalizedColumn = normalizeColumn(column);
-              const isActive = selectedMainColId === column.id;
-              const isMarkedForDelete = selectedMainForDelete.includes(column.id);
-              const fieldWidth = Math.max(220, normalizedColumn.width || BILL_FORM_DEFAULT_WIDTH);
-              const labelWidth = Math.max(58, Math.min(112, Number(normalizedColumn.labelWidth) || BILL_FORM_DEFAULT_LABEL_WIDTH));
-              const fontSize = Math.max(11, Math.min(18, Number(normalizedColumn.fontSize) || BILL_FORM_DEFAULT_FONT_SIZE));
+        <div
+          ref={billHeaderCanvasRef}
+          tabIndex={0}
+          onClick={() => {
+            setSelectedMainForDelete([]);
+            activateTableConfigSelection('main');
+          }}
+          onPaste={(event) => handlePasteColumns(event, setMainTableColumns, {
+            createColumn: (name, index, currentLength) => buildColumn('m_col', currentLength + index + 1, {
+              name,
+              width: BILL_FORM_DEFAULT_WIDTH,
+              ...getBillFieldLayout(currentLength + index, BILL_FORM_DEFAULT_WIDTH),
+            }),
+          })}
+          className={`grid grid-cols-1 gap-x-6 gap-y-4 rounded-2xl border border-white/84 bg-white/72 p-5 shadow-sm backdrop-blur-md lg:grid-cols-4 ${inspectorTarget.kind === 'main-grid' ? 'ring-2 ring-blue-200/70' : ''}`}
+        >
+          {mainTableColumns.length > 0 ? mainTableColumns.map((column, index) => {
+            const normalizedColumn = normalizeColumn(column);
+            const isActive = selectedMainColId === column.id;
+            const isMarkedForDelete = selectedMainForDelete.includes(column.id);
 
-              return (
-                <div
-                  key={column.id}
-                  role="button"
-                  tabIndex={0}
-                  style={{
-                    left: normalizedColumn.canvasX ?? BILL_FORM_LAYOUT_PADDING_X,
-                    top: normalizedColumn.canvasY ?? BILL_FORM_LAYOUT_PADDING_Y,
-                    width: fieldWidth,
-                  }}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleBillFieldSelect(event, column.id);
-                  }}
-                  onContextMenu={(event) => handleBillFieldContextMenu(event, column.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      setSelectedMainForDelete([column.id]);
-                      activateColumnSelection('main', column.id);
-                    }
-                  }}
-                  className={`absolute rounded-[22px] border p-3 transition-all ${getCardSelectionClass(isActive, isMarkedForDelete)}`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div
-                      onMouseDown={(event) => startBillFieldDrag(event, column.id)}
-                      className="cloudy-glass-orb flex size-9 shrink-0 cursor-grab items-center justify-center rounded-[16px] text-[color:var(--workspace-accent)] active:cursor-grabbing"
-                      title="拖动控件位置"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">drag_indicator</span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`shrink-0 truncate font-semibold ${normalizedColumn.required ? 'text-[color:var(--workspace-accent-strong)]' : 'text-slate-600 dark:text-slate-200'}`}
-                          style={{ width: labelWidth, fontSize: fontSize + 1 }}
-                          title={normalizedColumn.name}
-                        >
-                          {normalizedColumn.name}
-                        </div>
-                        <div className="min-w-0 flex-1">{renderBillFormControlPreview(normalizedColumn, index)}</div>
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] font-semibold">
-                        <span className="inline-flex items-center rounded-full bg-white/82 px-2 py-0.5 text-slate-500 dark:bg-slate-900/64 dark:text-slate-300">
-                          {normalizedColumn.type}
-                        </span>
-                        {normalizedColumn.sourceField ? (
-                          <span className="inline-flex items-center rounded-full bg-[color:var(--workspace-accent-soft)] px-2 py-0.5 text-[color:var(--workspace-accent-strong)]">
-                            {normalizedColumn.sourceField}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
+            return (
+              <div
+                key={column.id}
+                role="button"
+                tabIndex={0}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleBillFieldSelect(event, column.id);
+                }}
+                onContextMenu={(event) => handleBillFieldContextMenu(event, column.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setSelectedMainForDelete([column.id]);
+                    activateColumnSelection('main', column.id);
+                  }
+                }}
+                className={`${getFieldSpanClass(normalizedColumn)} group relative z-10 flex items-center gap-2 ${isActive ? 'rounded-md bg-white/25 px-1 py-1 ring-1 ring-blue-300/60' : isMarkedForDelete ? 'rounded-md bg-blue-50/30 px-1 py-1 ring-1 ring-blue-200/60' : ''}`}
+              >
+                <div className="absolute -left-5 cursor-grab p-1 text-slate-400 opacity-0 transition-opacity hover:text-blue-500 group-hover:opacity-100">
+                  <GripVertical size={16} />
                 </div>
-              );
-            }) : (
-              <div className="flex min-h-[320px] items-center justify-center text-center">
-                <div className="rounded-[24px] border border-dashed border-[color:var(--workspace-accent-border)] bg-white/72 px-8 py-10 shadow-[0_20px_34px_-30px_rgba(15,23,42,0.18)]">
-                  <div className="mx-auto flex size-14 items-center justify-center rounded-3xl bg-white text-[color:var(--workspace-accent)] shadow-[0_18px_32px_-24px_var(--workspace-accent-shadow)]">
-                    <span className="material-symbols-outlined text-[22px]">view_quilt</span>
-                  </div>
-                  <div className="mt-4 text-[14px] font-bold text-slate-700 dark:text-slate-100">将 Excel 字段复制到头部看板</div>
+                <label className="w-20 shrink-0 text-right text-sm font-medium text-slate-700 drop-shadow-sm">
+                  {normalizedColumn.name} {normalizedColumn.required ? <span className="text-red-500">*</span> : null}
+                </label>
+                <div className="min-w-0 flex-1">
+                  {renderReferenceBillControl(normalizedColumn, index)}
                 </div>
               </div>
-            )}
-          </div>
+            );
+          }) : (
+            <div className="col-span-full flex min-h-[220px] items-center justify-center rounded-2xl border border-white/86 bg-white/74 text-center shadow-sm backdrop-blur-md">
+              <div>
+                <div className="text-[14px] font-semibold text-slate-700">将 Excel 字段复制到头部看板</div>
+                <div className="mt-2 text-[12px] text-slate-500">会自动生成和参考稿一致的拟态玻璃表单。</div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1756,60 +1784,162 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   const renderBillDetailWorkbench = () => {
     const detailCols = billDetailColumns;
+    const previewRows = Array.from({ length: 15 }, (_, index) => index);
+    const buildSelectedIds = (columnId: string, append: boolean) => (
+      selectedDetailForDelete.includes(columnId)
+        ? selectedDetailForDelete
+        : append
+          ? Array.from(new Set([...selectedDetailForDelete, columnId]))
+          : [columnId]
+    );
+    const handleDetailHeaderClick = (event: React.MouseEvent<HTMLButtonElement>, id: string) => {
+      setBuilderSelectionContextMenu(null);
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        setSelectedDetailForDelete((prev) => (
+          prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+        ));
+        return;
+      }
+
+      setSelectedDetailForDelete([id]);
+      activateColumnSelection('detail', id);
+    };
+    const handleDetailHeaderContextMenu = (event: React.MouseEvent<HTMLButtonElement>, id: string) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const nextSelectedIds = buildSelectedIds(id, event.ctrlKey || event.metaKey);
+      setSelectedDetailForDelete(nextSelectedIds);
+      activateColumnSelection('detail', id);
+      setBuilderSelectionContextMenu({
+        kind: 'column',
+        scope: 'detail',
+        x: event.clientX,
+        y: event.clientY,
+        ids: nextSelectedIds,
+      });
+    };
+    const totalTableWidth = detailCols.reduce((sum, col) => sum + Math.max(88, Math.round(normalizeColumn(col).width || 120)), 0);
+    const toolbarButtonClass = 'flex items-center gap-1.5 rounded-md bg-white/60 px-3 py-1.5 text-sm font-medium text-blue-700 shadow-sm transition-all hover:bg-blue-50 hover:text-blue-800 border border-white/50 hover:border-blue-200';
 
     return (
-      <div style={workspaceThemeVars} className={`cloudy-glass-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-white/75 ${workspaceThemeStyles.tableSurface}`}>
-        <div className="cloudy-glass-toolbar flex items-center justify-between gap-3 px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="cloudy-glass-orb flex size-10 items-center justify-center rounded-2xl text-[color:var(--workspace-accent)]">
-              <span className="material-symbols-outlined text-[18px]">table_rows</span>
-            </div>
-            <div>
-              <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">单据明细表</h4>
-            </div>
+      <div style={workspaceThemeVars} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/84 bg-white/68 shadow-sm backdrop-blur-md">
+        <div className="flex items-center justify-between border-b border-white/44 bg-white/24 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
+            <FileText size={16} className="text-blue-500" />
+            物料明细
           </div>
           <div className="flex items-center gap-2">
             {selectedDetailForDelete.length > 0 && (
               <button
                 type="button"
                 onClick={() => deleteSelectedColumns('detail', selectedDetailForDelete)}
-                className="cloudy-glass-chip inline-flex h-9 items-center gap-1 rounded-[14px] border border-rose-200/80 px-3 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-50 dark:border-rose-500/20 dark:hover:bg-rose-500/10"
+                className="flex items-center gap-1.5 rounded-md border border-white/50 bg-white/60 px-3 py-1.5 text-sm font-medium text-rose-600 shadow-sm transition-all hover:bg-rose-50"
               >
-                <span className="material-symbols-outlined text-[14px]">delete</span>
-                删除
+                <Plus size={14} />
+                删除列
               </button>
             )}
             <button
               type="button"
               onClick={() => setBillDetailColumns((prev) => [...prev, buildColumn('bill_line', prev.length + 1)])}
-              className="inline-flex h-9 items-center gap-1.5 rounded-[14px] bg-[color:var(--workspace-accent)] px-3 text-[12px] font-bold text-white shadow-[0_18px_32px_-24px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+              className={toolbarButtonClass}
             >
-              <span className="material-symbols-outlined text-[15px]">add</span>
+              <Plus size={14} />
               新增列
+            </button>
+            <button type="button" className={toolbarButtonClass}>
+              <Plus size={14} />
+              物料类别
+            </button>
+            <button type="button" className={toolbarButtonClass}>
+              <Plus size={14} />
+              采购-按订单
+            </button>
+            <button type="button" className={toolbarButtonClass}>
+              <Plus size={14} />
+              采购-按供方
             </button>
           </div>
         </div>
         <div
-          className="scrollbar-none min-h-0 flex-1 overflow-auto px-4 pb-4 outline-none"
+          className="min-h-0 flex-1 overflow-auto custom-scrollbar outline-none"
           tabIndex={0}
           onPaste={(event) => handlePasteColumns(event, setBillDetailColumns)}
+          onClick={() => {
+            setSelectedDetailForDelete([]);
+            activateTableConfigSelection('detail');
+          }}
         >
-          <div className="pt-3">
-            {renderTableBuilder(
-              'detail',
-              detailCols,
-              setBillDetailColumns,
-              selectedDetailColId,
-              selectedDetailForDelete,
-              setSelectedDetailForDelete,
-              {
-                backgroundSelectable: true,
-                tableSelected: selectedTableConfigScope === 'detail',
-                onSelectTable: () => activateTableConfigSelection('detail'),
-                canvasLabel: '点击配置单据明细表',
-              },
-            )}
-          </div>
+          {detailCols.length > 0 ? (
+            <table
+              className="table-fixed whitespace-nowrap text-left text-sm"
+              style={{ width: totalTableWidth, minWidth: totalTableWidth }}
+            >
+              <thead className={`sticky top-0 z-10 bg-white/58 text-slate-700 shadow-sm backdrop-blur-md ${selectedTableConfigScope === 'detail' ? 'ring-2 ring-blue-200/50' : ''}`}>
+                <tr>
+                  {detailCols.map((col) => {
+                    const isActive = selectedDetailColId === col.id;
+                    const isMarkedForDelete = selectedDetailForDelete.includes(col.id);
+                    const width = Math.max(88, Math.round(normalizeColumn(col).width || 120));
+
+                    return (
+                      <th
+                        key={col.id}
+                        className="group relative border-b border-r border-white/30 px-3 py-3 font-semibold last:border-r-0"
+                        style={{ width, minWidth: width, maxWidth: width }}
+                      >
+                        <button
+                          type="button"
+                          onClick={(event) => handleDetailHeaderClick(event, col.id)}
+                          onContextMenu={(event) => handleDetailHeaderContextMenu(event, col.id)}
+                          className={`flex w-full items-center justify-between gap-2 overflow-hidden ${isActive ? 'text-blue-600' : isMarkedForDelete ? 'text-blue-500' : ''}`}
+                          title={col.name}
+                        >
+                          <span className="truncate">
+                            {col.name.includes('*') ? (
+                              <>
+                                <span className="mr-0.5 text-red-500">*</span>
+                                {col.name.replace('*', '')}
+                              </>
+                            ) : col.name}
+                          </span>
+                        </button>
+                        <div
+                          onMouseDown={(event) => startResize(event, col.id, detailCols, setBillDetailColumns, TABLE_COLUMN_MIN_WIDTH, TABLE_COLUMN_RESIZE_MAX_WIDTH, 'column')}
+                          onDoubleClick={(event) => autoFitColumnWidth(event, col.id, detailCols, setBillDetailColumns, TABLE_COLUMN_MIN_WIDTH, TABLE_COLUMN_RESIZE_MAX_WIDTH, 'column')}
+                          className={`absolute right-0 top-0 bottom-0 z-20 w-1.5 cursor-col-resize transition-colors ${activeResize?.id === col.id ? 'bg-blue-500/50' : 'hover:bg-blue-400/50'}`}
+                        />
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {previewRows.map((rowIndex) => (
+                  <tr key={`detail-preview-${rowIndex}`} className="group h-10 border-b border-white/20 transition-colors hover:bg-white/58">
+                    {detailCols.map((col) => {
+                      const width = Math.max(88, Math.round(normalizeColumn(col).width || 120));
+                      return (
+                        <td
+                          key={`${col.id}-${rowIndex}`}
+                          className="overflow-hidden border-r border-white/20 px-3 py-2 text-ellipsis transition-colors last:border-r-0 group-hover:border-white/30"
+                          style={{ width, minWidth: width, maxWidth: width }}
+                        />
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="flex h-full min-h-[280px] items-center justify-center rounded-2xl text-center">
+              <div className="rounded-2xl border border-white/70 bg-white/55 px-8 py-10 shadow-sm backdrop-blur-md">
+                <div className="text-[14px] font-semibold text-slate-700">将 Excel 字段复制到明细表</div>
+                <div className="mt-2 text-[12px] text-slate-500">会自动生成和参考稿一致的拟态玻璃表格。</div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -2228,11 +2358,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   const activeMenuName = menuData[activeSubsystem].find(m => m.id === activeMenu)?.name || '';
   const isModuleSettingStep = isConfigOpen && configStep === 4;
-  const isConfigFullscreenActive = isModuleSettingStep && isFullscreenConfig;
-  const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
+  const isConfigFullscreenActive = isConfigOpen;
+  const isCompactModuleSetting = false;
+  const isAppChromeHidden = isConfigOpen;
   const workspaceThemeVars = getWorkspaceThemeVars(workspaceTheme);
   const workspaceThemeStyles = getDetailBoardTheme(workspaceTheme);
-  const inspectorPaneWidth = isConfigFullscreenActive ? 392 : 356;
+  const inspectorPaneWidth = isModuleSettingStep ? 392 : 356;
   const currentDetailFillType = DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === tabFillTypes[activeTab])
     ? tabFillTypes[activeTab]
     : DETAIL_FILL_TYPE_OPTIONS[0].value;
@@ -2285,12 +2416,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       });
     }));
   }, [parsedTreeSourceFields, treeRelationColumn]);
-
-  useEffect(() => {
-    if (!isConfigOpen || configStep !== 4) {
-      setIsFullscreenConfig(false);
-    }
-  }, [configStep, isConfigOpen]);
 
   useEffect(() => {
     const handlePointerMove = (event: MouseEvent) => {
@@ -5065,9 +5190,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans">
+    <div className="app-atmosphere flex h-screen overflow-hidden text-slate-900 dark:text-slate-100 font-sans">
       {/* Sidebar Navigation */}
-      <aside className="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0">
+      <aside className={isAppChromeHidden
+        ? 'hidden'
+        : 'w-72 shrink-0 overflow-hidden border-r border-white/55 bg-white/68 backdrop-blur-2xl transition-all duration-300 dark:border-white/8 dark:bg-slate-900/70 flex flex-col'
+      }>
         {/* Brand Logo */}
         <div className="p-6">
           <BrandLogo size="sm" showTagline tagline="AI模块工作台" />
@@ -5200,9 +5328,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-background-light dark:bg-background-dark">
+      <main className={isAppChromeHidden ? 'hidden' : 'relative z-[1] flex min-w-0 flex-1 flex-col overflow-hidden bg-transparent'}>
         {/* Header */}
-        <header className="h-16 flex items-center justify-between px-8 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10 shrink-0">
+        <header className="cloud-topbar-shell h-16 flex items-center justify-between px-8 z-10 shrink-0">
           <div className="flex items-center gap-4">
             <h2 className="text-base font-bold text-slate-900 dark:text-white">模块配置工作台</h2>
             <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
@@ -5220,14 +5348,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           <div className="flex items-center gap-6">
             <div className="relative group">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg transition-colors group-focus-within:text-primary">search</span>
-              <input className="pl-10 pr-4 py-2 bg-slate-100/50 dark:bg-slate-800/50 border border-transparent focus:border-primary/30 focus:bg-white dark:focus:bg-slate-800 rounded-lg text-sm w-72 transition-all outline-none" placeholder="搜索模块名称、编码或状态..." type="text" />
+              <input className="cloud-search-shell pl-10 pr-4 py-2.5 text-sm w-72 transition-all outline-none rounded-xl focus:border-primary/30 text-slate-700 dark:text-slate-100" placeholder="搜索模块名称、编码或状态..." type="text" />
             </div>
             <div className="flex items-center gap-2">
-              <button className="p-2 text-slate-500 hover:text-primary transition-colors relative">
+              <button className="cloud-ghost-icon-btn relative p-2 text-slate-500 hover:text-primary transition-colors rounded-xl">
                 <span className="material-symbols-outlined text-[22px]">notifications</span>
                 <span className="absolute top-2 right-2 size-2 bg-rose-500 rounded-full border-2 border-white dark:border-slate-900"></span>
               </button>
-              <button className="p-2 text-slate-500 hover:text-primary transition-colors">
+              <button className="cloud-ghost-icon-btn rounded-xl p-2 text-slate-500 hover:text-primary transition-colors">
                 <span className="material-symbols-outlined text-[22px]">settings</span>
               </button>
             </div>
@@ -5255,7 +5383,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     管理{subsystems.find(s => s.id === activeSubsystem)?.name}子系统下的{activeMenuName}相关业务模块。在这里您可以进行精细化核算配置、数据模型定义以及 AI 增强逻辑的导入。
                   </p>
                 </div>
-                <button className="flex items-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-xl shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 transition-all">
+                <button className="cloud-page-primary flex items-center gap-2 px-6 py-3 text-white font-bold rounded-xl hover:-translate-y-0.5 active:translate-y-0 transition-all">
                   <span className="material-symbols-outlined text-xl">add</span>
                   <span>新增业务模块</span>
                 </button>
@@ -5264,12 +5392,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               {/* Grid of Module Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-8">
                 {/* Card 1 */}
-                <div className="group relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-black/50 transition-all duration-300 flex flex-col">
+                <div className="cloud-home-card group relative rounded-2xl transition-all duration-300 hover:-translate-y-1 flex flex-col">
                   <div className="p-6 pb-0 flex justify-between items-start">
                     <div className="size-14 rounded-2xl bg-primary/5 text-primary flex items-center justify-center border border-primary/10 group-hover:bg-primary group-hover:text-white transition-all duration-300">
                       <span className="material-symbols-outlined text-3xl">account_balance</span>
                     </div>
-                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50">
+                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50/80 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border border-white/70">
                       <span className="status-dot bg-emerald-500"></span>
                       <span className="text-[11px] font-bold tracking-wide uppercase">已启用</span>
                     </div>
@@ -5277,11 +5405,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   <div className="p-6 pt-5 flex-1">
                     <h4 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight mb-1 group-hover:text-primary transition-colors">{activeMenuName}模块 A</h4>
                     <div className="flex items-center gap-2 mb-4">
-                      <code className="text-[11px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-slate-200/50 dark:border-slate-700 font-mono">FM-{activeMenu.toUpperCase().substring(0, 2)}-001</code>
+                      <code className="text-[11px] px-1.5 py-0.5 bg-white/68 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-white/70 dark:border-slate-700 font-mono shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">FM-{activeMenu.toUpperCase().substring(0, 2)}-001</code>
                     </div>
                     <p className="text-[13px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3">核心{activeMenuName}核算系统，包含凭证处理、账簿查询、报表生成等基础控制能力，支持跨部门自动结算。</p>
                   </div>
-                  <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 rounded-b-2xl flex items-center justify-between">
+                  <div className="cloud-home-card-footer px-6 py-4 rounded-b-2xl flex items-center justify-between">
                     <div className="flex gap-4">
                       <button onClick={() => setIsConfigOpen(true)} className="text-slate-500 hover:text-primary text-[13px] font-bold flex items-center gap-1.5 transition-colors">
                         <span className="material-symbols-outlined text-[18px]">tune</span> 配置
@@ -5290,19 +5418,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         <span className="material-symbols-outlined text-[18px]">visibility</span> 详情
                       </button>
                     </div>
-                    <button className="size-8 rounded-lg text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-600 dark:hover:text-slate-200 transition-all flex items-center justify-center border border-transparent hover:border-slate-200 dark:hover:border-slate-600">
+                    <button className="cloud-ghost-icon-btn size-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all flex items-center justify-center border border-transparent">
                       <span className="material-symbols-outlined text-lg">more_horiz</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Card 2 */}
-                <div className="group relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col">
+                <div className="cloud-home-card group relative rounded-2xl transition-all duration-300 hover:-translate-y-1 flex flex-col">
                   <div className="p-6 pb-0 flex justify-between items-start">
                     <div className="size-14 rounded-2xl bg-indigo-50 text-indigo-500 dark:bg-indigo-950/30 dark:text-indigo-400 flex items-center justify-center border border-indigo-100 dark:border-indigo-900/50 group-hover:bg-indigo-500 group-hover:text-white transition-all duration-300">
                       <span className="material-symbols-outlined text-3xl">groups</span>
                     </div>
-                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400 border border-amber-100 dark:border-amber-900/50">
+                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-50/80 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400 border border-white/70">
                       <span className="status-dot bg-amber-500"></span>
                       <span className="text-[11px] font-bold tracking-wide uppercase">维护中</span>
                     </div>
@@ -5310,11 +5438,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   <div className="p-6 pt-5 flex-1">
                     <h4 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight mb-1 group-hover:text-indigo-600 transition-colors">{activeMenuName}模块 B</h4>
                     <div className="flex items-center gap-2 mb-4">
-                      <code className="text-[11px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-slate-200/50 dark:border-slate-700 font-mono">HR-{activeMenu.toUpperCase().substring(0, 2)}-002</code>
+                      <code className="text-[11px] px-1.5 py-0.5 bg-white/68 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-white/70 dark:border-slate-700 font-mono shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">HR-{activeMenu.toUpperCase().substring(0, 2)}-002</code>
                     </div>
                     <p className="text-[13px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3">成本分析与管控，涉及薪酬计算、社保公积金支出控制，以及人力外包服务成本模型分析。</p>
                   </div>
-                  <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 rounded-b-2xl flex items-center justify-between">
+                  <div className="cloud-home-card-footer px-6 py-4 rounded-b-2xl flex items-center justify-between">
                     <div className="flex gap-4">
                       <button onClick={() => setIsConfigOpen(true)} className="text-slate-500 hover:text-indigo-600 text-[13px] font-bold flex items-center gap-1.5 transition-colors">
                         <span className="material-symbols-outlined text-[18px]">tune</span> 配置
@@ -5323,19 +5451,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         <span className="material-symbols-outlined text-[18px]">visibility</span> 详情
                       </button>
                     </div>
-                    <button className="size-8 rounded-lg text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-indigo-600 transition-all flex items-center justify-center border border-transparent hover:border-slate-200 dark:hover:border-slate-600">
+                    <button className="cloud-ghost-icon-btn size-8 rounded-lg text-slate-400 hover:text-indigo-600 transition-all flex items-center justify-center border border-transparent">
                       <span className="material-symbols-outlined text-lg">more_horiz</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Card 3 */}
-                <div className="group relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col">
+                <div className="cloud-home-card group relative rounded-2xl transition-all duration-300 hover:-translate-y-1 flex flex-col">
                   <div className="p-6 pb-0 flex justify-between items-start">
                     <div className="size-14 rounded-2xl bg-cyan-50 text-cyan-500 dark:bg-cyan-950/30 dark:text-cyan-400 flex items-center justify-center border border-cyan-100 dark:border-cyan-900/50 group-hover:bg-cyan-500 group-hover:text-white transition-all duration-300">
                       <span className="material-symbols-outlined text-3xl">inventory_2</span>
                     </div>
-                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50">
+                    <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-50/80 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border border-white/70">
                       <span className="status-dot bg-emerald-500"></span>
                       <span className="text-[11px] font-bold tracking-wide uppercase">已启用</span>
                     </div>
@@ -5343,11 +5471,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   <div className="p-6 pt-5 flex-1">
                     <h4 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight mb-1 group-hover:text-cyan-600 transition-colors">{activeMenuName}模块 C</h4>
                     <div className="flex items-center gap-2 mb-4">
-                      <code className="text-[11px] px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-slate-200/50 dark:border-slate-700 font-mono">AM-{activeMenu.toUpperCase().substring(0, 2)}-003</code>
+                      <code className="text-[11px] px-1.5 py-0.5 bg-white/68 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-white/70 dark:border-slate-700 font-mono shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">AM-{activeMenu.toUpperCase().substring(0, 2)}-003</code>
                     </div>
                     <p className="text-[13px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3">覆盖固定资产与低值易耗品的折旧、维修、处置成本全生命周期跟踪，并集成智能折旧预测算法。</p>
                   </div>
-                  <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 rounded-b-2xl flex items-center justify-between">
+                  <div className="cloud-home-card-footer px-6 py-4 rounded-b-2xl flex items-center justify-between">
                     <div className="flex gap-4">
                       <button onClick={() => setIsConfigOpen(true)} className="text-slate-500 hover:text-cyan-600 text-[13px] font-bold flex items-center gap-1.5 transition-colors">
                         <span className="material-symbols-outlined text-[18px]">tune</span> 配置
@@ -5356,15 +5484,15 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         <span className="material-symbols-outlined text-[18px]">visibility</span> 详情
                       </button>
                     </div>
-                    <button className="size-8 rounded-lg text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-cyan-600 transition-all flex items-center justify-center border border-transparent hover:border-slate-200 dark:hover:border-slate-600">
+                    <button className="cloud-ghost-icon-btn size-8 rounded-lg text-slate-400 hover:text-cyan-600 transition-all flex items-center justify-center border border-transparent">
                       <span className="material-symbols-outlined text-lg">more_horiz</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Add New Module Card (Distinct) */}
-                <button className="group relative rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 p-8 flex flex-col items-center justify-center bg-white/40 dark:bg-slate-900/40 hover:bg-primary/5 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 min-h-[320px]">
-                  <div className="size-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-6 group-hover:bg-primary group-hover:scale-110 transition-all duration-300 shadow-inner">
+                <button className="cloud-home-add-card group relative rounded-2xl p-8 flex flex-col items-center justify-center hover:bg-primary/5 hover:border-primary/40 transition-all duration-300 min-h-[320px]">
+                  <div className="cloud-ghost-icon-btn size-16 rounded-full flex items-center justify-center mb-6 group-hover:bg-primary group-hover:scale-110 transition-all duration-300 shadow-inner">
                     <span className="material-symbols-outlined text-4xl text-slate-400 group-hover:text-white transition-colors">add</span>
                   </div>
                   <div className="text-center">
@@ -5372,14 +5500,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     <p className="text-[13px] text-slate-500 max-w-[180px] leading-relaxed">基于 AI 模型快速生成，或手动配置新的业务单元。</p>
                   </div>
                   <div className="mt-8 flex gap-2">
-                    <span className="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded text-[11px] font-medium text-slate-400 group-hover:text-slate-600 transition-colors">快速配置</span>
-                    <span className="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded text-[11px] font-medium text-slate-400 group-hover:text-slate-600 transition-colors">AI 生成</span>
+                    <span className="px-3 py-1 bg-white/72 dark:bg-slate-800 border border-white/70 dark:border-slate-700 rounded text-[11px] font-medium text-slate-400 group-hover:text-slate-600 transition-colors">快速配置</span>
+                    <span className="px-3 py-1 bg-white/72 dark:bg-slate-800 border border-white/70 dark:border-slate-700 rounded text-[11px] font-medium text-slate-400 group-hover:text-slate-600 transition-colors">AI 生成</span>
                   </div>
                 </button>
               </div>
 
               {/* Footer / Status Summary */}
-              <div className="mt-auto pt-8 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-sm text-slate-500">
+              <div className="cloud-home-summary mt-auto rounded-2xl px-6 py-5 flex items-center justify-between text-sm text-slate-500">
                 <div className="flex items-center gap-6">
                   <p>展示 <span className="font-bold text-slate-900 dark:text-white">4</span> 个活跃业务模块</p>
                   <div className="flex items-center gap-4 text-[11px] font-bold uppercase tracking-widest text-slate-400">
@@ -5388,13 +5516,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <button className="size-9 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center hover:bg-white dark:hover:bg-slate-800 hover:border-primary/30 transition-all">
+                  <button className="cloud-pagination-btn size-9 rounded-xl flex items-center justify-center hover:border-primary/30 transition-all">
                     <span className="material-symbols-outlined text-lg">chevron_left</span>
                   </button>
-                  <button className="size-9 rounded-xl bg-primary text-white flex items-center justify-center font-bold shadow-md shadow-primary/20">1</button>
-                  <button className="size-9 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center hover:bg-white dark:hover:bg-slate-800 hover:border-primary/30 transition-all font-medium">2</button>
-                  <button className="size-9 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center hover:bg-white dark:hover:bg-slate-800 hover:border-primary/30 transition-all font-medium">3</button>
-                  <button className="size-9 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-center hover:bg-white dark:hover:bg-slate-800 hover:border-primary/30 transition-all">
+                  <button className="cloud-page-primary size-9 rounded-xl text-white flex items-center justify-center font-bold">1</button>
+                  <button className="cloud-pagination-btn size-9 rounded-xl flex items-center justify-center hover:border-primary/30 transition-all font-medium">2</button>
+                  <button className="cloud-pagination-btn size-9 rounded-xl flex items-center justify-center hover:border-primary/30 transition-all font-medium">3</button>
+                  <button className="cloud-pagination-btn size-9 rounded-xl flex items-center justify-center hover:border-primary/30 transition-all">
                     <span className="material-symbols-outlined text-lg">chevron_right</span>
                   </button>
                 </div>
@@ -5411,7 +5539,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-background-light dark:bg-background-dark flex overflow-hidden"
+            className="app-atmosphere fixed inset-0 z-[100] flex overflow-hidden"
           >
             {/* Toast Notification */}
             <AnimatePresence>
@@ -5432,9 +5560,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             {renderPreviewContextMenu()}
 
             {/* Left Subway Line Panel */}
-            <div className={`shrink-0 overflow-hidden border-r border-slate-200 bg-white shadow-[4px_0_18px_rgba(15,23,42,0.04)] transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${
-              isConfigFullscreenActive ? 'w-0 border-r-0 p-0 opacity-0' : 'w-72 p-5 opacity-100'
-            }`}>
+            <div className="shrink-0 w-72 overflow-hidden border-r border-white/55 bg-white/72 p-5 opacity-100 shadow-[4px_0_18px_rgba(15,23,42,0.04)] backdrop-blur-2xl transition-all duration-300 dark:border-white/8 dark:bg-slate-900/72">
               <div className="mb-6 flex items-center gap-3">
                 <button 
                   onClick={() => setIsConfigOpen(false)}
@@ -5505,29 +5631,21 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </div>
 
             {/* Right Content Area */}
-            <div className="relative flex min-w-0 flex-1 flex-col bg-slate-100/60 dark:bg-slate-900/50">
+            <div
+              className="relative flex min-w-0 flex-1 flex-col bg-transparent"
+              style={{ width: 'calc(100vw - 18rem)', maxWidth: 'calc(100vw - 18rem)' }}
+            >
               {/* Ambient Background */}
               <div className="pointer-events-none absolute inset-0 mesh-bg opacity-20"></div>
-              {isConfigFullscreenActive && (
-                <div className="absolute right-6 top-6 z-20">
-                  <button
-                    onClick={() => setIsConfigOpen(false)}
-                    className="flex size-11 items-center justify-center rounded-2xl border border-white/80 bg-white/85 text-slate-500 shadow-[0_20px_35px_-24px_rgba(15,23,42,0.45)] transition-all hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-300 dark:hover:text-white"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">close</span>
-                  </button>
-                </div>
-              )}
-               
-              <div className={`relative z-10 flex flex-1 flex-col ${
-                isConfigFullscreenActive ? 'overflow-hidden p-3 lg:p-4' : isModuleSettingStep ? 'overflow-y-auto p-4 lg:p-4' : 'overflow-y-auto p-6 lg:p-8'
+              <div className={`relative z-10 flex w-full min-w-0 flex-1 flex-col ${
+                isModuleSettingStep ? 'overflow-hidden p-4 lg:p-5' : 'overflow-y-auto p-4 lg:p-5'
               }`}>
                 <motion.div
                   key={configStep}
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, ease: "easeOut" }}
-                  className={`mx-auto flex w-full flex-1 min-h-0 flex-col ${isConfigFullscreenActive ? 'max-w-none overflow-hidden' : isModuleSettingStep ? 'max-w-none' : 'max-w-[1600px]'}`}
+                  className={`flex w-full flex-1 min-h-0 flex-col max-w-none ${isModuleSettingStep ? 'overflow-hidden' : ''}`}
                 >
                   <div className="mb-0"></div>
 
@@ -5727,7 +5845,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ duration: 0.4 }}
-                      className={`flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm flex flex-col overflow-hidden min-h-[600px] ${
+                      className={`flex w-full min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm min-h-[600px] dark:border-slate-700 dark:bg-slate-800 ${
                         isFullscreenEditor ? 'fixed inset-4 z-[200] shadow-2xl' : ''
                       }`}
                     >
@@ -5807,10 +5925,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ duration: 0.4 }}
-                      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                      className="flex w-full min-w-0 min-h-0 flex-1 flex-col overflow-hidden"
                     >
                       {businessType === 'document' ? (
-                        <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex flex-1 min-h-0 overflow-hidden rounded-[24px] p-3 ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'h-full' : 'min-h-[780px]'}`}>
+                        <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex w-full min-w-0 flex-1 min-h-0 overflow-hidden rounded-[24px] p-3 ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'h-full' : 'min-h-[780px]'}`}>
                           {isTreePaneVisible && (
                             <>
                               <div className="flex min-h-0 shrink-0 flex-col" style={{ width: documentLeftPaneWidth }}>
@@ -5906,8 +6024,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           </div>
                         </div>
                       ) : businessType === 'table' ? (
-                        <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex flex-1 min-h-0 overflow-hidden rounded-[36px] p-3 ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'h-full' : 'min-h-[780px]'}`}>
-                          <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+                        <div style={workspaceThemeVars} className={`bill-workbench-stage-light cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex w-full min-w-0 flex-1 min-h-0 overflow-hidden rounded-[36px] ${isConfigFullscreenActive ? 'p-4 lg:p-5' : 'p-3'} ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'h-full' : 'min-h-[780px]'}`}>
+                          <div className={`grid w-full min-w-0 min-h-0 flex-1 ${isConfigFullscreenActive ? 'gap-5 xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_360px]' : 'gap-4 xl:grid-cols-[minmax(0,1fr)_360px]'}`}>
                             <div className="grid min-h-0 gap-4 xl:grid-rows-[minmax(360px,0.92fr)_minmax(0,1.08fr)]">
                               {renderBillHeaderWorkbench()}
                               {renderBillDetailWorkbench()}
@@ -5918,8 +6036,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           </div>
                         </div>
                       ) : (
-                        <div style={workspaceThemeVars} className={`cloudy-glass-stage flex flex-1 min-h-0 flex-col overflow-hidden rounded-[36px] ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'h-full' : 'min-h-[780px]'}`}>
-                          <div className={`cloudy-cloud-grid studio-grid-bg grid min-h-0 flex-1 ${
+                        <div style={workspaceThemeVars} className={`cloudy-glass-stage flex w-full min-w-0 flex-1 min-h-0 flex-col overflow-hidden rounded-[36px] ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'h-full' : 'min-h-[780px]'}`}>
+                          <div className={`cloudy-cloud-grid studio-grid-bg grid w-full min-w-0 min-h-0 flex-1 ${
                             isConfigFullscreenActive
                               ? 'xl:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)]'
                               : 'xl:grid-cols-[minmax(260px,0.82fr)_minmax(0,1.18fr)]'
@@ -6066,8 +6184,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   )}
 
                   {configStep === 3 && (
-                    <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 flex-1 min-h-[650px]">
-                      <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                    <div className="grid w-full min-w-0 grid-cols-1 gap-8 flex-1 min-h-[650px] lg:grid-cols-2">
+                      <div className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
                         <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/50 p-5 dark:border-slate-800 dark:bg-slate-800/50">
                           <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
                             <span className="material-symbols-outlined text-[20px]">smart_toy</span>
@@ -6186,7 +6304,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         )}
                       </div>
 
-                      <div className="relative flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-xl">
+                      <div className="relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-xl">
                         <div className="pointer-events-none absolute left-1/2 top-0 h-48 w-[120%] -translate-x-1/2 bg-primary/20 blur-[80px]"></div>
 
                         <div className="relative z-10 mb-8 flex items-center justify-between">
@@ -6279,7 +6397,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     </div>
                   )}
                   {(configStep === 5) && (
-                    <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-10 flex-1 min-h-[500px] flex items-center justify-center">
+                    <div className="flex w-full min-w-0 flex-1 min-h-[500px] items-center justify-center rounded-2xl border border-slate-200 bg-white p-10 shadow-sm dark:border-slate-700 dark:bg-slate-800">
                       <div className="text-center space-y-4">
                         <div className="size-20 bg-primary/5 text-primary rounded-full flex items-center justify-center mx-auto mb-6">
                           <span className="material-symbols-outlined text-4xl">
@@ -6329,22 +6447,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       <span className="material-symbols-outlined text-[20px]">save</span>
                       保存本页
                     </button>
-
-                    {configStep === 4 && (
-                      <button
-                        onClick={() => setIsFullscreenConfig((prev) => !prev)}
-                        className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[12px] font-semibold transition-all ${
-                          isConfigFullscreenActive
-                            ? 'border-primary/30 bg-primary/10 text-primary shadow-[0_16px_36px_rgba(49,98,255,0.18)]'
-                            : 'border-slate-200/80 bg-white/80 text-slate-600 shadow-[0_12px_32px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-[20px]">
-                          {isConfigFullscreenActive ? 'fullscreen_exit' : 'fullscreen'}
-                        </span>
-                        {isConfigFullscreenActive ? '退出全屏' : '全屏配置'}
-                      </button>
-                    )}
 
                     <button
                       onClick={() => {
