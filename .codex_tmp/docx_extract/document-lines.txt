@@ -1,0 +1,3308 @@
+﻿详细设计平台V2.0
+该版本主要目标为将现有工具进行重新整合和优化，融入AI元素，所有配置都将兼容现有版本配置
+登录
+统一使用公司内部CRM账套用户进行登录，登录时选择客户配置账套（也可以维护账套）
+账套管理（公版本项目账套+客户项目账套）
+（表名：LS_AccountTab，放到CRM服务器
+兼容常用的数据库连接，如：sqlserver，oracle，达梦，人大金仓等
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+accId
+| ID
+| int
+| 主键
+|
+accName
+| 账套名称
+| Varchar(100)
+|
+|
+serverName
+| 服务器地址或DSN名字
+| varchar(100)
+|
+|
+serverPort
+| 链接端口
+| int
+|
+|
+dbname
+| 数据库名
+| varchar(50)
+|
+|
+params
+| 其他参数
+| Varchar(500)
+| 当连接需要特殊指定参数时填入，直接拼接到连接串后面，比如模式指定
+|
+operatedate
+| 创建时间
+| datetime
+|
+|
+operatorname
+| 创建人
+| Varchar(20)
+|
+|
+|
+|
+|
+|
+项目功能树
+选择账套后，读取账套中p_systemtab表中clientname作为功能树根节点，功能树默认4级，第一级为客户项目名称或客户名称，第二级为子系统，第三级为一级菜单，第四级为功能模块菜单（通常情况下项目蓝图调研完成就已经生成）
+子系统维护
+读取p_subsystemtab子系统表中的数据作为二级节点，没有时可手动新增，可停用启用(useed)字段，变动回写到p_subsystemtab，后面再考虑与前期调研记录进行对接（调研记录，工作现状，痛点，原始表单报表等）
+p_subsystemtab表结构
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+subsysid
+| ID
+| int
+| 主键
+|
+subsysname
+| 子系统名
+| Varchar(50)
+|
+|
+subsyscode
+| 子系统标识
+| Varchar(10)
+|
+|
+useed
+| 启用标识
+| int
+| 1=启用，0=停用
+|
+mobileshow
+| 手机端启用
+| int
+| 1=启用，0=停用
+|
+subsystip
+| 子系统功能概述
+| Varchar(200)
+|
+|
+orderid
+| 显示顺序
+| int
+|
+|
+功能树
+读取子系统下的功能菜单p_formmenuconfigtab作为三级，四级节点，没有时可手动新增，可停用启用(useflag)，变动回写到p_formmenuconfigtab
+p_formmenuconfigtab表结构：
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+menuid
+| ID
+| int
+| 主键
+|
+subsysid
+| 所属子系统id
+| Int
+| 关联p_subsystemtab表中的subsysid
+|
+menustruct
+| 菜单结构编码
+| Varchar(10)
+| 兼容以前版本设计，菜单结构层级，两位一个分段，如：01,0101,0101为01的下一级菜单，每个子系统下进行唯一标识
+|
+menucaption
+| 菜单名称
+| Varchar(50)
+|
+|
+ParentMenuId
+| 上级菜单ID
+| int
+|
+|
+purviewid
+| 对应功能模块编码
+| Varchar(50)
+|
+|
+urlparams
+| 调用参数
+| Varchar(100)
+| 兼容以前版本设计，调用bs时链接参数
+|
+dllfilename
+| 模板dll名
+| Varchar(50)
+| 兼容以前版本设计，通过下拉选择方式进行
+|
+GroupCaption
+| 菜单分组标题
+| Varchar(50)
+|
+|
+menurow
+| 菜单行顺序
+| int
+| 菜单显示在分组内的行顺序
+|
+useflag
+| 启用标记
+| int
+| 1=启用
+|
+modtype
+| 模板类别
+| int
+| 新增字段，1=单表，2=单据，3=报表，可根据模板dll名选择后自动带入
+|
+menutips
+| 功能描述
+| Varchar(200)
+| 新增字段，带入
+|
+从公版账套直接引入整个项目功能树
+启用停用的功能通过小图标和颜色进行区分，也可以直接通过启用停用状态进行过滤
+模块功能详细设计
+功能树建立完成之后，末级为功能模块，指定功能模块编号后即可开始进行详细设计，根据功能树中指定的【模板类别】展现不同的设计页面（单据、单表和报表）
+模块导入
+选择源账套->功能菜单树->选择具体功能模块，直接从源账套整体复制模块（包含模创建模块相关的表，视图，触发器，配置主信息，显示字段信息，页面布局，明细，右键，颜色，卡片，附加模块，流水号规则，业务逻辑，审批流，消息等），如功能模块已存在则需要选择创建为新版本或者覆盖原版本
+新创建功能模块
+模块编码规则暂定为【前缀+顺序+版本号模式】，模块编码为全局唯一标识
+单表功能模块设计
+单表主模块信息：p_systemdlltab
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+DllID
+| ID
+| int
+| 主键
+|
+DllCoid
+| 模块编号
+| Varchar(20)
+|
+|
+ToolsName
+| 模块中文名
+| Varchar(100)
+|
+|
+SQL
+| 主表sql
+| Varchar(max)
+|
+|
+SQLDT1
+| 主表名
+| Varchar(50)
+|
+|
+AddDllName
+| 添加dll模板名
+| varchar(50)
+|
+|
+selfEdit
+| 表格编辑
+| int
+| 1=启用表格编辑，0=表格禁编
+|
+dllType
+| 单表模板类别
+| int
+| 1=左树右表，2=左表右表，3=单表
+|
+dirid
+| 附件目录id
+| varchar(50)
+| 上传附件所在路径分类，来源于p_fm_directorytab
+|
+bmpSpec
+| 图档分类
+| varchar(20)
+| 上传附件时选择的分类，来源于bmp_ProductSpeciesTab
+|
+formKey
+| 模块配置关联值
+| uniqueidentifier
+|
+|
+condKey
+| 模块条件关联值
+| uniqueidentifier
+|
+|
+isReport
+| 报表标记
+| int
+| 1=报表
+|
+modifyCond
+| 修改条件
+| varchar(200)
+|
+|
+deleteCond
+| 删除条件
+| varchar(200)
+|
+|
+OverBackOper
+| 强制反退人员权限
+| varchar(8000)
+|
+|
+OverBackCond
+| 强制反退条件
+| varchar(8000)
+|
+|
+addEnable
+| 添加按钮标记
+| int
+|
+|
+deleteEnable
+| 删除按钮标记
+| int
+|
+|
+modifyEnable
+| 修改按钮标记
+| int
+|
+|
+importEnable
+| 导入标记
+| int
+|
+|
+exportEnable
+| 导出标记
+| int
+|
+|
+searchEnable
+| 查询标记
+| int
+|
+|
+OrderStr
+| 排序内容
+| varchar(200)
+|
+|
+MobileOrderStr
+| App排序内容
+| varchar(8000)
+|
+|
+printSQL
+| 打印主sql
+| varchar(8000)
+|
+|
+printSQL1
+| 打印明细sql
+| varchar(8000)
+|
+|
+printSQL2
+| 打印明细sql
+| varchar(8000)
+|
+|
+printFile
+| 打印模板文件列表
+| varchar(8000)
+|
+|
+printType
+| 打印方式
+| int
+|
+|
+searchHide
+|
+| int
+|
+|
+leftWidth
+| 左边宽度
+| int
+|
+|
+printReportFile
+|
+| varchar(8000)
+|
+|
+dragCond
+| 拖拽条件
+| varchar(8000)
+|
+|
+ADDCOND
+| 添加条件
+| varchar(500)
+|
+|
+searchDefault
+| 默认查询标记
+| varchar(40)
+|
+|
+OverBackSql
+| 强制反退sql语句
+| varchar(8000)
+|
+|
+OverBackKey
+| 强制反退主键关联（用于关联条件，表格字段设置等）
+| uniqueidentifier
+|
+|
+bottomHeight
+| 下边高度
+| int
+|
+|
+exportCond
+| 导出条件
+| varchar(8000)
+|
+|
+printCond
+| 打印条件
+| varchar(8000)
+|
+|
+addCopyEnabled
+| 复制添加标记
+| int
+| 1=开启
+|
+printAddCond
+| 添加页面打印条件
+| varchar(50)
+|
+|
+cardRight
+| 右侧卡片
+| int
+|
+|
+cardwidth
+| 卡片宽度
+| int
+|
+|
+BackSelected
+| 反退步骤选择
+| int
+|
+|
+defaultShowSearch
+| APP审查
+| int
+|
+|
+baseModuleFile
+| 基础打印模板
+| varchar(200)
+|
+|
+basePrintSQL
+| 基础打印主sql
+| varchar(8000)
+|
+|
+basePrintSQL1
+| 基础打印明细sql
+| varchar(8000)
+|
+|
+basePrintSQL2
+| 基础打印明细sql
+| varchar(8000)
+|
+|
+addcaption
+| 添加按钮标签
+| varchar(100)
+|
+|
+modifycaption
+| 修改按钮标签
+| varchar(200)
+|
+|
+applycaption
+| 提交按钮标签
+| varchar(200)
+|
+|
+saveapplyenabled
+| 保存提交按钮
+| int
+|
+|
+enterOrder
+|
+| int
+|
+|
+newVer
+| 新版标记
+| int
+|
+|
+CustomColumnSQL
+| 查询前执行
+| varchar(5000)
+|
+|
+verifyUnique
+| 条码唯一
+| int
+|
+|
+verifyCancel
+| 条码验证
+| int
+|
+|
+addmodid
+| 添加模块编号
+| varchar(200)
+|
+|
+BSRowHeight
+| Bs行高
+| int
+|
+|
+bs_adddllname
+| Bs添加模板
+| varchar(50)
+|
+|
+displayRows
+| Bs默认显示行数
+| int
+|
+|
+popupWidth
+| 弹窗宽度
+| int
+|
+|
+popupHeight
+| 弹窗高度
+| int
+|
+|
+appautosave
+| 扫码保存
+| int
+|
+|
+TreeSQL
+|
+| varchar(4000)
+|
+|
+CsHasDefultSearch
+| 默认查询
+| int
+|
+|
+RowHeight
+| 行高
+| int
+|
+|
+isFirstLoad
+|
+| int
+|
+|
+CloseAfterAdd
+| 添加页面保存后关闭
+| int
+| 1=开启
+|
+AutoMultiHeader
+| 多栏标题
+| Int
+| 1=启用
+|
+newWFVer
+| 新流程标记
+| int
+| 1=开启
+|
+auditDetail
+| 明细审核
+| int
+|
+|
+refreshDetail
+| 明细刷新
+| int
+|
+|
+tasksql
+| 待办sql语句
+| varchar(MAX)
+|
+|
+selectLeaf
+| 选择末级树结构
+| int
+| 1=开启
+|
+delCaption
+| 删除按钮标签
+| varchar(100)
+|
+|
+addHintMSG
+| 添加提醒
+| varchar(1000)
+|
+|
+countSql
+| 数量统计sql（角标）
+| varchar(MAX)
+|
+|
+detailPageAlign
+| 明细页签停靠'
+| int
+|
+|
+editType
+| 编辑模式
+| int
+|
+|
+MuitlAuditFlag
+| 批量审批标记
+| int
+| 1=开启批量审批
+|
+addEmptyRow
+| 默认添加空行
+| int
+| 1=开启
+|
+rfidEnable
+| 开启RFID识别
+| int
+| 1=开启
+|
+gridObjCheck
+| 表格复选
+| int
+| 1=开启
+|
+dirspec
+|
+| varchar(100)
+|
+|
+cellTplflag
+| 开启单元格模式
+| bit
+| 1=开启
+|
+attatchModifyCond
+| 附件修改条件
+| varchar(1000)
+|
+|
+barSplitChar
+| 条码分割符
+| varchar(10)
+|
+|
+refreshTheInterface
+|
+| int
+|
+|
+multcheck
+| 多选
+| int
+|
+|
+quanxuantype
+|
+| varchar(2000)
+|
+|
+quanxuanmingxi
+|
+| varchar(2000)
+|
+|
+printertype
+| PDA打印类别
+| int
+|
+|
+DisMobileCard
+| APP卡片禁用
+| int
+|
+|
+bmpSpecIsMJ
+| 图档末级
+| int
+|
+|
+noGridLine
+| 禁用表格线
+| int
+| Bi适用
+|
+noRownumber
+| 禁用行号
+| int
+| Bi适用
+|
+noColumnHeader
+| 禁用表格标题
+| int
+| Bi适用
+|
+scanMode
+| 扫码模式
+| int
+|
+|
+closeAfterModify
+| 修改后退出
+| int
+|
+|
+barSplitFields
+| 条码内容分隔字段
+| varchar(1000)
+|
+|
+DefaultStoredProcedureSaves
+| 调用过程保存
+| int
+| 1=调用保存过程，0=直接表格保存
+|
+printflag
+| 蓝牙打印
+| int
+|
+|
+disableDetail
+| 详情禁用
+| int
+| 1=禁用
+|
+attatchInfoWidth
+|
+| int
+|
+|
+apiDataNode
+| API调用相关
+| varchar(100)
+|
+|
+apiSuccNode
+| API调用相关
+| varchar(100)
+|
+|
+apiSuccVal
+| API调用相关
+| varchar(100)
+|
+|
+bmptype
+|
+| varchar(100)
+|
+|
+MainModuleCodeField
+| 主模块编号对应字段名
+| varchar(200)
+|
+|
+AttachReveal
+|
+| int
+|
+|
+HiddenPrint
+|
+| int
+|
+|
+FilePreviewCode
+|
+| varchar(50)
+|
+|
+UnionAccraditationDllCoid
+|
+| varchar(50)
+|
+|
+TreeTableExpand
+|
+| int
+|
+|
+hideSaveFaultMsg
+|
+| int
+|
+|
+TreeAutoMultiHeader
+| 树表格
+| int
+| 1=开启
+|
+IsCustomGroup
+|
+| int
+|
+|
+DynamicColumnNameSql
+|
+| varchar(2000)
+|
+|
+IsTreeTable
+| 左侧树表
+| int
+| 1=开启
+|
+ExportNameWithoutDate
+|
+| int
+|
+|
+AfterSaveExec
+|
+| varchar(100)
+|
+|
+DynamicMain
+| 动态列模式
+| int
+| 1=开启
+|
+clearAllEnable
+|
+| varchar(1)
+|
+|
+ForbiddenCondition
+|
+| int
+|
+|
+DynamicPrompt
+|
+| int
+|
+|
+PromptFontSize
+|
+| int
+|
+|
+PromptForceColor
+|
+| varchar(100)
+|
+|
+attcField1
+| 附件关联字段1
+| varchar(100)
+|
+|
+attcField2
+| 附件关联字段2
+| varchar(100)
+|
+|
+attcField3
+| 附件关联字段3
+| varchar(100)
+|
+|
+TreeKeyFieldName
+|
+| varchar(100)
+|
+|
+TreeParentFieldName
+|
+| varchar(100)
+|
+|
+HideAttachBtn
+|
+| int
+|
+|
+bandSequentialMode
+|
+| int
+|
+|
+saveCaption
+| 保存按钮标签
+| varchar(100)
+|
+|
+disAppFastAudit
+|
+| int
+|
+|
+taskSQLYB
+| 已办任务sql
+| varchar(8000)
+|
+|
+taskSQLFQ
+| 发起任务sql
+| varchar(8000)
+|
+|
+taskSQLCS
+| 抄送任务SQL
+| varchar(8000)
+|
+|
+WebCardTpl
+|
+| int
+|
+|
+RefreshDetails
+|
+| int
+|
+|
+callRefreshDetail
+|
+| int
+|
+|
+PageVisbleCond
+| 明细页显示SQL
+| varchar(5000)
+|
+|
+SweepCodeSql
+|
+| varchar(2000)
+|
+|
+noDataMsg
+|
+| varchar(100)
+|
+|
+scanReadOnly
+|
+| int
+|
+|
+CancelDefaultConditions
+|
+| int
+|
+|
+TreeExactQuery
+|
+| int
+|
+|
+单表表单p_systemwordbooktab
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+id
+| ID
+| int
+| 主键
+|
+tab
+| 所属模块编码
+| varchar(50)
+| 对应p_systemdlltab中的dllcoid
+|
+orderid
+| 显示顺序
+| decimal(18, 1)
+|
+|
+fieldname
+| 字段名
+| varchar(200)
+|
+|
+sysname
+| 出厂名称
+| varchar(200)
+|
+|
+username1
+| 用户名称
+| varchar(200)
+|
+|
+vislble
+| 表格禁显
+| int
+|
+|
+addVisible
+| 添加页面禁显
+| int
+|
+|
+width
+| 显示宽度
+| int
+|
+|
+edit
+| 禁编
+| int
+|
+|
+defaultdate
+| 默认值
+| varchar(2000)
+|
+|
+bak
+| 备注说明
+| varchar(500)
+|
+|
+tagid
+| 必填标志
+| int
+|
+|
+rpname
+| 分组
+| varchar(200)
+|
+|
+fieldsql
+| 下拉sql
+| varchar(3000)
+|
+|
+fieldsqlid
+| 下拉编码字段
+| varchar(200)
+|
+|
+fieldsqlname
+| 下拉名称字段
+| varchar(200)
+|
+|
+fieldsqlTag
+| 控件类别
+| int
+|
+|
+ifSearch
+| 移动搜索
+| int
+|
+|
+isRow
+|
+| smallint
+|
+|
+controlWidth
+| 组件宽度
+| int
+|
+|
+controlHeight
+| 组件高度
+| int
+|
+|
+controlLeft
+| 组件左边距
+| int
+|
+|
+controlTop
+| 组件上边距
+| int
+|
+|
+formKey
+| 主模块关联formkey值
+| varchar(50)
+| 对应p_systemdlltab中的formkey
+|
+autoNo
+|
+| int
+|
+|
+privilegeView
+| 浏览权限id列表
+| varchar(200)
+| 对应模块权限分类设置p_systemPrivilege中的privTypeId
+|
+privilegeOper
+| 操作权限id列表
+| varchar(200)
+| 对应模块权限分类设置p_systemPrivilege中的privTypeId
+|
+unionFields
+| 关联字段
+| varchar(3500)
+|
+|
+unionValue
+| 关联字段取值
+| varchar(8000)
+|
+|
+fieldKey
+| 树结构字段关联唯一值
+| uniqueidentifier
+| 关联到
+|
+isSum
+| 合计
+| int
+|
+|
+MobileWidth
+| 移动宽度
+| int
+|
+|
+GroupId
+|
+| int
+|
+|
+addModuleId
+| 添加模块编号（下拉编码直接添加）
+| varchar(50)
+|
+|
+addModuleSpec
+| 添加模块默认分类
+| varchar(200)
+|
+|
+addModuleResult
+| 添加返回值
+| varchar(200)
+|
+|
+calcExpr
+| 计算公式
+| varchar(2000)
+|
+|
+calcOrder
+| 计算顺序
+| int
+|
+|
+DataFormat
+| 格式化
+| varchar(50)
+|
+|
+ShowMobile
+| 移动显示
+| int
+|
+|
+ShowMobile1
+| 移动显示1
+| int
+|
+|
+vislble5
+| 移动显示2
+| int
+|
+|
+columns_ID1
+| 自动布局列号
+| int
+|
+|
+Row_ID1
+| 自动布局行号
+| int
+|
+|
+ifMerge
+| 合并标记
+| int
+|
+|
+MergeGroup
+| 合并分组字段名
+| varchar(500)
+|
+|
+tabOrder
+| Tab顺序
+| int
+|
+|
+LimitLen
+| 长度限制
+| int
+|
+|
+Column_ID
+|
+| int
+|
+|
+mobile_order
+| 移动卡片显示顺序
+| int
+|
+|
+mobile_field
+| 移动卡片内容
+| varchar(500)
+|
+|
+mobile_color
+| 移动颜色
+| varchar(500)
+|
+|
+mobile_fontsize
+| 移动字号
+| int
+|
+|
+TM_linkmainTabfield
+| 扫码主表字段关联
+| varchar(200)
+| 老扫码app
+|
+TM_HeadString
+| 扫码列头字段
+| varchar(100)
+| 老扫码app
+|
+TM_tagID
+| 条码字段标识
+| int
+| 老扫码app
+|
+bandTitle
+| 卡片绑定标题
+| varchar(50)
+|
+|
+bandFields
+| 绑定字段
+| varchar(500)
+|
+|
+imageWidth
+| 图宽
+| int
+|
+|
+imageHeight
+| 图高
+| int
+|
+|
+cardEnable
+|
+| int
+|
+|
+cardOrder
+| 卡片顺序
+| int
+|
+|
+sumText
+| 合计文本
+| varchar(50)
+|
+|
+sumCond
+| 合计条件
+| varchar(500)
+|
+|
+sumCalc
+| 合计公式
+| varchar(100)
+|
+|
+canCopy
+| 复制
+| int
+|
+|
+BSRowId
+| BS行号
+| int
+|
+|
+BSColPercent
+| BS比例
+| int
+|
+|
+TitleColor
+| 标题颜色
+| varchar(200)
+|
+|
+InputHintText
+| 录入提示
+| varchar(50)
+|
+|
+DataDec
+| 小数位数
+| int
+|
+|
+fontsize
+| 添加字号
+| int
+|
+|
+disablecond
+| 启用条件
+| varchar(100)
+|
+|
+disabletype
+| disableType
+| varchar(100)
+|
+|
+bs_order
+| BS卡片顺序
+| int
+|
+|
+bs_field
+| BS卡片字段
+| varchar(1000)
+|
+|
+bs_color
+| BS卡片颜色
+| varchar(100)
+|
+|
+bs_fontsize
+| BS卡片字号
+| varchar(100)
+|
+|
+labelWidth
+| 标签宽度
+| int
+|
+|
+labelAlign
+| 标签对齐方式
+| int
+|
+|
+dragflag
+|
+| int
+|
+|
+isSumMerge
+|
+| int
+|
+|
+ownerEnabled
+|
+| int
+|
+|
+ownerUnionMod
+|
+| varchar(100)
+|
+|
+highlightFColor
+| 高亮前景色
+| varchar(50)
+|
+|
+highlightBColor
+| 高亮背景色
+| varchar(50)
+|
+|
+highlightBold
+| 字体加粗
+| int
+|
+|
+IsAddControl
+|
+| int
+|
+|
+doNotSpelling
+| 禁拼
+| int
+|
+|
+dataAlign
+| BS数据对齐
+| varchar(100)
+|
+|
+frozenFlag
+| 冻结列标记
+| int
+|
+|
+lookupWidth
+| 下拉宽度
+| int
+|
+|
+lookupFieldsWidth
+| 下拉字段宽度
+| varchar(50)
+|
+|
+bmptype
+|
+| varchar(100)
+|
+|
+SchedStartDataControl
+|
+| int
+|
+|
+DataAlignment
+| 数据显示位置
+| int
+|
+|
+IsCustomGroupPrimary
+|
+| int
+|
+|
+IsCustomGroupField
+|
+| int
+|
+|
+FileUploadControl
+|
+| int
+|
+|
+isDynamic
+| 动态显示
+| int
+|
+|
+bmpsource
+|
+| varchar(100)
+|
+|
+requiredCond
+|
+| varchar(200)
+|
+|
+flowContentFlag
+| 摘要标记
+| int
+|
+|
+flowContentOrder
+| 摘要显示顺序
+| int
+|
+|
+fontName
+|
+| varchar(100)
+|
+|
+ScanAfterEmpty
+|
+| int
+|
+|
+TextBoxProhibition
+|
+| int
+|
+|
+图表设置p_systemdlltabchart
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+id
+| ID
+| int
+| 主键
+|
+tab
+| 所属模块编号
+| varchar(20)
+| p_systemdlltab中的dllcoid
+|
+tabKey
+| 关联模块主表的formkey
+| uniqueidentifier
+| 关联到p_systemdlltab中的formkey字段
+|
+chartType
+| 图表类型
+| int
+|
+|
+chartTitle
+| 图表标题
+| varchar(50)
+|
+|
+chartColor
+| 图表颜色
+| varchar(20)
+|
+|
+chartColorDf
+|
+| varchar(20)
+|
+|
+chart3D
+| 3D
+| int
+|
+|
+gridLineVisible
+|
+| int
+|
+|
+XLabelField
+| X轴字段
+| varchar(30)
+|
+|
+YValueField
+| Y轴字段
+| varchar(30)
+|
+|
+XAxisTitle
+| X轴标题
+| varchar(20)
+|
+|
+YAxisTitle
+| Y轴标题
+| varchar(20)
+|
+|
+YAxisShared
+| Y轴共享
+| int
+|
+|
+markVisible
+| 标签禁显
+| int
+|
+|
+legendVisible
+| 标题禁显
+| int
+|
+|
+isVisible
+| 禁用
+| int
+|
+|
+orderId
+| 序号
+| int
+|
+|
+IsAbsolutely
+|
+| int
+|
+|
+YScale
+|
+| decimal(18, 8)
+|
+|
+yvaluefield1
+| Y轴字段2
+| varchar(50)
+|
+|
+yvaluefield2
+| Y轴字段3
+| varchar(50)
+|
+|
+valueVisible
+| 禁显数字
+| int
+|
+|
+labelangle
+| 标签角度
+| int
+|
+|
+labelvisible
+| 禁显标签
+| int
+|
+|
+labelsize
+| 标签字号
+| int
+|
+|
+labelSpaced
+| 标签间隔
+| int
+|
+|
+circlejagge
+| 锯齿圆
+| int
+|
+|
+circlehollow
+| 空心圆
+| int
+|
+|
+单表条件p_systembillsourcecond
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+id
+| ID
+| int
+|
+|
+sourceId
+| 条件来源id
+| int
+| 对应p_systemdlltab中的dllid
+|
+controlName
+| 条件名
+| Varchar(50)
+|
+|
+controlLabel
+| 显示条件名称
+| Varchar(50)
+|
+|
+controlType
+| 组件类别
+| int
+|
+|
+defaultValue
+| 默认值
+| Varchar(100)
+|
+|
+sourceSql
+| 组件下拉编码sql
+| Varchar(2000)
+|
+|
+keyField
+| 下拉返回编码字段
+| Varchar(50)
+|
+|
+resultField
+| 下拉返回名称字段
+| Varchar(50)
+|
+|
+controlLeft
+| 组件左边距
+| int
+|
+|
+controlTop
+| 组件上边距
+| int
+|
+|
+controlHeight
+| 组件高度
+| int
+|
+|
+controlWidth
+| 组件宽度
+| int
+|
+|
+checkCond
+| 组合条件
+| Varchar(500)
+|
+|
+formKey
+| 模块对应条件主键关联
+| Varchar(50)
+| 对应p_systemdlltab中的condkey
+|
+orderId
+| 顺序
+| int
+|
+|
+ShowMobile
+| 移动显示
+| int
+|
+|
+isFix
+| 移动固定
+| int
+|
+|
+Column_ID
+|
+| int
+|
+|
+BSRowId
+|
+| int
+|
+|
+BSColPercent
+|
+| int
+|
+|
+TitleColor
+|
+| varchar(200)
+|
+|
+InputHintText
+| 录入提示
+| varchar(50)
+|
+|
+edited
+| 禁编
+| int
+|
+|
+nullable
+| 必填
+| int
+|
+|
+leftNotLinkFlag
+|
+| int
+|
+|
+dataformat
+| 显示格式
+| varchar(100)
+|
+|
+disableCond
+| 启用条件
+| varchar(1000)
+|
+|
+disableType
+| 启用方式
+| int
+|
+|
+fontsize
+| 显示字号
+| int
+|
+|
+ScanAfterEmpty
+|
+| int
+|
+|
+单表右键与辅助功能p_systempopupmenu
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+id
+| ID
+| int
+|
+|
+tab
+| 所属模块编码
+| varchar(50)
+| 对应p_systemdlltab中的dllcoid
+|
+menuname
+| 菜单名称
+| varchar(50)
+|
+|
+dllname
+| 调用模板名
+| varchar(100)
+|
+|
+dllpar1
+| 参数1
+| varchar(8000)
+|
+|
+dllpar2
+| 参数2
+| varchar(8000)
+|
+|
+dllpar3
+| 参数3
+| varchar(8000)
+|
+|
+visible
+| 禁显
+| int
+|
+|
+action
+| 事件脚本
+| varchar(8000)
+|
+|
+actiontype
+| 事件类型
+| int
+|
+|
+orderid
+| 显示顺序
+| int
+|
+|
+beforeMsg
+| 执行前提示信息
+| varchar(8000)
+|
+|
+msgSuccess
+| 成功提示信息
+| varchar(8000)
+|
+|
+msgError
+| 错误提示信息
+| varchar(8000)
+|
+|
+dllpar4
+| 参数4
+| varchar(8000)
+|
+|
+dllpar5
+| 参数5
+| varchar(8000)
+|
+|
+dllpar6
+| 参数6
+| varchar(8000)
+|
+|
+dllpar7
+| 参数7
+| varchar(8000)
+|
+|
+dllpar8
+| 参数8
+| varchar(8000)
+|
+|
+dllpar9
+| 参数9
+| varchar(8000)
+|
+|
+dllpar10
+| 参数10
+| varchar(8000)
+|
+|
+menuid
+| 对应菜单id
+| int
+| 右键模块权限所对应的菜单id
+|
+menuCond
+| 可用条件
+| varchar(8000)
+|
+|
+menuType
+| 右键类型
+| int
+| 1=辅助功能
+|
+visible1
+|
+| int
+|
+|
+visible2
+|
+| int
+|
+|
+maxwindow
+| 调用窗口最大化
+| int
+|
+|
+ifRefresh
+| 刷新
+| int
+|
+|
+showMobile
+| 移动显示
+| int
+|
+|
+privilegeOper
+| 权限人员
+| varchar(8000)
+|
+|
+DBClickEvent
+| 双击执行标记
+| int
+|
+|
+ifMoreClick
+| 多条执行
+| int
+|
+|
+ShowToolBar
+| 快捷类别
+| int
+|
+|
+defailtimage
+| 快捷图标
+| varchar(8000)
+|
+|
+showMode
+| 加载方式
+| int
+|
+|
+addShowMode
+| 添加方式
+| int
+|
+|
+stepcode
+|
+| varchar(100)
+|
+|
+Fremark
+|
+| varchar(8000)
+|
+|
+mergeExec
+| 合并执行
+| int
+|
+|
+isCopy
+| 复制
+| int
+|
+|
+beforeTab
+|
+| varchar(100)
+|
+|
+isStartRun
+| 不关联执行
+| int
+|
+|
+isMrpClickBtn
+|
+| int
+|
+|
+disabletype
+| 禁用类别
+| int
+|
+|
+ForbiddenDisplay
+|
+| int
+|
+|
+AllowNullExec
+| 表格为空时执行标记
+| int
+|
+|
+ResultSQL
+|
+| varchar(500)
+|
+|
+SqlDirectExecution
+|
+| int
+|
+|
+hintMsg
+|
+| varchar(200)
+|
+|
+isModal
+| 非模态标记
+| int
+|
+|
+UnionZTid
+| 关联账套id
+| varchar(20)
+| P_sydbgrouptab中的id
+|
+IcoName
+|
+| varchar(50)
+|
+|
+countsql
+| 数量统计sql
+| varchar(MAX)
+|
+|
+单表颜色p_systemwordbookcolor
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+id
+| ID
+| int
+| 主键
+|
+tab
+| 所属模块编码
+| varchar(50)
+| 对应p_systemdlltab中的dllcoid
+|
+condition
+| 条件
+| varchar(2000)
+|
+|
+forcecolor
+| 字体颜色
+| varchar(20)
+|
+|
+backcolor
+| 背景颜色
+| varchar(20)
+|
+|
+orderid
+| 顺序
+| int
+|
+|
+useflag
+| 禁用标记
+| int
+|
+|
+dfcolor
+| 兼容delphi字体颜色
+| varchar(20)
+|
+|
+dbcolor
+| 兼容delphi背景色
+| varchar(20)
+|
+|
+ifBold
+| 加粗
+| int
+|
+|
+ifItalic
+| 倾斜
+| int
+|
+|
+ifStrickOut
+| 删除线
+| int
+|
+|
+ifUnderLine
+| 下划线
+| int
+|
+|
+fontsize
+| 字号
+| int
+|
+|
+左边表格p_systemwordbookgrid
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+id
+| ID
+| int
+|
+|
+fieldid
+| 所属字段id
+| int
+| p_systemwordbooktab中的id
+|
+orderid
+| 顺序
+| int
+|
+|
+fieldname
+| 字段名
+| varchar(30)
+|
+|
+width
+| 宽度
+| int
+|
+|
+username
+| 用户名
+| varchar(50)
+|
+|
+visible
+| 禁显
+| int
+|
+|
+fieldKey
+| 所属字段的fieldkey值
+| uniqueidentifier
+| p_systemwordbooktab中的fieldkey
+|
+ShowMobile
+| 移动显示
+| int
+|
+|
+MobileWidth
+| 移动宽度
+| int
+|
+|
+isCodeField
+|
+| int
+|
+|
+ifMerge
+|
+| int
+|
+|
+左边条件p_systembillsourcecond
+同单表条件，sourceid为所属字段id，关联p_systemwordbooktab中的id
+Formkey为所属字段对应的fieldkey
+左边颜色p_systemwordbookcolor
+同上颜色配置，tab为所属字段对应的fieldkey值
+左边右键菜单p_systempopupmenu
+同上右键菜单配置，tab为所属字段对应的fieldkey值
+蓝牙打印模板
+APP卡片布局
+主卡片设置p_systemcardtab
+卡片详情设置p_systemcarddetailtab
+明细模块
+明细模块列表 p_systemdlltabdetail
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+id
+| ID
+| int
+| 主键
+|
+tab
+| 所属模块编号
+| varchar(20)
+|
+|
+tabKey
+| 关联到模块的formkey
+| uniqueidentifier
+| 对应p_systemdlltab中的formkey
+|
+detailName
+| 明细模块名
+| varchar(30)
+|
+|
+detailSQL
+| 明细Sql语句
+| varchar(8000)
+|
+|
+detailType
+| 明细类别
+| int
+| 0=
+|
+isVisible
+| 禁用
+| bit
+|
+|
+formKey
+| 明细模块关键值
+| uniqueidentifier
+| 明细字段，颜色，右键等都会以此作为关联
+|
+orderId
+| 顺序
+| int
+|
+|
+UnionModule
+| 关联模块号
+| varchar(20)
+|
+|
+unionValue
+| 关联明细模块字段
+| varchar(200)
+|
+|
+rightVisible
+| 右边显示
+| int
+|
+|
+autoRefresh
+| 自动刷新
+| int
+|
+|
+calcExpr
+|
+| varchar(200)
+|
+|
+addVisible
+| 添加显示
+| int
+|
+|
+unionParentField
+| 关联主模块字段
+| varchar(50)
+|
+|
+scanMode
+| 扫码模式
+| int
+|
+|
+defaultusers
+|
+| varchar(8000)
+|
+|
+defaultItem
+| 默认打开
+| int
+|
+|
+cardwidth
+|
+| int
+|
+|
+isDrag
+| 拖拽
+| int
+|
+|
+menumode
+| 卡片标记
+| int
+|
+|
+operUsers
+| 权限列表
+| varchar(3000)
+|
+|
+library
+| Dll模板文件名
+| varchar(100)
+|
+|
+addShowMode
+| 添加方式
+| int
+|
+|
+displayMode
+| PC显示方式
+| int
+|
+|
+visibleCond
+| 禁用条件
+| varchar(200)
+|
+|
+fieldCond
+| 禁显字段条件
+| varchar(200)
+|
+|
+disableField
+| 禁显字段
+| varchar(200)
+|
+|
+fieldCond1
+| 禁显字段条件1
+| varchar(200)
+|
+|
+disableField1
+| 禁显字段1
+| varchar(200)
+|
+|
+fieldCond2
+| 禁显字段条件2
+| varchar(200)
+|
+|
+disableField2
+| 禁显字段2
+| varchar(200)
+|
+|
+unionCond
+| 关联条件
+| varchar(2000)
+|
+|
+bandHeight
+| 行高
+| varchar(10)
+|
+|
+bandWidth
+| 列宽
+| varchar(10)
+|
+|
+Fremark
+|
+| varchar(1000)
+|
+|
+unionFlag
+|
+| int
+|
+|
+gridDetailCheck
+| 复选
+| int
+|
+|
+noGridLine
+| 禁表格线
+| int
+|
+|
+noRownumber
+| 禁行号
+| int
+|
+|
+noColumnHeader
+| 禁标题
+| int
+|
+|
+displayRows
+| 显示行数
+| int
+|
+|
+dragcond
+| 拖拽条件
+| varchar(500)
+|
+|
+IsMrpDrag
+|
+| int
+|
+|
+mrpDragTag
+|
+| varchar(50)
+|
+|
+privilegeOper
+| 权限列表
+| varchar(200)
+|
+|
+AutoMultiHeader
+| 多表头
+| int
+|
+|
+CalcOrder
+|
+| int
+|
+|
+IsUnioDetail
+| 关联明细
+| int
+|
+|
+IsDownloadRelated
+|
+| int
+|
+|
+DetailSearch
+|
+| int
+|
+|
+Rightdockid
+| 父级明细序号
+| int
+|
+|
+IsUnionleft
+|
+| int
+|
+|
+明细模块字段p_systemDlltabDetailGrid
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+id
+| ID
+| int
+| 主键
+|
+detailId
+| 关联到明细模块列表id
+| int
+| p_systemdlltabdetail中的id
+|
+fieldName
+| 字段名
+| varchar(30)
+|
+|
+sysName
+| 出厂名
+| varchar(50)
+|
+|
+userName
+| 用户名称
+| varchar(50)
+|
+|
+width
+| 宽度
+| int
+|
+|
+orderid
+| 顺序
+| int
+|
+|
+isVisible
+| 禁显
+| bit
+|
+|
+detailKey
+| 关联明细模块列表的formkey
+| uniqueidentifier
+| 关联到p_systemdlltabdetail中的formkey字段
+|
+privilegeView
+| 权限列表
+| varchar(200)
+|
+|
+isSum
+| 合计
+| int
+|
+|
+mobilewidth
+| 移动宽度
+| int
+|
+|
+GroupId
+|
+| int
+|
+|
+DataFormat
+| 格式化
+| varchar(50)
+|
+|
+ifMerge
+| 合并
+| int
+|
+|
+calcExpr
+| 计算公式
+| varchar(200)
+|
+|
+ShowMobile
+| 移动显示
+| int
+|
+|
+mobile_order
+| 移动顺序
+| int
+|
+|
+mobile_field
+| 移动内容
+| varchar(500)
+|
+|
+mobile_color
+| 移动颜色
+| varchar(500)
+|
+|
+mobile_fontsize
+| 移动字号
+| int
+|
+|
+TM_linkmainTabfield
+| 条码主表关联字段
+| varchar(100)
+|
+|
+TM_HeadString
+| 条码显示字段
+| varchar(100)
+|
+|
+TM_tagID
+| 条码字段标识
+| int
+|
+|
+sumText
+| 合计文本
+| varchar(50)
+|
+|
+sumCond
+| 合计条件
+| varchar(500)
+|
+|
+dataAlign
+| BS数据对齐
+| varchar(100)
+|
+|
+frozenFlag
+| 冻结列
+| int
+|
+|
+CalcOrder
+|
+| int
+|
+|
+明细右键p_systempopupmenu
+同单表右键，tab字段关联明细模块列表中的formkey字段
+明细颜色p_systemwordbookcolor
+同单表颜色，tab字段关联明细模块列表中的formkey字段
+明细图表p_systemdlltabchart
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+id
+| ID
+| int
+| 主键
+|
+tab
+| 明细图表配置时未使用
+| varchar(20)
+|
+|
+tabKey
+| 关联明细模块列表的formkey
+| uniqueidentifier
+| 关联到p_systemdlltabdetail中的formkey字段
+|
+chartType
+| 图表类型
+| int
+|
+|
+chartTitle
+| 图表标题
+| varchar(50)
+|
+|
+chartColor
+| 图表颜色
+| varchar(20)
+|
+|
+chartColorDf
+|
+| varchar(20)
+|
+|
+chart3D
+| 3D
+| int
+|
+|
+gridLineVisible
+|
+| int
+|
+|
+XLabelField
+| X轴字段
+| varchar(30)
+|
+|
+YValueField
+| Y轴字段
+| varchar(30)
+|
+|
+XAxisTitle
+| X轴标题
+| varchar(20)
+|
+|
+YAxisTitle
+| Y轴标题
+| varchar(20)
+|
+|
+YAxisShared
+| Y轴共享
+| int
+|
+|
+markVisible
+| 标签禁显
+| int
+|
+|
+legendVisible
+| 标题禁显
+| int
+|
+|
+isVisible
+| 禁用
+| int
+|
+|
+orderId
+| 序号
+| int
+|
+|
+IsAbsolutely
+|
+| int
+|
+|
+YScale
+|
+| decimal(18, 8)
+|
+|
+yvaluefield1
+| Y轴字段2
+| varchar(50)
+|
+|
+yvaluefield2
+| Y轴字段3
+| varchar(50)
+|
+|
+valueVisible
+| 禁显数字
+| int
+|
+|
+labelangle
+| 标签角度
+| int
+|
+|
+labelvisible
+| 禁显标签
+| int
+|
+|
+labelsize
+| 标签字号
+| int
+|
+|
+labelSpaced
+| 标签间隔
+| int
+|
+|
+circlejagge
+| 锯齿圆
+| int
+|
+|
+circlehollow
+| 空心圆
+| int
+|
+|
+附加模块p_SystemdllTabAttach
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+id
+| ID
+| int
+| 主键
+|
+tab
+| 所属模块编码
+| varchar(20)
+| P_systemdlltab中的dllcoid
+|
+tabKey
+| 所属模块对应的formkey
+| varchar(50)
+| P_systemdlltab中的formkey
+|
+AttachName
+| 附加名称
+| varchar(50)
+|
+|
+unionModule
+| 关联模块编号
+| varchar(50)
+|
+|
+unionValue
+| 关联值
+| varchar(50)
+|
+|
+orderid
+| 序号
+| int
+|
+|
+isVisible
+| 禁用
+| int
+|
+|
+formKey
+| GUID唯一标识
+| varchar(50)
+|
+|
+attachType
+| 附加方式
+| varchar(20)
+|
+|
+attachIMG
+| 按钮图标地址
+| varchar(200)
+|
+|
+unionCond
+| 关联条件
+| varchar(2000)
+|
+|
+library
+| DLL模板
+| varchar(200)
+|
+|
+params
+| 模板参数
+| varchar(8000)
+|
+|
+审批流转
+流转步骤p_systemdlltabflow
+步骤信息p_systemdlltabflowstepgrid
+步骤颜色p_systemwordbooktab
+步骤条件p_systembillsourcecond
+步骤右键p_systempopupmenu
+流转附加p_systembillauditAttach
+明细附加p_SystemDlltabDetailFlowTab
+小类设置p_systemdlltabflowtype
+小类流转步骤p_systemdlltabflowtype
+提醒消息
+督办消息
+待办消息
+终审退回设置
+待办任务设置
+单据功能模块设计
+单据模块主信息：p_systembilltype
+字段名
+| 中文名
+| 字段类型
+| 说明
+|
+id
+| ID
+| int
+| 主键
+|
+typeCode
+| 模块编码
+| Varchar(50)
+|
+|
+typeName
+| 模块名称
+| Varchar(100)
+|
+|
+prefix
+| 单号前缀
+| Varchar(50)
+|
+|
+remark
+| 模块说明
+| Varchar(500)
+|
+|
+masterTable
+| 模块主表
+| Varchar(50)
+|
+|
+detailTable
+| 模块明细表
+| Varchar(50)
+|
+|
+masterSql
+| 主表sql
+| Varchar(max)
+|
+|
+detailSql
+| 明细表sql
+| Varchar(max)
+|
+|
+billWidth
+| 单据录入页面宽度
+| int
+|
+|
+billHeight
+| 单据录入页面高度
+| int
+|
+|
+billSeq
+| 模块标识（默认与typecode一致）
+| Varchar(50)
+|
+|
+modifyCond
+| 单据修改条件
+| Varchar(100)
+|
+|
+formKey
+| 模块配置关联字段
+| Varchar(50)
+|
+|
+billModuleFile
+| 打印模板文件列表
+| Varchar(200)
+| 多模板文件竖线分隔
+|
+billPrintType
+| 打印方式
+| int
+| 1=预览打印，2=带打印设置框打印，3=直接打印，4=定义，5=导出到excel文件
+|
+billPrintSQL
+| 打印主sql
+| Varchar(max)
+|
+|
+billPrintSQL1
+| 打印明细sql
+| Varchar(max)
+|
+|
+billPrintSQL2
+| 打印明细sql
+| Varchar(max)
+|
+|
+dirId
+| 附件目录id
+| int
+|
+|
+bmpSpec
+| 附件图档分类编码
+| Varchar(20)
+|
+|
+redBill
+| 红字标记
+| int
+|
+|
+bHasDetail
+|
+| int
+|
+|
+OverBackOper
+| 终审反退权限人员
+| Varchar(500)
+| 人员列表，或者角色列表
+|
+OverBackCond
+| 终审反退条件
+| Varchar(500)
+|
+|
+addEmptyRow
+| 空行
+| int
+| 1=开启
+|
+OverBackSql
+| 终审反退sql
+| Varchar(max)
+|
+|
+OverBackKey
+| 终审反退配置关联id
+| Varchar(50)
+|
+|
+tm_Test
+| 验正SN
+| int
+|
+|
+Wtmstepcode
+| 验证SN步骤
+| Varchar(50)
+|
+|
+applyComfirm
+| 提交确认
+| int
+|
+|
+printCond
+| 打印条件
+| Varchar(500)
+|
+|
+BackSelected
+| 返退选择
+| int
+|
+|
+AuditLoadDetailFlag
+|
+|
+|
+|
+canCopy
+| 复制新增标记
+| int
+|
+|
+canImport
+| 导入
+| int
+|
+|
+canExport
+| 导出
+| int
+|
+|
+enterOrder
+|
+| int
+|
+|
+DetailDoubleClickTip
+| 明细添加重复提示
+| int
+|
+|
+newVer
+| 新版标记
+| int
+|
+|
+ApplyRefresh
+| 提交新增
+| int
+|
+|
+DeleteDetailCond
+| 明细删除条件
+| Varchar(500)
+|
+|
+UpdateDetailCond
+| 明细修改条件
+| Varchar(500)
+|
+|
+defaultShowSearch
+| APP审查
+| int
+|
+|
+PopupUnionCode
+|
+| Varchar(50)
+|
+|
+MuitlAuditFlag
+| 批量审核
+| int
+|
+|
+bs_adddllname
+| BS显示模板
+| Varchar(50)
+|
+|
+tasksql
+| 待办sql
+| Varchar(max)
+|
+|
+countSql
+| 数量sql
+| Varchar(max)
+|
+|
+newWFVer
+| 新流程标记
+| int
+|
+|
+AutoMultiHeader
+| 多表头
+| int
+|
+|
+popupWidth
+|
+| int
+|
+|
+dirspec
+|
+| Varchar(50)
+|
+|
+attatchModifyCond
+| 附件修改条件
+| Varchar(500)
+|
+|
+ChangeColColor
+|
+| varchar(50)
+|
+|
+quanxuantype
+|
+|
+|
+|
+quanxuanmingxi
+|
+|
+|
+|
+billdetailcheck
+| 来源明细复选
+|
+|
+|
+billSourceCheck
+| 来源复选
+|
+|
+|
+billMainDetailCheck
+| 明细复选
+|
+|
+|
+drgFinishHide
+| 拖拽消失
+|
+|
+|
+RefGridLookUpData
+|
+|
+|
+|
+attatchInfoWidth
+|
+|
+|
+|
+rowHeight
+| 行高
+|
+|
+|
+BeforeBillSaveExec
+| 保存前执行脚本
+|
+|
+|
+attcField1
+| 附件附加字段1
+|
+|
+|
+attcField2
+| 附件附加字段2
+|
+|
+|
+attcField3
+| 附件附加字段3
+|
+|
+|
+isWorkLogin
+|
+|
+|
+|
+taskSQLYB
+| 已办sql
+|
+|
+|
+taskSQLFQ
+| 发起sql
+|
+|
+|
+taskSQLCS
+| 抄送sql
+|
+|
+|
+单据主信息：p_systembillinfo
+单据明细信息：p_systembilldetail
+辅助功能：p_systempopupmenu
+明细右键：p_systempopupmenu
+明细颜色：p_systemwordbooktab
+明细模板定义：
+明细模板字段：
+明细模板颜色：
+APP卡片设置
+单据来源
+来源定义：p_systembillsource
+来源主信息：p_systembillsourcegrid
+来源条件：p_systembillsourcecond
+来源明细：p_sytembillsourcedetail
+来源子明细：p_systembillsourcedetail
+sourceid=0 and sourcekey=:sourcekey and mxflag=1
+来源右键：p_systempopupmenu
+来源颜色：p_systemwordbookcolor
+来源明细右键：p_systempopupmenu
+来源明细颜色：p_systemwordbookcolor
+子明细右键：p_systempopupmenu
+来源APP卡片设置
+审批流设置
+流转步骤p_systembillflow
+步骤信息 p_systembillstepgrid
+步骤颜色p_systemwordbooktab
+步骤条件p_systembillsourcecond
+步骤右键p_systempopupmenu
+流转附加p_systembillauditAttach
+小类设置p_systembillflowtype
+小类流转步骤p_systembillflowtypestep
+提醒消息
+督办消息
+待办消息
+终审退回设置
+待办任务设置

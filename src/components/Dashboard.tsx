@@ -53,11 +53,222 @@ type BillSnapCandidate = {
   gap: BillFieldGapGuide | null;
   priority: number;
 };
+type ModuleMenuFieldKind = 'text' | 'textarea' | 'number' | 'select' | 'switch';
+type ModuleMenuValue = string | boolean;
+type ModuleMenuDraft = Record<string, ModuleMenuValue>;
+type ModuleMenuOption = {
+  value: string;
+  label: string;
+};
+type ModuleMenuFieldSchema = {
+  key: string;
+  label: string;
+  tableField: string;
+  kind: ModuleMenuFieldKind;
+  placeholder?: string;
+  hint?: string;
+  options?: ModuleMenuOption[];
+  rows?: number;
+  span?: 'half' | 'full';
+};
+type ModuleMenuSectionSchema = {
+  title: string;
+  description: string;
+  fields: ModuleMenuFieldSchema[];
+};
 const DETAIL_BOARD_CLIPBOARD_PREFIX = '__LS_DETAIL_BOARD_COLUMNS__';
 const BUSINESS_TYPE_OPTIONS: Array<{ value: BusinessType; label: string; icon: string }> = [
-  { value: 'document', label: '基础档案', icon: 'inventory_2' },
-  { value: 'table', label: '单据模式', icon: 'receipt_long' },
-  { value: 'tree', label: '树形模式', icon: 'account_tree' },
+  { value: 'document', label: '单表', icon: 'table_view' },
+  { value: 'table', label: '单据', icon: 'receipt_long' },
+  { value: 'tree', label: '树形单表', icon: 'account_tree' },
+];
+const MODULE_TYPE_OPTIONS = BUSINESS_TYPE_OPTIONS.filter((option) => option.value !== 'tree');
+const MODULE_GUIDE_PROFILES: Record<BusinessType, {
+  label: string;
+  intro: string;
+  configTable: string;
+  configTableDesc: string;
+  keyFields: string[];
+  relatedTables: string[];
+}> = {
+  document: {
+    label: '单表',
+    intro: '对应旧平台的单表模块配置，菜单信息将落到 p_systemdlltab，并继续向字段、条件、右键、颜色等子表扩展。',
+    configTable: 'p_systemdlltab',
+    configTableDesc: '单表主模块信息',
+    keyFields: ['DllCoid', 'ToolsName', 'SQL', 'SQLDT1', 'formKey', 'condKey'],
+    relatedTables: ['p_systemwordbooktab', 'p_systembillsourcecond', 'p_systempopupmenu', 'p_systemwordbookcolor'],
+  },
+  table: {
+    label: '单据',
+    intro: '对应旧平台的单据模块配置，菜单信息将落到 p_systembilltype，再挂单据主信息、明细、来源和流程。',
+    configTable: 'p_systembilltype',
+    configTableDesc: '单据模块主信息',
+    keyFields: ['模块编码', '模块名称', '模块主表', '模块明细表', '明细表sql', '模块配置关联字段'],
+    relatedTables: ['p_systembillinfo', 'p_systembilldetail', 'p_systembillsource', 'p_systempopupmenu'],
+  },
+  tree: {
+    label: '树形单表',
+    intro: '树形单表仍归属单表体系，主配置表与单表一致，后续通过树字段和动态 SQL 扩展左侧树结构。',
+    configTable: 'p_systemdlltab',
+    configTableDesc: '单表主模块信息',
+    keyFields: ['DllCoid', 'ToolsName', 'SQL', 'TreeSQL', 'TreeTableExpand', 'MainModuleCodeField'],
+    relatedTables: ['p_systemwordbooktab', 'p_systemwordbookgrid', 'p_systembillsourcecond', 'p_systempopupmenu'],
+  },
+};
+const DOCUMENT_MENU_DEFAULTS: ModuleMenuDraft = {
+  moduleCode: 'FM-CO-001',
+  moduleName: '成本控制',
+  mainTableName: 'erp_cost_control',
+  mainSql: 'SELECT * FROM erp_cost_control',
+  templateType: '1',
+  formKey: 'cost-form-key',
+  condKey: 'cost-cond-key',
+  allowGridEdit: 'true',
+  leftWidth: '280',
+  bottomHeight: '320',
+  detailPageAlign: 'bottom',
+  treeExpand: 'false',
+  printSql: '',
+  printDetailSql: '',
+  basePrintSql: '',
+};
+const BILLTYPE_MENU_DEFAULTS: ModuleMenuDraft = {
+  typeCode: 'BILL-CO-001',
+  typeName: '成本单据',
+  prefix: 'CB',
+  billSeq: 'BILL-CO-001',
+  remark: '用于维护成本类单据主表、明细及来源配置。',
+  masterTable: 'erp_cost_bill',
+  detailTable: 'erp_cost_bill_detail',
+  masterSql: 'SELECT * FROM erp_cost_bill',
+  detailSql: 'SELECT * FROM erp_cost_bill_detail WHERE bill_id = :id',
+  billWidth: '1440',
+  billHeight: '900',
+  formKey: 'bill-cost-form',
+  modifyCond: '',
+  billPrintType: '1',
+  billPrintSql: '',
+  billPrintDetailSql: '',
+  addEmptyRow: 'true',
+  redBill: 'false',
+};
+const DOCUMENT_MENU_SECTIONS: ModuleMenuSectionSchema[] = [
+  {
+    title: '主配置标识',
+    description: '对应 p_systemdlltab 的主键、名称和模板类别。',
+    fields: [
+      { key: 'moduleCode', label: '模块编码', tableField: 'DllCoid', kind: 'text', placeholder: '唯一模块编码' },
+      { key: 'moduleName', label: '模块名称', tableField: 'ToolsName', kind: 'text', placeholder: '模块中文名' },
+      {
+        key: 'templateType',
+        label: '模板类别',
+        tableField: 'dllType',
+        kind: 'select',
+        options: [
+          { value: '1', label: '左树右表' },
+          { value: '2', label: '左表右表' },
+          { value: '3', label: '单表' },
+        ],
+      },
+      { key: 'formKey', label: '配置关联值', tableField: 'formKey', kind: 'text', placeholder: '模块配置关联值' },
+      { key: 'condKey', label: '条件关联值', tableField: 'condKey', kind: 'text', placeholder: '条件配置关联值' },
+    ],
+  },
+  {
+    title: '数据源配置',
+    description: '单表模块最关键的是主表名和主表 SQL。',
+    fields: [
+      { key: 'mainTableName', label: '主表名', tableField: 'SQLDT1', kind: 'text', placeholder: '例如：erp_cost_control' },
+      { key: 'mainSql', label: '主表 SQL', tableField: 'SQL', kind: 'textarea', rows: 5, span: 'full', placeholder: '输入或 AI 生成主表 SQL' },
+    ],
+  },
+  {
+    title: '界面与行为',
+    description: '控制单表默认布局和交互方式。',
+    fields: [
+      { key: 'allowGridEdit', label: '表格编辑', tableField: 'selfEdit', kind: 'switch', hint: '开启后允许在表格内直接编辑' },
+      { key: 'leftWidth', label: '左侧宽度', tableField: 'leftWidth', kind: 'number', placeholder: '280' },
+      { key: 'bottomHeight', label: '下方高度', tableField: 'bottomHeight', kind: 'number', placeholder: '320' },
+      {
+        key: 'detailPageAlign',
+        label: '明细页签停靠',
+        tableField: 'detailPageAlign',
+        kind: 'select',
+        options: [
+          { value: 'bottom', label: '底部' },
+          { value: 'right', label: '右侧' },
+          { value: 'tab', label: '页签' },
+        ],
+      },
+      { key: 'treeExpand', label: '树表展开', tableField: 'TreeTableExpand', kind: 'switch', hint: '树形单表默认展开节点' },
+    ],
+  },
+  {
+    title: '打印与扩展',
+    description: '保留打印和基础模板相关主字段。',
+    fields: [
+      { key: 'printSql', label: '打印主 SQL', tableField: 'printSQL', kind: 'textarea', rows: 4, span: 'full' },
+      { key: 'printDetailSql', label: '打印明细 SQL', tableField: 'printSQL1', kind: 'textarea', rows: 4, span: 'full' },
+      { key: 'basePrintSql', label: '基础打印主 SQL', tableField: 'basePrintSQL', kind: 'textarea', rows: 4, span: 'full' },
+    ],
+  },
+];
+const BILLTYPE_MENU_SECTIONS: ModuleMenuSectionSchema[] = [
+  {
+    title: '单据主标识',
+    description: '对应 p_systembilltype 的主键信息和基础标识。',
+    fields: [
+      { key: 'typeCode', label: '模块编码', tableField: 'typeCode', kind: 'text', placeholder: '单据模块编码' },
+      { key: 'typeName', label: '模块名称', tableField: 'typeName', kind: 'text', placeholder: '单据模块名称' },
+      { key: 'prefix', label: '单号前缀', tableField: 'prefix', kind: 'text', placeholder: '例如：CB' },
+      { key: 'billSeq', label: '模块标识', tableField: 'billSeq', kind: 'text', placeholder: '默认与模块编码一致' },
+      { key: 'remark', label: '模块说明', tableField: 'remark', kind: 'textarea', rows: 4, span: 'full', placeholder: '描述单据场景和业务边界' },
+    ],
+  },
+  {
+    title: '主表与明细',
+    description: '单据模式会同时绑定主表、明细表和对应 SQL。',
+    fields: [
+      { key: 'masterTable', label: '模块主表', tableField: 'masterTable', kind: 'text', placeholder: '例如：erp_cost_bill' },
+      { key: 'detailTable', label: '模块明细表', tableField: 'detailTable', kind: 'text', placeholder: '例如：erp_cost_bill_detail' },
+      { key: 'masterSql', label: '主表 SQL', tableField: 'masterSql', kind: 'textarea', rows: 5, span: 'full' },
+      { key: 'detailSql', label: '明细 SQL', tableField: 'detailSql', kind: 'textarea', rows: 5, span: 'full' },
+    ],
+  },
+  {
+    title: '页面与规则',
+    description: '对应单据录入页面尺寸、关联键和修改约束。',
+    fields: [
+      { key: 'billWidth', label: '页面宽度', tableField: 'billWidth', kind: 'number', placeholder: '1440' },
+      { key: 'billHeight', label: '页面高度', tableField: 'billHeight', kind: 'number', placeholder: '900' },
+      { key: 'formKey', label: '配置关联字段', tableField: 'formKey', kind: 'text', placeholder: 'formKey' },
+      { key: 'modifyCond', label: '修改条件', tableField: 'modifyCond', kind: 'text', placeholder: '例如：status <> 1' },
+      { key: 'addEmptyRow', label: '默认空行', tableField: 'addEmptyRow', kind: 'switch', hint: '进入单据时默认补一行明细' },
+      { key: 'redBill', label: '红字标记', tableField: 'redBill', kind: 'switch', hint: '用于红字单据场景' },
+    ],
+  },
+  {
+    title: '打印配置',
+    description: '对应单据打印方式和 SQL。',
+    fields: [
+      {
+        key: 'billPrintType',
+        label: '打印方式',
+        tableField: 'billPrintType',
+        kind: 'select',
+        options: [
+          { value: '1', label: '预览打印' },
+          { value: '2', label: '带设置框打印' },
+          { value: '3', label: '直接打印' },
+          { value: '4', label: '自定义' },
+          { value: '5', label: '导出 Excel' },
+        ],
+      },
+      { key: 'billPrintSql', label: '打印主 SQL', tableField: 'billPrintSQL', kind: 'textarea', rows: 4, span: 'full' },
+      { key: 'billPrintDetailSql', label: '打印明细 SQL', tableField: 'billPrintSQL1', kind: 'textarea', rows: 4, span: 'full' },
+    ],
+  },
 ];
 
 const FIELD_TYPE_OPTIONS = ['文本', '数字', '下拉框', '搜索框', '日期框', '单选框', '多选框', '树形节点关联'];
@@ -251,7 +462,7 @@ function getBillFieldLayout(index: number, width = BILL_FORM_DEFAULT_WIDTH) {
 export default function Dashboard({ onLogout }: DashboardProps) {
   const debugParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const debugStepParam = Number(debugParams?.get('step') || 1);
-  const initialConfigStep = Number.isFinite(debugStepParam) ? Math.min(5, Math.max(1, debugStepParam)) : 1;
+  const initialConfigStep = Number.isFinite(debugStepParam) ? Math.min(6, Math.max(1, debugStepParam)) : 1;
   const initialConfigOpen = debugParams?.get('config') === '1' || debugParams?.has('step') || false;
   const initialDetailPreview = debugParams?.get('detailPreview') === '1';
   const initialBusinessType = BUSINESS_TYPE_OPTIONS.some((option) => option.value === debugParams?.get('mode'))
@@ -272,6 +483,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [commonFuncs, setCommonFuncs] = useState<string[]>(['import', 'export']);
   const [isFuncPopoverOpen, setIsFuncPopoverOpen] = useState(false);
   const [businessType, setBusinessType] = useState<BusinessType>(initialBusinessType);
+  const [documentMenuDraft, setDocumentMenuDraft] = useState<ModuleMenuDraft>(DOCUMENT_MENU_DEFAULTS);
+  const [billtypeMenuDraft, setBilltypeMenuDraft] = useState<ModuleMenuDraft>(BILLTYPE_MENU_DEFAULTS);
+  const currentModuleGuide = MODULE_GUIDE_PROFILES[businessType] ?? MODULE_GUIDE_PROFILES.document;
   const toggleFunc = (id: string) => setCommonFuncs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const funcOptions = [
     { id: 'import', name: '数据导入', icon: 'upload_file' },
@@ -280,6 +494,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     { id: 'approve', name: '审批流', icon: 'verified' },
     { id: 'attach', name: '附件管理', icon: 'attachment' },
   ];
+  const currentMenuSections = businessType === 'table' ? BILLTYPE_MENU_SECTIONS : DOCUMENT_MENU_SECTIONS;
+  const currentMenuDraft = businessType === 'table' ? billtypeMenuDraft : documentMenuDraft;
+  const currentConfigTableName = businessType === 'table' ? 'p_systembilltype' : 'p_systemdlltab';
+  const filledMenuFieldCount = currentMenuSections.reduce((total, section) => {
+    return total + section.fields.filter((field) => {
+      const value = currentMenuDraft[field.key];
+      if (field.kind === 'switch') return value === 'true';
+      return String(value ?? '').trim().length > 0;
+    }).length;
+  }, 0);
 
   // Step 2: Editor
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -626,7 +850,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   useEffect(() => {
-    if (configStep !== 2) return;
+    if (configStep !== 3) return;
     const frameId = window.requestAnimationFrame(() => {
       hydrateModuleIntroEditor();
     });
@@ -1416,7 +1640,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   useEffect(() => {
     if (businessType !== 'table') return;
-    const fullscreenActive = isConfigOpen && configStep === 4 && isFullscreenConfig;
+    const fullscreenActive = isConfigOpen && configStep === 5 && isFullscreenConfig;
 
     const viewport = billDocumentViewportRef.current;
     const paper = billDocumentPaperRef.current;
@@ -1447,7 +1671,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   }, [businessType, billDetailColumns.length, billMetaFields.length, isConfigOpen, configStep, isFullscreenConfig, mainTableColumns.length]);
 
   useEffect(() => {
-    const fullscreenActive = isConfigOpen && configStep === 4 && isFullscreenConfig;
+    const fullscreenActive = isConfigOpen && configStep === 5 && isFullscreenConfig;
     if (businessType !== 'table' || fullscreenActive || billHeaderAutoFillRef.current) return;
     if (mainTableColumns.length === 0) return;
 
@@ -1585,34 +1809,261 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     setInspectorPanelTab('common');
   };
 
-  const renderBusinessTypeSwitcher = (layoutId: string, compact = false) => (
-    <div className={`cloudy-glass-chip inline-flex items-center gap-1 rounded-[18px] border border-white/80 bg-white/72 p-1.5 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.2)] dark:border-slate-700/70 dark:bg-slate-900/58 ${compact ? 'w-full max-w-[420px]' : 'w-full'}`}>
-      {BUSINESS_TYPE_OPTIONS.map((option) => {
-        const isActive = businessType === option.value;
+  const updateCurrentMenuDraft = (fieldKey: string, value: ModuleMenuValue) => {
+    if (businessType === 'table') {
+      setBilltypeMenuDraft((prev) => ({ ...prev, [fieldKey]: value }));
+      return;
+    }
+    setDocumentMenuDraft((prev) => ({ ...prev, [fieldKey]: value }));
+  };
 
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => handleBusinessTypeChange(option.value)}
-            className={`relative flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[14px] px-3 py-2.5 text-[12px] font-bold transition-colors sm:text-[13px] ${
-              isActive
-                ? 'text-[color:var(--workspace-accent-strong)]'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100'
-            }`}
+  const renderMenuInfoField = (field: ModuleMenuFieldSchema) => {
+    const value = currentMenuDraft[field.key] ?? '';
+    const wrapperClass = field.span === 'full' ? 'md:col-span-2' : '';
+    const baseInputClass = 'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[14px] text-slate-700 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/10 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-100';
+
+    return (
+      <div key={field.key} className={`space-y-2.5 ${wrapperClass}`.trim()}>
+        <div className="flex items-center justify-between gap-3">
+          <label className="text-[13px] font-bold text-slate-700 dark:text-slate-300">{field.label}</label>
+          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500">
+            {field.tableField}
+          </span>
+        </div>
+
+        {field.kind === 'textarea' ? (
+          <textarea
+            rows={field.rows ?? 4}
+            value={String(value)}
+            placeholder={field.placeholder}
+            onChange={(event) => updateCurrentMenuDraft(field.key, event.target.value)}
+            className={`${baseInputClass} resize-y leading-6`}
+          />
+        ) : field.kind === 'select' ? (
+          <select
+            value={String(value)}
+            onChange={(event) => updateCurrentMenuDraft(field.key, event.target.value)}
+            className={`${baseInputClass} cursor-pointer appearance-none`}
           >
-            {isActive && (
-              <motion.div
-                layoutId={layoutId}
-                className="absolute inset-0 rounded-[14px] border border-[color:var(--workspace-accent-border)] bg-[linear-gradient(135deg,rgba(255,255,255,0.92),var(--workspace-accent-surface))] shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)]"
-                transition={{ type: 'spring', bounce: 0.16, duration: 0.45 }}
-              />
-            )}
-            <span className="material-symbols-outlined relative z-10 text-[16px]">{option.icon}</span>
-            <span className="relative z-10 truncate">{option.label}</span>
-          </button>
-        );
-      })}
+            {(field.options ?? []).map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        ) : field.kind === 'switch' ? (
+          <label className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/60">
+            <div>
+              <div className="text-[14px] font-semibold text-slate-700 dark:text-slate-100">{value === 'true' ? '已开启' : '未开启'}</div>
+              <div className="mt-1 text-[12px] text-slate-400">{field.hint || '布尔开关字段'}</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={value === 'true'}
+              onChange={(event) => updateCurrentMenuDraft(field.key, event.target.checked ? 'true' : 'false')}
+              className="h-5 w-5 rounded border-slate-300 text-primary focus:ring-primary/20"
+            />
+          </label>
+        ) : (
+          <input
+            type={field.kind === 'number' ? 'number' : 'text'}
+            value={String(value)}
+            placeholder={field.placeholder}
+            onChange={(event) => updateCurrentMenuDraft(field.key, event.target.value)}
+            className={baseInputClass}
+          />
+        )}
+
+        {field.hint && field.kind !== 'switch' && (
+          <p className="text-[12px] leading-5 text-slate-400">{field.hint}</p>
+        )}
+      </div>
+    );
+  };
+
+  const openNewModuleGuide = () => {
+    setIsConfigOpen(true);
+    setConfigStep(1);
+    setCompletedSteps([]);
+    setBusinessType('document');
+    setIsFullscreenConfig(false);
+    setIsFullscreenEditor(false);
+    setSurveyStep(0);
+    setSurveyAnswers([]);
+    setIsGenerating(false);
+    setSurveyPlan(null);
+    setSurveyPlanModel('');
+    setSurveyError(null);
+  };
+
+  const renderMenuInfoStep = () => (
+    <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1fr)_360px] flex-1">
+      <div className="space-y-8">
+        <div className="rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_right,rgba(49,98,255,0.1),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,250,255,0.98))] p-8 shadow-[0_26px_80px_-52px_rgba(15,23,42,0.34)] dark:border-slate-700 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(15,23,42,0.98))]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] font-bold tracking-[0.24em] text-primary">
+                菜单信息
+              </div>
+              <h3 className="text-[28px] font-black tracking-tight text-slate-900 dark:text-white">
+                按 {currentConfigTableName} 结构配置模块入口
+              </h3>
+              <p className="text-[14px] leading-7 text-slate-500 dark:text-slate-300">
+                当前菜单信息已经改成直接按旧系统主配置表字段构建。后续数据库接入时，这一页就按这里的字段名去查询、映射和回填。
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setConfigStep(1)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-[12px] font-bold text-slate-500 transition-colors hover:border-primary/30 hover:text-primary dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+            >
+              <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
+              返回切换类型
+            </button>
+          </div>
+
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center gap-2 rounded-full bg-primary px-3 py-1 text-[11px] font-bold text-white shadow-[0_12px_24px_-16px_rgba(49,98,255,0.48)]">
+              <span className="material-symbols-outlined text-[15px]">
+                {businessType === 'table' ? 'receipt_long' : 'table_view'}
+              </span>
+              {currentModuleGuide.label}
+            </span>
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              主配置表：{currentModuleGuide.configTable}
+            </span>
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              已填写字段：{filledMenuFieldCount}
+            </span>
+          </div>
+        </div>
+
+        {currentMenuSections.map((section) => (
+          <section key={section.title} className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_70px_-58px_rgba(15,23,42,0.4)] dark:border-slate-700 dark:bg-slate-900/96">
+            <div className="border-b border-slate-100 bg-slate-50/70 px-7 py-5 dark:border-slate-800 dark:bg-slate-800/60">
+              <h4 className="text-[18px] font-black tracking-tight text-slate-900 dark:text-white">{section.title}</h4>
+              <p className="mt-2 text-[13px] leading-6 text-slate-500 dark:text-slate-300">{section.description}</p>
+            </div>
+            <div className="grid gap-5 p-7 md:grid-cols-2">
+              {section.fields.map(renderMenuInfoField)}
+            </div>
+          </section>
+        ))}
+
+        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_70px_-58px_rgba(15,23,42,0.4)] dark:border-slate-700 dark:bg-slate-900/96">
+          <div className="border-b border-slate-100 bg-slate-50/70 px-7 py-5 dark:border-slate-800 dark:bg-slate-800/60">
+            <h4 className="text-[18px] font-black tracking-tight text-slate-900 dark:text-white">扩展能力关联</h4>
+            <p className="mt-2 text-[13px] leading-6 text-slate-500 dark:text-slate-300">
+              这部分先保留功能开关选择，后面继续映射到右键、审批流、附件和附加模块等复用表。
+            </p>
+          </div>
+          <div className="p-7">
+            <div className="flex flex-wrap gap-3 relative">
+              {commonFuncs.map((funcId) => {
+                const func = funcOptions.find((item) => item.id === funcId);
+                if (!func) return null;
+                return (
+                  <div key={func.id} className="px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-[13px] font-bold flex items-center gap-2 shadow-sm">
+                    <span className="material-symbols-outlined text-[18px]">{func.icon}</span>
+                    {func.name}
+                    <button onClick={() => toggleFunc(func.id)} className="ml-1 hover:text-rose-500 transition-colors flex items-center justify-center">
+                      <span className="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                  </div>
+                );
+              })}
+              <div className="relative">
+                <button onClick={() => setIsFuncPopoverOpen(!isFuncPopoverOpen)} className="px-4 py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-slate-500 hover:text-primary hover:border-primary/50 hover:bg-primary/5 text-[13px] font-bold flex items-center gap-2 transition-all">
+                  <span className="material-symbols-outlined text-[18px]">add</span>
+                  添加功能
+                </button>
+                <AnimatePresence>
+                  {isFuncPopoverOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setIsFuncPopoverOpen(false)}></div>
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        className="absolute top-full left-0 mt-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 p-2"
+                      >
+                        <div className="text-[12px] font-bold text-slate-400 mb-2 px-2 pt-1">选择扩展功能</div>
+                        <div className="space-y-1">
+                          {funcOptions.map((func) => {
+                            const isSelected = commonFuncs.includes(func.id);
+                            return (
+                              <button
+                                key={func.id}
+                                onClick={() => toggleFunc(func.id)}
+                                className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between text-[13px] transition-colors ${isSelected ? 'bg-primary/10 text-primary font-bold' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="material-symbols-outlined text-[18px]">{func.icon}</span>
+                                  {func.name}
+                                </div>
+                                {isSelected && <span className="material-symbols-outlined text-[16px]">check</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div className="flex flex-col gap-6">
+        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_70px_-58px_rgba(15,23,42,0.4)] dark:border-slate-700 dark:bg-slate-900/96">
+          <div className="border-b border-slate-100 bg-slate-50/70 px-6 py-5 dark:border-slate-800 dark:bg-slate-800/60">
+            <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">当前菜单信息写入表</h3>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+              <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">LEGACY TABLE</div>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <code className="rounded-xl bg-slate-900 px-3 py-2 text-[13px] font-bold text-cyan-300 dark:bg-slate-950">
+                  {currentModuleGuide.configTable}
+                </code>
+                <span className="text-[13px] font-semibold text-slate-600 dark:text-slate-300">{currentModuleGuide.configTableDesc}</span>
+              </div>
+              <p className="mt-3 text-[12px] leading-6 text-slate-500 dark:text-slate-400">
+                第二步所有表单项都按旧系统字段名映射展示，后端接数据库时直接对照这些字段即可。
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/30">
+              <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">主键摘要</div>
+              <div className="mt-3 space-y-3">
+                {currentMenuSections.slice(0, 2).flatMap((section) => section.fields.slice(0, 3)).map((field) => (
+                  <div key={`summary-${field.key}`} className="rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-3 dark:border-slate-800 dark:bg-slate-900/60">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[12px] font-bold text-slate-500 dark:text-slate-300">{field.label}</span>
+                      <code className="text-[10px] font-bold text-slate-400">{field.tableField}</code>
+                    </div>
+                    <div className="mt-2 break-all text-[13px] font-semibold text-slate-800 dark:text-slate-100">
+                      {String(currentMenuDraft[field.key] ?? '') || '未填写'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/30">
+              <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">后续关联表</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {currentModuleGuide.relatedTables.map((tableName) => (
+                  <span key={tableName} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    {tableName}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 
@@ -3514,11 +3965,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   const configSteps = [
-    { id: 1, title: '菜单信息', desc: '基础路由与权限配置' },
-    { id: 2, title: '模块介绍', desc: '功能概述与使用说明' },
-    { id: 3, title: '调研过程', desc: 'AI 深度业务需求分析' },
-    { id: 4, title: '模块设置', desc: '字段、表单与流程编排' },
-    { id: 5, title: '模块预览', desc: '实时交互效果演示' }
+    { id: 1, title: '类型选择', desc: '先确定本次创建的是单表还是单据' },
+    { id: 2, title: '菜单信息', desc: '基础路由、菜单和主配置表映射' },
+    { id: 3, title: '模块介绍', desc: '功能概述与使用说明' },
+    { id: 4, title: '调研过程', desc: 'AI 深度业务需求分析' },
+    { id: 5, title: '模块设置', desc: '字段、表单与流程编排' },
+    { id: 6, title: '模块预览', desc: '实时交互效果演示' }
   ];
 
   const subsystems = [
@@ -3550,7 +4002,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   const activeMenuName = menuData[activeSubsystem].find(m => m.id === activeMenu)?.name || '';
-  const isModuleSettingStep = isConfigOpen && configStep === 4;
+  const isModuleSettingStep = isConfigOpen && configStep === 5;
   const isConfigFullscreenActive = isModuleSettingStep && isFullscreenConfig;
   const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
   const workspaceThemeVars = getWorkspaceThemeVars(workspaceTheme);
@@ -3610,7 +4062,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   }, [parsedTreeSourceFields, treeRelationColumn]);
 
   useEffect(() => {
-    if (!isConfigOpen || configStep !== 4) {
+    if (!isConfigOpen || configStep !== 5) {
       setIsFullscreenConfig(false);
     }
   }, [configStep, isConfigOpen]);
@@ -4168,7 +4620,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         icon: businessType === 'table' ? 'dashboard' : 'table_view',
         iconClass: 'bg-cyan-500/12 text-cyan-500',
         column: mainTableConfig,
-        availableColumns: mainTableColumns,
+        availableColumns: businessType === 'table' ? [...billMetaFields, ...mainTableColumns] : mainTableColumns,
         setCols: setMainTableConfig,
         removeLabel: '',
       };
@@ -5047,6 +5499,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       const assignedFieldCount = currentDetailBoard.groups.reduce((sum: number, group: any) => sum + group.columnIds.length, 0);
       const updateGridColumns = (updater: React.SetStateAction<any[]>) => {
         if (selectedColumnContext.scope === 'main-grid') {
+          if (businessType === 'table') {
+            const metaIdSet = new Set(billMetaFields.map((field) => field.id));
+            const currentFields = [...billMetaFields, ...mainTableColumns];
+            const nextFields = typeof updater === 'function' ? updater(currentFields) : updater;
+
+            setBillMetaFields(nextFields.filter((field) => metaIdSet.has(field.id)));
+            setMainTableColumns(nextFields.filter((field) => !metaIdSet.has(field.id)));
+            return;
+          }
+
           setMainTableColumns((prev) => (typeof updater === 'function' ? updater(prev) : updater));
           return;
         }
@@ -5282,7 +5744,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className={compactInfoCardClass}>
                         <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">控件数量</div>
-                        <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{mainTableColumns.length} 个</div>
+                        <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{availableGridColumns.length} 个</div>
                       </div>
                       <div className={compactInfoCardClass}>
                         <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">来源表</div>
@@ -6921,7 +7383,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     管理{subsystems.find(s => s.id === activeSubsystem)?.name}子系统下的{activeMenuName}相关业务模块。在这里您可以进行精细化核算配置、数据模型定义以及 AI 增强逻辑的导入。
                   </p>
                 </div>
-                <button className="flex items-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-xl shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 transition-all">
+                <button onClick={openNewModuleGuide} className="flex items-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-xl shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 transition-all">
                   <span className="material-symbols-outlined text-xl">add</span>
                   <span>新增业务模块</span>
                 </button>
@@ -7029,7 +7491,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 </div>
 
                 {/* Add New Module Card (Distinct) */}
-                <button className="group relative rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 p-8 flex flex-col items-center justify-center bg-white/40 dark:bg-slate-900/40 hover:bg-primary/5 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 min-h-[320px]">
+                <button onClick={openNewModuleGuide} className="group relative rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 p-8 flex flex-col items-center justify-center bg-white/40 dark:bg-slate-900/40 hover:bg-primary/5 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 min-h-[320px]">
                   <div className="size-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-6 group-hover:bg-primary group-hover:scale-110 transition-all duration-300 shadow-inner">
                     <span className="material-symbols-outlined text-4xl text-slate-400 group-hover:text-white transition-colors">add</span>
                   </div>
@@ -7118,17 +7580,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 {configSteps.map((step) => {
                   const isActive = configStep === step.id;
                   const isCompleted = completedSteps.includes(step.id);
-                  const isLocked = (step.id === 4 || step.id === 5) && !completedSteps.includes(1);
+                  const isLocked = false;
                   
                   return (
                     <div 
                       key={step.id} 
                       onClick={() => {
-                        if (!isLocked) {
-                          setConfigStep(step.id);
-                        } else {
-                          showToast('请先保存“菜单信息”步骤后，再进入模块设置。');
-                        }
+                        setConfigStep(step.id);
                       }}
                       className={`relative z-10 flex items-start gap-3 group ${isLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                     >
@@ -7199,6 +7657,87 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
                   {/* Dynamic Content Area */}
                   {configStep === 1 && (
+                    <div className="flex flex-1 flex-col gap-8">
+                      <div className="rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_right,rgba(49,98,255,0.12),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,250,255,0.98))] p-8 shadow-[0_28px_80px_-48px_rgba(15,23,42,0.32)] dark:border-slate-700 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(15,23,42,0.98))]">
+                        <div className="max-w-3xl space-y-3">
+                          <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] font-bold tracking-[0.24em] text-primary">
+                            模块引导
+                          </div>
+                          <h3 className="text-[30px] font-black tracking-tight text-slate-900 dark:text-white">先选择本次要创建的模块类型</h3>
+                          <p className="text-[14px] leading-7 text-slate-500 dark:text-slate-300">
+                            这一步只决定底层主配置表。选中后，第二步菜单信息会自动切到对应老系统结构：单表走 <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[12px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">p_systemdlltab</code>，单据走 <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[12px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">p_systembilltype</code>。
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid flex-1 gap-6 lg:grid-cols-2">
+                        {MODULE_TYPE_OPTIONS.map((option) => {
+                          const isActive = businessType === option.value;
+                          const guide = MODULE_GUIDE_PROFILES[option.value];
+
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => handleBusinessTypeChange(option.value)}
+                              className={`group relative overflow-hidden rounded-[28px] border p-7 text-left transition-all ${
+                                isActive
+                                  ? 'border-primary/35 bg-[linear-gradient(180deg,rgba(239,246,255,0.96),rgba(255,255,255,0.98))] shadow-[0_32px_70px_-42px_rgba(49,98,255,0.42)] dark:border-primary/40 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.98),rgba(15,23,42,1))]'
+                                  : 'border-slate-200 bg-white hover:-translate-y-1 hover:border-primary/25 hover:shadow-[0_30px_60px_-46px_rgba(15,23,42,0.3)] dark:border-slate-700 dark:bg-slate-900/80'
+                              }`}
+                            >
+                              <div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-primary/8 blur-3xl transition-opacity group-hover:opacity-100" />
+                              <div className="relative z-10 flex h-full flex-col">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className={`flex size-14 items-center justify-center rounded-2xl border ${
+                                    isActive
+                                      ? 'border-primary/20 bg-primary text-white shadow-[0_18px_34px_-20px_rgba(49,98,255,0.46)]'
+                                      : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                  }`}>
+                                    <span className="material-symbols-outlined text-[26px]">{option.icon}</span>
+                                  </div>
+                                  <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-bold ${
+                                    isActive
+                                      ? 'border-primary/20 bg-primary/10 text-primary'
+                                      : 'border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                  }`}>
+                                    <span className="material-symbols-outlined text-[15px]">{isActive ? 'check_circle' : 'radio_button_unchecked'}</span>
+                                    {isActive ? '当前选择' : '点击选择'}
+                                  </div>
+                                </div>
+
+                                <div className="mt-6 space-y-3">
+                                  <div className="flex items-center gap-3">
+                                    <h4 className="text-[24px] font-black tracking-tight text-slate-900 dark:text-white">{guide.label}</h4>
+                                    <code className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                      {guide.configTable}
+                                    </code>
+                                  </div>
+                                  <p className="text-[14px] leading-7 text-slate-500 dark:text-slate-300">{guide.intro}</p>
+                                </div>
+
+                                <div className="mt-6 rounded-[22px] border border-slate-200/80 bg-white/82 p-5 dark:border-slate-700 dark:bg-slate-950/40">
+                                  <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">第二步写入主表</div>
+                                  <div className="mt-2 text-[16px] font-bold text-slate-800 dark:text-slate-100">{guide.configTableDesc}</div>
+                                  <div className="mt-4 flex flex-wrap gap-2">
+                                    {guide.keyFields.map((field) => (
+                                      <span key={`${option.value}-${field}`} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                        {field}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {configStep === 2 && renderMenuInfoStep()}
+
+                  {false && (
                     <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 flex-1">
                       {/* Left Column: Core Information */}
                       <div className="xl:col-span-2 flex flex-col gap-8">
@@ -7232,10 +7771,35 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                 </div>
                               </div>
 
-                              {/* 业务类型 (Segmented Control) */}
+                              {/* 模块类型 */}
                               <div className="space-y-2.5">
-                                <label className="text-[13px] font-bold text-slate-700 dark:text-slate-300">业务类型</label>
-                                {renderBusinessTypeSwitcher('businessTypeIndicatorStep1')}
+                                <div className="flex items-center justify-between gap-4">
+                                  <label className="text-[13px] font-bold text-slate-700 dark:text-slate-300">模块类型</label>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfigStep(1)}
+                                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-500 transition-colors hover:border-primary/30 hover:text-primary dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">swap_horiz</span>
+                                    返回切换类型
+                                  </button>
+                                </div>
+                                <div className="rounded-[20px] border border-primary/10 bg-[linear-gradient(135deg,rgba(239,246,255,0.88),rgba(255,255,255,0.96))] p-5 dark:border-primary/20 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.86),rgba(15,23,42,0.94))]">
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    <span className="inline-flex items-center gap-2 rounded-full bg-primary px-3 py-1 text-[11px] font-bold text-white shadow-[0_12px_24px_-16px_rgba(49,98,255,0.48)]">
+                                      <span className="material-symbols-outlined text-[15px]">
+                                        {businessType === 'table' ? 'receipt_long' : 'table_view'}
+                                      </span>
+                                      {currentModuleGuide.label}
+                                    </span>
+                                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                                      主配置表：{currentModuleGuide.configTable}
+                                    </span>
+                                  </div>
+                                  <p className="mt-3 text-[13px] leading-6 text-slate-500 dark:text-slate-300">
+                                    {currentModuleGuide.intro}
+                                  </p>
+                                </div>
                               </div>
 
                               {/* 常用功能 */}
@@ -7310,6 +7874,41 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
                       {/* Right Column: Visual & Routing */}
                       <div className="flex flex-col gap-6">
+                        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden">
+                          <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex items-center gap-3">
+                            <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                              <span className="material-symbols-outlined text-[18px]">schema</span>
+                            </div>
+                            <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-200">当前菜单信息写入表</h3>
+                          </div>
+
+                          <div className="p-6 space-y-4">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                              <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">LEGACY TABLE</div>
+                              <div className="mt-2 flex items-center gap-3">
+                                <code className="rounded-xl bg-slate-900 px-3 py-2 text-[13px] font-bold text-cyan-300 dark:bg-slate-950">
+                                  {currentModuleGuide.configTable}
+                                </code>
+                                <span className="text-[13px] font-semibold text-slate-600 dark:text-slate-300">{currentModuleGuide.configTableDesc}</span>
+                              </div>
+                              <p className="mt-3 text-[12px] leading-6 text-slate-500 dark:text-slate-400">
+                                第二步的菜单编码、模块名称、路由和类型信息，会优先对齐这张旧平台主配置表。
+                              </p>
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">关键字段</div>
+                              <div className="flex flex-wrap gap-2">
+                                {currentModuleGuide.keyFields.map((field) => (
+                                  <span key={`guide-field-${field}`} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                                    {field}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
                         {/* 瑙嗚涓庣姸鎬?*/}
                         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden">
                           <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex items-center gap-3">
@@ -7388,7 +7987,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     </div>
                   )}
 
-                  {configStep === 2 && (
+                  {configStep === 3 && (
                     <motion.div
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
@@ -7540,7 +8139,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     </motion.div>
                   )}
 
-                  {configStep === 4 && (
+                  {configStep === 5 && (
                     <motion.div
                       key={`layout-${businessType}`}
                       initial={{ opacity: 0, scale: 0.98 }}
@@ -7803,7 +8402,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     </motion.div>
                   )}
 
-                  {configStep === 3 && (
+                  {configStep === 4 && (
                     <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 flex-1 min-h-[650px]">
                       <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
                         <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/50 p-5 dark:border-slate-800 dark:bg-slate-800/50">
@@ -8043,7 +8642,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       </div>
                     </div>
                   )}
-                  {(configStep === 5) && (
+                  {(configStep === 6) && (
                     <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-10 flex-1 min-h-[500px] flex items-center justify-center">
                       <div className="text-center space-y-4">
                         <div className="size-20 bg-primary/5 text-primary rounded-full flex items-center justify-center mx-auto mb-6">
@@ -8095,7 +8694,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       保存本页
                     </button>
 
-                    {configStep === 4 && (
+                    {configStep === 5 && (
                       <button
                         onClick={() => setIsFullscreenConfig((prev) => !prev)}
                         className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[12px] font-semibold transition-all ${
@@ -8120,22 +8719,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         }
 
                         const nextStep = configStep + 1;
-                        const isNextLocked = (nextStep === 4 || nextStep === 5) && !newCompleted.includes(1);
 
-                        if (configStep < 5) {
-                          if (!isNextLocked) {
-                            setConfigStep(nextStep);
-                          } else {
-                            showToast('请先保存“菜单信息”步骤后，再进入模块设置。');
-                          }
+                        if (configStep < 6) {
+                          setConfigStep(nextStep);
                         } else {
                           setIsConfigOpen(false);
                         }
                       }}
                       className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2 text-[12px] font-semibold text-white shadow-[0_12px_24px_rgba(49,98,255,0.2)] transition-all hover:-translate-y-0.5 hover:bg-erp-blue"
                     >
-                      {configStep === 5 ? '完成配置' : '下一步'}
-                      {configStep !== 5 && <span className="material-symbols-outlined text-[20px]">arrow_forward</span>}
+                      {configStep === 6 ? '完成配置' : '下一步'}
+                      {configStep !== 6 && <span className="material-symbols-outlined text-[20px]">arrow_forward</span>}
                     </button>
                   </div>
                 </div>
