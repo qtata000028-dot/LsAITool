@@ -9,6 +9,11 @@ interface DashboardProps {
 
 type Subsystem = 'finance' | 'hr' | 'supply';
 type BusinessType = 'document' | 'table' | 'tree';
+type RestrictionConfigTabId =
+  | 'guard'
+  | 'number'
+  | 'structure'
+  | 'process';
 type BillSourceEntry = {
   id: string;
   configType: string;
@@ -75,6 +80,75 @@ type ModuleMenuSectionSchema = {
   title: string;
   description: string;
   fields: ModuleMenuFieldSchema[];
+};
+type RestrictionMeasureItem = {
+  id: string;
+  businessCategory: string;
+  eventType: string;
+  stepCode: string;
+  judgeRule: string;
+  syncAction: string;
+  description: string;
+  hint: string;
+  order: number;
+  enabled: boolean;
+  confirmRequired: boolean;
+  applyDate: string;
+  applyUser: string;
+};
+type RestrictionNumberRuleItem = {
+  id: string;
+  moduleCode: string;
+  sortOrder: number;
+  enabled: boolean;
+  sequencePermission: boolean;
+  segmentType: string;
+  segmentValue: string;
+  lengthLimit: number;
+  separator: string;
+  inputDate: string;
+  creator: string;
+};
+type RestrictionProcessDesignItem = {
+  id: string;
+  planValue: string;
+  businessCode: string;
+  schemeCode: string;
+  schemeName: string;
+  permissionScope: string;
+  businessType: string;
+  actionDescription: string;
+};
+type RestrictionTopStructureItem = {
+  id: string;
+  mainModuleCode: string;
+  tableName: string;
+  tableDesc: string;
+  remark: string;
+  rowId: number;
+  moduleCode: string;
+  moduleType: string;
+  moduleSchema: string;
+  fieldPrefix: string;
+  sequencePrefix: string;
+  sequenceRule: string;
+  orderLength: number;
+  relationField: string;
+};
+type RestrictionElementRow = {
+  id: string;
+  sourceId: string;
+  scope: 'base' | 'bill-head' | 'bill-meta' | 'bill-detail';
+  fieldName: string;
+  fieldKey: string;
+  controlType: string;
+  sourceTable: string;
+  required: boolean;
+  visible: boolean;
+  readonly: boolean;
+  dynamicSql: string;
+  helpText: string;
+  ownerLabel: string;
 };
 const DETAIL_BOARD_CLIPBOARD_PREFIX = '__LS_DETAIL_BOARD_COLUMNS__';
 const BUSINESS_TYPE_OPTIONS: Array<{ value: BusinessType; label: string; icon: string }> = [
@@ -293,6 +367,13 @@ const TABLE_TYPE_OPTIONS = ['普通表格', '多表头', '树表格'];
 const GRID_COLOR_RULE_OPERATOR_OPTIONS = ['等于', '包含', '大于', '小于', '大于等于', '小于等于'];
 const BILL_SOURCE_CONFIG_TYPE_OPTIONS = ['普通来源', '弹窗来源', '明细来源'];
 const BILL_SOURCE_TYPE_OPTIONS = ['SQL', '视图', '接口'];
+const RESTRICTION_BUSINESS_CATEGORY_OPTIONS = ['业务处理', '业务判断', '流程控制', '辅助校验'];
+const RESTRICTION_EVENT_TYPE_OPTIONS = ['保存时', '保存后', '提交前', '提交后', '终审时', '终审退返时'];
+const RESTRICTION_SEGMENT_TYPE_OPTIONS = ['固定字符串', '两位年', '月', '日', '顺序号', '字段值', '自定义SQL'];
+const MODULE_SETTING_STEP = 5;
+const RESTRICTION_STEP = 6;
+const MODULE_PREVIEW_STEP = 7;
+const MAX_CONFIG_STEP = MODULE_PREVIEW_STEP;
 const TABLE_COLUMN_MIN_WIDTH = 48;
 const TABLE_COLUMN_AUTO_FIT_MAX_WIDTH = 680;
 const TABLE_COLUMN_RESIZE_MAX_WIDTH = 2000;
@@ -479,7 +560,7 @@ function getBillFieldLayout(index: number, width = BILL_FORM_DEFAULT_WIDTH) {
 export default function Dashboard({ onLogout }: DashboardProps) {
   const debugParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const debugStepParam = Number(debugParams?.get('step') || 1);
-  const initialConfigStep = Number.isFinite(debugStepParam) ? Math.min(6, Math.max(1, debugStepParam)) : 1;
+  const initialConfigStep = Number.isFinite(debugStepParam) ? Math.min(MAX_CONFIG_STEP, Math.max(1, debugStepParam)) : 1;
   const initialConfigOpen = debugParams?.get('config') === '1' || debugParams?.has('step') || false;
   const initialDetailPreview = debugParams?.get('detailPreview') === '1';
   const initialBusinessType = BUSINESS_TYPE_OPTIONS.some((option) => option.value === debugParams?.get('mode'))
@@ -509,6 +590,18 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [documentMenuDraft, setDocumentMenuDraft] = useState<ModuleMenuDraft>(DOCUMENT_MENU_DEFAULTS);
   const [billtypeMenuDraft, setBilltypeMenuDraft] = useState<ModuleMenuDraft>(BILLTYPE_MENU_DEFAULTS);
   const currentModuleGuide = MODULE_GUIDE_PROFILES[businessType] ?? MODULE_GUIDE_PROFILES.document;
+  const currentModuleCode = businessType === 'table'
+    ? String(billtypeMenuDraft.typeCode || BILLTYPE_MENU_DEFAULTS.typeCode)
+    : String(documentMenuDraft.moduleCode || DOCUMENT_MENU_DEFAULTS.moduleCode);
+  const currentModuleName = businessType === 'table'
+    ? String(billtypeMenuDraft.typeName || BILLTYPE_MENU_DEFAULTS.typeName)
+    : String(documentMenuDraft.moduleName || DOCUMENT_MENU_DEFAULTS.moduleName);
+  const currentPrimaryTableName = businessType === 'table'
+    ? String(billtypeMenuDraft.masterTable || BILLTYPE_MENU_DEFAULTS.masterTable)
+    : String(documentMenuDraft.mainTableName || DOCUMENT_MENU_DEFAULTS.mainTableName);
+  const currentDetailTableName = businessType === 'table'
+    ? String(billtypeMenuDraft.detailTable || BILLTYPE_MENU_DEFAULTS.detailTable)
+    : '';
   const toggleFunc = (id: string) => setCommonFuncs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const funcOptions = [
     { id: 'import', name: '数据导入', icon: 'upload_file' },
@@ -586,6 +679,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const moduleIntroSelectionRef = useRef<Range | null>(null);
   const moduleIntroSelectedImageRef = useRef<HTMLElement | null>(null);
   const moduleIntroImageResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const moduleSettingsSectionRef = useRef<HTMLDivElement | null>(null);
   const moduleIntroTitleValueRef = useRef(MODULE_INTRO_DEFAULT_TITLE);
   const moduleIntroBodyValueRef = useRef(MODULE_INTRO_DEFAULT_HTML);
   const [moduleIntroBlockType, setModuleIntroBlockType] = useState<'paragraph' | 'h1' | 'h2' | 'h3'>('paragraph');
@@ -604,6 +698,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   // Step 4: Table Builder
   const [isFullscreenEditor, setIsFullscreenEditor] = useState(false);
   const [isFullscreenConfig, setIsFullscreenConfig] = useState(true);
+  const [restrictionActiveTab, setRestrictionActiveTab] = useState<RestrictionConfigTabId>('guard');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -1489,6 +1584,197 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       fontSize: BILL_FORM_DEFAULT_FONT_SIZE,
     },
   ]);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const buildRestrictionMeasure = (index: number, overrides: Partial<RestrictionMeasureItem> = {}): RestrictionMeasureItem => ({
+    id: `guard_rule_${Date.now()}_${index}`,
+    businessCategory: '业务处理',
+    eventType: '保存时',
+    stepCode: '0',
+    judgeRule: '',
+    syncAction: '',
+    description: `限制措施 ${index}`,
+    hint: '',
+    order: index,
+    enabled: true,
+    confirmRequired: false,
+    applyDate: todayIso,
+    applyUser: '管理员',
+    ...overrides,
+  });
+  const buildRestrictionNumberRule = (index: number, overrides: Partial<RestrictionNumberRuleItem> = {}): RestrictionNumberRuleItem => ({
+    id: `number_rule_${Date.now()}_${index}`,
+    moduleCode: currentModuleCode,
+    sortOrder: index,
+    enabled: true,
+    sequencePermission: true,
+    segmentType: '固定字符串',
+    segmentValue: '',
+    lengthLimit: 2,
+    separator: '',
+    inputDate: todayIso,
+    creator: '管理员',
+    ...overrides,
+  });
+  const buildRestrictionProcessDesign = (index: number, overrides: Partial<RestrictionProcessDesignItem> = {}): RestrictionProcessDesignItem => ({
+    id: `process_rule_${Date.now()}_${index}`,
+    planValue: `${1200 + index}`,
+    businessCode: currentModuleCode,
+    schemeCode: `Q0${index}`,
+    schemeName: `流程方案 ${index}`,
+    permissionScope: '管理员, 18仓库',
+    businessType: businessType === 'table' ? '单据' : businessType === 'tree' ? '树形单表' : '单表',
+    actionDescription: '鼠标右键设计审批流程方案',
+    ...overrides,
+  });
+  const buildRestrictionTopStructure = (index: number, overrides: Partial<RestrictionTopStructureItem> = {}): RestrictionTopStructureItem => ({
+    id: `top_structure_${Date.now()}_${index}`,
+    mainModuleCode: currentModuleCode,
+    tableName: currentPrimaryTableName,
+    tableDesc: currentModuleName,
+    remark: '',
+    rowId: 150 + index,
+    moduleCode: currentModuleCode,
+    moduleType: businessType === 'table' ? '单据' : businessType === 'tree' ? '树形单表' : '单表',
+    moduleSchema: businessType === 'table' ? '主从单据' : businessType === 'tree' ? '树表结构' : '单表结构',
+    fieldPrefix: businessType === 'table' ? 'bill_' : 'base_',
+    sequencePrefix: businessType === 'table' ? 'bd_' : 'main_',
+    sequenceRule: businessType === 'table' ? '单据内顺序' : '主表顺序',
+    orderLength: 4,
+    relationField: businessType === 'table' ? 'bill_id' : 'id',
+    ...overrides,
+  });
+  const [restrictionMeasures, setRestrictionMeasures] = useState<RestrictionMeasureItem[]>(() => ([
+    buildRestrictionMeasure(1, {
+      judgeRule: 'exists(select 1 from wms_billjoinslist where billid = @billid)',
+      syncAction: 'update Wms_BillJoinSlListTab',
+      description: '红单处理',
+      hint: '红单时按旧系统逻辑同步处理',
+      confirmRequired: true,
+    }),
+    buildRestrictionMeasure(2, {
+      judgeRule: 'exists(select 1 from wms_billjoinsmaintab where qty <= 0)',
+      description: '入库数量不能为 0',
+      hint: '入库数量不能为空或小于 0',
+      order: 1,
+    }),
+    buildRestrictionMeasure(3, {
+      businessCategory: '业务判断',
+      judgeRule: "set @msg = select @msg + '批料编码' + v.billcode from wms_productbarcode v",
+      syncAction: 'update wms_productbarcode',
+      description: '管理条码缓存',
+      hint: '管家码必须录入管家信息',
+      order: 2,
+    }),
+  ]));
+  const [restrictionNumberRules, setRestrictionNumberRules] = useState<RestrictionNumberRuleItem[]>(() => ([
+    buildRestrictionNumberRule(1, { segmentType: '固定字符串', segmentValue: 'RK', lengthLimit: 2 }),
+    buildRestrictionNumberRule(2, { segmentType: '两位年', segmentValue: 'getdate()', lengthLimit: 2 }),
+    buildRestrictionNumberRule(3, { segmentType: '月', segmentValue: 'getdate()', lengthLimit: 2 }),
+    buildRestrictionNumberRule(4, { segmentType: '日', segmentValue: 'getdate()', lengthLimit: 2 }),
+    buildRestrictionNumberRule(5, { segmentType: '顺序号', segmentValue: '0001', lengthLimit: 4 }),
+  ]));
+  const [restrictionProcessDesigns, setRestrictionProcessDesigns] = useState<RestrictionProcessDesignItem[]>(() => ([
+    buildRestrictionProcessDesign(1, {
+      planValue: '1296',
+      businessCode: currentModuleCode,
+      schemeCode: '0065',
+      schemeName: '正常流转',
+    }),
+  ]));
+  const [restrictionTopStructures, setRestrictionTopStructures] = useState<RestrictionTopStructureItem[]>(() => ([
+    buildRestrictionTopStructure(1, {
+      tableDesc: businessType === 'table' ? '单据主表结构' : '基础主表结构',
+      remark: '用于限制措施、规则和流程方案与当前模块做关联。',
+    }),
+  ]));
+  const [restrictionSelection, setRestrictionSelection] = useState<Record<RestrictionConfigTabId, string | null>>({
+    guard: null,
+    number: null,
+    structure: null,
+    process: null,
+  });
+  const baseRestrictionElements = useMemo<RestrictionElementRow[]>(() => {
+    if (businessType === 'table') return [];
+    return mainTableColumns.map((column) => {
+      const normalizedColumn = normalizeColumn(column);
+      return {
+        id: `base-${normalizedColumn.id}`,
+        sourceId: String(normalizedColumn.id),
+        scope: 'base',
+        fieldName: normalizedColumn.name || '未命名字段',
+        fieldKey: normalizedColumn.sourceField || String(normalizedColumn.id),
+        controlType: normalizedColumn.type || '文本',
+        sourceTable: currentPrimaryTableName,
+        required: Boolean(normalizedColumn.required),
+        visible: normalizedColumn.visible !== false,
+        readonly: Boolean(normalizedColumn.readonly),
+        dynamicSql: normalizedColumn.dynamicSql || '',
+        helpText: normalizedColumn.helpText || '',
+        ownerLabel: '基础表单',
+      };
+    });
+  }, [businessType, currentPrimaryTableName, mainTableColumns]);
+  const billHeadRestrictionElements = useMemo<RestrictionElementRow[]>(() => {
+    if (businessType !== 'table') return [];
+    const mainFields = mainTableColumns.map((column) => {
+      const normalizedColumn = normalizeColumn(column);
+      return {
+        id: `bill-head-${normalizedColumn.id}`,
+        sourceId: String(normalizedColumn.id),
+        scope: 'bill-head' as const,
+        fieldName: normalizedColumn.name || '未命名字段',
+        fieldKey: normalizedColumn.sourceField || String(normalizedColumn.id),
+        controlType: normalizedColumn.type || '文本',
+        sourceTable: currentPrimaryTableName,
+        required: Boolean(normalizedColumn.required),
+        visible: normalizedColumn.visible !== false,
+        readonly: Boolean(normalizedColumn.readonly),
+        dynamicSql: normalizedColumn.dynamicSql || '',
+        helpText: normalizedColumn.helpText || '',
+        ownerLabel: '抬头字段',
+      };
+    });
+    const metaFields = billMetaFields.map((column) => {
+      const normalizedColumn = normalizeColumn(column);
+      return {
+        id: `bill-meta-${normalizedColumn.id}`,
+        sourceId: String(normalizedColumn.id),
+        scope: 'bill-meta' as const,
+        fieldName: normalizedColumn.name || '未命名字段',
+        fieldKey: normalizedColumn.sourceField || String(normalizedColumn.id),
+        controlType: normalizedColumn.type || '文本',
+        sourceTable: currentPrimaryTableName,
+        required: Boolean(normalizedColumn.required),
+        visible: normalizedColumn.visible !== false,
+        readonly: normalizedColumn.readonly !== false,
+        dynamicSql: normalizedColumn.dynamicSql || '',
+        helpText: normalizedColumn.helpText || '',
+        ownerLabel: '系统字段',
+      };
+    });
+    return [...mainFields, ...metaFields];
+  }, [billMetaFields, businessType, currentPrimaryTableName, mainTableColumns]);
+  const billDetailRestrictionElements = useMemo<RestrictionElementRow[]>(() => {
+    if (businessType !== 'table') return [];
+    return billDetailColumns.map((column) => {
+      const normalizedColumn = normalizeColumn(column);
+      return {
+        id: `bill-detail-${normalizedColumn.id}`,
+        sourceId: String(normalizedColumn.id),
+        scope: 'bill-detail',
+        fieldName: normalizedColumn.name || '未命名字段',
+        fieldKey: normalizedColumn.sourceField || String(normalizedColumn.id),
+        controlType: normalizedColumn.type || '文本',
+        sourceTable: currentDetailTableName,
+        required: Boolean(normalizedColumn.required),
+        visible: normalizedColumn.visible !== false,
+        readonly: Boolean(normalizedColumn.readonly),
+        dynamicSql: normalizedColumn.dynamicSql || '',
+        helpText: normalizedColumn.helpText || '',
+        ownerLabel: '单据明细',
+      };
+    });
+  }, [billDetailColumns, businessType, currentDetailTableName]);
   const [documentLeftPaneWidth, setDocumentLeftPaneWidth] = useState(328);
   const [documentDetailPaneWidth, setDocumentDetailPaneWidth] = useState(332);
   const [documentTopPaneHeight, setDocumentTopPaneHeight] = useState(414);
@@ -1826,12 +2112,68 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   useEffect(() => {
+    const nextModuleType = businessType === 'table' ? '单据' : businessType === 'tree' ? '树形单表' : '单表';
+    setRestrictionTopStructures((prev) => {
+      const first = prev[0];
+      if (!first) return prev;
+      if (
+        first.mainModuleCode === currentModuleCode
+        && first.moduleCode === currentModuleCode
+        && first.tableName === currentPrimaryTableName
+        && first.tableDesc === currentModuleName
+        && first.moduleType === nextModuleType
+      ) {
+        return prev;
+      }
+      return prev.map((item, index) => (
+        index === 0
+          ? {
+              ...item,
+              mainModuleCode: currentModuleCode,
+              moduleCode: currentModuleCode,
+              tableName: currentPrimaryTableName,
+              tableDesc: currentModuleName,
+              moduleType: nextModuleType,
+            }
+          : item
+      ));
+    });
+  }, [businessType, currentModuleCode, currentModuleName, currentPrimaryTableName]);
+
+  useEffect(() => {
+    const rowsByTab: Record<RestrictionConfigTabId, Array<{ id: string }>> = {
+      guard: restrictionMeasures,
+      number: restrictionNumberRules,
+      structure: restrictionTopStructures,
+      process: restrictionProcessDesigns,
+    };
+
+    setRestrictionSelection((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      (Object.keys(rowsByTab) as RestrictionConfigTabId[]).forEach((tabId) => {
+        const rows = rowsByTab[tabId];
+        if (!rows.some((row) => row.id === next[tabId])) {
+          next[tabId] = rows[0]?.id ?? null;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [
+    restrictionMeasures,
+    restrictionNumberRules,
+    restrictionProcessDesigns,
+    restrictionTopStructures,
+  ]);
+
+  useEffect(() => {
     billCanvasFieldsRef.current = [...mainTableColumns, ...billMetaFields];
   }, [mainTableColumns, billMetaFields]);
 
   useEffect(() => {
     if (businessType !== 'table') return;
-    const fullscreenActive = isConfigOpen && configStep === 5 && isFullscreenConfig;
+    const fullscreenActive = isConfigOpen && configStep === MODULE_SETTING_STEP && isFullscreenConfig;
 
     const viewport = billDocumentViewportRef.current;
     const paper = billDocumentPaperRef.current;
@@ -1862,7 +2204,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   }, [businessType, billDetailColumns.length, billMetaFields.length, isConfigOpen, configStep, isFullscreenConfig, mainTableColumns.length]);
 
   useEffect(() => {
-    const fullscreenActive = isConfigOpen && configStep === 5 && isFullscreenConfig;
+    const fullscreenActive = isConfigOpen && configStep === MODULE_SETTING_STEP && isFullscreenConfig;
     if (businessType !== 'table' || fullscreenActive || billHeaderAutoFillRef.current) return;
     if (mainTableColumns.length === 0) return;
 
@@ -4353,8 +4695,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     { id: 2, title: '菜单信息', desc: '基础路由、菜单和主配置表映射' },
     { id: 3, title: '模块介绍', desc: '功能概述与使用说明' },
     { id: 4, title: '调研过程', desc: 'AI 深度业务需求分析' },
-    { id: 5, title: '模块设置', desc: '字段、表单与流程编排' },
-    { id: 6, title: '模块预览', desc: '实时交互效果演示' }
+    { id: MODULE_SETTING_STEP, title: '模块设置', desc: '字段、表单与流程编排' },
+    { id: RESTRICTION_STEP, title: '限制措施', desc: '规则、流程与限制配置' },
+    { id: MODULE_PREVIEW_STEP, title: '模块预览', desc: '实时交互效果演示' }
   ];
 
   const subsystems = [
@@ -4386,7 +4729,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   const activeMenuName = menuData[activeSubsystem].find(m => m.id === activeMenu)?.name || '';
-  const isModuleSettingStep = isConfigOpen && configStep === 5;
+  const isModuleSettingStep = isConfigOpen && (configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP);
   const isConfigFullscreenActive = isModuleSettingStep && isFullscreenConfig;
   const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
   const workspaceThemeVars = getWorkspaceThemeVars(workspaceTheme);
@@ -4475,7 +4818,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       return;
     }
 
-    if (configStep === 5 && !moduleSettingFullscreenInitRef.current) {
+    if ((configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP) && !moduleSettingFullscreenInitRef.current) {
       moduleSettingFullscreenInitRef.current = true;
       setIsFullscreenConfig(true);
     }
@@ -8711,6 +9054,870 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     );
   };
 
+  const setRestrictionSelectedId = (tabId: RestrictionConfigTabId, rowId: string | null) => {
+    setRestrictionSelection((prev) => ({ ...prev, [tabId]: rowId }));
+  };
+  const restrictionRowsByTab: Record<RestrictionConfigTabId, any[]> = {
+    guard: restrictionMeasures,
+    number: restrictionNumberRules,
+    structure: restrictionTopStructures,
+    process: restrictionProcessDesigns,
+  };
+  const restrictionTabMeta = [
+    { id: 'guard' as RestrictionConfigTabId, label: '管控限制措施', icon: 'rule_settings', count: restrictionMeasures.length, accent: 'text-rose-500' },
+    { id: 'number' as RestrictionConfigTabId, label: '编号规则管理', icon: 'tag', count: restrictionNumberRules.length, accent: 'text-cyan-500' },
+    { id: 'structure' as RestrictionConfigTabId, label: '顶层数据结构', icon: 'schema', count: restrictionTopStructures.length, accent: 'text-emerald-500' },
+    { id: 'process' as RestrictionConfigTabId, label: '流程设计管理', icon: 'account_tree', count: restrictionProcessDesigns.length, accent: 'text-amber-500' },
+  ];
+  const restrictionWorkbenchTotalCount = restrictionTabMeta.reduce((total, item) => total + item.count, 0);
+  const activeRestrictionRows = restrictionRowsByTab[restrictionActiveTab] ?? [];
+  const activeRestrictionSelectedId = restrictionSelection[restrictionActiveTab];
+  const activeRestrictionRow = activeRestrictionRows.find((row) => row.id === activeRestrictionSelectedId) ?? activeRestrictionRows[0] ?? null;
+  const selectedGuardRule = restrictionMeasures.find((item) => item.id === restrictionSelection.guard) ?? restrictionMeasures[0] ?? null;
+  const selectedNumberRule = restrictionNumberRules.find((item) => item.id === restrictionSelection.number) ?? restrictionNumberRules[0] ?? null;
+  const selectedTopStructure = restrictionTopStructures.find((item) => item.id === restrictionSelection.structure) ?? restrictionTopStructures[0] ?? null;
+  const selectedProcessDesign = restrictionProcessDesigns.find((item) => item.id === restrictionSelection.process) ?? restrictionProcessDesigns[0] ?? null;
+  useEffect(() => {
+    if (!restrictionTabMeta.some((item) => item.id === restrictionActiveTab)) {
+      setRestrictionActiveTab('guard');
+    }
+  }, [restrictionActiveTab, restrictionTabMeta]);
+  const restrictionPanelClass = 'flex min-h-0 flex-col overflow-hidden rounded-[26px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(247,250,254,0.97))] shadow-[0_24px_52px_-44px_rgba(15,23,42,0.26)] dark:border-slate-700 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]';
+  const restrictionSectionClass = 'rounded-[24px] border border-slate-200/80 bg-white/90 p-4 shadow-[0_20px_44px_-38px_rgba(15,23,42,0.28)] dark:border-slate-700 dark:bg-slate-900/70';
+  const restrictionCardClass = 'flex h-full flex-col rounded-[22px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(249,251,255,0.96))] p-4 shadow-[0_18px_34px_-32px_rgba(15,23,42,0.18)] dark:border-slate-700 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.9))]';
+  const restrictionHeroClass = 'overflow-hidden rounded-[22px] border border-[color:var(--workspace-accent-border)] bg-[linear-gradient(135deg,rgba(247,250,255,0.98),rgba(255,255,255,0.95))] px-4 py-4 shadow-[0_22px_44px_-38px_var(--workspace-accent-shadow)] dark:border-[color:var(--workspace-accent-border)] dark:bg-[linear-gradient(135deg,rgba(15,23,42,0.92),rgba(30,41,59,0.88))]';
+  const restrictionFieldClass = 'h-11 w-full rounded-[15px] border border-slate-200/80 bg-white/95 px-3.5 text-[13px] text-slate-700 outline-none transition focus:border-[color:var(--workspace-accent-border-strong)] focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100';
+  const restrictionTextareaClass = 'w-full rounded-[16px] border border-slate-200/80 bg-white/95 px-3.5 py-3 text-[13px] leading-6 text-slate-700 outline-none transition focus:border-[color:var(--workspace-accent-border-strong)] focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-100';
+  const restrictionDetailGridClass = 'grid gap-4 xl:grid-cols-12';
+  const restrictionHeroTitleInputClass = 'mt-3 h-11 w-full rounded-[16px] border border-white/85 bg-white/94 px-4 text-[17px] font-black tracking-[-0.03em] text-slate-900 outline-none transition focus:border-[color:var(--workspace-accent-border-strong)] focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/82 dark:text-white';
+  const restrictionHeroMetricGridClass = 'grid min-w-[280px] gap-3 sm:grid-cols-2 xl:w-[360px]';
+  const restrictionLabelClass = 'mb-2 block text-[11px] font-bold tracking-[0.08em] text-slate-400';
+  const restrictionBadge = (enabled: boolean, activeLabel: string, inactiveLabel: string) => (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold ${enabled ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-200' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'}`}>
+      {enabled ? activeLabel : inactiveLabel}
+    </span>
+  );
+  const restrictionTextPreview = (value: any) => {
+    const text = String(value ?? '').trim();
+    if (!text) return <span className="text-slate-300 dark:text-slate-600">-</span>;
+    return <span className="block truncate">{text}</span>;
+  };
+  const restrictionMetaChip = (icon: string, value: string) => (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100/90 px-2.5 py-1 text-[10px] font-semibold text-slate-500 dark:bg-slate-800/86 dark:text-slate-300">
+      <span className="material-symbols-outlined text-[12px]">{icon}</span>
+      <span className="truncate">{value || '-'}</span>
+    </span>
+  );
+  const restrictionMetric = (label: string, value: string, tone: 'default' | 'accent' | 'success' = 'default') => {
+    const toneClass = tone === 'accent'
+      ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]'
+      : tone === 'success'
+        ? 'border-emerald-100 bg-emerald-50 text-emerald-600 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+        : 'border-slate-200/80 bg-white/90 text-slate-600 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200';
+    return (
+      <div className={`rounded-[16px] border px-3 py-2.5 ${toneClass}`}>
+        <div className="text-[10px] font-bold tracking-[0.08em] opacity-70">{label}</div>
+        <div className="mt-1 truncate text-[13px] font-black tracking-[-0.02em]">{value || '-'}</div>
+      </div>
+    );
+  };
+  const restrictionSectionHeader = (title: string, hint?: string, action?: React.ReactNode) => (
+    <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-[14px] font-black tracking-[-0.02em] text-slate-800 dark:text-slate-100">{title}</div>
+        {hint ? <div className="mt-1 text-[11px] text-slate-400">{hint}</div> : null}
+      </div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+  const restrictionToggleTile = (
+    label: string,
+    hint: string,
+    checked: boolean,
+    onChange: (checked: boolean) => void,
+  ) => (
+    <label className={`flex h-full cursor-pointer items-center gap-3 rounded-[18px] border px-4 py-3.5 transition-all ${
+      checked
+        ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)] shadow-[0_18px_30px_-28px_var(--workspace-accent-shadow)]'
+        : 'border-slate-200/80 bg-white/92 text-slate-600 hover:border-[color:var(--workspace-accent-border)] dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200'
+    }`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-4 rounded accent-[color:var(--workspace-accent)]"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-bold">{label}</div>
+        <div className={`mt-1 text-[11px] ${checked ? 'text-[color:var(--workspace-accent-strong)]/80' : 'text-slate-400'}`}>{hint}</div>
+      </div>
+    </label>
+  );
+  const restrictionLongTextButton = (
+    title: string,
+    draft: string,
+    placeholder: string,
+    onSave: (value: string) => void,
+  ) => (
+    <button
+      type="button"
+      onClick={() => setLongTextEditorState({ title, draft, placeholder, onSave })}
+      className="inline-flex h-7 items-center rounded-full border border-slate-200/80 bg-white px-2.5 text-[10px] font-bold text-slate-500 transition-colors hover:border-[color:var(--workspace-accent-border-strong)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+    >
+      详情编辑
+    </button>
+  );
+  const getRestrictionCardTitle = (row: any) => {
+    if (!row) return '未命名配置';
+    if (restrictionActiveTab === 'guard') return row.description || '限制措施';
+    if (restrictionActiveTab === 'number') return row.segmentValue || row.segmentType || '编号规则';
+    if (restrictionActiveTab === 'structure') return row.tableDesc || row.tableName || '顶层结构';
+    if (restrictionActiveTab === 'process') return row.schemeName || row.schemeCode || '流程方案';
+    return row.fieldName || row.fieldKey || '字段元素';
+  };
+  const getRestrictionCardSubtitle = (row: any) => {
+    if (!row) return '';
+    if (restrictionActiveTab === 'guard') return `${row.businessCategory || '未分类'} · ${row.eventType || '未设置事件'}`;
+    if (restrictionActiveTab === 'number') return `${row.segmentType || '组成元素'} · 顺序 ${row.sortOrder ?? 0}`;
+    if (restrictionActiveTab === 'structure') return row.tableName || row.mainModuleCode || '未设置表名';
+    if (restrictionActiveTab === 'process') return `${row.schemeCode || '未编号'} · ${row.businessType || '未分类'}`;
+    return row.fieldKey || row.ownerLabel || '未绑定字段';
+  };
+  const getRestrictionCardSummary = (row: any) => {
+    if (!row) return '暂无说明';
+    if (restrictionActiveTab === 'guard') return row.hint || row.judgeRule || '暂无规则说明';
+    if (restrictionActiveTab === 'number') return row.segmentValue || `长度限制 ${row.lengthLimit ?? 0}`;
+    if (restrictionActiveTab === 'structure') return row.remark || `${row.fieldPrefix || '-'} / ${row.sequenceRule || '-'}`;
+    if (restrictionActiveTab === 'process') return row.actionDescription || row.permissionScope || '暂无流程说明';
+    return row.helpText || row.sourceTable || '暂无字段说明';
+  };
+  const getRestrictionCardPills = (row: any) => {
+    if (!row) return [] as string[];
+    if (restrictionActiveTab === 'guard') {
+      return [
+        row.stepCode ? `步骤 ${row.stepCode}` : '步骤 -',
+        `${row.enabled ? '启用' : '停用'}${row.confirmRequired ? ' · 需确认' : ''}`,
+      ];
+    }
+    if (restrictionActiveTab === 'number') {
+      return [
+        `长度 ${row.lengthLimit ?? 0}`,
+        `${row.sequencePermission ? '受限' : '开放'} · ${row.enabled ? '启用' : '停用'}`,
+      ];
+    }
+    if (restrictionActiveTab === 'structure') {
+      return [
+        row.moduleSchema || '未设结构',
+        row.fieldPrefix ? `前缀 ${row.fieldPrefix}` : '未设前缀',
+      ];
+    }
+    if (restrictionActiveTab === 'process') {
+      return [
+        row.planValue ? `方案 ${row.planValue}` : '未设方案',
+        row.businessCode || '未设业务号',
+      ];
+    }
+    return [
+      row.controlType || '未设控件',
+      row.required ? '必填' : '可选',
+      row.readonly ? '只读' : row.visible === false ? '隐藏' : '显示',
+    ];
+  };
+  const getRestrictionCardReadonlyMeta = (row: any) => {
+    if (!row) return [] as Array<{ icon: string; value: string }>;
+    if (restrictionActiveTab === 'guard') {
+      return [
+        { icon: 'calendar_month', value: row.applyDate || '-' },
+        { icon: 'person', value: row.applyUser || '-' },
+      ];
+    }
+    if (restrictionActiveTab === 'number') {
+      return [
+        { icon: 'calendar_month', value: row.inputDate || '-' },
+        { icon: 'badge', value: row.creator || '-' },
+      ];
+    }
+    return [] as Array<{ icon: string; value: string }>;
+  };
+  const renderRestrictionMasterList = () => {
+    const activeTabIcon = restrictionTabMeta.find((item) => item.id === restrictionActiveTab)?.icon ?? 'rule_settings';
+    const emptyLabel = '当前页签还没有配置内容';
+
+    if (activeRestrictionRows.length === 0) {
+      return (
+        <div className="flex h-full items-center justify-center rounded-[24px] border border-dashed border-slate-200/80 bg-white/65 px-5 text-center text-[12px] text-slate-400 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-500">
+          {emptyLabel}
+        </div>
+      );
+    }
+
+    return (
+      <div className="scrollbar-none min-h-0 flex-1 overflow-auto pr-1">
+        <div className="grid gap-2.5 content-start">
+          {activeRestrictionRows.map((row, index) => {
+            const selected = row.id === activeRestrictionRow?.id;
+            const title = getRestrictionCardTitle(row);
+            const subtitle = getRestrictionCardSubtitle(row);
+            const summary = getRestrictionCardSummary(row);
+            const pills = getRestrictionCardPills(row);
+            const readonlyMeta = getRestrictionCardReadonlyMeta(row);
+
+            return (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() => setRestrictionSelectedId(restrictionActiveTab, row.id)}
+                className={`group overflow-hidden rounded-[24px] border px-4 py-4 text-left transition-all ${
+                  selected
+                    ? 'border-[color:var(--workspace-accent-border-strong)] bg-[linear-gradient(180deg,rgba(245,249,255,0.98),rgba(241,246,255,0.95))] shadow-[0_18px_36px_-32px_var(--workspace-accent-shadow)] dark:border-[color:var(--workspace-accent-border)] dark:bg-slate-900/90'
+                    : 'border-slate-200/80 bg-white/92 hover:-translate-y-0.5 hover:border-[color:var(--workspace-accent-border)] hover:shadow-[0_16px_30px_-26px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900/72'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className={`flex size-11 shrink-0 items-center justify-center rounded-[16px] ${
+                      selected
+                        ? 'bg-[color:var(--workspace-accent)] text-white'
+                        : 'bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]'
+                    }`}>
+                      <span className="material-symbols-outlined text-[18px]">{activeTabIcon}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-[14px] font-black tracking-[-0.02em] text-slate-800 dark:text-slate-100">{title}</div>
+                      <div className="mt-1 truncate text-[11px] font-semibold text-slate-400">{subtitle}</div>
+                    </div>
+                  </div>
+                  <div className={`inline-flex min-w-[28px] items-center justify-center rounded-full px-2 py-1 text-[10px] font-black ${
+                    selected
+                      ? 'bg-white text-[color:var(--workspace-accent-strong)] dark:bg-slate-800'
+                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'
+                  }`}>
+                    {index + 1}
+                  </div>
+                </div>
+                <div className="mt-2.5 flex flex-wrap gap-2">
+                  {pills.map((pill) => (
+                    <span
+                      key={`${row.id}-${pill}`}
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                        selected
+                          ? 'bg-white/88 text-[color:var(--workspace-accent-strong)] dark:bg-slate-800 dark:text-slate-100'
+                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'
+                      }`}
+                    >
+                      {pill}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-2.5 line-clamp-2 text-[11px] leading-5 text-slate-500 dark:text-slate-300">
+                  {summary}
+                </div>
+                {readonlyMeta.length > 0 && (
+                  <div className="mt-2.5 flex flex-wrap gap-2 border-t border-slate-200/70 pt-2.5 dark:border-slate-700">
+                    {readonlyMeta.map((item) => (
+                      <React.Fragment key={`${row.id}-${item.icon}-${item.value}`}>
+                        {restrictionMetaChip(item.icon, item.value)}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+  const focusRestrictionElementInModel = (element: RestrictionElementRow | null) => {
+    if (!element) return;
+    setConfigStep(MODULE_SETTING_STEP);
+    window.setTimeout(() => {
+      moduleSettingsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+    if (element.scope === 'bill-detail') {
+      setSelectedArchiveNodeId(`detail-${activeTab}`);
+      activateColumnSelection('detail', element.sourceId);
+    } else {
+      setSelectedArchiveNodeId('archive-main');
+      activateColumnSelection('main', element.sourceId);
+    }
+    showToast(`已定位到 ${element.fieldName}`);
+  };
+  const handleAddRestrictionItem = () => {
+    if (restrictionActiveTab === 'guard') {
+      const next = buildRestrictionMeasure(restrictionMeasures.length + 1, { order: restrictionMeasures.length });
+      setRestrictionMeasures((prev) => [...prev, next]);
+      setRestrictionSelectedId('guard', next.id);
+      return;
+    }
+    if (restrictionActiveTab === 'number') {
+      const next = buildRestrictionNumberRule(restrictionNumberRules.length + 1);
+      setRestrictionNumberRules((prev) => [...prev, next]);
+      setRestrictionSelectedId('number', next.id);
+      return;
+    }
+    if (restrictionActiveTab === 'structure') {
+      const next = buildRestrictionTopStructure(restrictionTopStructures.length + 1, { rowId: 150 + restrictionTopStructures.length + 1 });
+      setRestrictionTopStructures((prev) => [...prev, next]);
+      setRestrictionSelectedId('structure', next.id);
+      return;
+    }
+    if (restrictionActiveTab === 'process') {
+      const next = buildRestrictionProcessDesign(restrictionProcessDesigns.length + 1);
+      setRestrictionProcessDesigns((prev) => [...prev, next]);
+      setRestrictionSelectedId('process', next.id);
+      return;
+    }
+    showToast('当前页签暂不支持新增。');
+  };
+  const handleDuplicateRestrictionItem = () => {
+    if (restrictionActiveTab === 'guard' && selectedGuardRule) {
+      const { id, ...rest } = selectedGuardRule;
+      const next = buildRestrictionMeasure(restrictionMeasures.length + 1, {
+        ...rest,
+        description: `${selectedGuardRule.description || '限制措施'} 副本`,
+        order: restrictionMeasures.length,
+      });
+      setRestrictionMeasures((prev) => [...prev, next]);
+      setRestrictionSelectedId('guard', next.id);
+      return;
+    }
+    if (restrictionActiveTab === 'number' && selectedNumberRule) {
+      const { id, ...rest } = selectedNumberRule;
+      const next = buildRestrictionNumberRule(restrictionNumberRules.length + 1, {
+        ...rest,
+        sortOrder: restrictionNumberRules.length + 1,
+      });
+      setRestrictionNumberRules((prev) => [...prev, next]);
+      setRestrictionSelectedId('number', next.id);
+      return;
+    }
+    if (restrictionActiveTab === 'structure' && selectedTopStructure) {
+      const { id, ...rest } = selectedTopStructure;
+      const next = buildRestrictionTopStructure(restrictionTopStructures.length + 1, {
+        ...rest,
+        tableDesc: `${selectedTopStructure.tableDesc || '结构'} 副本`,
+        rowId: selectedTopStructure.rowId + 1,
+      });
+      setRestrictionTopStructures((prev) => [...prev, next]);
+      setRestrictionSelectedId('structure', next.id);
+      return;
+    }
+    if (restrictionActiveTab === 'process' && selectedProcessDesign) {
+      const { id, ...rest } = selectedProcessDesign;
+      const next = buildRestrictionProcessDesign(restrictionProcessDesigns.length + 1, {
+        ...rest,
+        schemeName: `${selectedProcessDesign.schemeName || '流程方案'} 副本`,
+      });
+      setRestrictionProcessDesigns((prev) => [...prev, next]);
+      setRestrictionSelectedId('process', next.id);
+      return;
+    }
+    showToast('当前页签没有可复制的数据。');
+  };
+  const handleDeleteRestrictionItem = () => {
+    if (restrictionActiveTab === 'guard' && selectedGuardRule) {
+      setRestrictionMeasures((prev) => prev.filter((item) => item.id !== selectedGuardRule.id));
+      return;
+    }
+    if (restrictionActiveTab === 'number' && selectedNumberRule) {
+      setRestrictionNumberRules((prev) => prev.filter((item) => item.id !== selectedNumberRule.id));
+      return;
+    }
+    if (restrictionActiveTab === 'structure' && selectedTopStructure) {
+      setRestrictionTopStructures((prev) => prev.filter((item) => item.id !== selectedTopStructure.id));
+      return;
+    }
+    if (restrictionActiveTab === 'process' && selectedProcessDesign) {
+      setRestrictionProcessDesigns((prev) => prev.filter((item) => item.id !== selectedProcessDesign.id));
+      return;
+    }
+    showToast('当前页签没有可删除的数据。');
+  };
+  const handleSaveRestrictionTab = () => {
+    const activeTabLabel = restrictionTabMeta.find((item) => item.id === restrictionActiveTab)?.label || '限制措施';
+    showToast(`${activeTabLabel} 已暂存`);
+  };
+  const renderRestrictionMeasureDetail = () => {
+    if (!selectedGuardRule) {
+      return (
+        <div className="flex h-full items-center justify-center rounded-[24px] border border-dashed border-slate-200/80 text-[12px] text-slate-400 dark:border-slate-700">
+          先在上面选一条限制措施
+        </div>
+      );
+    }
+    const updateSelectedRule = (patch: Partial<RestrictionMeasureItem>) => {
+      setRestrictionMeasures((prev) => prev.map((item) => (item.id === selectedGuardRule.id ? { ...item, ...patch } : item)));
+    };
+    return (
+      <div className={restrictionDetailGridClass}>
+        <section className={`${restrictionHeroClass} xl:col-span-12`}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex h-8 items-center rounded-full bg-[color:var(--workspace-accent)] px-3 text-[11px] font-black text-white shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)]">
+                  管控限制措施
+                </span>
+                {restrictionBadge(selectedGuardRule.enabled, '启用中', '已停用')}
+                {selectedGuardRule.confirmRequired && restrictionBadge(true, '要求确认', '无确认')}
+              </div>
+              <input
+                type="text"
+                value={selectedGuardRule.description}
+                onChange={(event) => updateSelectedRule({ description: event.target.value })}
+                placeholder="输入限制措施名称"
+                className={restrictionHeroTitleInputClass}
+              />
+            </div>
+            <div className={restrictionHeroMetricGridClass}>
+              {restrictionMetric('业务类型', selectedGuardRule.businessCategory || '未设置', 'accent')}
+              {restrictionMetric('事件类型', selectedGuardRule.eventType || '未设置')}
+              {restrictionMetric('步骤代码', selectedGuardRule.stepCode || '-', 'default')}
+              {restrictionMetric('管理顺序', String(selectedGuardRule.order ?? 0), 'success')}
+            </div>
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-7`}>
+          {restrictionSectionHeader('规则身份', '锁定触发位置和执行顺序')}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={restrictionLabelClass}>业务类型</label>
+              <select value={selectedGuardRule.businessCategory} onChange={(event) => updateSelectedRule({ businessCategory: event.target.value })} className={restrictionFieldClass}>
+                {RESTRICTION_BUSINESS_CATEGORY_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>事件类型</label>
+              <select value={selectedGuardRule.eventType} onChange={(event) => updateSelectedRule({ eventType: event.target.value })} className={restrictionFieldClass}>
+                {RESTRICTION_EVENT_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>步骤代码</label>
+              <input type="text" value={selectedGuardRule.stepCode} onChange={(event) => updateSelectedRule({ stepCode: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>管理顺序</label>
+              <input type="number" value={selectedGuardRule.order} onChange={(event) => updateSelectedRule({ order: Number(event.target.value) || 0 })} className={restrictionFieldClass} />
+            </div>
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-5`}>
+          {restrictionSectionHeader('生效与确认', '只保留执行相关开关')}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {restrictionToggleTile('启用此限制', '参与执行', selectedGuardRule.enabled, (checked) => updateSelectedRule({ enabled: checked }))}
+            {restrictionToggleTile('触发时要求确认', '二次确认', selectedGuardRule.confirmRequired, (checked) => updateSelectedRule({ confirmRequired: checked }))}
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-12`}>
+          {restrictionSectionHeader('提示信息')}
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(240px,0.62fr)]">
+            <div>
+              <label className={restrictionLabelClass}>提示信息</label>
+              <textarea rows={3} value={selectedGuardRule.hint} onChange={(event) => updateSelectedRule({ hint: event.target.value })} className={`${restrictionTextareaClass} h-[112px] resize-none`} />
+            </div>
+            <div className="rounded-[18px] bg-slate-50/90 px-4 py-4 text-[12px] leading-6 text-slate-500 dark:bg-slate-900/55 dark:text-slate-300">
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前摘要</div>
+              <div className="mt-2 line-clamp-4 text-[13px] leading-6 text-slate-600 dark:text-slate-200">
+                {selectedGuardRule.hint || '用于保存、提交或终审前向操作者展示提醒。'}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-6`}>
+          {restrictionSectionHeader(
+            '判断限制代码',
+            'SQL / 脚本',
+            restrictionLongTextButton('判断限制代码', selectedGuardRule.judgeRule, '输入判断限制 SQL / 脚本', (value) => updateSelectedRule({ judgeRule: value })),
+          )}
+          <textarea rows={6} value={selectedGuardRule.judgeRule} onChange={(event) => updateSelectedRule({ judgeRule: event.target.value })} placeholder="exists(select 1 from ...)" className={`${restrictionTextareaClass} min-h-[168px] flex-1 resize-none font-mono text-[12px]`} />
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-6`}>
+          {restrictionSectionHeader(
+            '同步操作代码',
+            '保存后执行',
+            restrictionLongTextButton('同步操作代码', selectedGuardRule.syncAction, '输入更新脚本 / 过程调用', (value) => updateSelectedRule({ syncAction: value })),
+          )}
+          <textarea rows={6} value={selectedGuardRule.syncAction} onChange={(event) => updateSelectedRule({ syncAction: event.target.value })} placeholder="update ... / exec ..." className={`${restrictionTextareaClass} min-h-[168px] flex-1 resize-none font-mono text-[12px]`} />
+        </section>
+      </div>
+    );
+  };
+  const renderRestrictionNumberDetail = () => {
+    if (!selectedNumberRule) {
+      return <div className="flex h-full items-center justify-center rounded-[24px] border border-dashed border-slate-200/80 text-[12px] text-slate-400 dark:border-slate-700">先在上面选一条编号规则</div>;
+    }
+    const updateSelectedRule = (patch: Partial<RestrictionNumberRuleItem>) => {
+      setRestrictionNumberRules((prev) => prev.map((item) => (item.id === selectedNumberRule.id ? { ...item, ...patch } : item)));
+    };
+    const orderedNumberRules = restrictionNumberRules.slice().sort((left, right) => left.sortOrder - right.sortOrder);
+    const previewValue = orderedNumberRules
+      .filter((item) => item.enabled)
+      .map((item) => item.segmentValue || item.segmentType)
+      .join(selectedNumberRule.separator || '') || '编号预览';
+    return (
+      <div className={restrictionDetailGridClass}>
+        <section className={`${restrictionHeroClass} xl:col-span-12`}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex h-8 items-center rounded-full bg-[color:var(--workspace-accent)] px-3 text-[11px] font-black text-white shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)]">
+                  编号规则
+                </span>
+                {restrictionBadge(selectedNumberRule.enabled, '启用中', '已停用')}
+                {selectedNumberRule.sequencePermission && restrictionBadge(true, '受权限控制', '开放')}
+              </div>
+              <input
+                type="text"
+                value={selectedNumberRule.segmentValue}
+                onChange={(event) => updateSelectedRule({ segmentValue: event.target.value })}
+                placeholder="输入固定值、表达式或片段"
+                className={restrictionHeroTitleInputClass}
+              />
+            </div>
+            <div className={restrictionHeroMetricGridClass}>
+              {restrictionMetric('组成元素', selectedNumberRule.segmentType || '未设置', 'accent')}
+              {restrictionMetric('组成顺序', String(selectedNumberRule.sortOrder ?? 0))}
+              {restrictionMetric('长度限制', String(selectedNumberRule.lengthLimit ?? 0), 'success')}
+              {restrictionMetric('分隔符', selectedNumberRule.separator || '无')}
+            </div>
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-6`}>
+          {restrictionSectionHeader('编号段定义', '顺序、类型和长度')}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={restrictionLabelClass}>模块编码</label>
+              <input type="text" value={selectedNumberRule.moduleCode} onChange={(event) => updateSelectedRule({ moduleCode: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>组成顺序</label>
+              <input type="number" value={selectedNumberRule.sortOrder} onChange={(event) => updateSelectedRule({ sortOrder: Number(event.target.value) || 0 })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>组成元素</label>
+              <select value={selectedNumberRule.segmentType} onChange={(event) => updateSelectedRule({ segmentType: event.target.value })} className={restrictionFieldClass}>
+                {RESTRICTION_SEGMENT_TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>长度限制</label>
+              <input type="number" value={selectedNumberRule.lengthLimit} onChange={(event) => updateSelectedRule({ lengthLimit: Number(event.target.value) || 0 })} className={restrictionFieldClass} />
+            </div>
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-6`}>
+          {restrictionSectionHeader('生成控制', '分隔符和权限开关')}
+          <div className="grid gap-4">
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)]">
+              <div>
+                <label className={restrictionLabelClass}>分割符</label>
+                <input type="text" value={selectedNumberRule.separator} onChange={(event) => updateSelectedRule({ separator: event.target.value })} className={restrictionFieldClass} placeholder="例如 - / 空值" />
+              </div>
+              {restrictionToggleTile('序号受权限控制', '按权限决定是否参与生成', selectedNumberRule.sequencePermission, (checked) => updateSelectedRule({ sequencePermission: checked }))}
+            </div>
+            <div className="rounded-[18px] bg-slate-50/90 px-4 py-4 text-[12px] leading-6 text-slate-500 dark:bg-slate-900/55 dark:text-slate-300">
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前段值</div>
+              <div className="mt-2 line-clamp-4 break-all font-mono text-[13px] text-slate-700 dark:text-slate-100">
+                {selectedNumberRule.segmentValue || '未填写段值'}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-12`}>
+          {restrictionSectionHeader('效果查验', '看段位顺序和最终编号')}
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="rounded-[22px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,251,255,0.98),rgba(255,255,255,0.96))] p-5 dark:border-slate-700 dark:bg-slate-950/40">
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">编号段序列</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {orderedNumberRules.map((item) => (
+                  <span key={item.id} className={`inline-flex items-center rounded-full px-3 py-1.5 text-[12px] font-bold ${
+                    item.id === selectedNumberRule.id
+                      ? 'bg-[color:var(--workspace-accent)] text-white'
+                      : item.enabled
+                        ? 'bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-200'
+                        : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
+                  }`}>
+                    {item.segmentType} · {item.segmentValue || '空'}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-[22px] border border-dashed border-slate-200/80 bg-white/92 p-5 dark:border-slate-700 dark:bg-slate-900/78">
+              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">最终编号预览</div>
+              <div className="mt-4 rounded-[18px] border border-slate-200/80 bg-slate-950 px-4 py-4 font-mono text-[14px] font-bold tracking-[0.04em] text-emerald-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] dark:border-slate-700">
+                {previewValue}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  };
+  const renderRestrictionStructureDetail = () => {
+    if (!selectedTopStructure) {
+      return <div className="flex h-full items-center justify-center rounded-[24px] border border-dashed border-slate-200/80 text-[12px] text-slate-400 dark:border-slate-700">先在上面选一条顶层数据结构</div>;
+    }
+    const updateSelectedStructure = (patch: Partial<RestrictionTopStructureItem>) => {
+      setRestrictionTopStructures((prev) => prev.map((item) => (item.id === selectedTopStructure.id ? { ...item, ...patch } : item)));
+    };
+    return (
+      <div className={restrictionDetailGridClass}>
+        <section className={`${restrictionHeroClass} xl:col-span-12`}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex h-8 items-center rounded-full bg-[color:var(--workspace-accent)] px-3 text-[11px] font-black text-white shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)]">
+                  顶层数据结构
+                </span>
+                <span className="inline-flex h-8 items-center rounded-full bg-white/92 px-3 text-[11px] font-bold text-slate-500 dark:bg-slate-900/78 dark:text-slate-300">
+                  {selectedTopStructure.tableName || '未设表名'}
+                </span>
+              </div>
+              <input
+                type="text"
+                value={selectedTopStructure.tableDesc}
+                onChange={(event) => updateSelectedStructure({ tableDesc: event.target.value })}
+                placeholder="输入结构说明或表名描述"
+                className={restrictionHeroTitleInputClass}
+              />
+            </div>
+            <div className={restrictionHeroMetricGridClass}>
+              {restrictionMetric('模块结构', selectedTopStructure.moduleSchema || '未设置', 'accent')}
+              {restrictionMetric('字段前缀', selectedTopStructure.fieldPrefix || '无')}
+              {restrictionMetric('流水前缀', selectedTopStructure.sequencePrefix || '无')}
+              {restrictionMetric('顺序位数', String(selectedTopStructure.orderLength || 0), 'success')}
+            </div>
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-7`}>
+          {restrictionSectionHeader('结构主信息', '模块号、表名与结构归类')}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={restrictionLabelClass}>主模块号</label>
+              <input type="text" value={selectedTopStructure.mainModuleCode} onChange={(event) => updateSelectedStructure({ mainModuleCode: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>模块编码</label>
+              <input type="text" value={selectedTopStructure.moduleCode} onChange={(event) => updateSelectedStructure({ moduleCode: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>模块表名</label>
+              <input type="text" value={selectedTopStructure.tableName} onChange={(event) => updateSelectedStructure({ tableName: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>模块类型</label>
+              <input type="text" value={selectedTopStructure.moduleType} onChange={(event) => updateSelectedStructure({ moduleType: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={restrictionLabelClass}>模块结构</label>
+              <input type="text" value={selectedTopStructure.moduleSchema} onChange={(event) => updateSelectedStructure({ moduleSchema: event.target.value })} className={restrictionFieldClass} />
+            </div>
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-5`}>
+          {restrictionSectionHeader('前缀与关联', '编码前缀与主表关联')}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={restrictionLabelClass}>字段前缀</label>
+              <input type="text" value={selectedTopStructure.fieldPrefix} onChange={(event) => updateSelectedStructure({ fieldPrefix: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>流水号前缀</label>
+              <input type="text" value={selectedTopStructure.sequencePrefix} onChange={(event) => updateSelectedStructure({ sequencePrefix: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>流水号规则</label>
+              <input type="text" value={selectedTopStructure.sequenceRule} onChange={(event) => updateSelectedStructure({ sequenceRule: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>顺序号长度</label>
+              <input type="number" value={selectedTopStructure.orderLength} onChange={(event) => updateSelectedStructure({ orderLength: Number(event.target.value) || 0 })} className={restrictionFieldClass} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={restrictionLabelClass}>关联主表字段</label>
+              <input type="text" value={selectedTopStructure.relationField} onChange={(event) => updateSelectedStructure({ relationField: event.target.value })} className={restrictionFieldClass} />
+            </div>
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-12`}>
+          {restrictionSectionHeader('备注说明')}
+          <textarea rows={4} value={selectedTopStructure.remark} onChange={(event) => updateSelectedStructure({ remark: event.target.value })} className={`${restrictionTextareaClass} min-h-[152px] resize-none`} />
+        </section>
+      </div>
+    );
+  };
+  const renderRestrictionProcessDetail = () => {
+    if (!selectedProcessDesign) {
+      return <div className="flex h-full items-center justify-center rounded-[24px] border border-dashed border-slate-200/80 text-[12px] text-slate-400 dark:border-slate-700">先在上面选一条流程设计</div>;
+    }
+    const updateSelectedProcess = (patch: Partial<RestrictionProcessDesignItem>) => {
+      setRestrictionProcessDesigns((prev) => prev.map((item) => (item.id === selectedProcessDesign.id ? { ...item, ...patch } : item)));
+    };
+    return (
+      <div className={restrictionDetailGridClass}>
+        <section className={`${restrictionHeroClass} xl:col-span-12`}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex h-8 items-center rounded-full bg-[color:var(--workspace-accent)] px-3 text-[11px] font-black text-white shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)]">
+                  流程设计
+                </span>
+                <span className="inline-flex h-8 items-center rounded-full bg-white/92 px-3 text-[11px] font-bold text-slate-500 dark:bg-slate-900/78 dark:text-slate-300">
+                  {selectedProcessDesign.schemeCode || '未编号'}
+                </span>
+              </div>
+              <input
+                type="text"
+                value={selectedProcessDesign.schemeName}
+                onChange={(event) => updateSelectedProcess({ schemeName: event.target.value })}
+                placeholder="输入流程方案名称"
+                className={restrictionHeroTitleInputClass}
+              />
+            </div>
+            <div className={restrictionHeroMetricGridClass}>
+              {restrictionMetric('方案 ID', selectedProcessDesign.planValue || '未设置', 'accent')}
+              {restrictionMetric('业务编号', selectedProcessDesign.businessCode || '未设置')}
+              {restrictionMetric('方案编号', selectedProcessDesign.schemeCode || '未设置')}
+              {restrictionMetric('业务类型', selectedProcessDesign.businessType || '未设置', 'success')}
+            </div>
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-6`}>
+          {restrictionSectionHeader('审批方案主信息', '方案标识与业务挂接')}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className={restrictionLabelClass}>审批方案 ID 值</label>
+              <input type="text" value={selectedProcessDesign.planValue} onChange={(event) => updateSelectedProcess({ planValue: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>对应业务编号</label>
+              <input type="text" value={selectedProcessDesign.businessCode} onChange={(event) => updateSelectedProcess({ businessCode: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>审批方案编号</label>
+              <input type="text" value={selectedProcessDesign.schemeCode} onChange={(event) => updateSelectedProcess({ schemeCode: event.target.value })} className={restrictionFieldClass} />
+            </div>
+            <div>
+              <label className={restrictionLabelClass}>所属业务类型</label>
+              <input type="text" value={selectedProcessDesign.businessType} onChange={(event) => updateSelectedProcess({ businessType: event.target.value })} className={restrictionFieldClass} />
+            </div>
+          </div>
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-6`}>
+          {restrictionSectionHeader('权限范围')}
+          <textarea rows={4} value={selectedProcessDesign.permissionScope} onChange={(event) => updateSelectedProcess({ permissionScope: event.target.value })} className={`${restrictionTextareaClass} min-h-[172px] resize-none`} />
+        </section>
+        <section className={`${restrictionCardClass} xl:col-span-12`}>
+          {restrictionSectionHeader(
+            '操作说明',
+            '审批说明与执行建议',
+            restrictionLongTextButton('流程操作说明', selectedProcessDesign.actionDescription, '描述流程设计动作和审批说明', (value) => updateSelectedProcess({ actionDescription: value })),
+          )}
+          <textarea rows={7} value={selectedProcessDesign.actionDescription} onChange={(event) => updateSelectedProcess({ actionDescription: event.target.value })} className={`${restrictionTextareaClass} min-h-[190px] resize-none`} />
+        </section>
+      </div>
+    );
+  };
+  const renderRestrictionDetailPanel = () => {
+    if (restrictionActiveTab === 'guard') return renderRestrictionMeasureDetail();
+    if (restrictionActiveTab === 'number') return renderRestrictionNumberDetail();
+    if (restrictionActiveTab === 'structure') return renderRestrictionStructureDetail();
+    return renderRestrictionProcessDetail();
+  };
+  const renderRestrictionWorkbench = () => {
+    const activeRestrictionTabLabel = restrictionTabMeta.find((item) => item.id === restrictionActiveTab)?.label ?? '限制措施';
+    const activeRestrictionSummary = activeRestrictionRow
+      ? restrictionActiveTab === 'guard'
+        ? (activeRestrictionRow.description || '限制措施')
+        : restrictionActiveTab === 'number'
+          ? `${activeRestrictionRow.segmentType || '编号段'} · ${activeRestrictionRow.segmentValue || '空值'}`
+          : restrictionActiveTab === 'structure'
+            ? (activeRestrictionRow.tableDesc || activeRestrictionRow.tableName || '结构项')
+            : restrictionActiveTab === 'process'
+              ? (activeRestrictionRow.schemeName || '流程方案')
+              : (activeRestrictionRow.fieldName || '字段')
+      : '暂无选中项';
+    return (
+    <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex h-full flex-1 min-h-0 overflow-hidden rounded-[36px] p-2.5 ${workspaceThemeStyles.tableSurface}`}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[32px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,248,252,0.96))] px-4 pb-4 pt-3 shadow-[0_32px_80px_-56px_rgba(15,23,42,0.42)] dark:border-slate-700 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.96))]">
+        <div className="min-w-0">
+          <div className="truncate text-[20px] font-black tracking-[-0.03em] text-slate-900 dark:text-white">{currentModuleName}</div>
+        </div>
+        <div className="scrollbar-none mt-3 flex flex-nowrap gap-2 overflow-x-auto border-b border-slate-200/80 pb-3 dark:border-slate-700">
+          {restrictionTabMeta.map((tab) => {
+            const active = restrictionActiveTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setRestrictionActiveTab(tab.id)}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-bold transition-all ${active ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)] shadow-[0_16px_30px_-26px_var(--workspace-accent-shadow)]' : 'border-slate-200/80 bg-white/90 text-slate-500 hover:border-[color:var(--workspace-accent-border)] hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:text-slate-100'}`}
+              >
+                <span className={`material-symbols-outlined text-[16px] ${active ? 'text-[color:var(--workspace-accent)]' : tab.accent}`}>{tab.icon}</span>
+                <span>{tab.label}</span>
+                <span className={`inline-flex min-w-[20px] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${active ? 'bg-white text-[color:var(--workspace-accent-strong)]' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-200'}`}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-3 grid min-h-0 flex-1 gap-3 overflow-hidden xl:grid-cols-[minmax(320px,392px)_minmax(0,1fr)]">
+          <section className={`${restrictionPanelClass} min-h-0`}>
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/80 px-4 py-3 dark:border-slate-700">
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{activeRestrictionTabLabel}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <div className="text-[14px] font-bold text-slate-800 dark:text-slate-100">规则列表</div>
+                  <span className="rounded-full border border-slate-200/80 bg-white/90 px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300">
+                    {activeRestrictionRows.length}
+                  </span>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={handleAddRestrictionItem} className="inline-flex h-8 items-center gap-1.5 rounded-[13px] bg-[color:var(--workspace-accent)] px-3.5 text-[11px] font-bold text-white shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]">
+                  <span className="material-symbols-outlined text-[14px]">add</span>
+                  新增
+                </button>
+                <button type="button" onClick={handleDuplicateRestrictionItem} className="inline-flex h-8 items-center gap-1.5 rounded-[13px] border border-slate-200/80 bg-white px-3.5 text-[11px] font-bold text-slate-600 transition-colors hover:border-[color:var(--workspace-accent-border-strong)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                  复制
+                </button>
+                <button type="button" onClick={handleDeleteRestrictionItem} className="inline-flex h-8 items-center gap-1.5 rounded-[13px] border border-rose-200 bg-rose-50 px-3.5 text-[11px] font-bold text-rose-500 transition-colors hover:bg-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10">
+                  <span className="material-symbols-outlined text-[14px]">delete</span>
+                  删除
+                </button>
+                <button type="button" onClick={handleSaveRestrictionTab} className="inline-flex h-8 items-center gap-1.5 rounded-[13px] border border-slate-200/80 bg-white px-3.5 text-[11px] font-bold text-slate-600 transition-colors hover:border-[color:var(--workspace-accent-border-strong)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  <span className="material-symbols-outlined text-[14px]">save</span>
+                  保存
+                </button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden px-3 pb-3 pt-3">
+              {renderRestrictionMasterList()}
+            </div>
+          </section>
+          <section className={`${restrictionPanelClass} min-h-0`}>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 px-4 py-3 dark:border-slate-700">
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">配置面板</div>
+                <div className="mt-1 truncate text-[15px] font-black tracking-[-0.02em] text-slate-800 dark:text-slate-100">{activeRestrictionSummary}</div>
+              </div>
+              <div className="rounded-full bg-slate-100/90 px-3 py-1 text-[10px] font-bold text-slate-500 dark:bg-slate-800/80 dark:text-slate-300">
+                {activeRestrictionTabLabel}
+              </div>
+            </div>
+            <div className="scrollbar-none min-h-0 flex-1 overflow-auto px-4 pb-3 pt-2.5">
+              {renderRestrictionDetailPanel()}
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+  };
+
   return (
     <div className="flex h-screen overflow-hidden bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans">
       {/* Sidebar Navigation */}
@@ -9665,7 +10872,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     </motion.div>
                   )}
 
-                  {configStep === 5 && (
+                  {configStep === MODULE_SETTING_STEP && (
                     <motion.div
                       key={`layout-${businessType}`}
                       initial={{ opacity: 0, scale: 0.98 }}
@@ -9673,8 +10880,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       transition={{ duration: 0.4 }}
                       className="flex min-h-0 flex-1 flex-col overflow-hidden"
                     >
-                      {businessType === 'document' ? (
-                        <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex flex-1 min-h-0 overflow-hidden rounded-[36px] p-3 ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'h-full' : 'min-h-[780px]'}`}>
+                      <div ref={moduleSettingsSectionRef} className="min-h-0 flex flex-1 flex-col min-w-0">
+                        {businessType === 'document' ? (
+                        <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex min-h-0 overflow-hidden rounded-[36px] p-3 ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'min-h-[920px]' : 'min-h-[780px]'}`}>
                           {isTreePaneVisible && (
                             <>
                               <div className="flex min-h-0 shrink-0 flex-col" style={{ width: documentLeftPaneWidth }}>
@@ -9770,7 +10978,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           </div>
                         </div>
                       ) : businessType === 'table' ? (
-                        <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex flex-1 min-h-0 overflow-hidden rounded-[36px] ${isConfigFullscreenActive ? 'h-full p-1.5' : 'min-h-[780px] p-3'} ${workspaceThemeStyles.tableSurface}`}>
+                        <div style={workspaceThemeVars} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex min-h-0 overflow-hidden rounded-[36px] ${isConfigFullscreenActive ? 'min-h-[860px] p-1.5' : 'min-h-[780px] p-3'} ${workspaceThemeStyles.tableSurface}`}>
                           <div className={`grid min-h-0 flex-1 ${isConfigFullscreenActive ? 'gap-3 xl:grid-cols-[minmax(0,1fr)_448px]' : 'gap-4 xl:grid-cols-[minmax(0,1fr)_388px]'}`}>
                             <div className="flex min-h-0">
                               {renderBillDocumentWorkbench()}
@@ -9781,7 +10989,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           </div>
                         </div>
                       ) : (
-                        <div style={workspaceThemeVars} className={`cloudy-glass-stage flex flex-1 min-h-0 flex-col overflow-hidden rounded-[36px] ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'h-full' : 'min-h-[780px]'}`}>
+                        <div style={workspaceThemeVars} className={`cloudy-glass-stage flex min-h-0 flex-col overflow-hidden rounded-[36px] ${workspaceThemeStyles.tableSurface} ${isConfigFullscreenActive ? 'min-h-[860px]' : 'min-h-[780px]'}`}>
                           <div className={`cloudy-cloud-grid studio-grid-bg grid min-h-0 flex-1 ${
                             isConfigFullscreenActive
                               ? 'xl:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.28fr)]'
@@ -9925,6 +11133,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           </div>
                         </div>
                       )}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {configStep === RESTRICTION_STEP && (
+                    <motion.div
+                      key="restriction-workbench"
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.4 }}
+                      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                    >
+                      {renderRestrictionWorkbench()}
                     </motion.div>
                   )}
 
@@ -10168,7 +11389,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       </div>
                     </div>
                   )}
-                  {(configStep === 6) && (
+                  {(configStep === MODULE_PREVIEW_STEP) && (
                     <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm p-10 flex-1 min-h-[500px] flex items-center justify-center">
                       <div className="text-center space-y-4">
                         <div className="size-20 bg-primary/5 text-primary rounded-full flex items-center justify-center mx-auto mb-6">
@@ -10220,7 +11441,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       保存本页
                     </button>
 
-                    {configStep === 5 && (
+                    {(configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP) && (
                       <button
                         onClick={() => setIsFullscreenConfig((prev) => !prev)}
                         className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[12px] font-semibold transition-all ${
@@ -10246,7 +11467,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
                         const nextStep = configStep + 1;
 
-                        if (configStep < 6) {
+                        if (configStep < MAX_CONFIG_STEP) {
                           setConfigStep(nextStep);
                         } else {
                           setIsConfigOpen(false);
@@ -10254,8 +11475,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       }}
                       className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2 text-[12px] font-semibold text-white shadow-[0_12px_24px_rgba(49,98,255,0.2)] transition-all hover:-translate-y-0.5 hover:bg-erp-blue"
                     >
-                      {configStep === 6 ? '完成配置' : '下一步'}
-                      {configStep !== 6 && <span className="material-symbols-outlined text-[20px]">arrow_forward</span>}
+                      {configStep === MODULE_PREVIEW_STEP ? '完成配置' : '下一步'}
+                      {configStep !== MODULE_PREVIEW_STEP && <span className="material-symbols-outlined text-[20px]">arrow_forward</span>}
                     </button>
                   </div>
                 </div>
