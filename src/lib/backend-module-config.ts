@@ -16,6 +16,8 @@ export type SingleTableModuleFieldDto = Record<string, unknown>;
 export type SingleTableConditionDto = Record<string, unknown>;
 export type SingleTableDetailDto = Record<string, unknown>;
 export type SingleTableGridFieldDto = Record<string, unknown>;
+export type SingleTableColorRuleDto = Record<string, unknown>;
+export type SingleTableContextMenuDto = Record<string, unknown>;
 
 export interface BillTypeConfigDto {
   detailSql?: unknown;
@@ -72,6 +74,20 @@ export async function fetchSingleTableFieldGridFields(dllCoId: string, fieldId: 
 
 export async function fetchSingleTableModuleDetails(dllCoId: string) {
   return apiRequest<SingleTableDetailDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/details`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableModuleColors(dllCoId: string) {
+  return apiRequest<SingleTableColorRuleDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/colors`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableModuleMenus(dllCoId: string) {
+  return apiRequest<SingleTableContextMenuDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/menus`, {
     auth: true,
     method: 'GET',
   });

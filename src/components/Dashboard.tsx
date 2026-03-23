@@ -8,14 +8,18 @@ import {
   type BackendSubsystemNode,
 } from '../lib/backend-menus';
 import {
+  fetchSingleTableModuleColors,
   fetchSingleTableFieldConditions,
   fetchSingleTableFieldGridFields,
   fetchSingleTableModuleDetails,
   fetchSingleTableModuleFields,
   fetchSingleTableModuleConditions,
+  fetchSingleTableModuleMenus,
   deleteBillTypeConfig,
   deleteSingleTableModuleConfig,
   type SingleTableConditionDto,
+  type SingleTableContextMenuDto,
+  type SingleTableColorRuleDto,
   type SingleTableDetailDto,
   type SingleTableGridFieldDto,
   type SingleTableModuleFieldDto,
@@ -1761,9 +1765,14 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   };
 
   const normalizeContextMenuItem = (item: Record<string, any> = {}, index = 1) => {
-    const menuName = item.menuname ?? item.label ?? `右键功能 ${index}`;
-    const templateName = item.dllname ?? item.actionKey ?? `action_${index}`;
-    const conditionValue = item.menuCond ?? item.disabledCondition ?? '';
+    const menuName = item.menuname ?? item.menuName ?? item.label ?? `右键功能 ${index}`;
+    const templateName = item.dllname ?? item.dllName ?? item.actionKey ?? `action_${index}`;
+    const conditionValue = item.menuCond ?? item.menuCondition ?? item.disabledCondition ?? '';
+    const actionValue = item.action ?? item.actionSql ?? '';
+    const actionTypeValue = item.actiontype ?? item.actionType;
+    const orderValue = item.orderid ?? item.orderId;
+    const menuIdValue = item.menuid ?? item.menuId;
+    const beforeMessageValue = item.beforeMsg ?? item.beforeMessage ?? '';
 
     return {
       id: item.id ?? `ctx_${Date.now()}_${index}`,
@@ -1783,16 +1792,16 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       dllpar9: item.dllpar9 ?? '',
       dllpar10: item.dllpar10 ?? '',
       visible: normalizePopupMenuNumber(item.visible, 0),
-      action: item.action ?? '',
-      actiontype: normalizePopupMenuNumber(item.actiontype, 0),
-      orderid: normalizePopupMenuNumber(item.orderid, index),
-      beforeMsg: item.beforeMsg ?? '',
+      action: actionValue,
+      actiontype: normalizePopupMenuNumber(actionTypeValue, 0),
+      orderid: normalizePopupMenuNumber(orderValue, index),
+      beforeMsg: beforeMessageValue,
       msgSuccess: item.msgSuccess ?? '',
       msgError: item.msgError ?? '',
-      menuid: item.menuid ?? '',
+      menuid: menuIdValue ?? '',
       menuCond: conditionValue,
       disabledCondition: conditionValue,
-      menuType: normalizePopupMenuNumber(item.menuType, 0),
+      menuType: normalizePopupMenuNumber(item.menuType ?? item.menutype, 0),
       visible1: normalizePopupMenuNumber(item.visible1, 0),
       visible2: normalizePopupMenuNumber(item.visible2, 0),
       maxwindow: normalizePopupMenuNumber(item.maxwindow, 0),
@@ -1836,6 +1845,49 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     note: '',
     ...overrides,
   });
+  const mapSingleTableContextMenuItem = (item: SingleTableContextMenuDto, index: number) => normalizeContextMenuItem({
+    ...item,
+    menuname: getRecordFieldValue(item, 'menuname', 'menuName'),
+    dllname: getRecordFieldValue(item, 'dllname', 'dllName'),
+    action: getRecordFieldValue(item, 'action', 'actionSql'),
+    actiontype: getRecordFieldValue(item, 'actiontype', 'actionType'),
+    orderid: getRecordFieldValue(item, 'orderid', 'orderId'),
+    menuid: getRecordFieldValue(item, 'menuid', 'menuId'),
+    menuCond: getRecordFieldValue(item, 'menucond', 'menuCondition'),
+    beforeMsg: getRecordFieldValue(item, 'beforemsg', 'beforeMessage'),
+    menuType: getRecordFieldValue(item, 'menutype', 'menuType'),
+  }, index + 1);
+  const mapSingleTableColorRule = (rule: SingleTableColorRuleDto, index: number) => {
+    const orderId = toRecordNumber(getRecordFieldValue(rule, 'orderid', 'orderId'), index + 1);
+    const conditionSql = toRecordText(getRecordFieldValue(rule, 'conditionsql', 'conditionSql', 'condition'));
+    const foregroundToken = toRecordText(getRecordFieldValue(rule, 'foregroundtoken', 'foregroundToken', 'dfcolor'));
+    const backgroundToken = toRecordText(getRecordFieldValue(rule, 'backgroundtoken', 'backgroundToken', 'dbcolor'));
+    const foregroundColor = toRecordText(getRecordFieldValue(rule, 'foregroundcolor', 'foregroundColor', 'forcecolor'));
+    const backgroundColor = toRecordText(getRecordFieldValue(rule, 'backgroundcolor', 'backgroundColor', 'backcolor'));
+    const useFlag = toRecordBoolean(getRecordFieldValue(rule, 'useflag', 'useFlag'), true);
+    const label = conditionSql || `颜色规则 ${orderId}`;
+
+    return buildGridColorRule(orderId, {
+      ...rule,
+      id: getRecordFieldValue(rule, 'id') ?? `color_${Date.now()}_${orderId}`,
+      orderId,
+      tab: toRecordText(getRecordFieldValue(rule, 'tab')),
+      label,
+      disabled: !useFlag,
+      note: conditionSql,
+      conditionSql,
+      useFlag,
+      foregroundToken,
+      backgroundToken,
+      foregroundColor,
+      textColor: foregroundColor || foregroundToken || '#9f1239',
+      backgroundColor: backgroundColor || backgroundToken || '#ffe4e6',
+      isBold: toRecordBoolean(getRecordFieldValue(rule, 'ifbold', 'ifBold', 'isbold', 'isBold'), false),
+      isItalic: toRecordBoolean(getRecordFieldValue(rule, 'ifitalic', 'ifItalic', 'isitalic', 'isItalic'), false),
+      isStrikeOut: toRecordBoolean(getRecordFieldValue(rule, 'ifstrickout', 'ifStrickOut', 'isstrikeout', 'isStrikeOut'), false),
+      isUnderline: toRecordBoolean(getRecordFieldValue(rule, 'ifunderline', 'ifUnderLine', 'isunderline', 'isUnderline'), false),
+    });
+  };
 
   const buildDetailChartConfig = (overrides: Record<string, any> = {}) => ({
     chartType: '0',
@@ -2509,6 +2561,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   ]);
   const [detailTabs, setDetailTabs] = useState([{ id: 'tab1', name: '关联附件' }, { id: 'tab2', name: '操作日志' }]);
   const [activeTab, setActiveTab] = useState('tab1');
+  const [tabFillTypes, setTabFillTypes] = useState<Record<string, string>>({ tab1: '表格', tab2: '表格' });
   const [mainTableConfig, setMainTableConfig] = useState(
     buildGridConfig('SELECT * FROM customer_archive', 'enable = 1', {
       contextMenuEnabled: true,
@@ -7569,6 +7622,100 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     };
 
     void loadSingleTableDetails();
+
+    return () => {
+      isActive = false;
+    };
+  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen]);
+
+  useEffect(() => {
+    if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
+      return;
+    }
+
+    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadSingleTableMenus = async () => {
+      try {
+        const rows = await fetchSingleTableModuleMenus(activeConfigModuleKey);
+
+        if (!isActive) {
+          return;
+        }
+
+        const mappedMenus = [...rows]
+          .sort(
+            (left, right) => toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId'), 0)
+              - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId'), 0),
+          )
+          .map((item, index) => mapSingleTableContextMenuItem(item, index));
+
+        setMainTableConfig((prev) => ({
+          ...prev,
+          contextMenuEnabled: mappedMenus.length > 0,
+          contextMenuItems: mappedMenus,
+        }));
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        showToast(getDashboardErrorMessage(error));
+      }
+    };
+
+    void loadSingleTableMenus();
+
+    return () => {
+      isActive = false;
+    };
+  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen]);
+
+  useEffect(() => {
+    if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
+      return;
+    }
+
+    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadSingleTableColors = async () => {
+      try {
+        const rows = await fetchSingleTableModuleColors(activeConfigModuleKey);
+
+        if (!isActive) {
+          return;
+        }
+
+        const mappedRules = [...rows]
+          .sort(
+            (left, right) => toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId'), 0)
+              - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId'), 0),
+          )
+          .map((rule, index) => mapSingleTableColorRule(rule, index));
+
+        setMainTableConfig((prev) => ({
+          ...prev,
+          colorRulesEnabled: mappedRules.length > 0,
+          colorRules: mappedRules,
+        }));
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        showToast(getDashboardErrorMessage(error));
+      }
+    };
+
+    void loadSingleTableColors();
 
     return () => {
       isActive = false;
