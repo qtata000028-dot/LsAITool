@@ -8,17 +8,27 @@ import {
   type BackendSubsystemNode,
 } from '../lib/backend-menus';
 import {
-  createBillTypeConfig,
-  createSingleTableModuleConfig,
+  fetchSingleTableFieldConditions,
+  fetchSingleTableFieldGridFields,
+  fetchSingleTableModuleDetails,
+  fetchSingleTableModuleFields,
+  fetchSingleTableModuleConditions,
   deleteBillTypeConfig,
   deleteSingleTableModuleConfig,
-  fetchBillTypeConfig,
-  fetchSingleTableModuleConfig,
-  saveBillTypeConfig,
-  saveSingleTableModuleConfig,
-  type BillTypeConfigDto,
-  type SingleTableModuleConfigDto,
+  type SingleTableConditionDto,
+  type SingleTableDetailDto,
+  type SingleTableGridFieldDto,
+  type SingleTableModuleFieldDto,
 } from '../lib/backend-module-config';
+import {
+  fetchSubsystemMenuConfig,
+  saveSubsystemMenuConfig,
+  type SubsystemMenuConfigDto,
+} from '../lib/backend-subsystem-menu-config';
+import {
+  fetchFieldSqlTagOptions,
+  type FieldSqlTagOptionDto,
+} from '../lib/backend-system';
 import { requestIdentifierTranslation, requestSqlDraft, requestSurveyPlan, type SurveyPlan } from '../lib/minimax';
 import {
   getShadcnTabTriggerClass,
@@ -163,6 +173,295 @@ function isUseflagEnabled(useflag: number | string | undefined, enabled: boolean
 function normalizeModuleType(value?: string) {
   return value?.trim().toLowerCase() || '';
 }
+
+function getRecordFieldValue(record: Record<string, unknown> | null | undefined, ...keys: string[]) {
+  if (!record) {
+    return undefined;
+  }
+
+  const directLookup = record as Record<string, unknown>;
+  const normalizedEntries = Object.entries(directLookup).map(([key, value]) => [key.toLowerCase(), value] as const);
+  const normalizedLookup = new Map(normalizedEntries);
+
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(directLookup, key)) {
+      return directLookup[key];
+    }
+
+    const matchedValue = normalizedLookup.get(key.toLowerCase());
+    if (matchedValue !== undefined) {
+      return matchedValue;
+    }
+  }
+
+  return undefined;
+}
+
+function toRecordText(value: unknown) {
+  return value == null ? '' : String(value).trim();
+}
+
+function stripBraces(value: string) {
+  return value.replace(/[{}]/g, '').trim();
+}
+
+function toRecordNumber(value: unknown, fallback: number) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) {
+      const parsed = Number(trimmed);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return fallback;
+}
+
+function toRecordBoolean(value: unknown, fallback: boolean) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  if (typeof value === 'string') {
+    const normalizedValue = value.trim().toLowerCase();
+    if (!normalizedValue) {
+      return fallback;
+    }
+
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalizedValue)) {
+      return true;
+    }
+
+    if (['0', 'false', 'no', 'n', 'off'].includes(normalizedValue)) {
+      return false;
+    }
+  }
+
+  return fallback;
+}
+
+function normalizeFieldSqlTagId(value: unknown, fallback = 0) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.round(value);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) {
+      const parsed = Number(trimmed);
+      if (Number.isFinite(parsed)) {
+        return Math.round(parsed);
+      }
+    }
+  }
+
+  return fallback;
+}
+
+function getFieldSqlTagOptionLabel(option: FieldSqlTagOptionDto | null | undefined) {
+  const optionId = normalizeFieldSqlTagId(option?.showid, -1);
+  const rawLabel = toRecordText(option?.showname);
+
+  return FIELD_SQL_TAG_LABEL_FALLBACKS[optionId] || rawLabel || `类型 ${optionId}`;
+}
+
+function mapFieldSqlTagToFieldType(fieldSqlTagValue: unknown, fieldSqlTagLabel = '', fallbackType = '文本') {
+  const fieldSqlTagId = normalizeFieldSqlTagId(fieldSqlTagValue, -1);
+  const normalizedLabel = fieldSqlTagLabel.replace(/\s+/g, '').toLowerCase();
+
+  if (
+    fieldSqlTagId === FIELD_SQL_TAG_TREE_RELATION_ID
+    || normalizedLabel.includes('树型结点关联')
+    || normalizedLabel.includes('树形节点关联')
+  ) {
+    return '树形节点关联';
+  }
+
+  if (FIELD_SQL_TAG_DATE_IDS.has(fieldSqlTagId) || /(日期|时间|date|time)/i.test(fieldSqlTagLabel)) {
+    return '日期框';
+  }
+
+  if (FIELD_SQL_TAG_RADIO_IDS.has(fieldSqlTagId) || /单选/.test(fieldSqlTagLabel)) {
+    return '单选框';
+  }
+
+  if (FIELD_SQL_TAG_MULTI_IDS.has(fieldSqlTagId) || /(多选|复选)/.test(fieldSqlTagLabel)) {
+    return '多选框';
+  }
+
+  if (FIELD_SQL_TAG_SEARCH_IDS.has(fieldSqlTagId) || /(搜索|lookup)/i.test(fieldSqlTagLabel)) {
+    return '搜索框';
+  }
+
+  if (FIELD_SQL_TAG_SELECT_IDS.has(fieldSqlTagId) || /下拉/.test(fieldSqlTagLabel)) {
+    return '下拉框';
+  }
+
+  if (FIELD_SQL_TAG_NUMBER_IDS.has(fieldSqlTagId) || /(数值|金额|进度|price|amount|qty|number)/i.test(fieldSqlTagLabel)) {
+    return '数字';
+  }
+
+  return FIELD_TYPE_OPTIONS.includes(fallbackType) ? fallbackType : '文本';
+}
+
+function resolveColumnFieldType(column: Record<string, unknown> | null | undefined) {
+  const rawType = toRecordText(getRecordFieldValue(column, 'type'));
+  const fieldSqlTagLabel = toRecordText(getRecordFieldValue(column, 'fieldsqltagname', 'fieldSqlTagName'));
+  const fieldSqlTagValue = getRecordFieldValue(column, 'fieldsqltag', 'fieldSqlTag');
+
+  return mapFieldSqlTagToFieldType(fieldSqlTagValue, fieldSqlTagLabel, rawType);
+}
+
+function resolveColumnFieldSqlTagId(column: Record<string, unknown> | null | undefined) {
+  const rawFieldSqlTag = getRecordFieldValue(column, 'fieldsqltag', 'fieldSqlTag');
+  if (rawFieldSqlTag !== undefined && rawFieldSqlTag !== null && String(rawFieldSqlTag).trim() !== '') {
+    return normalizeFieldSqlTagId(rawFieldSqlTag, 0);
+  }
+
+  const fallbackType = toRecordText(getRecordFieldValue(column, 'type'));
+  return FIELD_TYPE_DEFAULT_SQL_TAG_IDS[fallbackType] ?? 0;
+}
+
+function isTreeRelationFieldColumn(column: Record<string, unknown> | null | undefined) {
+  if (!column) {
+    return false;
+  }
+
+  return mapFieldSqlTagToFieldType(
+    getRecordFieldValue(column, 'fieldsqltag', 'fieldSqlTag'),
+    toRecordText(getRecordFieldValue(column, 'fieldsqltagname', 'fieldSqlTagName')),
+    toRecordText(getRecordFieldValue(column, 'type')),
+  ) === '树形节点关联';
+}
+
+function buildSingleTableFieldColumn(index: number, overrides: Record<string, unknown> = {}) {
+  return {
+    ...getBillFieldLayout(index, BILL_FORM_DEFAULT_WIDTH),
+    required: false,
+    visible: true,
+    searchable: false,
+    readonly: false,
+    align: '左对齐',
+    placeholder: '',
+    defaultValue: '',
+    dictCode: '',
+    formula: '',
+    relationSql: '',
+    dynamicSql: '',
+    helpText: '',
+    ...overrides,
+  };
+}
+
+function resolveSingleTableFieldType(field: Record<string, unknown>) {
+  const directType = toRecordText(
+    getRecordFieldValue(field, 'type', 'fieldType', 'fieldtypename', 'fieldTypeName', 'controltypename', 'controlTypeName'),
+  );
+
+  if (FIELD_TYPE_OPTIONS.includes(directType)) {
+    return directType;
+  }
+
+  const fieldSqlTagLabel = toRecordText(getRecordFieldValue(field, 'fieldsqltagname', 'fieldSqlTagName', 'showname', 'showName'));
+  const fieldSqlTagValue = getRecordFieldValue(field, 'fieldsqltag', 'fieldSqlTag', 'controltype', 'controlType');
+  const mappedByFieldSqlTag = mapFieldSqlTagToFieldType(fieldSqlTagValue, fieldSqlTagLabel, directType || '文本');
+  if (FIELD_TYPE_OPTIONS.includes(mappedByFieldSqlTag)) {
+    return mappedByFieldSqlTag;
+  }
+
+  if (/(日期|时间|date|time)/i.test(directType)) {
+    return '日期框';
+  }
+
+  if (/下拉|select/i.test(directType)) {
+    return '下拉框';
+  }
+
+  if (/搜索|lookup|search/i.test(directType)) {
+    return '搜索框';
+  }
+
+  if (/radio/i.test(directType)) {
+    return '单选框';
+  }
+
+  if (/checkbox|multi/i.test(directType)) {
+    return '多选框';
+  }
+
+  const fieldName = toRecordText(getRecordFieldValue(field, 'username1', 'displayName', 'fieldname', 'fieldName'));
+  const systemName = toRecordText(getRecordFieldValue(field, 'sysname', 'systemName'));
+  const nameForGuess = `${fieldName} ${systemName}`;
+
+  if (/(日期|时间|date|time)/i.test(nameForGuess)) {
+    return '日期框';
+  }
+
+  if (/(数量|金额|单价|price|amount|qty|count|number)/i.test(nameForGuess)) {
+    return '数字';
+  }
+
+  return '文本';
+}
+
+function mapSingleTableFieldRecordToColumn(field: SingleTableModuleFieldDto, index: number) {
+  const backendId = getRecordFieldValue(field, 'id');
+  const displayName = toRecordText(getRecordFieldValue(field, 'username1', 'displayName'));
+  const fieldName = toRecordText(getRecordFieldValue(field, 'fieldname', 'fieldName'));
+  const systemName = toRecordText(getRecordFieldValue(field, 'sysname', 'systemName'));
+  const fieldKey = toRecordText(getRecordFieldValue(field, 'fieldkey', 'fieldKey'));
+  const placeholder = toRecordText(getRecordFieldValue(field, 'placeholder', 'prompttext', 'promptText'));
+  const relationSql = toRecordText(getRecordFieldValue(field, 'relationsql', 'relationSql'));
+  const dynamicSql = toRecordText(getRecordFieldValue(field, 'dynamicsql', 'dynamicSql', 'fieldsql', 'fieldSql'));
+  const helpText = toRecordText(getRecordFieldValue(field, 'helptext', 'helpText', 'remark', 'memo'));
+  const defaultValue = toRecordText(getRecordFieldValue(field, 'defaultdate', 'defaultDate', 'defaultvalue', 'defaultValue'));
+  const fieldSqlTag = normalizeFieldSqlTagId(getRecordFieldValue(field, 'fieldsqltag', 'fieldSqlTag'), 0);
+  const fieldSqlTagName = toRecordText(getRecordFieldValue(field, 'fieldsqltagname', 'fieldSqlTagName', 'showname', 'showName'));
+  const visibleValue = getRecordFieldValue(field, 'visible', 'isVisible', 'showmobile', 'showMobile');
+  const requiredValue = getRecordFieldValue(field, 'required', 'isneed', 'isNeed', 'mustinput', 'mustInput');
+  const readonlyValue = getRecordFieldValue(field, 'readonly', 'readOnly', 'isreadonly', 'isReadOnly');
+  const searchableValue = getRecordFieldValue(field, 'searchable', 'isquery', 'isQuery', 'queryable');
+
+  return buildSingleTableFieldColumn(index, {
+    ...field,
+    id: backendId == null ? `field_${Date.now()}_${index + 1}` : `field_${backendId}`,
+    backendId,
+    orderId: toRecordNumber(getRecordFieldValue(field, 'orderid', 'orderId'), index + 1),
+    backendFieldKey: fieldKey,
+    formKey: toRecordText(getRecordFieldValue(field, 'formkey', 'formKey')),
+    tab: toRecordText(getRecordFieldValue(field, 'tab')),
+    fieldSqlTag,
+    fieldSqlTagName,
+    name: displayName || fieldName || systemName || fieldKey || `字段 ${index + 1}`,
+    sourceField: systemName || fieldName || fieldKey || `field_${index + 1}`,
+    type: resolveSingleTableFieldType(field),
+    width: toRecordNumber(
+      getRecordFieldValue(field, 'width', 'controlwidth', 'controlWidth', 'mobilewidth', 'mobileWidth'),
+      BILL_FORM_DEFAULT_WIDTH,
+    ),
+    required: toRecordBoolean(requiredValue, false),
+    visible: toRecordBoolean(visibleValue, true),
+    searchable: toRecordBoolean(searchableValue, false),
+    readonly: toRecordBoolean(readonlyValue, false),
+    placeholder,
+    defaultValue,
+    dictCode: toRecordText(getRecordFieldValue(field, 'dictcode', 'dictCode')),
+    formula: toRecordText(getRecordFieldValue(field, 'formula')),
+    relationSql,
+    dynamicSql,
+    helpText,
+  });
+}
 type RestrictionMeasureItem = {
   id: string;
   businessCategory: string;
@@ -275,7 +574,7 @@ const MODULE_GUIDE_PROFILES: Record<BusinessType, {
 }> = {
   document: {
     label: '单表',
-    intro: '对应旧平台的单表模块配置，菜单信息将落到 p_systemdlltab，并继续向字段、条件、右键、颜色等子表扩展。',
+    intro: '菜单信息统一写入 P_FormMenuConfigTab，确认类型后，后续模块主配置会落到 p_systemdlltab，并继续向字段、条件、右键、颜色等子表扩展。',
     configTable: 'p_systemdlltab',
     configTableDesc: '单表主模块信息',
     keyFields: ['DllCoid', 'ToolsName', 'SQL', 'SQLDT1', 'formKey', 'condKey'],
@@ -283,7 +582,7 @@ const MODULE_GUIDE_PROFILES: Record<BusinessType, {
   },
   table: {
     label: '单据',
-    intro: '对应旧平台的单据模块配置，菜单信息将落到 p_systembilltype，再挂单据主信息、明细、来源和流程。',
+    intro: '菜单信息统一写入 P_FormMenuConfigTab，确认类型后，后续模块主配置会落到 p_systembilltype，再挂单据主信息、明细、来源和流程。',
     configTable: 'p_systembilltype',
     configTableDesc: '单据模块主信息',
     keyFields: ['模块编码', '模块名称', '模块主表', '模块明细表', '明细表sql', '模块配置关联字段'],
@@ -291,92 +590,58 @@ const MODULE_GUIDE_PROFILES: Record<BusinessType, {
   },
   tree: {
     label: '树形单表',
-    intro: '树形单表仍归属单表体系，主配置表与单表一致，后续通过树字段和动态 SQL 扩展左侧树结构。',
+    intro: '菜单信息统一写入 P_FormMenuConfigTab，树形单表仍归属单表体系，后续主配置表与单表一致，并通过树字段和动态 SQL 扩展左侧树结构。',
     configTable: 'p_systemdlltab',
     configTableDesc: '单表主模块信息',
     keyFields: ['DllCoid', 'ToolsName', 'SQL', 'TreeSQL', 'TreeTableExpand', 'MainModuleCodeField'],
     relatedTables: ['p_systemwordbooktab', 'p_systemwordbookgrid', 'p_systembillsourcecond', 'p_systempopupmenu'],
   },
 };
-const DOCUMENT_MENU_DEFAULTS: ModuleMenuDraft = {
+const MENU_CONFIG_TABLE_NAME = 'P_FormMenuConfigTab';
+const MENU_CONFIG_TABLE_DESC = '功能树菜单信息';
+const MENU_CONFIG_TABLE_FIELDS = ['MenuId', 'SubsysId', 'MenuStruct', 'Menucaption', 'ParentMenuId', 'PurviewId', 'UrlParams', 'DllFileName', 'GroupCaption', 'MenuRow', 'UseFlag', 'ModType', 'MenuTips'];
+const MENU_CONFIG_DEFAULTS: ModuleMenuDraft = {
+  menuId: '',
+  subsystemId: '',
+  parentMenuId: '',
+  menuStruct: '',
+  menuCaption: '',
   moduleCode: '',
-  moduleName: '',
-  mainTableName: '',
-  mainSql: '',
-  formKey: '',
-  condKey: '',
-  overbackKey: '',
-  isReport: 'false',
+  useFlag: 'true',
+  modType: '1',
+  dllFileName: '',
+  urlParams: '',
+  groupCaption: '',
+  menuRow: '',
+  menuTips: '',
 };
-const BILLTYPE_MENU_DEFAULTS: ModuleMenuDraft = {
-  typeCode: '',
-  typeName: '',
-  billSeq: '',
-  formKey: '',
-  overbackKey: '',
-  remark: '',
-  masterTable: '',
-  detailTable: '',
-  masterSql: '',
-  detailSql: '',
-};
-const DOCUMENT_MENU_SECTIONS: ModuleMenuSectionSchema[] = [
+const MENU_CONFIG_SECTIONS: ModuleMenuSectionSchema[] = [
   {
-    title: '主配置标识',
-    description: '对应 p_systemdlltab 的主键、名称和关联标识。',
+    title: '结构列表基础',
+    description: '对应文档中功能树结构列表的主键、层级关系和模块关联字段。',
     fields: [
-      { key: 'moduleCode', label: '模块编码', tableField: 'DllCoid', kind: 'text', placeholder: '唯一模块编码' },
-      { key: 'moduleName', label: '模块名称', tableField: 'ToolsName', kind: 'text', placeholder: '模块中文名' },
-      { key: 'formKey', label: '配置关联值', tableField: 'formKey', kind: 'text', placeholder: '模块配置关联值' },
-      { key: 'condKey', label: '条件关联值', tableField: 'condKey', kind: 'text', placeholder: '条件配置关联值' },
-      { key: 'overbackKey', label: '回写关联值', tableField: 'overbackKey', kind: 'text', placeholder: '回写配置关联值' },
+      { key: 'menuCaption', label: '菜单名称', tableField: 'Menucaption', kind: 'text', placeholder: '功能树显示名称' },
+      { key: 'moduleCode', label: '功能模块编码', tableField: 'PurviewId', kind: 'text', placeholder: '对应功能模块编号' },
+      { key: 'useFlag', label: '启用状态', tableField: 'Useflag', kind: 'switch', hint: '开启后功能树中显示为启用状态' },
     ],
   },
   {
-    title: '数据源配置',
-    description: '单表模块最关键的是主表名和主表 SQL。',
+    title: '结构列表扩展',
+    description: '对应文档里结构列表的调用参数、分组展示和功能描述字段。',
     fields: [
-      { key: 'mainTableName', label: '主表名', tableField: 'SQLDT1', kind: 'text', placeholder: '例如：erp_cost_control' },
-      { key: 'mainSql', label: '主表 SQL', tableField: 'SQL', kind: 'textarea', rows: 5, span: 'full', placeholder: '输入或 AI 生成主表 SQL' },
-    ],
-  },
-  {
-    title: '运行标识',
-    description: '保留单表模块的基础运行标识。',
-    fields: [
-      { key: 'isReport', label: '报表模式', tableField: 'isReport', kind: 'switch', hint: '开启后按报表模式处理当前单表模块' },
-    ],
-  },
-];
-const BILLTYPE_MENU_SECTIONS: ModuleMenuSectionSchema[] = [
-  {
-    title: '单据主标识',
-    description: '对应 p_systembilltype 的主键信息和基础标识。',
-    fields: [
-      { key: 'typeCode', label: '模块编码', tableField: 'typeCode', kind: 'text', placeholder: '单据模块编码' },
-      { key: 'typeName', label: '模块名称', tableField: 'typeName', kind: 'text', placeholder: '单据模块名称' },
-      { key: 'billSeq', label: '模块标识', tableField: 'billSeq', kind: 'text', placeholder: '默认与模块编码一致' },
-      { key: 'formKey', label: '配置关联字段', tableField: 'formKey', kind: 'text', placeholder: 'formKey' },
-      { key: 'overbackKey', label: '回写关联字段', tableField: 'overbackKey', kind: 'text', placeholder: 'overbackKey' },
-      { key: 'remark', label: '模块说明', tableField: 'remark', kind: 'textarea', rows: 4, span: 'full', placeholder: '描述单据场景和业务边界' },
-    ],
-  },
-  {
-    title: '主表与明细',
-    description: '单据模式会同时绑定主表、明细表和对应 SQL。',
-    fields: [
-      { key: 'masterTable', label: '模块主表', tableField: 'masterTable', kind: 'text', placeholder: '例如：erp_cost_bill' },
-      { key: 'detailTable', label: '模块明细表', tableField: 'detailTable', kind: 'text', placeholder: '例如：erp_cost_bill_detail' },
-      { key: 'masterSql', label: '主表 SQL', tableField: 'masterSql', kind: 'textarea', rows: 5, span: 'full' },
-      { key: 'detailSql', label: '明细 SQL', tableField: 'detailSql', kind: 'textarea', rows: 5, span: 'full' },
+      { key: 'dllFileName', label: 'DLL 文件名', tableField: 'Dllfilename', kind: 'text', placeholder: '如：LsBill.dll' },
+      { key: 'groupCaption', label: '菜单分组标题', tableField: 'GroupCaption', kind: 'text', placeholder: '用于功能树分组显示' },
+      { key: 'menuRow', label: '菜单行顺序', tableField: 'Menurow', kind: 'number', placeholder: '分组内显示顺序' },
+      { key: 'urlParams', label: '附加参数', tableField: 'Urlparams', kind: 'textarea', rows: 4, span: 'full', placeholder: 'key=value&key2=value2' },
+      { key: 'menuTips', label: '功能描述', tableField: 'Menutips', kind: 'textarea', rows: 4, span: 'full', placeholder: '展示在功能树或配置页的功能说明' },
     ],
   },
 ];
 
 const MENU_DEFAULT_COMMON_FIELD_KEYS: Record<BusinessType, string[]> = {
-  document: ['moduleCode', 'moduleName', 'mainTableName', 'mainSql', 'formKey', 'condKey'],
-  table: ['typeCode', 'typeName', 'masterTable', 'detailTable', 'masterSql', 'detailSql', 'formKey'],
-  tree: ['moduleCode', 'moduleName', 'mainTableName', 'mainSql', 'formKey', 'condKey'],
+  document: ['menuCaption', 'moduleCode', 'useFlag', 'dllFileName', 'menuTips'],
+  table: ['menuCaption', 'moduleCode', 'useFlag', 'dllFileName', 'menuTips'],
+  tree: ['menuCaption', 'moduleCode', 'useFlag', 'dllFileName', 'menuTips'],
 };
 
 function filterMenuSectionsByKeys(sections: ModuleMenuSectionSchema[], keys: string[]) {
@@ -409,65 +674,127 @@ function toPersistedSwitch(value: ModuleMenuValue | undefined) {
   return value === true || value === 'true' ? 1 : 0;
 }
 
-function mapSingleTableModuleToDraft(module: SingleTableModuleConfigDto): ModuleMenuDraft {
+function toOptionalNumber(value: ModuleMenuValue | undefined) {
+  const text = toDraftText(value).trim();
+  if (!text) {
+    return undefined;
+  }
+
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : text;
+}
+
+function getMenuConfigField(menu: SubsystemMenuConfigDto, ...keys: string[]) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(menu, key)) {
+      return menu[key];
+    }
+  }
+
+  const normalizedEntries = Object.entries(menu).map(([entryKey, entryValue]) => [entryKey.toLowerCase(), entryValue] as const);
+  for (const key of keys) {
+    const matched = normalizedEntries.find(([entryKey]) => entryKey === key.toLowerCase());
+    if (matched) {
+      return matched[1];
+    }
+  }
+
+  return undefined;
+}
+
+function mapSubsystemMenuConfigToDraft(menu: SubsystemMenuConfigDto): ModuleMenuDraft {
   return {
-    ...DOCUMENT_MENU_DEFAULTS,
-    condKey: toDraftText(module.conditionKey),
-    formKey: toDraftText(module.formKey),
-    isReport: toDraftSwitch(module.isReport),
-    mainSql: toDraftText(module.querySql),
-    mainTableName: toDraftText(module.mainTable),
-    moduleCode: toDraftText(module.dllCoId),
-    moduleName: toDraftText(module.moduleName),
-    overbackKey: toDraftText(module.overbackKey),
+    ...MENU_CONFIG_DEFAULTS,
+    dllFileName: toDraftText(getMenuConfigField(menu, 'dllfilename', 'dllFileName', 'DllFileName')),
+    groupCaption: toDraftText(getMenuConfigField(menu, 'groupcaption', 'groupCaption', 'GroupCaption')),
+    menuCaption: toDraftText(getMenuConfigField(menu, 'menucaption', 'menuCaption', 'Menucaption', 'MenuCaption')),
+    menuId: toDraftText(getMenuConfigField(menu, 'menuid', 'menuId', 'Menuid', 'MenuId')),
+    menuRow: toDraftText(getMenuConfigField(menu, 'menurow', 'menuRow', 'Menurow', 'MenuRow')),
+    menuStruct: toDraftText(getMenuConfigField(menu, 'menustruct', 'menuStruct', 'Menustruct', 'MenuStruct')),
+    menuTips: toDraftText(getMenuConfigField(menu, 'menutips', 'menuTips', 'Menutips', 'MenuTips')),
+    modType: toDraftText(getMenuConfigField(menu, 'modtype', 'modType', 'Modtype', 'ModType')),
+    moduleCode: toDraftText(getMenuConfigField(menu, 'purviewid', 'purviewId', 'Purviewid', 'PurviewId')),
+    parentMenuId: toDraftText(getMenuConfigField(menu, 'parentmenuid', 'parentMenuId', 'Parentmenuid', 'ParentMenuId')),
+    subsystemId: toDraftText(getMenuConfigField(menu, 'subsysid', 'subsystemId', 'subsysId', 'Subsysid', 'SubsystemId', 'SubsysId')),
+    urlParams: toDraftText(getMenuConfigField(menu, 'urlparams', 'urlParams', 'Urlparams', 'UrlParams')),
+    useFlag: toDraftSwitch(getMenuConfigField(menu, 'useflag', 'useFlag', 'Useflag', 'UseFlag')),
   };
 }
 
-function mapBillTypeToDraft(type: BillTypeConfigDto): ModuleMenuDraft {
+function mapMenuConfigDraftToPayload(draft: ModuleMenuDraft) {
   return {
-    ...BILLTYPE_MENU_DEFAULTS,
-    billSeq: toDraftText(type.billSequence),
-    detailSql: toDraftText(type.detailSql),
-    detailTable: toDraftText(type.detailTable),
-    formKey: toDraftText(type.formKey),
-    masterSql: toDraftText(type.masterSql),
-    masterTable: toDraftText(type.masterTable),
-    overbackKey: toDraftText(type.overbackKey),
-    remark: toDraftText(type.remark),
-    typeCode: toDraftText(type.typeCode),
-    typeName: toDraftText(type.typeName),
-  };
-}
-
-function mapDocumentDraftToPayload(draft: ModuleMenuDraft) {
-  return {
-    condkey: toDraftText(draft.condKey),
-    dllcoid: toDraftText(draft.moduleCode).trim(),
-    formkey: toDraftText(draft.formKey),
-    isreport: toPersistedSwitch(draft.isReport),
-    overbackkey: toDraftText(draft.overbackKey),
-    sql: toDraftText(draft.mainSql),
-    sqldt1: toDraftText(draft.mainTableName),
-    toolsname: toDraftText(draft.moduleName),
-  };
-}
-
-function mapBillTypeDraftToPayload(draft: ModuleMenuDraft) {
-  return {
-    billseq: toDraftText(draft.billSeq),
-    detailtable: toDraftText(draft.detailTable),
-    detailsql: toDraftText(draft.detailSql),
-    formkey: toDraftText(draft.formKey),
-    mastertable: toDraftText(draft.masterTable),
-    mastersql: toDraftText(draft.masterSql),
-    overbackkey: toDraftText(draft.overbackKey),
-    remark: toDraftText(draft.remark),
-    typecode: toDraftText(draft.typeCode).trim(),
-    typename: toDraftText(draft.typeName),
+    ...(toOptionalNumber(draft.menuId) !== undefined ? { menuid: toOptionalNumber(draft.menuId) } : {}),
+    ...(toOptionalNumber(draft.subsystemId) !== undefined ? { subsysid: toOptionalNumber(draft.subsystemId) } : {}),
+    ...(toOptionalNumber(draft.parentMenuId) !== undefined ? { parentmenuid: toOptionalNumber(draft.parentMenuId) } : {}),
+    ...(toOptionalNumber(draft.menuRow) !== undefined ? { menurow: toOptionalNumber(draft.menuRow) } : {}),
+    ...(toOptionalNumber(draft.modType) !== undefined ? { modtype: toOptionalNumber(draft.modType) } : {}),
+    menustruct: toDraftText(draft.menuStruct).trim(),
+    menucaption: toDraftText(draft.menuCaption).trim(),
+    purviewid: toDraftText(draft.moduleCode).trim(),
+    useflag: toPersistedSwitch(draft.useFlag),
+    dllfilename: toDraftText(draft.dllFileName),
+    groupcaption: toDraftText(draft.groupCaption),
+    menutips: toDraftText(draft.menuTips),
+    urlparams: toDraftText(draft.urlParams),
   };
 }
 
 const FIELD_TYPE_OPTIONS = ['文本', '数字', '下拉框', '搜索框', '日期框', '单选框', '多选框', '树形节点关联'];
+const FIELD_SQL_TAG_TREE_RELATION_ID = 3;
+const FIELD_SQL_TAG_DATE_IDS = new Set([4, 44, 444, 4444, 44444]);
+const FIELD_SQL_TAG_SELECT_IDS = new Set([1, 2, 23, 35, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127]);
+const FIELD_SQL_TAG_SEARCH_IDS = new Set([5, 6, 15, 16, 38, 39, 40, 41, 42, 43, 102, 103, 109, 110, 111, 112, 113, 114, 116, 117, 160, 161]);
+const FIELD_SQL_TAG_MULTI_IDS = new Set([13, 14, 17, 18, 19, 33, 34, 104, 105, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139]);
+const FIELD_SQL_TAG_RADIO_IDS = new Set([106, 107]);
+const FIELD_SQL_TAG_NUMBER_IDS = new Set([7, 27, 96, 108, 115]);
+const FIELD_TYPE_DEFAULT_SQL_TAG_IDS: Record<string, number> = {
+  文本: 0,
+  数字: 7,
+  下拉框: 1,
+  搜索框: 5,
+  日期框: 4,
+  单选框: 106,
+  多选框: 17,
+  树形节点关联: FIELD_SQL_TAG_TREE_RELATION_ID,
+};
+const FIELD_SQL_TAG_LABEL_FALLBACKS: Record<number, string> = {
+  0: '字符串',
+  1: '下拉框返回ID',
+  2: '下拉框返回名称',
+  3: '树型结点关联',
+  4: '日期类型框',
+  5: '搜索框返回ID',
+  6: '搜索框返回名称',
+  7: '数值',
+  15: '搜索框返回ID-带参数',
+  16: '搜索框返回名称-带参数',
+  17: '复选框',
+  18: '下拉多选返回代码',
+  19: '下拉多选返回名称',
+  23: '下拉框返回名称-带参数',
+  35: '下拉框返回ID-带参数',
+  38: '智能搜索返回ID',
+  39: '智能搜索返回名称',
+  40: '智能搜索返回ID-带参数',
+  41: '智能搜索返回名称-带参数',
+  42: '弹出模块单选返回ID',
+  43: '弹出模块多选返回ID',
+  44: '日期时间类型框(时分秒)',
+  106: '单选按钮返回ID',
+  107: '单选按钮返回名称',
+  118: '树型下拉返回ID',
+  119: '树型下拉返回名称',
+};
+const DEFAULT_FIELD_SQL_TAG_OPTIONS: FieldSqlTagOptionDto[] = [
+  { showid: 0, showname: '字符串' },
+  { showid: 7, showname: '数值' },
+  { showid: 1, showname: '下拉框返回ID' },
+  { showid: 5, showname: '搜索框返回ID' },
+  { showid: 4, showname: '日期类型框' },
+  { showid: 106, showname: '单选按钮返回ID' },
+  { showid: 17, showname: '复选框' },
+  { showid: FIELD_SQL_TAG_TREE_RELATION_ID, showname: '树型结点关联' },
+];
 const COLUMN_ALIGN_OPTIONS = ['左对齐', '居中', '右对齐'];
 const TABLE_TYPE_OPTIONS = ['普通表格', '多表头', '树表格'];
 const GRID_COLOR_RULE_OPERATOR_OPTIONS = ['等于', '包含', '大于', '小于', '大于等于', '小于等于'];
@@ -718,27 +1045,19 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     table: [...MENU_DEFAULT_COMMON_FIELD_KEYS.table],
     tree: [...MENU_DEFAULT_COMMON_FIELD_KEYS.tree],
   }));
-  const [documentMenuDraft, setDocumentMenuDraft] = useState<ModuleMenuDraft>(DOCUMENT_MENU_DEFAULTS);
-  const [billtypeMenuDraft, setBilltypeMenuDraft] = useState<ModuleMenuDraft>(BILLTYPE_MENU_DEFAULTS);
+  const [menuConfigDraft, setMenuConfigDraft] = useState<ModuleMenuDraft>(MENU_CONFIG_DEFAULTS);
   const [activeConfigMenu, setActiveConfigMenu] = useState<BackendMenuNode | null>(null);
   const [deletingMenuId, setDeletingMenuId] = useState<string | null>(null);
   const [pendingDeleteMenu, setPendingDeleteMenu] = useState<BackendMenuNode | null>(null);
   const [isMenuInfoLoading, setIsMenuInfoLoading] = useState(false);
   const [isMenuInfoSaving, setIsMenuInfoSaving] = useState(false);
+  const [isSingleTableFieldsLoading, setIsSingleTableFieldsLoading] = useState(false);
   const [menuInfoError, setMenuInfoError] = useState<string | null>(null);
   const currentModuleGuide = MODULE_GUIDE_PROFILES[businessType] ?? MODULE_GUIDE_PROFILES.document;
-  const currentModuleCode = businessType === 'table'
-    ? String(billtypeMenuDraft.typeCode || BILLTYPE_MENU_DEFAULTS.typeCode)
-    : String(documentMenuDraft.moduleCode || DOCUMENT_MENU_DEFAULTS.moduleCode);
-  const currentModuleName = businessType === 'table'
-    ? String(billtypeMenuDraft.typeName || BILLTYPE_MENU_DEFAULTS.typeName)
-    : String(documentMenuDraft.moduleName || DOCUMENT_MENU_DEFAULTS.moduleName);
-  const currentPrimaryTableName = businessType === 'table'
-    ? String(billtypeMenuDraft.masterTable || BILLTYPE_MENU_DEFAULTS.masterTable)
-    : String(documentMenuDraft.mainTableName || DOCUMENT_MENU_DEFAULTS.mainTableName);
-  const currentDetailTableName = businessType === 'table'
-    ? String(billtypeMenuDraft.detailTable || BILLTYPE_MENU_DEFAULTS.detailTable)
-    : '';
+  const currentModuleCode = String(menuConfigDraft.moduleCode || activeConfigMenu?.purviewId || '');
+  const currentModuleName = String(menuConfigDraft.menuCaption || activeConfigMenu?.title || '');
+  const currentPrimaryTableName = '';
+  const currentDetailTableName = '';
   const toggleFunc = (id: string) => setCommonFuncs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const funcOptions = [
     { id: 'import', name: '数据导入', icon: 'upload_file' },
@@ -747,9 +1066,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     { id: 'approve', name: '审批流', icon: 'verified' },
     { id: 'attach', name: '附件管理', icon: 'attachment' },
   ];
-  const currentMenuSections = businessType === 'table' ? BILLTYPE_MENU_SECTIONS : DOCUMENT_MENU_SECTIONS;
-  const currentMenuDraft = businessType === 'table' ? billtypeMenuDraft : documentMenuDraft;
-  const activeConfigModuleKey = normalizeMenuCode(activeConfigMenu?.purviewId);
+  const currentMenuSections = MENU_CONFIG_SECTIONS;
+  const currentMenuDraft = menuConfigDraft;
+  const activeConfigModuleKey = normalizeMenuCode(toDraftText(menuConfigDraft.moduleCode || activeConfigMenu?.purviewId));
   const isMenuFieldFilled = (field: ModuleMenuFieldSchema, value: ModuleMenuValue | undefined) => {
     if (field.kind === 'switch') return value === 'true';
     return String(value ?? '').trim().length > 0;
@@ -1230,6 +1549,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     id: `${prefix}_${Date.now()}_${index}`,
     name: `新字段 ${index}`,
     type: '文本',
+    fieldSqlTag: FIELD_TYPE_DEFAULT_SQL_TAG_IDS['文本'],
+    fieldSqlTagName: FIELD_SQL_TAG_LABEL_FALLBACKS[FIELD_TYPE_DEFAULT_SQL_TAG_IDS['文本']],
     width: 104,
     ...getBillFieldLayout(index - 1, BILL_FORM_DEFAULT_WIDTH),
     required: false,
@@ -1459,6 +1780,74 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     disabledCondition: '',
     ...overrides,
   });
+  const mapSingleTableDetailRecord = (detail: SingleTableDetailDto, index: number) => {
+    const backendId = getRecordFieldValue(detail, 'id');
+    const backendFormKey = toRecordText(getRecordFieldValue(detail, 'formkey', 'formKey'));
+    const backendTabKey = toRecordText(getRecordFieldValue(detail, 'tabkey', 'tabKey'));
+    const detailName = toRecordText(getRecordFieldValue(detail, 'detailname', 'detailName')) || `明细 ${index + 1}`;
+    const fillType = resolveSingleTableDetailFillType(detail);
+    const detailTabId = backendId == null
+      ? (backendFormKey || `detail_${Date.now()}_${index + 1}`)
+      : `detail_${backendId}`;
+    const relatedCondition = toRecordText(
+      getRecordFieldValue(detail, 'unioncond', 'unionCond', 'relatedcondition', 'relatedCondition'),
+    );
+    const detailSql = toRecordText(getRecordFieldValue(detail, 'detailsql', 'detailSQL', 'detailSql'));
+    const tableType = fillType === '树表格' ? '树表格' : '普通表格';
+
+    return {
+      tab: {
+        id: detailTabId,
+        name: detailName,
+      },
+      fillType,
+      config: buildDetailTabConfig({
+        ...detail,
+        id: detailTabId,
+        backendId,
+        formKey: backendFormKey,
+        tab: toRecordText(getRecordFieldValue(detail, 'tab')) || currentModuleCode,
+        tabKey: backendTabKey || backendFormKey || detailTabId,
+        detailName,
+        detailType: fillType,
+        dllTemplate: toRecordText(getRecordFieldValue(detail, 'library', 'dlltemplate', 'dllTemplate')),
+        relatedModule: toRecordText(getRecordFieldValue(detail, 'unionmodule', 'UnionModule', 'relatedmodule', 'relatedModule')),
+        relatedModuleField: toRecordText(
+          getRecordFieldValue(detail, 'unionparentfield', 'unionParentField', 'relatedmodulefield', 'relatedModuleField'),
+        ),
+        relatedValue: toRecordText(getRecordFieldValue(detail, 'unionvalue', 'unionValue', 'relatedvalue', 'relatedValue')),
+        rightDisplay: toRecordBoolean(
+          getRecordFieldValue(detail, 'rightvisible', 'rightVisible', 'rightdisplay', 'rightDisplay'),
+          false,
+        ),
+        addDisplay: toRecordBoolean(getRecordFieldValue(detail, 'addvisible', 'addVisible', 'adddisplay', 'addDisplay'), false),
+        defaultOpen: toRecordBoolean(getRecordFieldValue(detail, 'defaultitem', 'defaultItem', 'defaultopen', 'defaultOpen'), false),
+        scanMode: toRecordBoolean(getRecordFieldValue(detail, 'scanmode', 'scanMode'), false),
+        cardMode: toRecordBoolean(getRecordFieldValue(detail, 'menumode', 'menuMode', 'cardmode', 'cardMode'), false),
+        bandHeight: toRecordText(getRecordFieldValue(detail, 'bandheight', 'bandHeight')) || '36',
+        bandWidth: toRecordText(getRecordFieldValue(detail, 'bandwidth', 'bandWidth')) || '160',
+        displayRows: toRecordNumber(getRecordFieldValue(detail, 'displayrows', 'displayRows'), 12),
+        noColumnHeader: toRecordBoolean(getRecordFieldValue(detail, 'nocolumnheader', 'noColumnHeader'), false),
+        gridDetailCheck: toRecordBoolean(getRecordFieldValue(detail, 'griddetailcheck', 'gridDetailCheck'), false),
+        unionFlag: toRecordNumber(getRecordFieldValue(detail, 'unionflag', 'unionFlag'), 0),
+        dragcond: toRecordText(getRecordFieldValue(detail, 'dragcond')),
+        isMrpDrag: toRecordBoolean(getRecordFieldValue(detail, 'ismrpdrag', 'isMrpDrag'), false),
+        mrpDragTag: toRecordText(getRecordFieldValue(detail, 'mrpdragtag', 'mrpDragTag')),
+        privilegeOper: toRecordText(getRecordFieldValue(detail, 'privilegeoper', 'privilegeOper', 'operusers', 'operUsers')),
+        Fremark: toRecordText(getRecordFieldValue(detail, 'fremark', 'Fremark')),
+        relatedCondition,
+        autoRefresh: toRecordBoolean(getRecordFieldValue(detail, 'autorefresh', 'autoRefresh'), true),
+        disabled: toRecordBoolean(getRecordFieldValue(detail, 'isvisible', 'isVisible', 'disabled'), false),
+        disabledCondition: toRecordText(
+          getRecordFieldValue(detail, 'visiblecond', 'visibleCond', 'disabledcondition', 'disabledCondition'),
+        ),
+      }),
+      gridConfig: buildGridConfig(detailSql, relatedCondition, {
+        sourceCondition: relatedCondition,
+        tableType,
+      }),
+    };
+  };
 
   function buildDetailBoardGroup(index: number, columnIds: string[] = [], overrides: Record<string, any> = {}) {
     const presets = [
@@ -1577,7 +1966,59 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     dynamicSql: '',
     helpText: '',
     ...col,
+    type: resolveColumnFieldType(col),
+    fieldSqlTag: resolveColumnFieldSqlTagId(col),
+    fieldSqlTagName: toRecordText(getRecordFieldValue(col, 'fieldsqltagname', 'fieldSqlTagName')),
   });
+  const buildTreeRelationFallbackColumns = (fields: string[], currentColumns: any[] = []) => (
+    fields.map((fieldName, index) => {
+      const existing = currentColumns.find((item) => item.sourceField === fieldName);
+      if (existing) {
+        return { ...existing, sourceField: fieldName };
+      }
+
+      return buildColumn('tree_col', index + 1, {
+        name: fieldName,
+        sourceField: fieldName,
+        width: index === 1 ? 176 : 148,
+      });
+    })
+  );
+  const mapSingleTableGridFieldRecordToColumn = (
+    field: SingleTableGridFieldDto,
+    index: number,
+    existingColumn?: any,
+  ) => {
+    const normalizedExisting = existingColumn ? normalizeColumn(existingColumn) : null;
+    const backendId = getRecordFieldValue(field, 'id');
+    const ownerFieldId = getRecordFieldValue(field, 'fieldid', 'fieldId');
+    const fieldKey = toRecordText(getRecordFieldValue(field, 'fieldkey', 'fieldKey'));
+    const fieldName = toRecordText(getRecordFieldValue(field, 'fieldname', 'fieldName'));
+    const displayName = toRecordText(getRecordFieldValue(field, 'displayname', 'displayName', 'username'));
+    const orderId = toRecordNumber(getRecordFieldValue(field, 'orderid', 'orderId'), index + 1);
+    const width = toRecordNumber(
+      getRecordFieldValue(field, 'width', 'mobilewidth', 'mobileWidth'),
+      normalizedExisting?.width ?? (index === 1 ? 176 : 148),
+    );
+
+    return buildColumn('tree_col', index + 1, {
+      ...(normalizedExisting ?? {}),
+      ...field,
+      id: backendId == null ? (normalizedExisting?.id ?? `tree_grid_${Date.now()}_${index + 1}`) : `tree_grid_${backendId}`,
+      backendId,
+      ownerFieldId,
+      orderId,
+      backendFieldKey: fieldKey || normalizedExisting?.backendFieldKey || '',
+      name: displayName || fieldName || normalizedExisting?.name || `左侧列 ${index + 1}`,
+      sourceField: fieldName || fieldKey || normalizedExisting?.sourceField || `tree_field_${index + 1}`,
+      type: normalizedExisting?.type || '文本',
+      width,
+      mobileWidth: toRecordNumber(getRecordFieldValue(field, 'mobilewidth', 'mobileWidth'), width),
+      visible: toRecordBoolean(getRecordFieldValue(field, 'isvisible', 'isVisible'), normalizedExisting?.visible ?? true),
+      showMobile: toRecordBoolean(getRecordFieldValue(field, 'showmobile', 'showMobile'), normalizedExisting?.showMobile ?? false),
+      isCodeField: toRecordBoolean(getRecordFieldValue(field, 'iscodefield', 'isCodeField'), normalizedExisting?.isCodeField ?? false),
+    });
+  };
   const getBillHeaderLegacyRow = (field: any) => {
     const legacyY = Number.isFinite(Number(field?.canvasY))
       ? Number(field.canvasY)
@@ -1749,6 +2190,113 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       ),
     ),
   });
+  const resolveSingleTableConditionType = (condition: Record<string, unknown>) => {
+    const directType = toRecordText(
+      getRecordFieldValue(condition, 'type', 'controltypename', 'controlTypeName', 'fieldtypename', 'fieldTypeName'),
+    );
+
+    if (FIELD_TYPE_OPTIONS.includes(directType)) {
+      return directType;
+    }
+
+    const controlTypeLabel = toRecordText(
+      getRecordFieldValue(condition, 'fieldsqltagname', 'fieldSqlTagName', 'showname', 'showName'),
+    );
+    const controlTypeValue = getRecordFieldValue(condition, 'controltype', 'controlType', 'fieldsqltag', 'fieldSqlTag');
+    const mappedByControlType = mapFieldSqlTagToFieldType(controlTypeValue, controlTypeLabel, directType || '文本');
+    if (FIELD_TYPE_OPTIONS.includes(mappedByControlType)) {
+      return mappedByControlType;
+    }
+
+    if (/(日期|时间|date|time)/i.test(directType)) {
+      return '日期框';
+    }
+
+    if (/下拉|select/i.test(directType)) {
+      return '下拉框';
+    }
+
+    if (/搜索|lookup|search/i.test(directType)) {
+      return '搜索框';
+    }
+
+    const labelText = toRecordText(getRecordFieldValue(condition, 'controllabel', 'controlLabel', 'controlname', 'controlName'));
+    if (/(日期|时间|date|time)/i.test(labelText)) {
+      return '日期框';
+    }
+
+    return '文本';
+  };
+  const resolveSingleTableDetailFillType = (detail: Record<string, unknown>) => {
+    const directType = toRecordText(
+      getRecordFieldValue(detail, 'detailtype', 'detailType', 'displaymode', 'displayMode', 'tabletype', 'tableType'),
+    );
+
+    if (DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === directType)) {
+      return directType;
+    }
+
+    if (/(tree|树)/i.test(directType)) {
+      return '树表格';
+    }
+
+    if (/(chart|图)/i.test(directType)) {
+      return '图表';
+    }
+
+    if (/(web|page|url|网页)/i.test(directType)) {
+      return '网页';
+    }
+
+    switch (directType) {
+      case '1':
+        return '树表格';
+      case '2':
+        return '图表';
+      case '3':
+        return '网页';
+      default:
+        return '表格';
+    }
+  };
+  const mapSingleTableConditionRecordToField = (
+    condition: SingleTableConditionDto,
+    index: number,
+    overrides: Record<string, unknown> = {},
+  ) => {
+    const backendId = getRecordFieldValue(condition, 'id');
+    const controlName = toRecordText(getRecordFieldValue(condition, 'controlname', 'controlName'));
+    const controlLabel = toRecordText(getRecordFieldValue(condition, 'controllabel', 'controlLabel'));
+    const displayName = controlLabel || controlName || `条件 ${index + 1}`;
+    const controlType = resolveSingleTableConditionType(condition);
+    const placeholder = controlType === '日期框' || controlType === '下拉框' || controlType === '搜索框' || controlType === '单选框' || controlType === '多选框'
+      ? `请选择${displayName}`
+      : `请输入${displayName}`;
+
+    return normalizeConditionField({
+      ...condition,
+      id: backendId == null ? `cond_${Date.now()}_${index + 1}` : `cond_${backendId}`,
+      backendId,
+      orderId: toRecordNumber(getRecordFieldValue(condition, 'orderid', 'orderId'), index + 1),
+      sourceid: getRecordFieldValue(condition, 'sourceid', 'sourceId'),
+      formKey: toRecordText(getRecordFieldValue(condition, 'formkey', 'formKey')),
+      name: displayName,
+      sourceField: controlName || toRecordText(getRecordFieldValue(condition, 'keyfield', 'keyField')) || `condition_${index + 1}`,
+      type: controlType,
+      width: toRecordNumber(
+        getRecordFieldValue(condition, 'controlwidth', 'controlWidth', 'width'),
+        CONDITION_PANEL_CONTROL_WIDTH,
+      ),
+      defaultValue: toRecordText(getRecordFieldValue(condition, 'defaultvalue', 'defaultValue')),
+      relationSql: toRecordText(getRecordFieldValue(condition, 'sourcesql', 'sourceSql')),
+      formula: toRecordText(getRecordFieldValue(condition, 'resultfield', 'resultField')),
+      dynamicSql: toRecordText(getRecordFieldValue(condition, 'checkcond', 'checkCondition')),
+      dictCode: toRecordText(getRecordFieldValue(condition, 'keyfield', 'keyField')),
+      placeholder,
+      panelRow: CONDITION_PANEL_MIN_ROWS,
+      ...overrides,
+    });
+  };
   const [leftTableColumns, setLeftTableColumns] = useState<any[]>([]);
   const [leftTableConfig, setLeftTableConfig] = useState(
     buildGridConfig('', '', {
@@ -1860,6 +2408,48 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       return changed ? next : prev;
     });
   }, [currentModuleCode, detailTabs]);
+  useEffect(() => {
+    let isActive = true;
+
+    const loadFieldSqlTagOptions = async () => {
+      try {
+        const rows = await fetchFieldSqlTagOptions();
+
+        if (!isActive || !Array.isArray(rows) || rows.length === 0) {
+          return;
+        }
+
+        const dedupedRows = rows.reduce<FieldSqlTagOptionDto[]>((collection, row) => {
+          const optionId = normalizeFieldSqlTagId(row?.showid, -1);
+          if (optionId < 0 || collection.some((item) => normalizeFieldSqlTagId(item.showid, -1) === optionId)) {
+            return collection;
+          }
+
+          collection.push({
+            showid: optionId,
+            showname: getFieldSqlTagOptionLabel(row),
+          });
+          return collection;
+        }, []);
+
+        if (dedupedRows.length > 0) {
+          setFieldSqlTagOptions(dedupedRows);
+        }
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
+        setFieldSqlTagOptions(DEFAULT_FIELD_SQL_TAG_OPTIONS);
+      }
+    };
+
+    void loadFieldSqlTagOptions();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
   const [inspectorTarget, setInspectorTarget] = useState<{
     kind:
       | 'none'
@@ -1892,6 +2482,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const [selectedMainForDelete, setSelectedMainForDelete] = useState<string[]>([]);
   const [selectedLeftFiltersForDelete, setSelectedLeftFiltersForDelete] = useState<string[]>([]);
   const [selectedMainFiltersForDelete, setSelectedMainFiltersForDelete] = useState<string[]>([]);
+  const [fieldSqlTagOptions, setFieldSqlTagOptions] = useState<FieldSqlTagOptionDto[]>(DEFAULT_FIELD_SQL_TAG_OPTIONS);
 
   const [detailTableColumns, setDetailTableColumns] = useState<Record<string, any[]>>({
     tab1: [
@@ -2794,6 +3385,10 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   const handleBusinessTypeChange = (nextType: BusinessType) => {
     setBusinessType(nextType);
+    setMenuConfigDraft((prev) => ({
+      ...prev,
+      modType: nextType === 'table' ? '2' : '1',
+    }));
     setMenuInfoTab('common');
     setBuilderSelectionContextMenu(null);
     setSelectedLeftForDelete([]);
@@ -2808,11 +3403,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   };
 
   const updateCurrentMenuDraft = (fieldKey: string, value: ModuleMenuValue) => {
-    if (businessType === 'table') {
-      setBilltypeMenuDraft((prev) => ({ ...prev, [fieldKey]: value }));
-      return;
-    }
-    setDocumentMenuDraft((prev) => ({ ...prev, [fieldKey]: value }));
+    setMenuConfigDraft((prev) => ({ ...prev, [fieldKey]: value }));
   };
 
   const toggleMenuPinnedField = (fieldKey: string, shouldPin?: boolean) => {
@@ -2957,7 +3548,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setConfigStep(nextStep);
     setCompletedSteps(options?.completedSteps ?? []);
     handleBusinessTypeChange(nextType);
-    setIsFullscreenConfig(true);
+    setIsFullscreenConfig(false);
     setIsFullscreenEditor(false);
     setSurveyStep(0);
     setSurveyAnswers([]);
@@ -2972,8 +3563,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setMenuInfoError(null);
     setIsMenuInfoLoading(false);
     setIsMenuInfoSaving(false);
-    setDocumentMenuDraft(DOCUMENT_MENU_DEFAULTS);
-    setBilltypeMenuDraft(BILLTYPE_MENU_DEFAULTS);
+    setMenuConfigDraft({
+      ...MENU_CONFIG_DEFAULTS,
+      parentMenuId: toDraftText(activeFirstLevelMenu?.menuId),
+      subsystemId: toDraftText(selectedSubsystem?.subsysId),
+      useFlag: 'true',
+    });
     openModuleGuide('document');
   };
 
@@ -3008,34 +3603,39 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     };
   };
 
-  const buildCreatedConfigMenu = (moduleKey: string, menuTitle: string, moduleType: 'single-table' | 'bill'): BackendMenuNode => {
+  const buildCreatedConfigMenu = (savedMenu: SubsystemMenuConfigDto, moduleType: 'single-table' | 'bill'): BackendMenuNode => {
     const currentSubsystem = subsystemMenus.find((node) => node.id === activeSubsystem);
     const currentFirstLevelMenu = currentSubsystem?.children.find((node) => node.id === activeFirstLevelMenuId);
+    const nextMenuId = Number(getMenuConfigField(savedMenu, 'menuid', 'menuId', 'Menuid', 'MenuId'));
+    const nextUseflag = Number(getMenuConfigField(savedMenu, 'useflag', 'useFlag', 'Useflag', 'UseFlag') ?? 1);
+    const nextMenuStruct = normalizeMenuCode(toDraftText(getMenuConfigField(savedMenu, 'menustruct', 'menuStruct', 'Menustruct', 'MenuStruct')));
+    const nextMenuTitle = normalizeMenuTitle(toDraftText(getMenuConfigField(savedMenu, 'menucaption', 'menuCaption', 'Menucaption', 'MenuCaption'))) || '新建模块';
+    const nextModuleKey = normalizeMenuCode(toDraftText(getMenuConfigField(savedMenu, 'purviewid', 'purviewId', 'Purviewid', 'PurviewId')));
+    const nextSubsystemId = Number(getMenuConfigField(savedMenu, 'subsysid', 'subsysId', 'subsystemId', 'Subsysid', 'SubsysId', 'SubsystemId') ?? currentSubsystem?.subsysId ?? 0);
+    const nextParentMenuId = Number(getMenuConfigField(savedMenu, 'parentmenuid', 'parentMenuId', 'Parentmenuid', 'ParentMenuId') ?? currentFirstLevelMenu?.menuId ?? -1);
 
     return {
-      id: `draft:${moduleType}:${moduleKey || Date.now()}`,
+      id: Number.isFinite(nextMenuId) && nextMenuId > 0 ? `menu:${nextMenuId}` : `draft:${moduleType}:${nextModuleKey || Date.now()}`,
       parentId: currentFirstLevelMenu?.id,
       nodeType: 'menu',
-      title: normalizeMenuTitle(menuTitle) || '新建模块',
-      code: moduleKey,
+      title: nextMenuTitle,
+      code: nextMenuStruct,
       moduleType,
-      useflag: 1,
-      subsysId: currentSubsystem?.subsysId ?? 0,
+      useflag: nextUseflag,
+      subsysId: nextSubsystemId,
       subsysCode: currentSubsystem?.subsysCode,
-      menuId: undefined,
-      parentMenuId: currentFirstLevelMenu?.menuId ?? -1,
-      menuStruct: currentFirstLevelMenu?.menuStruct,
-      purviewId: moduleKey,
-      enabled: true,
+      menuId: Number.isFinite(nextMenuId) && nextMenuId > 0 ? nextMenuId : undefined,
+      parentMenuId: Number.isFinite(nextParentMenuId) ? nextParentMenuId : undefined,
+      menuStruct: nextMenuStruct,
+      purviewId: nextModuleKey,
+      enabled: isUseflagEnabled(nextUseflag, true),
       children: [],
     };
   };
 
-  const loadMenuInfoForMenu = async (menu: BackendMenuNode, nextType: BusinessType) => {
-    const moduleKey = normalizeMenuCode(menu.purviewId);
-
-    if (!moduleKey) {
-      const message = '当前菜单缺少模块标识，无法加载菜单信息。';
+  const loadMenuInfoForMenu = async (menu: BackendMenuNode) => {
+    if (!menu.menuId) {
+      const message = '当前菜单缺少菜单编号，无法加载菜单信息。';
       setMenuInfoError(message);
       showToast(message);
       return;
@@ -3045,17 +3645,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setMenuInfoError(null);
 
     try {
-      if (nextType === 'table') {
-        const data = await fetchBillTypeConfig(moduleKey);
-        setBilltypeMenuDraft(mapBillTypeToDraft(data));
-        const nextModuleKey = normalizeMenuCode(toDraftText(data.typeCode)) || moduleKey;
-        setActiveConfigMenu((prev) => (prev && prev.id === menu.id ? { ...prev, purviewId: nextModuleKey } : prev));
-      } else {
-        const data = await fetchSingleTableModuleConfig(moduleKey);
-        setDocumentMenuDraft(mapSingleTableModuleToDraft(data));
-        const nextModuleKey = normalizeMenuCode(toDraftText(data.dllCoId)) || moduleKey;
-        setActiveConfigMenu((prev) => (prev && prev.id === menu.id ? { ...prev, purviewId: nextModuleKey } : prev));
-      }
+      const data = await fetchSubsystemMenuConfig(menu.menuId);
+      setMenuConfigDraft(mapSubsystemMenuConfigToDraft(data));
+      setActiveConfigMenu((prev) => (prev && prev.id === menu.id ? buildCreatedConfigMenu(data, prev.moduleType === 'bill' ? 'bill' : 'single-table') : prev));
     } catch (error) {
       const message = getDashboardErrorMessage(error);
       setMenuInfoError(message);
@@ -3068,26 +3660,20 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const handleSecondLevelMenuConfig = (menu: BackendMenuNode) => {
     const moduleTypeProfile = getMenuModuleTypeProfile(menu.moduleType);
     const nextType = moduleTypeProfile?.businessType ?? 'document';
-    const moduleKey = normalizeMenuCode(menu.purviewId);
-
-    if (!moduleKey) {
-      showToast('当前菜单缺少模块标识，无法打开配置。');
+    if (!menu.menuId) {
+      showToast('当前菜单缺少菜单编号，无法打开配置。');
       return;
     }
 
     setActiveConfigMenu(menu);
     setMenuInfoError(null);
     setIsMenuInfoSaving(false);
-    if (nextType === 'table') {
-      setBilltypeMenuDraft(BILLTYPE_MENU_DEFAULTS);
-    } else {
-      setDocumentMenuDraft(DOCUMENT_MENU_DEFAULTS);
-    }
+    setMenuConfigDraft(MENU_CONFIG_DEFAULTS);
     openModuleGuide(nextType, {
       completedSteps: [1],
       initialStep: 2,
     });
-    void loadMenuInfoForMenu(menu, nextType);
+    void loadMenuInfoForMenu(menu);
   };
 
   const handleMenuInfoSave = async () => {
@@ -3099,8 +3685,35 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       return;
     }
 
-    if (activeConfigMenu && !activeConfigModuleKey) {
-      const message = '当前菜单缺少模块标识，无法保存菜单信息。';
+    const nextModuleType = activeConfigMenu?.moduleType ?? (businessType === 'table' ? 'bill' : 'single-table');
+    const nextMenuTitle = normalizeMenuTitle(toDraftText(menuConfigDraft.menuCaption));
+    const fallbackModuleKey = normalizeMenuCode(toDraftText(menuConfigDraft.moduleCode));
+    const resolvedSubsystemId = toDraftText(menuConfigDraft.subsystemId || selectedSubsystem?.subsysId);
+    const resolvedParentMenuId = toDraftText(menuConfigDraft.parentMenuId || activeFirstLevelMenu?.menuId);
+
+    if (!nextMenuTitle) {
+      const message = '请先填写菜单名称，再保存菜单信息。';
+      setMenuInfoError(message);
+      showToast(message);
+      return;
+    }
+
+    if (!fallbackModuleKey) {
+      const message = '请先填写模块标识，再保存菜单信息。';
+      setMenuInfoError(message);
+      showToast(message);
+      return;
+    }
+
+    if (!resolvedSubsystemId) {
+      const message = '当前缺少子系统编号，无法保存菜单信息。';
+      setMenuInfoError(message);
+      showToast(message);
+      return;
+    }
+
+    if (!resolvedParentMenuId) {
+      const message = '当前缺少父菜单编号，无法保存菜单信息。';
       setMenuInfoError(message);
       showToast(message);
       return;
@@ -3110,61 +3723,29 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setMenuInfoError(null);
 
     try {
-      if (businessType === 'table') {
-        const payload = mapBillTypeDraftToPayload(billtypeMenuDraft);
-        const fallbackModuleKey = normalizeMenuCode(toDraftText(payload.typecode));
-        const nextMenuTitle = normalizeMenuTitle(toDraftText(payload.typename)) || normalizeMenuTitle(toDraftText(billtypeMenuDraft.typeName)) || '新建单据模块';
+      const payload = mapMenuConfigDraftToPayload({
+        ...menuConfigDraft,
+        menuCaption: nextMenuTitle,
+        moduleCode: fallbackModuleKey,
+        parentMenuId: resolvedParentMenuId,
+        subsystemId: resolvedSubsystemId,
+      });
+      const saved = await saveSubsystemMenuConfig({
+        ...(activeConfigMenu?.menuId ? { menuid: activeConfigMenu.menuId } : buildCreateModuleRelationPayload(fallbackModuleKey, nextMenuTitle, nextModuleType)),
+        ...payload,
+      });
+      const nextMenuNode = buildCreatedConfigMenu(saved, nextModuleType);
 
-        if (!activeConfigMenu && !fallbackModuleKey) {
-          const message = '请先填写单据模块编码，再保存菜单信息。';
-          setMenuInfoError(message);
-          showToast(message);
-          return;
+      setMenuConfigDraft(mapSubsystemMenuConfigToDraft(saved));
+      setActiveConfigMenu(nextMenuNode);
+      setSecondLevelMenus((prev) => {
+        const existingIndex = prev.findIndex((item) => item.menuId === nextMenuNode.menuId || item.id === nextMenuNode.id);
+        if (existingIndex === -1) {
+          return [...prev, nextMenuNode];
         }
 
-        const saved = activeConfigMenu
-          ? await saveBillTypeConfig(activeConfigModuleKey, payload)
-          : await createBillTypeConfig({
-              ...buildCreateModuleRelationPayload(fallbackModuleKey, nextMenuTitle, 'bill'),
-              ...payload,
-            });
-
-        setBilltypeMenuDraft(mapBillTypeToDraft(saved));
-        const nextModuleKey = normalizeMenuCode(toDraftText(saved.typeCode)) || fallbackModuleKey || activeConfigModuleKey;
-
-        if (activeConfigMenu) {
-          setActiveConfigMenu((prev) => (prev ? { ...prev, code: nextModuleKey, purviewId: nextModuleKey, title: nextMenuTitle } : prev));
-        } else {
-          setActiveConfigMenu(buildCreatedConfigMenu(nextModuleKey, nextMenuTitle, 'bill'));
-        }
-      } else {
-        const payload = mapDocumentDraftToPayload(documentMenuDraft);
-        const fallbackModuleKey = normalizeMenuCode(toDraftText(payload.dllcoid));
-        const nextMenuTitle = normalizeMenuTitle(toDraftText(payload.toolsname)) || normalizeMenuTitle(toDraftText(documentMenuDraft.moduleName)) || '新建单表模块';
-
-        if (!activeConfigMenu && !fallbackModuleKey) {
-          const message = '请先填写单表模块编码，再保存菜单信息。';
-          setMenuInfoError(message);
-          showToast(message);
-          return;
-        }
-
-        const saved = activeConfigMenu
-          ? await saveSingleTableModuleConfig(activeConfigModuleKey, payload)
-          : await createSingleTableModuleConfig({
-              ...buildCreateModuleRelationPayload(fallbackModuleKey, nextMenuTitle, 'single-table'),
-              ...payload,
-            });
-
-        setDocumentMenuDraft(mapSingleTableModuleToDraft(saved));
-        const nextModuleKey = normalizeMenuCode(toDraftText(saved.dllCoId)) || fallbackModuleKey || activeConfigModuleKey;
-
-        if (activeConfigMenu) {
-          setActiveConfigMenu((prev) => (prev ? { ...prev, code: nextModuleKey, purviewId: nextModuleKey, title: nextMenuTitle } : prev));
-        } else {
-          setActiveConfigMenu(buildCreatedConfigMenu(nextModuleKey, nextMenuTitle, 'single-table'));
-        }
-      }
+        return prev.map((item, index) => (index === existingIndex ? nextMenuNode : item));
+      });
 
       markStepCompleted(2);
       showToast(activeConfigMenu ? '菜单信息已保存' : '菜单信息已创建');
@@ -3180,6 +3761,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const handleSecondLevelMenuDelete = async (menu: BackendMenuNode) => {
     const moduleTypeProfile = getMenuModuleTypeProfile(menu.moduleType);
     const moduleKey = normalizeMenuCode(menu.purviewId);
+    const normalizedModuleType = String(menu.moduleType || '').trim().toLowerCase();
     const menuTitle = normalizeMenuTitle(menu.title) || '当前模块';
 
     if (!moduleTypeProfile) {
@@ -3195,10 +3777,13 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setDeletingMenuId(menu.id);
 
     try {
-      if (moduleTypeProfile.businessType === 'table') {
+      if (normalizedModuleType === 'bill') {
         await deleteBillTypeConfig(moduleKey);
-      } else {
+      } else if (normalizedModuleType === 'single-table') {
         await deleteSingleTableModuleConfig(moduleKey);
+      } else {
+        showToast('当前菜单的模块类型无法识别，暂时不能删除。');
+        return;
       }
 
       setSecondLevelMenus((prev) => prev.filter((item) => item.id !== menu.id));
@@ -3332,13 +3917,14 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   const renderMenuInfoStep = () => {
     const panelShellClass = shadcnPanelShellClass;
-    const panelHeaderClass = `${shadcnPanelHeaderClass} px-5 py-4`;
+    const panelHeaderClass = `${shadcnPanelHeaderClass} px-5 py-3.5`;
     const panelTitleClass = shadcnPanelTitleClass;
     const panelBadgeClass = shadcnPanelBadgeClass;
     const panelIconShellClass = `${shadcnPanelIconShellClass} size-10 rounded-lg`;
     const compactInfoCardClass = shadcnInfoCardClass;
     const compactCardClass = shadcnSectionCardClass;
     const sectionTitleClass = shadcnSectionTitleClass;
+    const sidePanelShellClass = `${panelShellClass} h-auto min-h-fit overflow-visible`;
     const menuTabs: Array<{ id: 'common' | 'advanced'; label: string; icon: string }> = [
       { id: 'common', label: '常用', icon: 'folder_managed' },
       { id: 'advanced', label: '不常用', icon: 'inventory_2' },
@@ -3354,7 +3940,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         <div className={panelShellClass}>
           <div className={panelHeaderClass}>
             <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div className="inline-flex items-center gap-2 rounded-full border border-[#1686e3]/15 bg-[#1686e3]/5 px-3 py-1 text-[11px] font-bold tracking-[0.24em] text-[#1686e3]">
                     菜单信息
                   </div>
@@ -3382,20 +3968,20 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               )}
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-2.5">
+            <div className="mt-3 flex flex-wrap items-center gap-2.5">
               <span className="inline-flex items-center gap-2 rounded-full bg-[#1686e3] px-3 py-1 text-[11px] font-bold text-white shadow-[0_12px_24px_-16px_rgba(22,134,227,0.52)]">
                 <span className="material-symbols-outlined text-[15px]">
                   {businessType === 'table' ? 'receipt_long' : 'table_view'}
                 </span>
                 {currentModuleGuide.label}
               </span>
-              <span className={panelBadgeClass}>配置表 {currentModuleGuide.configTable}</span>
+              <span className={panelBadgeClass}>配置表 {MENU_CONFIG_TABLE_NAME}</span>
               <span className={panelBadgeClass}>已填写 {filledMenuFieldCount}/{currentMenuFieldEntries.length}</span>
               <span className={panelBadgeClass}>{menuInfoTab === 'common' ? '常用目录' : '不常用目录'} {activeFilledCount}/{activeFieldCount}</span>
               {activeConfigModuleKey ? <span className={panelBadgeClass}>模块标识 {activeConfigModuleKey}</span> : null}
             </div>
 
-            <div className="mt-4 flex items-center gap-2 rounded-[18px] border border-slate-200/70 bg-white/82 p-1.5 dark:border-slate-700 dark:bg-slate-900/50">
+            <div className="mt-3 flex items-center gap-2 rounded-[18px] border border-slate-200/70 bg-white/82 p-1.5 dark:border-slate-700 dark:bg-slate-900/50">
               {menuTabs.map((tab) => {
                 const isActive = menuInfoTab === tab.id;
 
@@ -3417,24 +4003,14 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               })}
             </div>
 
-            {isEditingMenu ? (
-              <div className="mt-4 rounded-[18px] border border-slate-200/70 bg-white/82 px-4 py-3 text-[12px] text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
-                正在编辑菜单「{normalizeMenuTitle(activeConfigMenu?.title)}」，已按 {currentModuleGuide.label} 类型加载菜单信息。
-              </div>
-            ) : (
-              <div className="mt-4 rounded-[18px] border border-sky-200 bg-sky-50 px-4 py-3 text-[12px] font-semibold text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300">
-                当前是新建模式。首次点击“保存本页”会调用新增接口，创建成功后会自动切到可继续保存的编辑态。
-              </div>
-            )}
-
             {isMenuInfoLoading ? (
-              <div className="mt-4 rounded-[18px] border border-sky-200 bg-sky-50 px-4 py-3 text-[12px] font-semibold text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300">
+              <div className="mt-3 rounded-[18px] border border-sky-200 bg-sky-50 px-4 py-3 text-[12px] font-semibold text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300">
                 正在从后端加载菜单信息...
               </div>
             ) : null}
 
             {menuInfoError ? (
-              <div className="mt-4 rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] font-semibold text-rose-600 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+              <div className="mt-3 rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] font-semibold text-rose-600 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
                 {menuInfoError}
               </div>
             ) : null}
@@ -3498,7 +4074,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         </div>
 
         <div className="flex flex-col gap-6">
-          <div className={panelShellClass}>
+          <div className={sidePanelShellClass}>
             <div className={panelHeaderClass}>
               <div className="flex items-start gap-3">
                 <div className={panelIconShellClass}>
@@ -3547,7 +4123,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                   <span className="material-symbols-outlined text-[16px] text-[#1686e3]">insights</span>
                   <span>配置概览</span>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                <div className="grid gap-3">
                   <div className={compactInfoCardClass}>
                     <div className="text-[11px] font-bold tracking-[0.06em] text-slate-400">常用字段</div>
                     <div className="mt-2 text-[22px] font-black tracking-tight text-slate-900 dark:text-white">{currentPinnedMenuKeys.length}</div>
@@ -3560,15 +4136,15 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                   </div>
                   <div className={compactInfoCardClass}>
                     <div className="text-[11px] font-bold tracking-[0.06em] text-slate-400">配置表</div>
-                    <div className="mt-2 break-all text-[13px] font-bold text-slate-800 dark:text-slate-100">{currentModuleGuide.configTable}</div>
-                    <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">{currentModuleGuide.configTableDesc}</div>
+                    <div className="mt-2 break-all text-[13px] font-bold text-slate-800 dark:text-slate-100">{MENU_CONFIG_TABLE_NAME}</div>
+                    <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">{MENU_CONFIG_TABLE_DESC}</div>
                   </div>
                 </div>
               </section>
             </div>
           </div>
 
-          <div className={panelShellClass}>
+          <div className={sidePanelShellClass}>
             <div className={panelHeaderClass}>
               <div className="flex items-start gap-3">
                 <div className={panelIconShellClass}>
@@ -5414,29 +5990,35 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       ? 'cloudy-glass-panel border-[3px] border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] shadow-[0_32px_68px_-44px_rgba(81,98,128,0.26)]'
       : 'cloudy-glass-panel border-white/70';
     const headerDividerClass = tableSelected ? 'border-[color:var(--workspace-accent-border)]' : 'border-slate-200/70 dark:border-slate-700/80';
-    const getHeaderButtonClass = (isActive: boolean, isMarkedForDelete: boolean) => (
+    const getHeaderButtonClass = (isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => (
       isActive
         ? 'bg-[linear-gradient(180deg,rgba(255,241,244,0.98),rgba(255,247,249,1))] shadow-[inset_0_0_0_1px_rgba(228,177,187,0.52)]'
         : isMarkedForDelete
           ? 'bg-[linear-gradient(180deg,rgba(255,246,248,0.98),rgba(255,250,251,1))]'
+          : isTreeRelation
+            ? 'bg-[linear-gradient(180deg,rgba(237,247,255,0.98),rgba(245,250,255,1))] shadow-[inset_0_0_0_1px_rgba(125,176,255,0.46)]'
           : tableSelected
             ? 'bg-[linear-gradient(180deg,rgba(255,248,250,0.9),rgba(255,251,252,0.98))] hover:bg-white/35 dark:hover:bg-white/5'
             : 'bg-white/92 hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
     );
-    const getHeaderLabelClass = (isActive: boolean, isMarkedForDelete: boolean) => {
+    const getHeaderLabelClass = (isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => {
       if (isActive) {
         return 'bg-[#d86a80] text-white shadow-[0_14px_24px_-20px_rgba(216,106,128,0.92)]';
       }
       if (isMarkedForDelete) {
         return 'bg-[#f9e9ed] text-[#bf5a70]';
       }
+      if (isTreeRelation) {
+        return 'bg-[#eaf4ff] text-[#2563eb] shadow-[0_12px_20px_-18px_rgba(59,130,246,0.7)] dark:bg-sky-500/16 dark:text-sky-200';
+      }
       return tableSelected
         ? 'bg-[#fff7f9] text-[#ba566d] dark:bg-white/8 dark:text-[#f4b5c1]'
         : 'bg-transparent text-slate-700 dark:text-slate-100';
     };
-    const getHeaderRequiredMarkClass = (isActive: boolean, isMarkedForDelete: boolean, isRequired: boolean) => {
+    const getHeaderRequiredMarkClass = (isActive: boolean, isMarkedForDelete: boolean, isRequired: boolean, isTreeRelation: boolean) => {
       if (!isRequired) return 'hidden';
       if (isActive) return 'text-white/88';
+      if (isTreeRelation) return 'text-[#2563eb] dark:text-sky-200';
       if (isMarkedForDelete || tableSelected) return 'text-[#d15b75]';
       return 'text-[color:var(--workspace-accent-strong)]';
     };
@@ -5465,6 +6047,10 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const addColumnButtonClass = tableSelected
       ? 'cloudy-glass-orb border-[color:var(--workspace-accent-border)] text-[color:var(--workspace-accent-strong)]'
       : 'cloudy-glass-orb text-[color:var(--workspace-accent)]';
+    const tableBuilderContentStyle: React.CSSProperties = {
+      width: totalTableWidth,
+      minWidth: totalTableWidth,
+    };
     if (cols.length === 0) {
       return (
         <div className={`flex items-center justify-center px-6 text-center text-slate-400 ${isCompactCanvas ? 'min-h-[164px] py-6' : 'h-full min-h-[240px]'}`}>
@@ -5483,7 +6069,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
     if (backgroundSelectable) {
       return (
-        <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-[26px] border ${themedTableSurfaceClass} ${isCompactCanvas ? 'flex h-full min-h-[184px]' : 'flex h-full min-h-[260px]'} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
+        <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full flex-col overflow-x-auto overflow-y-hidden rounded-[26px] border ${themedTableSurfaceClass} ${isCompactCanvas ? 'flex h-full min-h-[184px]' : 'flex h-full min-h-[260px]'} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
           {visibleResizeTag && (
             <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-full border border-[#0b6bcb]/15 bg-white/96 px-3 py-1.5 text-[11px] font-bold text-[#0b6bcb] shadow-[0_18px_32px_-24px_rgba(11,107,203,0.48)] dark:border-[#0b6bcb]/20 dark:bg-slate-900/92">
               <span className="material-symbols-outlined text-[14px]">straighten</span>
@@ -5491,9 +6077,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               <span className="rounded-full bg-[#0b6bcb]/8 px-2 py-0.5">{Math.round(visibleResizeTag.width)}px</span>
             </div>
           )}
-          <div className="scrollbar-none min-w-0 shrink-0 overflow-x-auto">
+          <div className="min-w-0 shrink-0">
             <table
-              style={{ width: totalTableWidth, minWidth: totalTableWidth, tableLayout: 'fixed' }}
+              style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
               className="table-fixed border-separate border-spacing-0 text-left text-[12px]"
             >
               <colgroup>
@@ -5509,6 +6095,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                     const normalizedCol = normalizeColumn(col);
                     const isActive = selectedId === col.id;
                     const isMarkedForDelete = selectedForDelete.includes(col.id);
+                    const isTreeRelation = scope === 'main' && businessType !== 'table' && isTreeRelationFieldColumn(normalizedCol);
                     const isResizing = activeResize?.id === col.id;
                     const headerWidth = getColumnRenderWidth(normalizedCol);
                     const isCollapsedHeader = headerWidth <= 18;
@@ -5523,15 +6110,20 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                         type="button"
                         onClick={(event) => handleColumnHeaderClick(event, col.id)}
                         onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
-                        className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-2 py-0' : isCompactModuleSetting ? 'min-h-[34px] px-3 pr-4 py-0' : 'min-h-[40px] px-3.5 pr-5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete)}`}
+                        className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-2 py-0' : isCompactModuleSetting ? 'min-h-[34px] px-3 pr-4 py-0' : 'min-h-[40px] px-3.5 pr-5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`}
                       >
                           <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
                             <div
-                              className={`inline-flex max-w-full items-center rounded-full font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : 'px-2.5 py-1'} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete)}`}
+                              className={`inline-flex max-w-full items-center rounded-full font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : 'px-2.5 py-1'} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
                               title={normalizedCol.name}
                             >
                               <span className="truncate">{normalizedCol.name}</span>
-                              <span className={`ml-1 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required)}`}>*</span>
+                              {isTreeRelation && !isCollapsedHeader && (
+                                <span className="ml-1.5 inline-flex items-center rounded-full bg-white/75 px-1.5 py-0.5 text-[9px] font-black leading-none text-[#2563eb] shadow-[0_10px_18px_-16px_rgba(37,99,235,0.7)] dark:bg-sky-500/16 dark:text-sky-100">
+                                  树
+                                </span>
+                              )}
+                              <span className={`ml-1 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
                             </div>
                           </div>
                         </button>
@@ -5572,6 +6164,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               event.stopPropagation();
               options?.onCanvasDoubleClick?.();
             }}
+            style={tableBuilderContentStyle}
             className={`relative mt-1 flex w-full overflow-hidden rounded-[20px] border text-center transition-all dark:border-slate-700 ${themedTableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] flex-1' : 'min-h-[188px] flex-1'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
           >
             <div className={`pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.28),transparent_62%)] ${tableSelected ? 'opacity-80' : 'opacity-100'}`} />
@@ -5597,7 +6190,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     }
 
     return (
-      <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-w-max rounded-[26px] border ${themedTableSurfaceClass} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
+      <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden rounded-[26px] border ${themedTableSurfaceClass} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
         {visibleResizeTag && (
           <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-full border border-[#1686e3]/15 bg-white/96 px-3 py-1.5 text-[11px] font-bold text-[#1686e3] shadow-[0_18px_32px_-24px_rgba(22,134,227,0.58)] dark:border-[#1686e3]/20 dark:bg-slate-900/92">
             <span className="material-symbols-outlined text-[14px]">straighten</span>
@@ -5606,7 +6199,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           </div>
         )}
         <table
-          style={{ minWidth: totalTableWidth, tableLayout: 'fixed' }}
+          style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
           className="table-fixed overflow-hidden rounded-[18px] border-separate border-spacing-0 text-left text-[12px]"
         >
           <colgroup>
@@ -5622,6 +6215,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 const normalizedCol = normalizeColumn(col);
                 const isActive = selectedId === col.id;
                 const isMarkedForDelete = selectedForDelete.includes(col.id);
+                const isTreeRelation = scope === 'main' && businessType !== 'table' && isTreeRelationFieldColumn(normalizedCol);
                 const isResizing = activeResize?.id === col.id;
                 const headerWidth = getColumnRenderWidth(normalizedCol);
                 const isCollapsedHeader = headerWidth <= 18;
@@ -5636,15 +6230,20 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                       type="button"
                       onClick={(event) => handleColumnHeaderClick(event, col.id)}
                       onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
-                      className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[38px] px-0 pr-2 py-0' : isCompactModuleSetting ? 'min-h-[38px] px-3 pr-4 py-0' : 'min-h-[46px] px-3.5 pr-5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete)}`}
+                      className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[38px] px-0 pr-2 py-0' : isCompactModuleSetting ? 'min-h-[38px] px-3 pr-4 py-0' : 'min-h-[46px] px-3.5 pr-5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`}
                     >
                       <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
                         <div
-                          className={`inline-flex max-w-full items-center rounded-full font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : 'px-2.5 py-1'} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete)}`}
+                          className={`inline-flex max-w-full items-center rounded-full font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : 'px-2.5 py-1'} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
                           title={normalizedCol.name}
                         >
                           <span className="truncate">{normalizedCol.name}</span>
-                          <span className={`ml-1 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required)}`}>*</span>
+                          {isTreeRelation && !isCollapsedHeader && (
+                            <span className="ml-1.5 inline-flex items-center rounded-full bg-white/75 px-1.5 py-0.5 text-[9px] font-black leading-none text-[#2563eb] shadow-[0_10px_18px_-16px_rgba(37,99,235,0.7)] dark:bg-sky-500/16 dark:text-sky-100">
+                              树
+                            </span>
+                          )}
+                          <span className={`ml-1 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
                         </div>
                       </div>
                     </button>
@@ -5713,7 +6312,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   const configSteps = [
     { id: 1, title: '类型选择', desc: '先确定本次创建的是单表还是单据' },
-    { id: 2, title: '菜单信息', desc: '基础路由、菜单和主配置表映射' },
+    { id: 2, title: '菜单信息', desc: '基础路由、菜单与功能树映射' },
     { id: 3, title: '模块介绍', desc: '功能概述与使用说明' },
     { id: 4, title: '调研过程', desc: 'AI 深度业务需求分析' },
     { id: MODULE_SETTING_STEP, title: '模块设置', desc: '字段、表单与流程编排' },
@@ -5883,15 +6482,22 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const currentDetailFillType = DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === tabFillTypes[activeTab])
     ? tabFillTypes[activeTab]
     : DETAIL_FILL_TYPE_OPTIONS[0].value;
-  const treeRelationColumn = mainTableColumns.find((column) => normalizeColumn(column).type === '树形节点关联') ?? null;
+  const treeRelationColumn = mainTableColumns.find((column) => isTreeRelationFieldColumn(column)) ?? null;
   const parsedTreeSourceFields = useMemo(
     () => parseSqlFieldNames(treeRelationColumn?.dynamicSql ?? ''),
     [treeRelationColumn?.dynamicSql],
   );
   const isTreePaneVisible = Boolean(treeRelationColumn);
-  const documentConditionOwnerFieldKey = treeRelationColumn
-    ? normalizeColumn(treeRelationColumn).sourceField || treeRelationColumn.id
+  const treeRelationColumnConfig = treeRelationColumn ? normalizeColumn(treeRelationColumn) : null;
+  const documentConditionOwnerFieldKey = treeRelationColumnConfig
+    ? stripBraces(
+      toRecordText(treeRelationColumnConfig.backendFieldKey || treeRelationColumnConfig.fieldKey)
+        || toRecordText(treeRelationColumnConfig.formKey)
+        || toRecordText(treeRelationColumnConfig.sourceField)
+        || toRecordText(treeRelationColumn.id),
+    )
     : '';
+  const documentConditionOwnerSourceId = treeRelationColumnConfig?.backendId ?? treeRelationColumn?.id ?? '';
 
   useEffect(() => {
     setSelectedDetailForDelete([]);
@@ -5949,18 +6555,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
     const sourceFields = parsedTreeSourceFields.length > 0 ? parsedTreeSourceFields : ['node_id', 'node_name', 'parent_id'];
     const ownerField = normalizeColumn(treeRelationColumn);
-    setLeftTableColumns((prev) => sourceFields.map((fieldName, index) => {
-      const existing = prev.find((item) => item.sourceField === fieldName);
-      if (existing) {
-        return { ...existing, sourceField: fieldName };
-      }
-
-      return buildColumn('tree_col', index + 1, {
-        name: fieldName,
-        sourceField: fieldName,
-        width: index === 1 ? 176 : 148,
-      });
-    }));
+    setLeftTableColumns((prev) => buildTreeRelationFallbackColumns(sourceFields, prev));
     setLeftTableConfig((prev) => ({
       ...prev,
       tableType: '树表格',
@@ -5976,10 +6571,86 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     }));
     setLeftFilterFields((prev) => prev.map((field) => ({
       ...field,
-      sourceid: treeRelationColumn.id,
+      sourceid: documentConditionOwnerSourceId,
       formKey: documentConditionOwnerFieldKey,
     })));
-  }, [documentConditionOwnerFieldKey, parsedTreeSourceFields, treeRelationColumn]);
+  }, [documentConditionOwnerFieldKey, documentConditionOwnerSourceId, parsedTreeSourceFields, treeRelationColumn]);
+
+  useEffect(() => {
+    if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
+      return;
+    }
+
+    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+      return;
+    }
+
+    if (!treeRelationColumn || !documentConditionOwnerSourceId) {
+      return;
+    }
+
+    const fieldId = Number(documentConditionOwnerSourceId);
+    if (!Number.isFinite(fieldId) || fieldId <= 0) {
+      return;
+    }
+
+    const fallbackFields = parsedTreeSourceFields.length > 0 ? parsedTreeSourceFields : ['node_id', 'node_name', 'parent_id'];
+    let isActive = true;
+
+    const applyFallbackColumns = () => {
+      setLeftTableColumns((prev) => buildTreeRelationFallbackColumns(fallbackFields, prev));
+    };
+
+    const loadSingleTableFieldGridFields = async () => {
+      try {
+        const rows = await fetchSingleTableFieldGridFields(activeConfigModuleKey, fieldId);
+        if (!isActive) {
+          return;
+        }
+
+        if (!Array.isArray(rows) || rows.length === 0) {
+          applyFallbackColumns();
+          return;
+        }
+
+        const orderedRows = [...rows].sort(
+          (left, right) => toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId'), 0)
+            - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId'), 0),
+        );
+
+        setLeftTableColumns((prev) => orderedRows.map((row, index) => {
+          const backendId = getRecordFieldValue(row, 'id');
+          const fieldName = toRecordText(getRecordFieldValue(row, 'fieldname', 'fieldName'));
+          const fieldKey = toRecordText(getRecordFieldValue(row, 'fieldkey', 'fieldKey'));
+          const existing = prev.find((item) => (
+            (backendId != null && getRecordFieldValue(item, 'backendid', 'backendId') === backendId)
+            || (fieldName && item.sourceField === fieldName)
+            || (fieldKey && getRecordFieldValue(item, 'backendfieldkey', 'backendFieldKey') === fieldKey)
+          ));
+
+          return mapSingleTableGridFieldRecordToColumn(row, index, existing);
+        }));
+      } catch {
+        if (isActive) {
+          applyFallbackColumns();
+        }
+      }
+    };
+
+    loadSingleTableFieldGridFields();
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    activeConfigMenu?.moduleType,
+    activeConfigModuleKey,
+    configStep,
+    documentConditionOwnerSourceId,
+    isConfigOpen,
+    parsedTreeSourceFields,
+    treeRelationColumn,
+  ]);
 
   useEffect(() => {
     if (!isConfigOpen) {
@@ -5991,6 +6662,226 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       moduleSettingFullscreenInitRef.current = true;
     }
   }, [configStep, isConfigOpen]);
+
+  useEffect(() => {
+    if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
+      setIsSingleTableFieldsLoading(false);
+      return;
+    }
+
+    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+      setIsSingleTableFieldsLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    setIsSingleTableFieldsLoading(true);
+
+    const loadSingleTableFields = async () => {
+      try {
+        const rows = await fetchSingleTableModuleFields(activeConfigModuleKey);
+
+        if (!isActive) {
+          return;
+        }
+
+        const mappedColumns = rows.map((field, index) => mapSingleTableFieldRecordToColumn(field, index));
+        setMainTableColumns(mappedColumns);
+        setSelectedMainForDelete([]);
+        setInspectorTarget((prev) => {
+          if (prev.kind === 'main-col' && !mappedColumns.some((column) => column.id === prev.id)) {
+            return { kind: 'main-grid' };
+          }
+
+          return prev;
+        });
+        setDetailBoardSortColumnId((prev) => (
+          prev && mappedColumns.some((column) => column.id === prev) ? prev : mappedColumns[0]?.id ?? null
+        ));
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        showToast(getDashboardErrorMessage(error));
+      } finally {
+        if (isActive) {
+          setIsSingleTableFieldsLoading(false);
+        }
+      }
+    };
+
+    void loadSingleTableFields();
+
+    return () => {
+      isActive = false;
+    };
+  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen]);
+
+  useEffect(() => {
+    if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
+      return;
+    }
+
+    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadSingleTableConditions = async () => {
+      try {
+        const rows = await fetchSingleTableModuleConditions(activeConfigModuleKey);
+
+        if (!isActive) {
+          return;
+        }
+
+        const mappedFields = rows.map((condition, index) => mapSingleTableConditionRecordToField(condition, index));
+        setMainFilterFields(mappedFields);
+        setSelectedMainFiltersForDelete([]);
+        setInspectorTarget((prev) => {
+          if (prev.kind === 'main-filter' && !mappedFields.some((field) => field.id === prev.id)) {
+            return { kind: 'main-filter-panel' };
+          }
+
+          return prev;
+        });
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        showToast(getDashboardErrorMessage(error));
+      }
+    };
+
+    void loadSingleTableConditions();
+
+    return () => {
+      isActive = false;
+    };
+  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen]);
+
+  useEffect(() => {
+    if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
+      return;
+    }
+
+    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+      return;
+    }
+
+    if (!treeRelationColumn || !documentConditionOwnerSourceId) {
+      setLeftFilterFields([]);
+      setSelectedLeftFiltersForDelete([]);
+      return;
+    }
+
+    const fieldId = Number(documentConditionOwnerSourceId);
+    if (!Number.isFinite(fieldId) || fieldId <= 0) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadSingleTableFieldConditions = async () => {
+      try {
+        const rows = await fetchSingleTableFieldConditions(activeConfigModuleKey, fieldId);
+
+        if (!isActive) {
+          return;
+        }
+
+        const mappedFields = rows.map((condition, index) => mapSingleTableConditionRecordToField(condition, index, {
+          sourceid: fieldId,
+          formKey: documentConditionOwnerFieldKey,
+        }));
+        setLeftFilterFields(mappedFields);
+        setSelectedLeftFiltersForDelete([]);
+        setInspectorTarget((prev) => {
+          if (prev.kind === 'left-filter' && !mappedFields.some((field) => field.id === prev.id)) {
+            return { kind: 'left-filter-panel' };
+          }
+
+          return prev;
+        });
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        showToast(getDashboardErrorMessage(error));
+      }
+    };
+
+    void loadSingleTableFieldConditions();
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    activeConfigMenu?.moduleType,
+    activeConfigModuleKey,
+    configStep,
+    documentConditionOwnerFieldKey,
+    documentConditionOwnerSourceId,
+    isConfigOpen,
+    treeRelationColumn,
+  ]);
+
+  useEffect(() => {
+    if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
+      return;
+    }
+
+    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadSingleTableDetails = async () => {
+      try {
+        const rows = await fetchSingleTableModuleDetails(activeConfigModuleKey);
+
+        if (!isActive) {
+          return;
+        }
+
+        const mappedDetails = rows.map((detail, index) => mapSingleTableDetailRecord(detail, index));
+        const nextTabs = mappedDetails.map((item) => item.tab);
+        const nextTabFillTypes = Object.fromEntries(mappedDetails.map((item) => [item.tab.id, item.fillType]));
+        const nextTabConfigs = Object.fromEntries(mappedDetails.map((item) => [item.tab.id, item.config]));
+        const nextGridConfigs = Object.fromEntries(mappedDetails.map((item) => [item.tab.id, item.gridConfig]));
+        const nextDetailColumns = Object.fromEntries(mappedDetails.map((item) => [item.tab.id, [] as any[]]));
+        const nextDetailFilters = Object.fromEntries(mappedDetails.map((item) => [item.tab.id, [] as any[]]));
+        const nextActiveTab = nextTabs[0]?.id ?? '';
+
+        setDetailTabs(nextTabs);
+        setTabFillTypes(nextTabFillTypes);
+        setDetailTabConfigs(nextTabConfigs);
+        setDetailTableConfigs(nextGridConfigs);
+        setDetailTableColumns(nextDetailColumns);
+        setDetailFilterFields(nextDetailFilters);
+        setSelectedDetailForDelete([]);
+        setSelectedDetailFiltersForDelete([]);
+        setActiveTab((prev) => (nextTabs.some((tab) => tab.id === prev) ? prev : nextActiveTab));
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        showToast(getDashboardErrorMessage(error));
+      }
+    };
+
+    void loadSingleTableDetails();
+
+    return () => {
+      isActive = false;
+    };
+  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen]);
 
   useEffect(() => {
     const contextMenuItems = leftTableConfig.contextMenuItems ?? [];
@@ -8478,7 +9369,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             <div className={compactInfoCardClass}>
               <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">关联条件</div>
               <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{leftFilterFields.length} 条</div>
-              <div className="mt-1 break-all font-mono text-[11px] text-slate-400">sourceid = {treeRelationColumn?.id || '未设置'}</div>
+                        <div className="mt-1 break-all font-mono text-[11px] text-slate-400">sourceid = {documentConditionOwnerSourceId || '未设置'}</div>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -10057,9 +10948,60 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           { key: 'searchable', label: '支持搜索', desc: '可作为筛选检索字段参与查询' },
           { key: 'readonly', label: '只读模式', desc: '用于系统回填或计算型字段' },
         ];
+    const isSingleTableField = !isConditionConfig && businessType !== 'table';
+    const currentFieldSqlTagValue = String(resolveColumnFieldSqlTagId(currentColumn));
+    const currentFieldSqlTagLabel = toRecordText(currentColumn.fieldSqlTagName)
+      || FIELD_SQL_TAG_LABEL_FALLBACKS[normalizeFieldSqlTagId(currentFieldSqlTagValue, 0)]
+      || currentColumn.type;
+    const availableFieldSqlTagOptions = (fieldSqlTagOptions.length > 0 ? fieldSqlTagOptions : DEFAULT_FIELD_SQL_TAG_OPTIONS).reduce<FieldSqlTagOptionDto[]>((collection, option) => {
+      const optionId = normalizeFieldSqlTagId(option.showid, -1);
+      if (optionId < 0 || collection.some((item) => normalizeFieldSqlTagId(item.showid, -1) === optionId)) {
+        return collection;
+      }
+
+      collection.push({
+        showid: optionId,
+        showname: getFieldSqlTagOptionLabel(option),
+      });
+      return collection;
+    }, []);
+    if (!availableFieldSqlTagOptions.some((option) => String(normalizeFieldSqlTagId(option.showid, -1)) === currentFieldSqlTagValue)) {
+      availableFieldSqlTagOptions.unshift({
+        showid: normalizeFieldSqlTagId(currentFieldSqlTagValue, 0),
+        showname: currentFieldSqlTagLabel || `类型 ${currentFieldSqlTagValue}`,
+      });
+    }
+    const existingTreeRelationColumn = isSingleTableField
+      ? mainTableColumns.find((column) => isTreeRelationFieldColumn(column)) ?? null
+      : null;
+    const hasOtherTreeRelationField = Boolean(existingTreeRelationColumn && existingTreeRelationColumn.id !== currentColumn.id);
     const availableFieldTypes = isConditionConfig
       ? FIELD_TYPE_OPTIONS.filter((type) => type !== '树形节点关联')
       : FIELD_TYPE_OPTIONS;
+    const handleFieldTypeChange = (nextValue: string) => {
+      if (isConditionConfig) {
+        updateColumn({ type: nextValue });
+        return;
+      }
+
+      const selectedOption = availableFieldSqlTagOptions.find((option) => String(normalizeFieldSqlTagId(option.showid, -1)) === nextValue);
+      if (!selectedOption) {
+        return;
+      }
+
+      const nextFieldType = mapFieldSqlTagToFieldType(selectedOption.showid, getFieldSqlTagOptionLabel(selectedOption), currentColumn.type);
+      if (isSingleTableField && nextFieldType === '树形节点关联' && hasOtherTreeRelationField) {
+        showToast(`树形节点关联已被字段「${normalizeColumn(existingTreeRelationColumn).name}」占用，其他列不能重复选择。`);
+        return;
+      }
+
+      updateColumn({
+        type: nextFieldType,
+        fieldSqlTag: normalizeFieldSqlTagId(selectedOption.showid, 0),
+        fieldSqlTagName: getFieldSqlTagOptionLabel(selectedOption),
+      });
+    };
+    const currentTypeDisplayLabel = isConditionConfig ? currentColumn.type : currentFieldSqlTagLabel;
     const commonPropertySwitches = propertySwitches.filter((item) => item.key !== 'readonly');
     const advancedPropertySwitches = propertySwitches.filter((item) => item.key === 'readonly');
     const legacyTableMeta = isConditionConfig
@@ -10139,7 +11081,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             </div>
             <div className={compactInfoCardClass}>
               <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{itemTypeLabel}</div>
-              <div className="mt-1 break-words text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">{currentColumn.type}</div>
+              <div className="mt-1 break-words text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">{currentTypeDisplayLabel}</div>
             </div>
             <div className={compactInfoCardClass}>
               <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{itemWidthLabel}</div>
@@ -10210,16 +11152,35 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                       <div>
                         <label className={mutedLabelClass}>{isConditionConfig || isBillHeaderField ? '控件类型' : '字段类型'}</label>
                         <select
-                          value={currentColumn.type}
-                          onChange={(e) => updateColumn({ type: e.target.value })}
+                          value={isConditionConfig ? currentColumn.type : currentFieldSqlTagValue}
+                          onChange={(e) => handleFieldTypeChange(e.target.value)}
                           className={fieldClass}
                         >
-                          {availableFieldTypes.map((type) => (
-                            <option key={type} value={type}>
-                              {type}
-                            </option>
-                          ))}
+                          {isConditionConfig
+                            ? availableFieldTypes.map((type) => (
+                                <option key={type} value={type}>
+                                  {type}
+                                </option>
+                              ))
+                            : availableFieldSqlTagOptions.map((option) => {
+                                const optionId = normalizeFieldSqlTagId(option.showid, -1);
+                                const optionLabel = getFieldSqlTagOptionLabel(option);
+                                const optionFieldType = mapFieldSqlTagToFieldType(option.showid, optionLabel, '文本');
+                                const isTreeRelationOption = optionFieldType === '树形节点关联';
+                                const isDisabled = isTreeRelationOption && hasOtherTreeRelationField && String(optionId) !== currentFieldSqlTagValue;
+
+                                return (
+                                  <option key={optionId} value={String(optionId)} disabled={isDisabled}>
+                                    {optionLabel}
+                                  </option>
+                                );
+                              })}
                         </select>
+                        {!isConditionConfig && hasOtherTreeRelationField && (
+                          <div className="mt-2 rounded-[14px] border border-sky-200/70 bg-sky-50/85 px-3 py-2 text-[11px] font-medium leading-5 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200">
+                            树形节点关联已由“{normalizeColumn(existingTreeRelationColumn).name}”使用，当前列不能重复选择。
+                          </div>
+                        )}
                       </div>
                       {isConditionConfig ? (
                         <div>
@@ -10542,7 +11503,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       const next = buildConditionField(leftFilterFields.length + 1, {
         name: `左侧条件 ${leftFilterFields.length + 1}`,
         panelRow: getNextConditionWorkbenchRow('left', leftFilterFields.length),
-        sourceid: treeRelationColumn.id,
+        sourceid: documentConditionOwnerSourceId,
         formKey: documentConditionOwnerFieldKey,
       });
       setLeftFilterFields((prev) => [...prev, next]);
@@ -10604,7 +11565,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         sourceField: buildConditionSourceFieldKey(name),
         panelRow: ((currentLength + index) % Math.max(CONDITION_PANEL_MIN_ROWS, rowCount)) + 1,
         ...(scope === 'left' && treeRelationColumn ? {
-          sourceid: treeRelationColumn.id,
+          sourceid: documentConditionOwnerSourceId,
           formKey: documentConditionOwnerFieldKey,
         } : {}),
       });
@@ -13178,7 +14139,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                           </div>
                           <h3 className="text-[30px] font-black tracking-tight text-slate-900 dark:text-white">先选择本次要创建的模块类型</h3>
                           <p className="text-[14px] leading-7 text-slate-500 dark:text-slate-300">
-                            这一步只决定底层主配置表。选中后，第二步菜单信息会自动切到对应老系统结构：单表走 <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[12px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">p_systemdlltab</code>，单据走 <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[12px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">p_systembilltype</code>。
+                            这一步只决定后续模块主配置表。第二步菜单信息统一写入 <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[12px] text-slate-700 dark:bg-slate-800 dark:text-slate-200">{MENU_CONFIG_TABLE_NAME}</code>，选中的类型会影响后续模块配置落到哪张主表。
                           </p>
                         </div>
                       </div>
@@ -13230,7 +14191,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                                 </div>
 
                                 <div className="mt-6 rounded-[22px] border border-slate-200/80 bg-white/82 p-5 dark:border-slate-700 dark:bg-slate-950/40">
-                                  <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">第二步写入主表</div>
+                                  <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">后续模块主表</div>
                                   <div className="mt-2 text-[16px] font-bold text-slate-800 dark:text-slate-100">{guide.configTableDesc}</div>
                                   <div className="mt-4 flex flex-wrap gap-2">
                                     {guide.keyFields.map((field) => (
@@ -13397,22 +14358,22 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
                           <div className="p-6 space-y-4">
                             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                              <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">LEGACY TABLE</div>
+                              <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">MENU TABLE</div>
                               <div className="mt-2 flex items-center gap-3">
                                 <code className="rounded-xl bg-slate-900 px-3 py-2 text-[13px] font-bold text-cyan-300 dark:bg-slate-950">
-                                  {currentModuleGuide.configTable}
+                                  {MENU_CONFIG_TABLE_NAME}
                                 </code>
-                                <span className="text-[13px] font-semibold text-slate-600 dark:text-slate-300">{currentModuleGuide.configTableDesc}</span>
+                                <span className="text-[13px] font-semibold text-slate-600 dark:text-slate-300">{MENU_CONFIG_TABLE_DESC}</span>
                               </div>
                               <p className="mt-3 text-[12px] leading-6 text-slate-500 dark:text-slate-400">
-                                第二步的菜单编码、模块名称、路由和类型信息，会优先对齐这张旧平台主配置表。
+                                第二步的菜单编码、层级、路由和启用状态，会统一对齐这张功能树菜单表。
                               </p>
                             </div>
 
                             <div className="space-y-2">
                               <div className="text-[12px] font-bold tracking-[0.18em] text-slate-400">关键字段</div>
                               <div className="flex flex-wrap gap-2">
-                                {currentModuleGuide.keyFields.map((field) => (
+                                {MENU_CONFIG_TABLE_FIELDS.map((field) => (
                                   <span key={`guide-field-${field}`} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
                                     {field}
                                   </span>
@@ -13798,7 +14759,14 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                                       <span className="material-symbols-outlined text-[16px]">table_rows</span>
                                     </div>
                                     <div>
-                                      <h4 className="text-[12px] font-semibold text-slate-800 dark:text-slate-200">主表字段配置</h4>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <h4 className="text-[12px] font-semibold text-slate-800 dark:text-slate-200">主表字段配置</h4>
+                                        {isSingleTableFieldsLoading && normalizeModuleType(activeConfigMenu?.moduleType) === 'single-table' ? (
+                                          <span className="inline-flex items-center rounded-full border border-emerald-200/80 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                                            同步中
+                                          </span>
+                                        ) : null}
+                                      </div>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">

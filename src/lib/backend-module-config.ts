@@ -12,6 +12,11 @@ export interface SingleTableModuleConfigDto {
   querySql?: unknown;
 }
 
+export type SingleTableModuleFieldDto = Record<string, unknown>;
+export type SingleTableConditionDto = Record<string, unknown>;
+export type SingleTableDetailDto = Record<string, unknown>;
+export type SingleTableGridFieldDto = Record<string, unknown>;
+
 export interface BillTypeConfigDto {
   detailSql?: unknown;
   detailTable?: unknown;
@@ -32,6 +37,41 @@ function encodePathParam(value: string) {
 
 export async function fetchSingleTableModuleConfig(dllCoId: string) {
   return apiRequest<SingleTableModuleConfigDto>(`/api/single-table/modules/${encodePathParam(dllCoId)}`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableModuleFields(dllCoId: string) {
+  return apiRequest<SingleTableModuleFieldDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/fields`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableModuleConditions(dllCoId: string) {
+  return apiRequest<SingleTableConditionDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/conditions`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableFieldConditions(dllCoId: string, fieldId: number) {
+  return apiRequest<SingleTableConditionDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/fields/${fieldId}/conditions`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableFieldGridFields(dllCoId: string, fieldId: number) {
+  return apiRequest<SingleTableGridFieldDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/fields/${fieldId}/grid-fields`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableModuleDetails(dllCoId: string) {
+  return apiRequest<SingleTableDetailDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/details`, {
     auth: true,
     method: 'GET',
   });
