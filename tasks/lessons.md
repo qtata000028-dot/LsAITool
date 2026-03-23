@@ -1,5 +1,16 @@
 # 任务教训
 
+## 2026-03-23 Document Split, Resize Smoothness And Archive Group Layout
+- 文档工作台里主表和明细如果都是高频操作区，就不要继续保留可拖分隔条；默认应按稳定比例甚至等分高度展示，避免用户一点击下半区就感觉布局在缩动。
+- 对高频拖宽控件，不能一处用直接 setState 每帧刷新、另一处再单独实现临时预览；应统一成同一套 live preview + rAF 提交链路，否则体感会明显不一致。
+- 当用户明确需要“拖宽时有对齐刻度”时，不要只显示当前像素 HUD，要把可吸附宽度和刻度反馈一起给出来，帮助微调。
+- 基础档案主表详情布局如果已经有“分组”语义，就不要再停留在大块分组卡堆叠；应升级为主从工作台，让用户先选分组，再配置该分组内部行数和字段排布。
+
+## 2026-03-23 明细类型入口与表格式明细能力
+- 明细类型切换必须内聚到明细页签右侧，不要再保留底部独立类型栏。页签负责定义当前明细的内部视图类型，工作面只按这个类型渲染。
+- 表格式明细整表能力必须和主表保持同级，至少要保留整表、布局、右键、颜色这类高频入口，不能因为是明细就降成裁剪版检查器。
+- 验证这类改动时不能只看右侧表单有没有出现，还要真实切一次类型，确认中间工作面同步切换，且旧的底部类型切换条已经消失。
+
 ## 会话启动前检查
 - 开始本项目的复杂任务前，先阅读本文件。
 - 如果用户刚给出修正意见，先更新本文件，再继续执行。
@@ -135,3 +146,52 @@
 - 当用户说“明细页签可以配一部分，里面控件也可以配一部分”时，优先检查是不是把“页签对象”和“内部视图对象”共用了同一个选中态；这类问题的根因通常不是单个表单太乱，而是选中模型没有拆层。
 - 底部类型切换属于“视图切换”，不应该默认等于“右侧详情切换”。只有用户真正点击到表格区域、图表预留区这类内部视图对象时，右侧才应该切到对应详情。
 - 图表视图的右侧配置不要重复承载数据来源、表格摘要、颜色/右键入口等整表级信息；图表面板只保留 `p_systemdlltabchart` 本身需要的字段，其余信息留在明细表配置里。
+## 2026-03-23 Document Split And Group Workbench
+- If both upper and lower panes are high-frequency work areas, do not keep a draggable divider by default; use a stable equal split so clicks in the lower area do not feel like the layout is collapsing.
+- Width resizing in high-frequency workbenches must share one implementation path: live preview, requestAnimationFrame throttling, and snap/tick feedback. Mixed resize patterns are immediately noticeable to users.
+- When a user asks for alignment guidance while resizing, a pixel HUD alone is not enough; expose snap tick cues so micro-adjustment feels intentional.
+- If archive main-table layout already has a grouping concept, do not keep it as one oversized detail form. Promote it to a master-detail workbench where users choose a group, then edit row count and grouped fields inside that group.
+- Right-side inspectors inside narrow panels should prefer vertical flow over wide two-column grids; breakpoint-driven desktop grids break down quickly in non-fullscreen configuration screens.
+
+## 2026-03-23 Detail Tab Unified Inspector
+- If the user says all detail configuration should be handled inside the tab, do not keep a separate detail-tab form and detail-grid form in parallel. Use one inspector model and pull tab-level fields into it.
+- For archive detail tabs, selecting the tab itself should already enter the same configuration path as the current detail view; bottom view clicks should refine the current view, not switch users into a different conceptual object.
+- When a table detail is described as basically inheriting main-table behavior, preserve the same table-grade tabs and capabilities instead of inventing a reduced detail-specific inspector.
+
+## 2026-03-23 Settings Inspector Density Refresh
+- When users complain that the settings UI feels empty or bloated on 1080p screens, do not keep optimizing one inspector branch at a time. Flatten the shared shell first: panel radius, shadow, padding, tab density, input height, and card nesting.
+- Perceived whitespace in workbench-style screens often comes from repeated rounded wrapper layers, not only from literal empty gaps. Removing low-value cloud cards and summary chips usually improves clarity more than shrinking individual fields.
+- Dense admin/workbench screens should move technical mapping hints and counts into compact badge rows or header metadata instead of dedicated mini cards, so the editable form fields remain the visual focus.
+- Central canvas surfaces and right-side inspectors must be tightened together. If only the right inspector becomes dense while the center still uses large cloudy shells, the whole screen still reads as loose and inconsistent.
+
+## 2026-03-23 Archive Main Layout Popup Workbench
+- If the user says the right inspector should only show summary information, do not leave the real layout editor embedded in that narrow side panel. Move dense layout editing into a dedicated popup workbench and keep the inspector read-oriented.
+- For archive main-table grouping, the draggable source must be the real main-table columns. Do not invent a second synthetic field source, or the user loses trust in what is actually being laid out.
+- Group layout editing should follow the same interaction language as other high-frequency workbenches: group list on one side, selected-group rows in the middle, draggable field palette on the other side, with direct row assignment and insert-style drag/drop.
+
+## 2026-03-23 Archive Layout Canvas Workbench
+- If the user says the popup still feels too much like master-detail form editing, treat that as a structural correction, not a styling nit. Replace the “select one group, edit one group” flow with an all-groups canvas workbench.
+- Layout editors must account for tall controls such as remarks/textareas. Do not assume every field is a single-line chip; field cards should be able to visually occupy more height so spacing and grouping still make sense.
+- For dense 1080p workbenches, shadcn-style polish should reduce ceremony, not add it. Fewer side lists and fewer redundant wrappers usually improve layout editing more than adding more summary panels.
+## 2026-03-23 Archive Layout Canvas Polish
+- Archive layout canvases are not summary cards. If the user is judging spacing and dragging placement, field items must look like real controls, not mini info cards with badges and extra chrome.
+- High-frequency width dragging must render from live drag state first and persist second. If the canvas only reflects committed width, users will read the interaction as sticky even when the math is correct.
+- Row numbering or leading sequence labels inside layout editors and previews create false spacing cues. When users are arranging fields visually, prefer clean separators or no row label at all.
+- Archive layout rows also cannot be oversized containers. In form-layout workbenches, rows should read as light flow lanes; only tall controls should grow, not the entire row shell.
+## 2026-03-23 Archive Layout Lane Density
+- In layout editors, do not use large bordered row cards as the default visual container. Users judge spacing and drag placement by the row lane itself, so oversized wrappers immediately make the editor feel empty and clumsy.
+- Tall controls such as remarks/textareas must grow independently. A tall control should not force every sibling in the same row to stretch to the same height.
+- The preview modal must mirror the editor density. If the editor is compact but the preview still uses big grouped cards, users will still perceive the layout system as bloated.
+
+## 2026-03-23 Archive Layout Resize Feedback
+- In layout editors, a top-of-screen resize HUD is the wrong feedback for width tuning. Users compare current control edges with nearby controls, so resize guidance should live inside the lane where alignment is being judged.
+- For row-based form canvases, width drag guides should prefer previous-row boundary references over abstract tick rulers. That makes alignment decisions match how people visually compare labels and controls.
+- Flat control shells are more useful than translucent rounded wrappers when spacing judgment matters. Extra wrapper chrome makes gaps look larger and hides whether controls are truly aligned.
+
+## 2026-03-23 Archive Layout Delete And Alignment Guides
+- In layout editors, per-control close buttons should not be mixed into every field shell when bulk selection/delete is the intended editing model. Extra close affordances add noise and make drag targets harder to judge.
+- Previous-row alignment feedback must be obvious enough to use while dragging. Subtle tick marks are not sufficient; prefer full-height lane guides plus a stronger active edge guide for the dragged control.
+
+## 2026-03-23 Archive Layout Blue Alignment Markers
+- Previous-row width guides in layout editors should not stay neutral gray once users are actively using them for alignment. When the guides carry alignment meaning, use the same clear blue accent language as the active edge so the relationship reads immediately.
+- If a guide is meant to show top/bottom correspondence, plain dashed lines are too weak. Add distinct endpoints or caps so the guide reads like a full alignment reference, not a leftover separator.
