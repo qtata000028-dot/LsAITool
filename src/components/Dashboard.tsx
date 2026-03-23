@@ -7,6 +7,18 @@ import {
   type BackendMenuNode,
   type BackendSubsystemNode,
 } from '../lib/backend-menus';
+import {
+  createBillTypeConfig,
+  createSingleTableModuleConfig,
+  deleteBillTypeConfig,
+  deleteSingleTableModuleConfig,
+  fetchBillTypeConfig,
+  fetchSingleTableModuleConfig,
+  saveBillTypeConfig,
+  saveSingleTableModuleConfig,
+  type BillTypeConfigDto,
+  type SingleTableModuleConfigDto,
+} from '../lib/backend-module-config';
 import { requestIdentifierTranslation, requestSqlDraft, requestSurveyPlan, type SurveyPlan } from '../lib/minimax';
 
 interface DashboardProps {
@@ -82,6 +94,12 @@ type ModuleMenuSectionSchema = {
   description: string;
   fields: ModuleMenuFieldSchema[];
 };
+type MenuModuleTypeProfile = {
+  badgeClass: string;
+  businessType: BusinessType;
+  icon: string;
+  label: string;
+};
 
 function getDashboardErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim()) {
@@ -115,6 +133,10 @@ function isUseflagEnabled(useflag: number | string | undefined, enabled: boolean
   return enabled;
 }
 
+function normalizeModuleType(value?: string) {
+  return value?.trim().toLowerCase() || '';
+}
+
 const DETAIL_BOARD_CLIPBOARD_PREFIX = '__LS_DETAIL_BOARD_COLUMNS__';
 const BUSINESS_TYPE_OPTIONS: Array<{ value: BusinessType; label: string; icon: string }> = [
   { value: 'document', label: '单表', icon: 'table_view' },
@@ -122,6 +144,32 @@ const BUSINESS_TYPE_OPTIONS: Array<{ value: BusinessType; label: string; icon: s
   { value: 'tree', label: '树形单表', icon: 'account_tree' },
 ];
 const MODULE_TYPE_OPTIONS = BUSINESS_TYPE_OPTIONS.filter((option) => option.value !== 'tree');
+const MENU_MODULE_TYPE_PROFILES: Record<'bill' | 'single-table', MenuModuleTypeProfile> = {
+  'single-table': {
+    badgeClass:
+      'border-sky-100 bg-sky-50 text-sky-600 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300',
+    businessType: 'document',
+    icon: 'table_view',
+    label: '单表',
+  },
+  bill: {
+    badgeClass:
+      'border-indigo-100 bg-indigo-50 text-indigo-600 dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:text-indigo-300',
+    businessType: 'table',
+    icon: 'receipt_long',
+    label: '单据',
+  },
+};
+
+function getMenuModuleTypeProfile(moduleType?: string): MenuModuleTypeProfile | null {
+  const normalizedType = normalizeModuleType(moduleType);
+
+  if (normalizedType === 'single-table' || normalizedType === 'bill') {
+    return MENU_MODULE_TYPE_PROFILES[normalizedType];
+  }
+
+  return null;
+}
 const MODULE_GUIDE_PROFILES: Record<BusinessType, {
   label: string;
   intro: string;
@@ -156,62 +204,37 @@ const MODULE_GUIDE_PROFILES: Record<BusinessType, {
   },
 };
 const DOCUMENT_MENU_DEFAULTS: ModuleMenuDraft = {
-  moduleCode: 'FM-CO-001',
-  moduleName: '成本控制',
-  mainTableName: 'erp_cost_control',
-  mainSql: 'SELECT * FROM erp_cost_control',
-  templateType: '1',
-  formKey: 'cost-form-key',
-  condKey: 'cost-cond-key',
-  allowGridEdit: 'true',
-  leftWidth: '280',
-  bottomHeight: '320',
-  detailPageAlign: 'bottom',
-  treeExpand: 'false',
-  printSql: '',
-  printDetailSql: '',
-  basePrintSql: '',
+  moduleCode: '',
+  moduleName: '',
+  mainTableName: '',
+  mainSql: '',
+  formKey: '',
+  condKey: '',
+  overbackKey: '',
+  isReport: 'false',
 };
 const BILLTYPE_MENU_DEFAULTS: ModuleMenuDraft = {
-  typeCode: 'BILL-CO-001',
-  typeName: '成本单据',
-  prefix: 'CB',
-  billSeq: 'BILL-CO-001',
-  remark: '用于维护成本类单据主表、明细及来源配置。',
-  masterTable: 'erp_cost_bill',
-  detailTable: 'erp_cost_bill_detail',
-  masterSql: 'SELECT * FROM erp_cost_bill',
-  detailSql: 'SELECT * FROM erp_cost_bill_detail WHERE bill_id = :id',
-  billWidth: '1440',
-  billHeight: '900',
-  formKey: 'bill-cost-form',
-  modifyCond: '',
-  billPrintType: '1',
-  billPrintSql: '',
-  billPrintDetailSql: '',
-  addEmptyRow: 'true',
-  redBill: 'false',
+  typeCode: '',
+  typeName: '',
+  billSeq: '',
+  formKey: '',
+  overbackKey: '',
+  remark: '',
+  masterTable: '',
+  detailTable: '',
+  masterSql: '',
+  detailSql: '',
 };
 const DOCUMENT_MENU_SECTIONS: ModuleMenuSectionSchema[] = [
   {
     title: '主配置标识',
-    description: '对应 p_systemdlltab 的主键、名称和模板类别。',
+    description: '对应 p_systemdlltab 的主键、名称和关联标识。',
     fields: [
       { key: 'moduleCode', label: '模块编码', tableField: 'DllCoid', kind: 'text', placeholder: '唯一模块编码' },
       { key: 'moduleName', label: '模块名称', tableField: 'ToolsName', kind: 'text', placeholder: '模块中文名' },
-      {
-        key: 'templateType',
-        label: '模板类别',
-        tableField: 'dllType',
-        kind: 'select',
-        options: [
-          { value: '1', label: '左树右表' },
-          { value: '2', label: '左表右表' },
-          { value: '3', label: '单表' },
-        ],
-      },
       { key: 'formKey', label: '配置关联值', tableField: 'formKey', kind: 'text', placeholder: '模块配置关联值' },
       { key: 'condKey', label: '条件关联值', tableField: 'condKey', kind: 'text', placeholder: '条件配置关联值' },
+      { key: 'overbackKey', label: '回写关联值', tableField: 'overbackKey', kind: 'text', placeholder: '回写配置关联值' },
     ],
   },
   {
@@ -223,33 +246,10 @@ const DOCUMENT_MENU_SECTIONS: ModuleMenuSectionSchema[] = [
     ],
   },
   {
-    title: '界面与行为',
-    description: '控制单表默认布局和交互方式。',
+    title: '运行标识',
+    description: '保留单表模块的基础运行标识。',
     fields: [
-      { key: 'allowGridEdit', label: '表格编辑', tableField: 'selfEdit', kind: 'switch', hint: '开启后允许在表格内直接编辑' },
-      { key: 'leftWidth', label: '左侧宽度', tableField: 'leftWidth', kind: 'number', placeholder: '280' },
-      { key: 'bottomHeight', label: '下方高度', tableField: 'bottomHeight', kind: 'number', placeholder: '320' },
-      {
-        key: 'detailPageAlign',
-        label: '明细页签停靠',
-        tableField: 'detailPageAlign',
-        kind: 'select',
-        options: [
-          { value: 'bottom', label: '底部' },
-          { value: 'right', label: '右侧' },
-          { value: 'tab', label: '页签' },
-        ],
-      },
-      { key: 'treeExpand', label: '树表展开', tableField: 'TreeTableExpand', kind: 'switch', hint: '树形单表默认展开节点' },
-    ],
-  },
-  {
-    title: '打印与扩展',
-    description: '保留打印和基础模板相关主字段。',
-    fields: [
-      { key: 'printSql', label: '打印主 SQL', tableField: 'printSQL', kind: 'textarea', rows: 4, span: 'full' },
-      { key: 'printDetailSql', label: '打印明细 SQL', tableField: 'printSQL1', kind: 'textarea', rows: 4, span: 'full' },
-      { key: 'basePrintSql', label: '基础打印主 SQL', tableField: 'basePrintSQL', kind: 'textarea', rows: 4, span: 'full' },
+      { key: 'isReport', label: '报表模式', tableField: 'isReport', kind: 'switch', hint: '开启后按报表模式处理当前单表模块' },
     ],
   },
 ];
@@ -260,8 +260,9 @@ const BILLTYPE_MENU_SECTIONS: ModuleMenuSectionSchema[] = [
     fields: [
       { key: 'typeCode', label: '模块编码', tableField: 'typeCode', kind: 'text', placeholder: '单据模块编码' },
       { key: 'typeName', label: '模块名称', tableField: 'typeName', kind: 'text', placeholder: '单据模块名称' },
-      { key: 'prefix', label: '单号前缀', tableField: 'prefix', kind: 'text', placeholder: '例如：CB' },
       { key: 'billSeq', label: '模块标识', tableField: 'billSeq', kind: 'text', placeholder: '默认与模块编码一致' },
+      { key: 'formKey', label: '配置关联字段', tableField: 'formKey', kind: 'text', placeholder: 'formKey' },
+      { key: 'overbackKey', label: '回写关联字段', tableField: 'overbackKey', kind: 'text', placeholder: 'overbackKey' },
       { key: 'remark', label: '模块说明', tableField: 'remark', kind: 'textarea', rows: 4, span: 'full', placeholder: '描述单据场景和业务边界' },
     ],
   },
@@ -275,45 +276,12 @@ const BILLTYPE_MENU_SECTIONS: ModuleMenuSectionSchema[] = [
       { key: 'detailSql', label: '明细 SQL', tableField: 'detailSql', kind: 'textarea', rows: 5, span: 'full' },
     ],
   },
-  {
-    title: '页面与规则',
-    description: '对应单据录入页面尺寸、关联键和修改约束。',
-    fields: [
-      { key: 'billWidth', label: '页面宽度', tableField: 'billWidth', kind: 'number', placeholder: '1440' },
-      { key: 'billHeight', label: '页面高度', tableField: 'billHeight', kind: 'number', placeholder: '900' },
-      { key: 'formKey', label: '配置关联字段', tableField: 'formKey', kind: 'text', placeholder: 'formKey' },
-      { key: 'modifyCond', label: '修改条件', tableField: 'modifyCond', kind: 'text', placeholder: '例如：status <> 1' },
-      { key: 'addEmptyRow', label: '默认空行', tableField: 'addEmptyRow', kind: 'switch', hint: '进入单据时默认补一行明细' },
-      { key: 'redBill', label: '红字标记', tableField: 'redBill', kind: 'switch', hint: '用于红字单据场景' },
-    ],
-  },
-  {
-    title: '打印配置',
-    description: '对应单据打印方式和 SQL。',
-    fields: [
-      {
-        key: 'billPrintType',
-        label: '打印方式',
-        tableField: 'billPrintType',
-        kind: 'select',
-        options: [
-          { value: '1', label: '预览打印' },
-          { value: '2', label: '带设置框打印' },
-          { value: '3', label: '直接打印' },
-          { value: '4', label: '自定义' },
-          { value: '5', label: '导出 Excel' },
-        ],
-      },
-      { key: 'billPrintSql', label: '打印主 SQL', tableField: 'billPrintSQL', kind: 'textarea', rows: 4, span: 'full' },
-      { key: 'billPrintDetailSql', label: '打印明细 SQL', tableField: 'billPrintSQL1', kind: 'textarea', rows: 4, span: 'full' },
-    ],
-  },
 ];
 
 const MENU_DEFAULT_COMMON_FIELD_KEYS: Record<BusinessType, string[]> = {
-  document: ['moduleCode', 'moduleName', 'templateType', 'mainTableName', 'mainSql', 'formKey', 'condKey'],
-  table: ['typeCode', 'typeName', 'prefix', 'masterTable', 'detailTable', 'masterSql', 'detailSql', 'formKey'],
-  tree: ['moduleCode', 'moduleName', 'templateType', 'mainTableName', 'mainSql', 'formKey', 'condKey'],
+  document: ['moduleCode', 'moduleName', 'mainTableName', 'mainSql', 'formKey', 'condKey'],
+  table: ['typeCode', 'typeName', 'masterTable', 'detailTable', 'masterSql', 'detailSql', 'formKey'],
+  tree: ['moduleCode', 'moduleName', 'mainTableName', 'mainSql', 'formKey', 'condKey'],
 };
 
 function filterMenuSectionsByKeys(sections: ModuleMenuSectionSchema[], keys: string[]) {
@@ -324,6 +292,84 @@ function filterMenuSectionsByKeys(sections: ModuleMenuSectionSchema[], keys: str
       fields: section.fields.filter((field) => keySet.has(field.key)),
     }))
     .filter((section) => section.fields.length > 0);
+}
+
+function toDraftText(value: unknown) {
+  return value === null || value === undefined ? '' : String(value);
+}
+
+function toDraftSwitch(value: unknown) {
+  if (value === true || value === 1 || value === '1') {
+    return 'true';
+  }
+
+  if (typeof value === 'string' && ['true', 'yes', 'y'].includes(value.trim().toLowerCase())) {
+    return 'true';
+  }
+
+  return 'false';
+}
+
+function toPersistedSwitch(value: ModuleMenuValue | undefined) {
+  return value === true || value === 'true' ? 1 : 0;
+}
+
+function mapSingleTableModuleToDraft(module: SingleTableModuleConfigDto): ModuleMenuDraft {
+  return {
+    ...DOCUMENT_MENU_DEFAULTS,
+    condKey: toDraftText(module.conditionKey),
+    formKey: toDraftText(module.formKey),
+    isReport: toDraftSwitch(module.isReport),
+    mainSql: toDraftText(module.querySql),
+    mainTableName: toDraftText(module.mainTable),
+    moduleCode: toDraftText(module.dllCoId),
+    moduleName: toDraftText(module.moduleName),
+    overbackKey: toDraftText(module.overbackKey),
+  };
+}
+
+function mapBillTypeToDraft(type: BillTypeConfigDto): ModuleMenuDraft {
+  return {
+    ...BILLTYPE_MENU_DEFAULTS,
+    billSeq: toDraftText(type.billSequence),
+    detailSql: toDraftText(type.detailSql),
+    detailTable: toDraftText(type.detailTable),
+    formKey: toDraftText(type.formKey),
+    masterSql: toDraftText(type.masterSql),
+    masterTable: toDraftText(type.masterTable),
+    overbackKey: toDraftText(type.overbackKey),
+    remark: toDraftText(type.remark),
+    typeCode: toDraftText(type.typeCode),
+    typeName: toDraftText(type.typeName),
+  };
+}
+
+function mapDocumentDraftToPayload(draft: ModuleMenuDraft) {
+  return {
+    condkey: toDraftText(draft.condKey),
+    dllcoid: toDraftText(draft.moduleCode).trim(),
+    formkey: toDraftText(draft.formKey),
+    isreport: toPersistedSwitch(draft.isReport),
+    overbackkey: toDraftText(draft.overbackKey),
+    sql: toDraftText(draft.mainSql),
+    sqldt1: toDraftText(draft.mainTableName),
+    toolsname: toDraftText(draft.moduleName),
+  };
+}
+
+function mapBillTypeDraftToPayload(draft: ModuleMenuDraft) {
+  return {
+    billseq: toDraftText(draft.billSeq),
+    detailtable: toDraftText(draft.detailTable),
+    detailsql: toDraftText(draft.detailSql),
+    formkey: toDraftText(draft.formKey),
+    mastertable: toDraftText(draft.masterTable),
+    mastersql: toDraftText(draft.masterSql),
+    overbackkey: toDraftText(draft.overbackKey),
+    remark: toDraftText(draft.remark),
+    typecode: toDraftText(draft.typeCode).trim(),
+    typename: toDraftText(draft.typeName),
+  };
 }
 
 const FIELD_TYPE_OPTIONS = ['文本', '数字', '下拉框', '搜索框', '日期框', '单选框', '多选框', '树形节点关联'];
@@ -554,6 +600,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   }));
   const [documentMenuDraft, setDocumentMenuDraft] = useState<ModuleMenuDraft>(DOCUMENT_MENU_DEFAULTS);
   const [billtypeMenuDraft, setBilltypeMenuDraft] = useState<ModuleMenuDraft>(BILLTYPE_MENU_DEFAULTS);
+  const [activeConfigMenu, setActiveConfigMenu] = useState<BackendMenuNode | null>(null);
+  const [deletingMenuId, setDeletingMenuId] = useState<string | null>(null);
+  const [pendingDeleteMenu, setPendingDeleteMenu] = useState<BackendMenuNode | null>(null);
+  const [isMenuInfoLoading, setIsMenuInfoLoading] = useState(false);
+  const [isMenuInfoSaving, setIsMenuInfoSaving] = useState(false);
+  const [menuInfoError, setMenuInfoError] = useState<string | null>(null);
   const currentModuleGuide = MODULE_GUIDE_PROFILES[businessType] ?? MODULE_GUIDE_PROFILES.document;
   const toggleFunc = (id: string) => setCommonFuncs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const funcOptions = [
@@ -565,6 +617,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   ];
   const currentMenuSections = businessType === 'table' ? BILLTYPE_MENU_SECTIONS : DOCUMENT_MENU_SECTIONS;
   const currentMenuDraft = businessType === 'table' ? billtypeMenuDraft : documentMenuDraft;
+  const activeConfigModuleKey = normalizeMenuCode(activeConfigMenu?.purviewId);
   const isMenuFieldFilled = (field: ModuleMenuFieldSchema, value: ModuleMenuValue | undefined) => {
     if (field.kind === 'switch') return value === 'true';
     return String(value ?? '').trim().length > 0;
@@ -655,6 +708,10 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const markStepCompleted = (stepId: number) => {
+    setCompletedSteps((prev) => (prev.includes(stepId) ? prev : [...prev, stepId]));
   };
 
   const execRichTextCommand = (command: string, value?: string) => {
@@ -2077,6 +2134,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const renderMenuInfoField = (
     field: ModuleMenuFieldSchema,
     options: {
+      isDisabled?: boolean;
       isPinned: boolean;
       onTogglePinned: () => void;
     },
@@ -2084,7 +2142,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const value = currentMenuDraft[field.key] ?? '';
     const wrapperClass = field.span === 'full' ? 'md:col-span-2' : '';
     const cardClass = 'cloudy-glass-panel-soft rounded-[22px] border border-white/75 p-4 shadow-[0_20px_44px_-32px_rgba(15,23,42,0.28)]';
-    const baseInputClass = 'w-full rounded-[18px] border border-slate-200/80 bg-slate-50/92 px-3.5 py-2.5 text-[12px] text-slate-700 outline-none transition shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] focus:border-[#1686e3]/70 focus:bg-white focus:ring-4 focus:ring-[#1686e3]/10 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-100';
+    const baseInputClass = `w-full rounded-[18px] border border-slate-200/80 bg-slate-50/92 px-3.5 py-2.5 text-[12px] text-slate-700 outline-none transition shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] focus:border-[#1686e3]/70 focus:bg-white focus:ring-4 focus:ring-[#1686e3]/10 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-100 ${
+      options.isDisabled ? 'cursor-not-allowed opacity-60' : ''
+    }`;
     const pinButtonClass = options.isPinned
       ? 'border-rose-200/80 bg-rose-50/90 text-rose-600 hover:border-rose-300 hover:bg-rose-100/80 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200'
       : 'border-sky-200/80 bg-sky-50/90 text-sky-700 hover:border-sky-300 hover:bg-sky-100/80 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200';
@@ -2106,8 +2166,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             </div>
             <button
               type="button"
+              disabled={options.isDisabled}
               onClick={options.onTogglePinned}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${pinButtonClass}`}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${pinButtonClass} ${
+                options.isDisabled ? 'cursor-not-allowed opacity-50' : ''
+              }`}
             >
               <span className="material-symbols-outlined text-[15px]">
                 {options.isPinned ? 'remove_circle' : 'add_circle'}
@@ -2119,6 +2182,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           <div className="mt-3">
             {field.kind === 'textarea' ? (
               <textarea
+                disabled={options.isDisabled}
                 rows={field.rows ?? 4}
                 value={String(value)}
                 placeholder={field.placeholder}
@@ -2128,6 +2192,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             ) : field.kind === 'select' ? (
               <div className="relative">
                 <select
+                  disabled={options.isDisabled}
                   value={String(value)}
                   onChange={(event) => updateCurrentMenuDraft(field.key, event.target.value)}
                   className={`${baseInputClass} cursor-pointer appearance-none pr-10`}
@@ -2141,13 +2206,16 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 </span>
               </div>
             ) : field.kind === 'switch' ? (
-              <label className="flex cursor-pointer items-center justify-between rounded-[18px] border border-slate-200/80 bg-white/82 px-4 py-3.5 transition-colors hover:border-[#1686e3]/30 dark:border-slate-700 dark:bg-slate-900/60">
+              <label className={`flex items-center justify-between rounded-[18px] border border-slate-200/80 bg-white/82 px-4 py-3.5 transition-colors dark:border-slate-700 dark:bg-slate-900/60 ${
+                options.isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#1686e3]/30'
+              }`}>
                 <div className="text-[13px] font-semibold text-slate-700 dark:text-slate-100">
                   {value === 'true' ? '已开启' : '未开启'}
                 </div>
                 <span className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${value === 'true' ? 'bg-[#f3afb7]' : 'bg-slate-200 dark:bg-slate-700'}`}>
                   <input
                     type="checkbox"
+                    disabled={options.isDisabled}
                     checked={value === 'true'}
                     onChange={(event) => updateCurrentMenuDraft(field.key, event.target.checked ? 'true' : 'false')}
                     className="sr-only"
@@ -2157,6 +2225,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               </label>
             ) : (
               <input
+                disabled={options.isDisabled}
                 type={field.kind === 'number' ? 'number' : 'text'}
                 value={String(value)}
                 placeholder={field.placeholder}
@@ -2174,11 +2243,18 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     );
   };
 
-  const openNewModuleGuide = () => {
+  const openModuleGuide = (
+    nextType: BusinessType,
+    options?: {
+      completedSteps?: number[];
+      initialStep?: number;
+    },
+  ) => {
+    const nextStep = options?.initialStep ?? 1;
     setIsConfigOpen(true);
-    setConfigStep(1);
-    setCompletedSteps([]);
-    setBusinessType('document');
+    setConfigStep(nextStep);
+    setCompletedSteps(options?.completedSteps ?? []);
+    handleBusinessTypeChange(nextType);
     setIsFullscreenConfig(true);
     setIsFullscreenEditor(false);
     setSurveyStep(0);
@@ -2187,6 +2263,369 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setSurveyPlan(null);
     setSurveyPlanModel('');
     setSurveyError(null);
+  };
+
+  const openNewModuleGuide = () => {
+    setActiveConfigMenu(null);
+    setMenuInfoError(null);
+    setIsMenuInfoLoading(false);
+    setIsMenuInfoSaving(false);
+    setDocumentMenuDraft(DOCUMENT_MENU_DEFAULTS);
+    setBilltypeMenuDraft(BILLTYPE_MENU_DEFAULTS);
+    openModuleGuide('document');
+  };
+
+  const buildCreateModuleRelationPayload = (
+    moduleKey: string,
+    moduleTitle: string,
+    moduleType: 'single-table' | 'bill',
+  ) => {
+    const parentMenuTitle = normalizeMenuTitle(activeFirstLevelMenu?.title);
+    const parentMenuStruct = normalizeMenuCode(activeFirstLevelMenu?.menuStruct);
+    const parentMenuCode = normalizeMenuCode(activeFirstLevelMenu?.code);
+
+    return {
+      moduletype: moduleType,
+      nodetype: 'menu',
+      title: moduleTitle,
+      menucaption: moduleTitle,
+      purviewid: moduleKey,
+      subsysid: selectedSubsystem?.subsysId,
+      subsyscode: normalizeMenuCode(selectedSubsystem?.subsysCode ?? selectedSubsystem?.code),
+      parentmenuid: activeFirstLevelMenu?.menuId,
+      menuparentid: activeFirstLevelMenu?.menuId,
+      parentid: activeFirstLevelMenu?.id,
+      parentmenucode: parentMenuCode,
+      parentmenustruct: parentMenuStruct,
+      parentmenutitle: parentMenuTitle,
+      menuparenttitle: parentMenuTitle,
+      menuparentcode: parentMenuCode,
+      menuparentstruct: parentMenuStruct,
+      menulevel: 2,
+      childlevel: 2,
+    };
+  };
+
+  const buildCreatedConfigMenu = (moduleKey: string, menuTitle: string, moduleType: 'single-table' | 'bill'): BackendMenuNode => {
+    const currentSubsystem = subsystemMenus.find((node) => node.id === activeSubsystem);
+    const currentFirstLevelMenu = currentSubsystem?.children.find((node) => node.id === activeFirstLevelMenuId);
+
+    return {
+      id: `draft:${moduleType}:${moduleKey || Date.now()}`,
+      parentId: currentFirstLevelMenu?.id,
+      nodeType: 'menu',
+      title: normalizeMenuTitle(menuTitle) || '新建模块',
+      code: moduleKey,
+      moduleType,
+      useflag: 1,
+      subsysId: currentSubsystem?.subsysId ?? 0,
+      subsysCode: currentSubsystem?.subsysCode,
+      menuId: undefined,
+      parentMenuId: currentFirstLevelMenu?.menuId ?? -1,
+      menuStruct: currentFirstLevelMenu?.menuStruct,
+      purviewId: moduleKey,
+      enabled: true,
+      children: [],
+    };
+  };
+
+  const loadMenuInfoForMenu = async (menu: BackendMenuNode, nextType: BusinessType) => {
+    const moduleKey = normalizeMenuCode(menu.purviewId);
+
+    if (!moduleKey) {
+      const message = '当前菜单缺少模块标识，无法加载菜单信息。';
+      setMenuInfoError(message);
+      showToast(message);
+      return;
+    }
+
+    setIsMenuInfoLoading(true);
+    setMenuInfoError(null);
+
+    try {
+      if (nextType === 'table') {
+        const data = await fetchBillTypeConfig(moduleKey);
+        setBilltypeMenuDraft(mapBillTypeToDraft(data));
+        const nextModuleKey = normalizeMenuCode(toDraftText(data.typeCode)) || moduleKey;
+        setActiveConfigMenu((prev) => (prev && prev.id === menu.id ? { ...prev, purviewId: nextModuleKey } : prev));
+      } else {
+        const data = await fetchSingleTableModuleConfig(moduleKey);
+        setDocumentMenuDraft(mapSingleTableModuleToDraft(data));
+        const nextModuleKey = normalizeMenuCode(toDraftText(data.dllCoId)) || moduleKey;
+        setActiveConfigMenu((prev) => (prev && prev.id === menu.id ? { ...prev, purviewId: nextModuleKey } : prev));
+      }
+    } catch (error) {
+      const message = getDashboardErrorMessage(error);
+      setMenuInfoError(message);
+      showToast(message);
+    } finally {
+      setIsMenuInfoLoading(false);
+    }
+  };
+
+  const handleSecondLevelMenuConfig = (menu: BackendMenuNode) => {
+    const moduleTypeProfile = getMenuModuleTypeProfile(menu.moduleType);
+    const nextType = moduleTypeProfile?.businessType ?? 'document';
+    const moduleKey = normalizeMenuCode(menu.purviewId);
+
+    if (!moduleKey) {
+      showToast('当前菜单缺少模块标识，无法打开配置。');
+      return;
+    }
+
+    setActiveConfigMenu(menu);
+    setMenuInfoError(null);
+    setIsMenuInfoSaving(false);
+    if (nextType === 'table') {
+      setBilltypeMenuDraft(BILLTYPE_MENU_DEFAULTS);
+    } else {
+      setDocumentMenuDraft(DOCUMENT_MENU_DEFAULTS);
+    }
+    openModuleGuide(nextType, {
+      completedSteps: [1],
+      initialStep: 2,
+    });
+    void loadMenuInfoForMenu(menu, nextType);
+  };
+
+  const handleMenuInfoSave = async () => {
+    if (configStep !== 2) {
+      markStepCompleted(configStep);
+      if (configStep === 1) {
+        showToast('模块类型已确认');
+      }
+      return;
+    }
+
+    if (activeConfigMenu && !activeConfigModuleKey) {
+      const message = '当前菜单缺少模块标识，无法保存菜单信息。';
+      setMenuInfoError(message);
+      showToast(message);
+      return;
+    }
+
+    setIsMenuInfoSaving(true);
+    setMenuInfoError(null);
+
+    try {
+      if (businessType === 'table') {
+        const payload = mapBillTypeDraftToPayload(billtypeMenuDraft);
+        const fallbackModuleKey = normalizeMenuCode(toDraftText(payload.typecode));
+        const nextMenuTitle = normalizeMenuTitle(toDraftText(payload.typename)) || normalizeMenuTitle(toDraftText(billtypeMenuDraft.typeName)) || '新建单据模块';
+
+        if (!activeConfigMenu && !fallbackModuleKey) {
+          const message = '请先填写单据模块编码，再保存菜单信息。';
+          setMenuInfoError(message);
+          showToast(message);
+          return;
+        }
+
+        const saved = activeConfigMenu
+          ? await saveBillTypeConfig(activeConfigModuleKey, payload)
+          : await createBillTypeConfig({
+              ...buildCreateModuleRelationPayload(fallbackModuleKey, nextMenuTitle, 'bill'),
+              ...payload,
+            });
+
+        setBilltypeMenuDraft(mapBillTypeToDraft(saved));
+        const nextModuleKey = normalizeMenuCode(toDraftText(saved.typeCode)) || fallbackModuleKey || activeConfigModuleKey;
+
+        if (activeConfigMenu) {
+          setActiveConfigMenu((prev) => (prev ? { ...prev, code: nextModuleKey, purviewId: nextModuleKey, title: nextMenuTitle } : prev));
+        } else {
+          setActiveConfigMenu(buildCreatedConfigMenu(nextModuleKey, nextMenuTitle, 'bill'));
+        }
+      } else {
+        const payload = mapDocumentDraftToPayload(documentMenuDraft);
+        const fallbackModuleKey = normalizeMenuCode(toDraftText(payload.dllcoid));
+        const nextMenuTitle = normalizeMenuTitle(toDraftText(payload.toolsname)) || normalizeMenuTitle(toDraftText(documentMenuDraft.moduleName)) || '新建单表模块';
+
+        if (!activeConfigMenu && !fallbackModuleKey) {
+          const message = '请先填写单表模块编码，再保存菜单信息。';
+          setMenuInfoError(message);
+          showToast(message);
+          return;
+        }
+
+        const saved = activeConfigMenu
+          ? await saveSingleTableModuleConfig(activeConfigModuleKey, payload)
+          : await createSingleTableModuleConfig({
+              ...buildCreateModuleRelationPayload(fallbackModuleKey, nextMenuTitle, 'single-table'),
+              ...payload,
+            });
+
+        setDocumentMenuDraft(mapSingleTableModuleToDraft(saved));
+        const nextModuleKey = normalizeMenuCode(toDraftText(saved.dllCoId)) || fallbackModuleKey || activeConfigModuleKey;
+
+        if (activeConfigMenu) {
+          setActiveConfigMenu((prev) => (prev ? { ...prev, code: nextModuleKey, purviewId: nextModuleKey, title: nextMenuTitle } : prev));
+        } else {
+          setActiveConfigMenu(buildCreatedConfigMenu(nextModuleKey, nextMenuTitle, 'single-table'));
+        }
+      }
+
+      markStepCompleted(2);
+      showToast(activeConfigMenu ? '菜单信息已保存' : '菜单信息已创建');
+    } catch (error) {
+      const message = getDashboardErrorMessage(error);
+      setMenuInfoError(message);
+      showToast(message);
+    } finally {
+      setIsMenuInfoSaving(false);
+    }
+  };
+
+  const handleSecondLevelMenuDelete = async (menu: BackendMenuNode) => {
+    const moduleTypeProfile = getMenuModuleTypeProfile(menu.moduleType);
+    const moduleKey = normalizeMenuCode(menu.purviewId);
+    const menuTitle = normalizeMenuTitle(menu.title) || '当前模块';
+
+    if (!moduleTypeProfile) {
+      showToast('当前菜单的模块类型无法识别，暂时不能删除。');
+      return;
+    }
+
+    if (!moduleKey) {
+      showToast('当前菜单缺少模块标识，无法删除。');
+      return;
+    }
+
+    setDeletingMenuId(menu.id);
+
+    try {
+      if (moduleTypeProfile.businessType === 'table') {
+        await deleteBillTypeConfig(moduleKey);
+      } else {
+        await deleteSingleTableModuleConfig(moduleKey);
+      }
+
+      setSecondLevelMenus((prev) => prev.filter((item) => item.id !== menu.id));
+
+      if (activeConfigMenu?.id === menu.id) {
+        setActiveConfigMenu(null);
+        setMenuInfoError(null);
+        setIsConfigOpen(false);
+      }
+
+      setPendingDeleteMenu((prev) => (prev?.id === menu.id ? null : prev));
+      showToast(`模块「${menuTitle}」已删除`);
+    } catch (error) {
+      showToast(getDashboardErrorMessage(error));
+    } finally {
+      setDeletingMenuId(null);
+    }
+  };
+
+  const renderDeleteConfirmModal = () => {
+    if (!pendingDeleteMenu) {
+      return null;
+    }
+
+    const moduleTypeProfile = getMenuModuleTypeProfile(pendingDeleteMenu.moduleType);
+    const moduleKey = normalizeMenuCode(pendingDeleteMenu.purviewId) || '未提供';
+    const menuTitle = normalizeMenuTitle(pendingDeleteMenu.title) || '当前模块';
+    const isDeletingPendingMenu = deletingMenuId === pendingDeleteMenu.id;
+
+    return (
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/28 px-4 backdrop-blur-[6px]"
+          onClick={() => {
+            if (!isDeletingPendingMenu) {
+              setPendingDeleteMenu(null);
+            }
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 18, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="module-delete-dialog-title"
+            className="w-full max-w-[480px] rounded-[28px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(249,251,255,0.96))] p-6 shadow-[0_36px_90px_-42px_rgba(15,23,42,0.6)] dark:border-slate-700 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.94))]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start gap-4">
+              <div className="flex size-14 shrink-0 items-center justify-center rounded-[18px] border border-rose-200 bg-rose-50 text-rose-500 shadow-[0_12px_24px_-20px_rgba(244,63,94,0.6)] dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+                <span className="material-symbols-outlined text-[28px]">delete_forever</span>
+              </div>
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-bold tracking-[0.18em] text-rose-500 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+                  危险操作
+                </div>
+                <div className="space-y-1">
+                  <h3 id="module-delete-dialog-title" className="text-[22px] font-black tracking-tight text-slate-900 dark:text-white">
+                    确认删除模块
+                  </h3>
+                  <p className="text-[13px] leading-6 text-slate-500 dark:text-slate-300">
+                    删除后，这个二级菜单对应的模块配置会被永久移除，当前操作不可恢复。请确认该模块已经不再使用。
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-[22px] border border-slate-200/80 bg-white/85 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] dark:border-slate-700 dark:bg-slate-900/70">
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                  <span className="text-[12px] font-bold tracking-[0.16em] text-slate-400">模块名称</span>
+                  <span className="text-right text-[14px] font-bold text-slate-900 dark:text-white">{menuTitle}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                  <span className="text-[12px] font-bold tracking-[0.16em] text-slate-400">模块类型</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[12px] font-bold text-sky-600 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300">
+                    <span className="material-symbols-outlined text-[15px]">
+                      {moduleTypeProfile?.businessType === 'table' ? 'table_view' : 'article'}
+                    </span>
+                    {moduleTypeProfile?.label ?? '未定义'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-[12px] font-bold tracking-[0.16em] text-slate-400">模块标识</span>
+                  <code className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-[12px] text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    {moduleKey}
+                  </code>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteMenu(null)}
+                disabled={isDeletingPendingMenu}
+                className={`inline-flex min-w-[108px] items-center justify-center rounded-2xl border px-4 py-3 text-[13px] font-bold transition-all ${
+                  isDeletingPendingMenu
+                    ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-700'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white'
+                }`}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSecondLevelMenuDelete(pendingDeleteMenu)}
+                disabled={isDeletingPendingMenu}
+                className={`inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl px-4 py-3 text-[13px] font-bold text-white shadow-[0_20px_40px_-24px_rgba(244,63,94,0.72)] transition-all ${
+                  isDeletingPendingMenu
+                    ? 'cursor-not-allowed bg-rose-300 dark:bg-rose-900'
+                    : 'bg-rose-500 hover:bg-rose-600 dark:bg-rose-500 dark:hover:bg-rose-400'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {isDeletingPendingMenu ? 'progress_activity' : 'delete'}
+                </span>
+                {isDeletingPendingMenu ? '删除中...' : '确认删除'}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
+    );
   };
 
   const renderMenuInfoStep = () => {
@@ -2205,6 +2644,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const activeSections = menuInfoTab === 'common' ? currentCommonMenuSections : currentAdvancedMenuSections;
     const activeFieldCount = menuInfoTab === 'common' ? currentPinnedMenuKeys.length : currentAdvancedMenuKeys.length;
     const activeFilledCount = menuInfoTab === 'common' ? commonFilledMenuFieldCount : advancedFilledMenuFieldCount;
+    const isEditingMenu = activeConfigMenu !== null;
+    const isMenuInfoBusy = isMenuInfoLoading || isMenuInfoSaving;
 
     return (
       <div className="grid flex-1 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -2225,14 +2666,21 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setConfigStep(1)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-[12px] font-bold text-slate-500 transition-colors hover:border-[#1686e3]/30 hover:text-[#1686e3] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-              >
-                <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
-                返回切换类型
-              </button>
+              {isEditingMenu ? (
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-[12px] font-bold text-emerald-600 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+                  <span className="material-symbols-outlined text-[16px]">lock</span>
+                  编辑模式已锁定类型
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfigStep(1)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2 text-[12px] font-bold text-slate-500 transition-colors hover:border-[#1686e3]/30 hover:text-[#1686e3] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                >
+                  <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
+                  返回切换类型
+                </button>
+              )}
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-2.5">
@@ -2245,6 +2693,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               <span className={panelBadgeClass}>配置表 {currentModuleGuide.configTable}</span>
               <span className={panelBadgeClass}>已填写 {filledMenuFieldCount}/{currentMenuFieldEntries.length}</span>
               <span className={panelBadgeClass}>{menuInfoTab === 'common' ? '常用目录' : '不常用目录'} {activeFilledCount}/{activeFieldCount}</span>
+              {activeConfigModuleKey ? <span className={panelBadgeClass}>模块标识 {activeConfigModuleKey}</span> : null}
             </div>
 
             <div className="mt-4 flex items-center gap-2 rounded-[18px] border border-slate-200/70 bg-white/82 p-1.5 dark:border-slate-700 dark:bg-slate-900/50">
@@ -2268,6 +2717,28 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 );
               })}
             </div>
+
+            {isEditingMenu ? (
+              <div className="mt-4 rounded-[18px] border border-slate-200/70 bg-white/82 px-4 py-3 text-[12px] text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+                正在编辑菜单「{normalizeMenuTitle(activeConfigMenu?.title)}」，已按 {currentModuleGuide.label} 类型加载菜单信息。
+              </div>
+            ) : (
+              <div className="mt-4 rounded-[18px] border border-sky-200 bg-sky-50 px-4 py-3 text-[12px] font-semibold text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300">
+                当前是新建模式。首次点击“保存本页”会调用新增接口，创建成功后会自动切到可继续保存的编辑态。
+              </div>
+            )}
+
+            {isMenuInfoLoading ? (
+              <div className="mt-4 rounded-[18px] border border-sky-200 bg-sky-50 px-4 py-3 text-[12px] font-semibold text-sky-700 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300">
+                正在从后端加载菜单信息...
+              </div>
+            ) : null}
+
+            {menuInfoError ? (
+              <div className="mt-4 rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] font-semibold text-rose-600 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+                {menuInfoError}
+              </div>
+            ) : null}
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 md:p-5">
@@ -2289,6 +2760,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                     <div className="grid gap-4 md:grid-cols-2">
                       {section.fields.map((field) =>
                         renderMenuInfoField(field, {
+                          isDisabled: isMenuInfoBusy,
                           isPinned: currentPinnedMenuKeySet.has(field.key),
                           onTogglePinned: () => toggleMenuPinnedField(field.key, !currentPinnedMenuKeySet.has(field.key)),
                         }),
@@ -9128,10 +9600,17 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 ) : secondLevelMenuCount > 0 ? (
                   secondLevelMenus.map((menu, index) => {
                     const cardStyle = secondLevelMenuCardStyles[index % secondLevelMenuCardStyles.length];
+                    const isDeletingMenu = deletingMenuId === menu.id;
                     const isMenuEnabled = isUseflagEnabled(menu.useflag, menu.enabled);
                     const menuCodeLabel = normalizeMenuCode(menu.code) || `${activeMenuCodePrefix}-${index + 1}`;
                     const menuStructLabel = normalizeMenuCode(menu.menuStruct) || '未配置';
                     const purviewLabel = normalizeMenuCode(menu.purviewId) || '未配置';
+                    const moduleTypeProfile = getMenuModuleTypeProfile(menu.moduleType);
+                    const moduleTypeLabel = moduleTypeProfile?.label ?? '未定义类型';
+                    const moduleTypeBadgeClass =
+                      moduleTypeProfile?.badgeClass ??
+                      'border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+                    const moduleTypeIcon = moduleTypeProfile?.icon ?? 'category';
                     const statusBadgeClass = isMenuEnabled
                       ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50'
                       : 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400 border-amber-100 dark:border-amber-900/50';
@@ -9147,11 +9626,17 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                           <div className={`size-14 rounded-2xl border flex items-center justify-center transition-all duration-300 ${cardStyle.iconClass}`}>
                             <span className="material-symbols-outlined text-3xl">{cardStyle.icon}</span>
                           </div>
-                          <div className={`flex items-center gap-2 rounded-full border px-2.5 py-1 ${statusBadgeClass}`}>
-                            <span className={`status-dot ${statusDotClass}`}></span>
-                            <span className="text-[11px] font-bold uppercase tracking-wide">
-                              {statusText}
-                            </span>
+                          <div className="flex flex-col items-end gap-2">
+                            <div className={`flex items-center gap-2 rounded-full border px-2.5 py-1 ${statusBadgeClass}`}>
+                              <span className={`status-dot ${statusDotClass}`}></span>
+                              <span className="text-[11px] font-bold uppercase tracking-wide">
+                                {statusText}
+                              </span>
+                            </div>
+                            <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${moduleTypeBadgeClass}`}>
+                              <span className="material-symbols-outlined text-[14px]">{moduleTypeIcon}</span>
+                              <span className="text-[11px] font-semibold tracking-wide">{moduleTypeLabel}</span>
+                            </div>
                           </div>
                         </div>
                         <div className="flex-1 p-6 pt-5">
@@ -9170,7 +9655,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                         <div className="flex items-center justify-between rounded-b-2xl border-t border-slate-100 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-800/30">
                           <div className="flex gap-4">
                             <button
-                              onClick={() => setIsConfigOpen(true)}
+                              onClick={() => handleSecondLevelMenuConfig(menu)}
+                              disabled={isDeletingMenu}
                               className={`flex items-center gap-1.5 text-[13px] font-bold text-slate-500 transition-colors ${cardStyle.actionClass}`}
                             >
                               <span className="material-symbols-outlined text-[18px]">tune</span>
@@ -9178,11 +9664,16 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                             </button>
                             <button
                               type="button"
-                              onClick={() => showToast(`菜单「${normalizeMenuTitle(menu.title)}」详情待接入。`)}
-                              className={`flex items-center gap-1.5 text-[13px] font-bold text-slate-500 transition-colors ${cardStyle.actionClass}`}
+                              disabled={isDeletingMenu}
+                              onClick={() => setPendingDeleteMenu(menu)}
+                              className={`flex items-center gap-1.5 text-[13px] font-bold transition-colors ${
+                                isDeletingMenu
+                                  ? 'cursor-not-allowed text-rose-300 dark:text-rose-800'
+                                  : 'text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300'
+                              }`}
                             >
-                              <span className="material-symbols-outlined text-[18px]">visibility</span>
-                              详情
+                              <span className="material-symbols-outlined text-[18px]">delete</span>
+                              {isDeletingMenu ? '删除中...' : '删除'}
                             </button>
                           </div>
                           <button className={`size-8 rounded-lg border border-transparent text-slate-400 transition-all flex items-center justify-center hover:bg-white dark:hover:bg-slate-700 hover:border-slate-200 dark:hover:border-slate-600 ${cardStyle.actionClass}`}>
@@ -9243,6 +9734,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         </div>
       </main>
 
+      {renderDeleteConfirmModal()}
+
       {/* Full-screen Config Modal */}
       <AnimatePresence>
         {isConfigOpen && (
@@ -9292,12 +9785,16 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 {configSteps.map((step) => {
                   const isActive = configStep === step.id;
                   const isCompleted = completedSteps.includes(step.id);
-                  const isLocked = false;
+                  const isLocked = activeConfigMenu !== null && step.id === 1;
                   
                   return (
                     <div 
                       key={step.id} 
                       onClick={() => {
+                        if (isLocked) {
+                          showToast('编辑模式已锁定类型');
+                          return;
+                        }
                         setConfigStep(step.id);
                       }}
                       className={`relative z-10 flex items-start gap-3 group ${isLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
@@ -10381,13 +10878,18 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               >
                 <div className="flex h-20 items-center justify-between gap-4">
                   <button
-                    onClick={() => setConfigStep(Math.max(1, configStep - 1))}
+                    onClick={() => {
+                      if (activeConfigMenu !== null && configStep === 2) {
+                        return;
+                      }
+                      setConfigStep(Math.max(1, configStep - 1));
+                    }}
                     className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[12px] font-semibold transition-all ${
-                      configStep === 1
+                      configStep === 1 || (activeConfigMenu !== null && configStep === 2)
                         ? 'cursor-not-allowed border-slate-200/80 bg-slate-100/70 text-slate-300 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-600'
                         : 'border-slate-200/80 bg-white/80 text-slate-600 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200'
                     }`}
-                    disabled={configStep === 1}
+                    disabled={configStep === 1 || (activeConfigMenu !== null && configStep === 2)}
                   >
                     <span className="material-symbols-outlined text-[18px]">arrow_back</span>
                     上一步
@@ -10395,15 +10897,19 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
                   <div className="flex items-center gap-3">
                     <button
+                      type="button"
+                      disabled={configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving)}
                       onClick={() => {
-                        if (!completedSteps.includes(configStep)) {
-                          setCompletedSteps([...completedSteps, configStep]);
-                        }
+                        void handleMenuInfoSave();
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-4 py-2 text-[12px] font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200"
+                      className={`inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-4 py-2 text-[12px] font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition-all dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200 ${
+                        configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving)
+                          ? 'cursor-not-allowed opacity-60'
+                          : 'hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary'
+                      }`}
                     >
                       <span className="material-symbols-outlined text-[20px]">save</span>
-                      保存本页
+                      {configStep === 2 && isMenuInfoSaving ? (activeConfigMenu ? '保存中...' : '创建中...') : '保存本页'}
                     </button>
 
                     {configStep === 5 && (
@@ -10423,7 +10929,13 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                     )}
 
                     <button
+                      type="button"
                       onClick={() => {
+                        if (configStep === 2 && activeConfigMenu === null) {
+                          showToast('请先保存菜单信息，创建模块后再进入下一步。');
+                          return;
+                        }
+
                         const newCompleted = [...completedSteps];
                         if (!newCompleted.includes(configStep)) {
                           newCompleted.push(configStep);
@@ -10438,7 +10950,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                           setIsConfigOpen(false);
                         }
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2 text-[12px] font-semibold text-white shadow-[0_12px_24px_rgba(49,98,255,0.2)] transition-all hover:-translate-y-0.5 hover:bg-erp-blue"
+                      disabled={configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving || activeConfigMenu === null)}
+                      className={`inline-flex items-center gap-1.5 rounded-xl px-5 py-2 text-[12px] font-semibold text-white shadow-[0_12px_24px_rgba(49,98,255,0.2)] transition-all ${
+                        configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving || activeConfigMenu === null)
+                          ? 'cursor-not-allowed bg-primary/60'
+                          : 'bg-primary hover:-translate-y-0.5 hover:bg-erp-blue'
+                      }`}
                     >
                       {configStep === 6 ? '完成配置' : '下一步'}
                       {configStep !== 6 && <span className="material-symbols-outlined text-[20px]">arrow_forward</span>}

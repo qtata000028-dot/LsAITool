@@ -6,6 +6,7 @@ export interface BackendMenuNode {
   nodeType: string;
   title: string;
   code: string;
+  moduleType?: string;
   useflag?: number | string;
   subsysId: number;
   subsysCode?: string;
