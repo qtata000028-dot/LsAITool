@@ -2988,6 +2988,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   }, [billDetailColumns, businessType, currentDetailTableName]);
   const [documentLeftPaneWidth, setDocumentLeftPaneWidth] = useState(328);
   const [documentDetailPaneWidth, setDocumentDetailPaneWidth] = useState(436);
+  const [documentTopPaneHeight, setDocumentTopPaneHeight] = useState(468);
   const [documentConditionScope, setDocumentConditionScope] = useState<'main' | 'left'>('main');
   const [billHeaderWorkbenchConfig, setBillHeaderWorkbenchConfig] = useState<BillHeaderWorkbenchConfig>(
     buildBillHeaderWorkbenchConfig(),
