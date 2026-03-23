@@ -410,6 +410,16 @@ const CONDITION_PANEL_MIN_ROWS = 1;
 const CONDITION_PANEL_MAX_ROWS = 6;
 const BILL_HEADER_WORKBENCH_MIN_ROWS = 1;
 const BILL_HEADER_WORKBENCH_MAX_ROWS = 6;
+const DETAIL_BOARD_GROUP_MIN_ROWS = 1;
+const DETAIL_BOARD_GROUP_MAX_ROWS = 6;
+const DETAIL_BOARD_FIELD_DEFAULT_WIDTH = 280;
+const DETAIL_BOARD_FIELD_MIN_WIDTH = 220;
+const DETAIL_BOARD_FIELD_MAX_WIDTH = 920;
+const DETAIL_BOARD_FIELD_DEFAULT_HEIGHT = 52;
+const DETAIL_BOARD_TALL_FIELD_DEFAULT_HEIGHT = 96;
+const DETAIL_BOARD_TALL_FIELD_MIN_HEIGHT = 88;
+const DETAIL_BOARD_TALL_FIELD_MAX_HEIGHT = 340;
+const ARCHIVE_LAYOUT_LANE_GAP = 8;
 const BILL_FORM_DEFAULT_WIDTH = 236;
 const BILL_FORM_MIN_WIDTH = 168;
 const BILL_FORM_MAX_WIDTH = 560;
@@ -423,6 +433,8 @@ const BILL_FORM_LAYOUT_COLUMNS = 3;
 const BILL_FORM_ROW_HEIGHT = 56;
 const BILL_FORM_SNAP_SIZE = 8;
 const BILL_FORM_ALIGN_THRESHOLD = 10;
+const WIDTH_RESIZE_SNAP_THRESHOLD = 10;
+const WIDTH_RESIZE_GRID_STEP = 4;
 const EMPTY_BILL_FIELD_GUIDES: BillFieldGuideState = {
   lines: [],
   gap: null,
@@ -595,6 +607,151 @@ function getBillFieldLayout(index: number, width = BILL_FORM_DEFAULT_WIDTH) {
     sourceTable: 'bill-source',
     sourceField: '',
   };
+}
+
+function buildResizeSnapCandidates(
+  widths: number[],
+  {
+    minWidth,
+    maxWidth,
+    baseWidth,
+  }: {
+    minWidth: number;
+    maxWidth: number;
+    baseWidth: number;
+  },
+) {
+  const candidates = new Set<number>([minWidth, maxWidth, baseWidth]);
+  widths
+    .map((width) => Math.round(width))
+    .filter((width) => Number.isFinite(width) && width >= minWidth && width <= maxWidth)
+    .forEach((width) => candidates.add(width));
+
+  return Array.from(candidates).sort((left, right) => left - right);
+}
+
+function resolveResizeWidthWithSnap(
+  rawWidth: number,
+  {
+    minWidth,
+    maxWidth,
+    snapCandidates,
+    snapThreshold = WIDTH_RESIZE_SNAP_THRESHOLD,
+  }: {
+    minWidth: number;
+    maxWidth: number;
+    snapCandidates: number[];
+    snapThreshold?: number;
+  },
+) {
+  const clampedWidth = Math.max(minWidth, Math.min(maxWidth, rawWidth));
+  const gridWidth = Math.max(minWidth, Math.min(maxWidth, Math.round(clampedWidth / WIDTH_RESIZE_GRID_STEP) * WIDTH_RESIZE_GRID_STEP));
+  const snappedCandidate = snapCandidates.reduce<number | null>((closest, candidate) => {
+    if (Math.abs(candidate - clampedWidth) > snapThreshold) return closest;
+    if (closest === null) return candidate;
+    return Math.abs(candidate - clampedWidth) < Math.abs(closest - clampedWidth) ? candidate : closest;
+  }, null);
+  const width = Math.round(snappedCandidate ?? gridWidth);
+
+  return {
+    width,
+    snappedTo: snappedCandidate,
+  };
+}
+
+function getResizeRulerTicks(
+  width: number,
+  {
+    minWidth,
+    maxWidth,
+    snapCandidates,
+  }: {
+    minWidth: number;
+    maxWidth: number;
+    snapCandidates: number[];
+  },
+) {
+  const normalized = Array.from(new Set([minWidth, maxWidth, ...snapCandidates]))
+    .filter((candidate) => candidate >= minWidth && candidate <= maxWidth)
+    .sort((left, right) => left - right);
+
+  if (normalized.length <= 9) return normalized;
+
+  const closestIndex = normalized.reduce((bestIndex, candidate, index) => (
+    Math.abs(candidate - width) < Math.abs(normalized[bestIndex] - width) ? index : bestIndex
+  ), 0);
+  const startIndex = Math.max(1, closestIndex - 3);
+  const endIndex = Math.min(normalized.length - 1, closestIndex + 4);
+
+  return Array.from(new Set([
+    normalized[0],
+    ...normalized.slice(startIndex, endIndex),
+    normalized[normalized.length - 1],
+  ])).sort((left, right) => left - right);
+}
+
+function getDetailBoardGroupRows(group: any) {
+  const rawRows = Number.isFinite(Number(group?.rows)) ? Number(group.rows) : DETAIL_BOARD_GROUP_MIN_ROWS;
+  return Math.min(DETAIL_BOARD_GROUP_MAX_ROWS, Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, rawRows));
+}
+
+function getDetailBoardGroupColumnRow(group: any, columnId: string) {
+  const rows = getDetailBoardGroupRows(group);
+  const columnIds = Array.isArray(group?.columnIds) ? group.columnIds : [];
+  const explicitRow = Number(group?.columnRows?.[columnId]);
+  if (Number.isFinite(explicitRow)) {
+    return Math.min(rows, Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, explicitRow));
+  }
+
+  const legacyColumnsPerRow = Math.max(1, Math.min(4, Number(group?.columnsPerRow) || 2));
+  const columnIndex = Math.max(0, columnIds.indexOf(columnId));
+  return Math.min(rows, Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, Math.floor(columnIndex / legacyColumnsPerRow) + 1));
+}
+
+function ResizeTickRuler({
+  width,
+  minWidth,
+  maxWidth,
+  ticks,
+}: {
+  width: number;
+  minWidth: number;
+  maxWidth: number;
+  ticks: number[];
+}) {
+  const usableTicks = ticks.length > 0 ? ticks : [minWidth, maxWidth];
+  const range = Math.max(1, maxWidth - minWidth);
+
+  return (
+    <div className="mt-1.5 w-[182px] rounded-[12px] border border-slate-200/80 bg-white/94 px-2.5 py-1.5 shadow-[0_12px_24px_-24px_rgba(15,23,42,0.28)] dark:border-slate-700 dark:bg-slate-950/88">
+      <div className="relative h-4">
+        <span className="absolute inset-x-0 top-2 h-px rounded-full bg-slate-200/90 dark:bg-slate-700" />
+        {usableTicks.map((tick) => {
+          const left = `${((tick - minWidth) / range) * 100}%`;
+          const isActive = Math.round(tick) === Math.round(width);
+          const isEdge = tick === minWidth || tick === maxWidth;
+          return (
+            <span
+              key={`resize-tick-${tick}`}
+              className={`absolute top-[3px] w-px -translate-x-1/2 rounded-full ${
+                isActive
+                  ? 'h-[10px] bg-[color:var(--workspace-accent)]'
+                  : isEdge
+                    ? 'h-[8px] bg-slate-500/70 dark:bg-slate-300/70'
+                    : 'h-[6px] bg-slate-300 dark:bg-slate-500'
+              }`}
+              style={{ left }}
+            />
+          );
+        })}
+      </div>
+      <div className="mt-1 flex items-center justify-between text-[9px] font-semibold text-slate-400 dark:text-slate-500">
+        <span>{minWidth}</span>
+        <span className="text-[color:var(--workspace-accent)]">{Math.round(width)}</span>
+        <span>{maxWidth}</span>
+      </div>
+    </div>
+  );
 }
 
 export default function Dashboard({ onLogout }: DashboardProps) {
@@ -1371,8 +1528,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       name: preset.name,
       description: preset.description,
       columnIds,
+      rows: Math.min(3, Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, Math.ceil(Math.max(columnIds.length, 1) / 2))),
+      columnRows: Object.fromEntries(columnIds.map((columnId, columnIndex) => [columnId, Math.floor(columnIndex / 2) + 1])),
       columnsPerRow: 2,
       columnWidths: {},
+      columnHeights: {},
       ...overrides,
     };
   }
@@ -1413,18 +1573,48 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const suggestedGroups = createSuggestedDetailBoardGroups(columns);
     const hasCustomGroups = Array.isArray(config?.groups);
     const rawGroups = hasCustomGroups ? config.groups : suggestedGroups;
-    const normalizedGroups = rawGroups.map((group: any, index: number) => ({
-      id: group?.id ?? buildDetailBoardGroup(index + 1).id,
-      name: typeof group?.name === 'string' ? group.name : `信息分组 ${index + 1}`,
-      description: group?.description ?? '',
-      columnIds: Array.from(new Set((group?.columnIds ?? []).filter((columnId: string) => availableColumnIds.has(columnId)))),
-      columnsPerRow: Math.max(1, Math.min(4, Number(group?.columnsPerRow) || 2)),
-      columnWidths: Object.fromEntries(
-        Object.entries(group?.columnWidths ?? {}).filter(([columnId, width]) => (
-          availableColumnIds.has(columnId) && Number(width) > 0
-        )),
-      ),
-    }));
+    const normalizedGroups = rawGroups.map((group: any, index: number) => (
+      (() => {
+        const columnIds = Array.from(new Set((group?.columnIds ?? []).filter((columnId: string) => availableColumnIds.has(columnId))));
+        const legacyColumnsPerRow = Math.max(1, Math.min(4, Number(group?.columnsPerRow) || 2));
+        const rows = clampValue(
+          Number.isFinite(Number(group?.rows))
+            ? Number(group.rows)
+            : Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, Math.ceil(Math.max(columnIds.length, 1) / legacyColumnsPerRow)),
+          DETAIL_BOARD_GROUP_MIN_ROWS,
+          DETAIL_BOARD_GROUP_MAX_ROWS,
+        );
+        const rawColumnRows = Object.fromEntries(
+          columnIds.map((columnId: string, columnIndex: number) => {
+            const explicitRow = Number(group?.columnRows?.[columnId]);
+            const row = Number.isFinite(explicitRow)
+              ? explicitRow
+              : Math.floor(columnIndex / legacyColumnsPerRow) + 1;
+            return [columnId, clampValue(row, DETAIL_BOARD_GROUP_MIN_ROWS, rows)];
+          }),
+        );
+
+        return {
+          id: group?.id ?? buildDetailBoardGroup(index + 1).id,
+          name: typeof group?.name === 'string' ? group.name : `信息分组 ${index + 1}`,
+          description: group?.description ?? '',
+          columnIds,
+          rows,
+          columnRows: rawColumnRows,
+          columnsPerRow: legacyColumnsPerRow,
+          columnWidths: Object.fromEntries(
+            Object.entries(group?.columnWidths ?? {}).filter(([columnId, width]) => (
+              availableColumnIds.has(columnId) && Number(width) > 0
+            )),
+          ),
+          columnHeights: Object.fromEntries(
+            Object.entries(group?.columnHeights ?? {}).filter(([columnId, height]) => (
+              availableColumnIds.has(columnId) && Number(height) > 0
+            )),
+          ),
+        };
+      })()
+    ));
 
     return {
       enabled: Boolean(config?.enabled),
@@ -1669,7 +1859,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   ]);
   const [detailTabs, setDetailTabs] = useState([{ id: 'tab1', name: '关联附件' }, { id: 'tab2', name: '操作日志' }]);
   const [activeTab, setActiveTab] = useState('tab1');
-  const [tabFillTypes, setTabFillTypes] = useState<Record<string, string>>({ tab1: '表格', tab2: '表格' });
   const [mainTableConfig, setMainTableConfig] = useState(
     buildGridConfig('SELECT * FROM customer_archive', 'enable = 1', {
       contextMenuEnabled: true,
@@ -1782,8 +1971,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [inspectorPanelTab, setInspectorPanelTab] = useState<'common' | 'advanced' | 'contextmenu' | 'color'>('common');
   const [selectedLeftContextMenuId, setSelectedLeftContextMenuId] = useState<string | null>(null);
   const [selectedMainContextMenuId, setSelectedMainContextMenuId] = useState<string | null>(null);
+  const [selectedDetailContextMenuId, setSelectedDetailContextMenuId] = useState<string | null>(null);
   const [selectedLeftColorRuleId, setSelectedLeftColorRuleId] = useState<string | null>(null);
   const [selectedMainColorRuleId, setSelectedMainColorRuleId] = useState<string | null>(null);
+  const [selectedDetailColorRuleId, setSelectedDetailColorRuleId] = useState<string | null>(null);
   const [selectedPopupMenuParamKey, setSelectedPopupMenuParamKey] = useState<string>('dllpar1');
   const selectedPopupMenuOwnerRef = useRef<string | null>(null);
   const [selectedLeftForDelete, setSelectedLeftForDelete] = useState<string[]>([]);
@@ -2104,7 +2295,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   }, [billDetailColumns, businessType, currentDetailTableName]);
   const [documentLeftPaneWidth, setDocumentLeftPaneWidth] = useState(328);
   const [documentDetailPaneWidth, setDocumentDetailPaneWidth] = useState(436);
-  const [documentTopPaneHeight, setDocumentTopPaneHeight] = useState(468);
   const [documentConditionScope, setDocumentConditionScope] = useState<'main' | 'left'>('main');
   const [billHeaderWorkbenchConfig, setBillHeaderWorkbenchConfig] = useState<BillHeaderWorkbenchConfig>(
     buildBillHeaderWorkbenchConfig(),
@@ -2126,6 +2316,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [isDetailBoardOpen, setIsDetailBoardOpen] = useState(initialDetailPreview);
   const [detailBoardSortColumnId, setDetailBoardSortColumnId] = useState<string | null>(initialDetailPreview ? mainTableColumns[0]?.id ?? null : null);
   const [detailBoardOpenedRowId, setDetailBoardOpenedRowId] = useState<number | null>(initialDetailPreview ? 1 : null);
+  const [selectedDetailBoardGroupId, setSelectedDetailBoardGroupId] = useState<string | null>(null);
   const [workspaceTheme, setWorkspaceTheme] = useState(initialWorkspaceTheme);
   const [detailBoardClipboardIds, setDetailBoardClipboardIds] = useState<string[]>([]);
   const [activeDetailBoardResize, setActiveDetailBoardResize] = useState<{
@@ -2133,6 +2324,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     columnId: string;
     label: string;
     width: number;
+    minWidth: number;
+    maxWidth: number;
+    snapCandidates: number[];
+  } | null>(null);
+  const [activeDetailBoardHeightResize, setActiveDetailBoardHeightResize] = useState<{
+    groupId: string;
+    columnId: string;
+    label: string;
+    height: number;
+    minHeight: number;
+    maxHeight: number;
   } | null>(null);
   const [previewContextMenu, setPreviewContextMenu] = useState<{
     scope: 'main' | 'detail';
@@ -2180,9 +2382,29 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     row: number;
     beforeId: string | null;
   } | null>(null);
+  const [detailBoardWorkbenchDrag, setDetailBoardWorkbenchDrag] = useState<{
+    groupId: string;
+    columnId: string;
+  } | null>(null);
+  const [detailBoardWorkbenchDropTarget, setDetailBoardWorkbenchDropTarget] = useState<{
+    groupId: string;
+    row: number;
+    beforeId: string | null;
+  } | null>(null);
+  const [isArchiveLayoutEditorOpen, setIsArchiveLayoutEditorOpen] = useState(false);
+  const [selectedArchiveLayoutGroupId, setSelectedArchiveLayoutGroupId] = useState<string | null>(null);
+  const [archiveLayoutWorkbenchDrag, setArchiveLayoutWorkbenchDrag] = useState<{
+    groupId: string | null;
+    columnId: string;
+  } | null>(null);
+  const [archiveLayoutWorkbenchDropTarget, setArchiveLayoutWorkbenchDropTarget] = useState<{
+    groupId: string;
+    row: number;
+    beforeId: string | null;
+  } | null>(null);
   const [billFieldSnapGuides, setBillFieldSnapGuides] = useState<BillFieldGuideState>(EMPTY_BILL_FIELD_GUIDES);
   const layoutDragRef = useRef<{
-    type: 'document-left-width' | 'document-detail-width' | 'document-top-height';
+    type: 'document-left-width' | 'document-detail-width';
     startX: number;
     startY: number;
     startValue: number;
@@ -2228,7 +2450,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   } | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
   const conditionResizeHudFrameRef = useRef<number | null>(null);
-  const detailBoardResizeFrameRef = useRef<number | null>(null);
+  const conditionResizePreviewFrameRef = useRef<number | null>(null);
 
   const selectedLeftColId = inspectorTarget.kind === 'left-col' ? inspectorTarget.id ?? null : null;
   const selectedMainColId = inspectorTarget.kind === 'main-col' ? inspectorTarget.id ?? null : null;
@@ -2856,7 +3078,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const panelHeaderClass = `${shadcnPanelHeaderClass} px-5 py-4`;
     const panelTitleClass = shadcnPanelTitleClass;
     const panelBadgeClass = shadcnPanelBadgeClass;
-    const panelIconShellClass = `${shadcnPanelIconShellClass} size-10 rounded-lg`;
+    const panelIconShellClass = `${shadcnPanelIconShellClass} size-8`;
     const compactInfoCardClass = shadcnInfoCardClass;
     const compactCardClass = shadcnSectionCardClass;
     const sectionTitleClass = shadcnSectionTitleClass;
@@ -3212,7 +3434,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               : (
                   DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === prev.id)
                     ? prev.id
-                    : '表格'
+                    : getDetailFillTypeByTabId(activeTab)
                 )
           )
         : undefined;
@@ -3247,9 +3469,161 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           : {
               ...current,
               ...patch,
-            },
+        },
       };
     });
+  };
+
+  const openArchiveLayoutEditor = () => {
+    const current = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    if (!current.enabled) {
+      updateMainDetailBoard({
+        ...current,
+        enabled: true,
+      });
+    }
+    setSelectedArchiveLayoutGroupId(current.groups[0]?.id ?? null);
+    setIsArchiveLayoutEditorOpen(true);
+  };
+
+  const addArchiveLayoutGroup = () => {
+    const current = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const nextGroup = buildDetailBoardGroup(current.groups.length + 1);
+    updateMainDetailBoard({
+      ...current,
+      enabled: true,
+      groups: [...current.groups, nextGroup],
+    });
+    setSelectedArchiveLayoutGroupId(nextGroup.id);
+  };
+
+  const updateArchiveLayoutGroup = (groupId: string, updater: Record<string, any> | ((group: any) => any)) => {
+    updateMainDetailBoard((current: any) => ({
+      ...current,
+      enabled: true,
+      groups: current.groups.map((group: any) => (
+        group.id === groupId
+          ? typeof updater === 'function'
+            ? updater(group)
+            : { ...group, ...updater }
+          : group
+      )),
+    }));
+  };
+
+  const removeArchiveLayoutGroup = (groupId: string) => {
+    const current = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const nextGroups = current.groups.filter((group: any) => group.id !== groupId);
+    updateMainDetailBoard({
+      ...current,
+      enabled: nextGroups.length > 0,
+      groups: nextGroups,
+    });
+    setSelectedArchiveLayoutGroupId(nextGroups[0]?.id ?? null);
+  };
+
+  const clearArchiveLayoutGroups = () => {
+    const current = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    updateMainDetailBoard({
+      ...current,
+      groups: [],
+    });
+    setSelectedArchiveLayoutGroupId(null);
+  };
+
+  const assignArchiveLayoutColumn = (
+    targetGroupId: string,
+    columnId: string,
+    rowNumber: number,
+    beforeId: string | null = null,
+  ) => {
+    updateMainDetailBoard((current: any) => {
+      const groups = normalizeDetailBoardConfig(current, mainTableColumns).groups.map((group: any) => ({
+        ...group,
+        columnIds: [...(group.columnIds ?? [])],
+        columnRows: { ...(group.columnRows ?? {}) },
+        columnWidths: { ...(group.columnWidths ?? {}) },
+        columnHeights: { ...(group.columnHeights ?? {}) },
+      }));
+      const targetGroup = groups.find((group: any) => group.id === targetGroupId);
+      if (!targetGroup) return current;
+      let preservedWidth: number | null = null;
+      let preservedHeight: number | null = null;
+
+      groups.forEach((group: any) => {
+        if (!group.columnIds.includes(columnId)) return;
+        const nextWidth = Number(group.columnWidths?.[columnId]);
+        const nextHeight = Number(group.columnHeights?.[columnId]);
+        if (Number.isFinite(nextWidth) && nextWidth > 0) preservedWidth = nextWidth;
+        if (Number.isFinite(nextHeight) && nextHeight > 0) preservedHeight = nextHeight;
+        group.columnIds = group.columnIds.filter((id: string) => id !== columnId);
+        group.columnRows = Object.fromEntries(
+          Object.entries(group.columnRows ?? {}).filter(([key]) => key !== columnId),
+        );
+        group.columnWidths = Object.fromEntries(
+          Object.entries(group.columnWidths ?? {}).filter(([key]) => key !== columnId),
+        );
+        group.columnHeights = Object.fromEntries(
+          Object.entries(group.columnHeights ?? {}).filter(([key]) => key !== columnId),
+        );
+      });
+
+      const nextRow = clampValue(
+        rowNumber,
+        DETAIL_BOARD_GROUP_MIN_ROWS,
+        getDetailBoardGroupRows(targetGroup),
+      );
+      const remaining = targetGroup.columnIds.filter((id: string) => id !== columnId);
+      let insertIndex = beforeId ? remaining.indexOf(beforeId) : -1;
+      if (insertIndex === -1) {
+        insertIndex = remaining.findIndex((id: string) => getDetailBoardGroupColumnRow(targetGroup, id) > nextRow);
+        if (insertIndex === -1) insertIndex = remaining.length;
+      }
+
+      targetGroup.columnIds = [
+        ...remaining.slice(0, insertIndex),
+        columnId,
+        ...remaining.slice(insertIndex),
+      ];
+      targetGroup.columnRows = {
+        ...targetGroup.columnRows,
+        [columnId]: nextRow,
+      };
+      if (Number.isFinite(preservedWidth) && preservedWidth! > 0) {
+        targetGroup.columnWidths = {
+          ...targetGroup.columnWidths,
+          [columnId]: preservedWidth,
+        };
+      }
+      if (Number.isFinite(preservedHeight) && preservedHeight! > 0) {
+        targetGroup.columnHeights = {
+          ...targetGroup.columnHeights,
+          [columnId]: preservedHeight,
+        };
+      }
+
+      return {
+        ...current,
+        enabled: true,
+        groups,
+      };
+    });
+  };
+
+  const removeArchiveLayoutColumn = (groupId: string, columnId: string) => {
+    updateArchiveLayoutGroup(groupId, (group: any) => ({
+      ...group,
+      columnIds: (group.columnIds ?? []).filter((id: string) => id !== columnId),
+      columnRows: Object.fromEntries(
+        Object.entries(group.columnRows ?? {}).filter(([key]) => key !== columnId),
+      ),
+      columnWidths: Object.fromEntries(
+        Object.entries(group.columnWidths ?? {}).filter(([key]) => key !== columnId),
+      ),
+      columnHeights: Object.fromEntries(
+        Object.entries(group.columnHeights ?? {}).filter(([key]) => key !== columnId),
+      ),
+    }));
   };
 
   const startDetailBoardFieldResize = (
@@ -3257,20 +3631,43 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     groupId: string,
     columnId: string,
     label: string,
+    minWidthOverride?: number,
   ) => {
     event.preventDefault();
     event.stopPropagation();
 
     const startX = event.pageX;
     const previewItem = event.currentTarget.closest('[data-detail-field-item="true"]') as HTMLElement | null;
-    const startWidth = previewItem?.getBoundingClientRect().width ?? 320;
-    const minWidth = 220;
-    const maxWidth = 920;
+    const startWidth = previewItem?.getBoundingClientRect().width ?? DETAIL_BOARD_FIELD_DEFAULT_WIDTH;
+    const minWidth = Math.max(DETAIL_BOARD_FIELD_MIN_WIDTH, Number(minWidthOverride) || DETAIL_BOARD_FIELD_MIN_WIDTH);
+    const maxWidth = DETAIL_BOARD_FIELD_MAX_WIDTH;
+    const currentDetailBoardConfig = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const currentGroup = currentDetailBoardConfig.groups.find((group: any) => group.id === groupId);
+    const siblingWidths = (currentGroup?.columnIds ?? [])
+      .filter((id: string) => id !== columnId)
+      .map((id: string) => {
+        const siblingColumn = mainTableColumns.find((column: any) => column.id === id);
+        return getLayoutFieldWorkbenchMeta(siblingColumn, currentGroup?.columnWidths?.[id]).width;
+      });
+    const snapCandidates = buildResizeSnapCandidates(siblingWidths, {
+      minWidth,
+      maxWidth,
+      baseWidth: DETAIL_BOARD_FIELD_DEFAULT_WIDTH,
+    });
     let latestWidth = startWidth;
+    let previewFrame: number | null = null;
 
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-    setActiveDetailBoardResize({ groupId, columnId, label, width: startWidth });
+    setActiveDetailBoardResize({
+      groupId,
+      columnId,
+      label,
+      width: startWidth,
+      minWidth,
+      maxWidth,
+      snapCandidates,
+    });
 
     const commitWidth = (nextWidth: number) => {
       updateMainDetailBoard((current: any) => ({
@@ -3290,22 +3687,28 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     };
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      latestWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + (moveEvent.pageX - startX)));
-      setActiveDetailBoardResize((prev) => (
-        prev?.groupId === groupId && prev.columnId === columnId ? { ...prev, width: latestWidth } : prev
-      ));
+      const { width } = resolveResizeWidthWithSnap(startWidth + (moveEvent.pageX - startX), {
+        minWidth,
+        maxWidth,
+        snapCandidates,
+      });
+      latestWidth = width;
 
-      if (detailBoardResizeFrameRef.current !== null) return;
-      detailBoardResizeFrameRef.current = window.requestAnimationFrame(() => {
-        detailBoardResizeFrameRef.current = null;
-        commitWidth(latestWidth);
+      if (previewFrame !== null) return;
+      previewFrame = window.requestAnimationFrame(() => {
+        previewFrame = null;
+        setActiveDetailBoardResize((prev) => (
+          prev?.groupId === groupId && prev.columnId === columnId
+            ? { ...prev, width: latestWidth }
+            : prev
+        ));
       });
     };
 
     const handleMouseUp = () => {
-      if (detailBoardResizeFrameRef.current !== null) {
-        window.cancelAnimationFrame(detailBoardResizeFrameRef.current);
-        detailBoardResizeFrameRef.current = null;
+      if (previewFrame !== null) {
+        window.cancelAnimationFrame(previewFrame);
+        previewFrame = null;
       }
       commitWidth(latestWidth);
       setActiveDetailBoardResize((prev) => (
@@ -3336,6 +3739,106 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               ...group,
               columnWidths: Object.fromEntries(
                 Object.entries(group.columnWidths ?? {}).filter(([key]) => key !== columnId),
+              ),
+            }
+          : group
+      )),
+    }));
+  };
+
+  const startDetailBoardFieldHeightResize = (
+    event: React.MouseEvent<HTMLButtonElement>,
+    groupId: string,
+    columnId: string,
+    label: string,
+    minHeightOverride?: number,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startY = event.pageY;
+    const previewItem = event.currentTarget.closest('[data-detail-field-item="true"]') as HTMLElement | null;
+    const startHeight = previewItem?.getBoundingClientRect().height ?? DETAIL_BOARD_TALL_FIELD_DEFAULT_HEIGHT;
+    const minHeight = Math.max(DETAIL_BOARD_TALL_FIELD_MIN_HEIGHT, Number(minHeightOverride) || DETAIL_BOARD_TALL_FIELD_MIN_HEIGHT);
+    const maxHeight = DETAIL_BOARD_TALL_FIELD_MAX_HEIGHT;
+    let latestHeight = startHeight;
+    let previewFrame: number | null = null;
+
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+    setActiveDetailBoardHeightResize({
+      groupId,
+      columnId,
+      label,
+      height: startHeight,
+      minHeight,
+      maxHeight,
+    });
+
+    const commitHeight = (nextHeight: number) => {
+      updateMainDetailBoard((current: any) => ({
+        ...current,
+        groups: current.groups.map((group: any) => (
+          group.id === groupId
+            ? {
+                ...group,
+                columnHeights: {
+                  ...(group.columnHeights ?? {}),
+                  [columnId]: nextHeight,
+                },
+              }
+            : group
+        )),
+      }));
+    };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      latestHeight = Math.round(Math.max(minHeight, Math.min(maxHeight, startHeight + (moveEvent.pageY - startY))));
+      if (previewFrame !== null) return;
+      previewFrame = window.requestAnimationFrame(() => {
+        previewFrame = null;
+        setActiveDetailBoardHeightResize((prev) => (
+          prev?.groupId === groupId && prev.columnId === columnId
+            ? { ...prev, height: latestHeight }
+            : prev
+        ));
+      });
+    };
+
+    const handleMouseUp = () => {
+      if (previewFrame !== null) {
+        window.cancelAnimationFrame(previewFrame);
+        previewFrame = null;
+      }
+      commitHeight(latestHeight);
+      setActiveDetailBoardHeightResize((prev) => (
+        prev?.groupId === groupId && prev.columnId === columnId ? null : prev
+      ));
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const resetDetailBoardFieldHeight = (
+    event: React.MouseEvent<HTMLButtonElement>,
+    groupId: string,
+    columnId: string,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    updateMainDetailBoard((current: any) => ({
+      ...current,
+      groups: current.groups.map((group: any) => (
+        group.id === groupId
+          ? {
+              ...group,
+              columnHeights: Object.fromEntries(
+                Object.entries(group.columnHeights ?? {}).filter(([key]) => key !== columnId),
               ),
             }
           : group
@@ -3430,7 +3933,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const newId = `tab_${Date.now()}`;
     setDetailTabs([...detailTabs, { id: newId, name: `新页签 ${detailTabs.length + 1}` }]);
     setActiveTab(newId);
-    setTabFillTypes({ ...tabFillTypes, [newId]: '表格' });
     setDetailFilterFields((prev) => ({
       ...prev,
       [newId]: [buildConditionField(1, { name: '关键字', placeholder: '请输入关键字', width: 220 })],
@@ -3456,11 +3958,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     e.stopPropagation();
     const newTabs = detailTabs.filter(t => t.id !== id);
     setDetailTabs(newTabs);
-    setTabFillTypes(prev => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
     setDetailFilterFields((prev) => {
       const next = { ...prev };
       delete next[id];
@@ -3897,6 +4394,154 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         onClick={stopPreviewEvent}
         onDoubleClick={stopPreviewEvent}
       />
+    );
+  };
+
+  const getLayoutFieldWorkbenchMeta = (rawField: any, customWidth?: number | null, customHeight?: number | null) => {
+    const field = normalizeColumn(rawField);
+    const typeText = String(field.type ?? '').toLowerCase();
+    const isTallControl = ['备注', '说明', '多行', '文本域', 'textarea', '富文本', 'markdown']
+      .some((keyword) => typeText.includes(keyword.toLowerCase()))
+      || Number(field.previewRows) >= 3
+      || Number(field.layoutRows) >= 2;
+    const minWidth = isTallControl ? 320 : DETAIL_BOARD_FIELD_MIN_WIDTH;
+    const minHeight = isTallControl ? DETAIL_BOARD_TALL_FIELD_MIN_HEIGHT : DETAIL_BOARD_FIELD_DEFAULT_HEIGHT;
+    const preferredWidth = Number.isFinite(Number(customWidth)) && Number(customWidth) > 0
+      ? Number(customWidth)
+      : Number.isFinite(Number(field.width)) && Number(field.width) > 0
+        ? Number(field.width)
+        : (isTallControl ? 360 : DETAIL_BOARD_FIELD_DEFAULT_WIDTH);
+    const preferredHeight = Number.isFinite(Number(customHeight)) && Number(customHeight) > 0
+      ? Number(customHeight)
+      : Number.isFinite(Number(field.layoutHeight)) && Number(field.layoutHeight) > 0
+        ? Number(field.layoutHeight)
+        : (isTallControl ? DETAIL_BOARD_TALL_FIELD_DEFAULT_HEIGHT : DETAIL_BOARD_FIELD_DEFAULT_HEIGHT);
+
+    return {
+      field,
+      isTallControl,
+      width: clampValue(preferredWidth, minWidth, DETAIL_BOARD_FIELD_MAX_WIDTH),
+      height: isTallControl
+        ? clampValue(preferredHeight, minHeight, DETAIL_BOARD_TALL_FIELD_MAX_HEIGHT)
+        : DETAIL_BOARD_FIELD_DEFAULT_HEIGHT,
+      minWidth,
+      minHeight,
+      previewRows: isTallControl ? 4 : 1,
+      frameClass: isTallControl ? 'min-h-[96px]' : 'min-h-[52px]',
+    };
+  };
+
+  const getDetailBoardFieldLiveWidth = (
+    groupId: string,
+    columnId: string,
+    fallbackWidth: number,
+  ) => (
+    activeDetailBoardResize?.groupId === groupId && activeDetailBoardResize.columnId === columnId
+      ? activeDetailBoardResize.width
+      : fallbackWidth
+  );
+
+  const getDetailBoardFieldLiveHeight = (
+    groupId: string,
+    columnId: string,
+    fallbackHeight: number,
+  ) => (
+    activeDetailBoardHeightResize?.groupId === groupId && activeDetailBoardHeightResize.columnId === columnId
+      ? activeDetailBoardHeightResize.height
+      : fallbackHeight
+  );
+
+  const getArchiveLayoutControlLabelWidth = (field: any, isTallControl: boolean) => {
+    if (isTallControl) return 88;
+    return Math.max(54, Math.min(82, String(field.name ?? '').length * 12));
+  };
+
+  const renderArchiveLayoutFieldShell = (
+    rawField: any,
+    {
+      rowIndex,
+      width,
+      height,
+    }: {
+      rowIndex: number;
+      width?: number | null;
+      height?: number | null;
+    },
+  ) => {
+    const layoutMeta = getLayoutFieldWorkbenchMeta(rawField, width, height);
+    const labelWidth = getArchiveLayoutControlLabelWidth(layoutMeta.field, layoutMeta.isTallControl);
+    const wrapperClass = layoutMeta.isTallControl
+      ? 'flex w-full flex-col gap-1.5'
+      : 'flex w-full items-center gap-2';
+
+    return (
+      <div
+        className={wrapperClass}
+        style={layoutMeta.isTallControl ? { minHeight: layoutMeta.height } : undefined}
+      >
+        {layoutMeta.isTallControl ? (
+          <>
+            <div
+              className={`text-[11px] font-medium ${
+                layoutMeta.field.required
+                  ? 'text-[color:var(--workspace-accent-strong)]'
+                  : 'text-slate-500 dark:text-slate-300'
+              }`}
+              style={{ width: labelWidth }}
+              title={layoutMeta.field.name}
+            >
+              <span className="block truncate">{layoutMeta.field.name}</span>
+            </div>
+            <div className="min-h-0 flex-1">
+              {renderLayoutWorkbenchFieldPreview(layoutMeta.field, rowIndex, layoutMeta.width)}
+            </div>
+          </>
+        ) : (
+          <>
+            <div
+              className={`shrink-0 text-right text-[11px] font-medium ${
+                layoutMeta.field.required
+                  ? 'text-[color:var(--workspace-accent-strong)]'
+                  : 'text-slate-500 dark:text-slate-300'
+              }`}
+              style={{ width: labelWidth }}
+              title={layoutMeta.field.name}
+            >
+              <span className="block truncate">{layoutMeta.field.name}</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="pointer-events-none">
+                {renderFieldPreview(layoutMeta.field, rowIndex, 'filter')}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderLayoutWorkbenchFieldPreview = (rawField: any, rowIndex: number, customWidth?: number | null) => {
+    const layoutMeta = getLayoutFieldWorkbenchMeta(rawField, customWidth);
+    if (layoutMeta.isTallControl) {
+      return (
+        <textarea
+          readOnly
+          rows={layoutMeta.previewRows}
+          value={String(
+            layoutMeta.field.defaultValue
+            || layoutMeta.field.placeholder
+            || `${layoutMeta.field.name}的详细内容示例`,
+          )}
+          className={`${shadcnTextareaClass} min-h-0 resize-none bg-white text-[12px] text-slate-600 shadow-none pointer-events-none dark:bg-slate-950 dark:text-slate-200`}
+          style={{ minHeight: Math.max(70, layoutMeta.height - 28) }}
+        />
+      );
+    }
+
+    return (
+      <div className="pointer-events-none">
+        {renderFieldPreview(layoutMeta.field, rowIndex, 'filter')}
+      </div>
     );
   };
 
@@ -4363,6 +5008,31 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const activeBillResize = activeBillResizeId
       ? billCanvasFields.find((field) => field.id === activeBillResizeId) ?? null
       : null;
+    const getBillResizeCandidates = (fieldId: string) => {
+      const targetField = billCanvasFields.find((field) => field.id === fieldId);
+      const targetRow = clampValue(
+        Number.isFinite(Number(targetField?.panelRow)) ? Number(targetField.panelRow) : BILL_HEADER_WORKBENCH_MIN_ROWS,
+        BILL_HEADER_WORKBENCH_MIN_ROWS,
+        billHeaderRowCount,
+      );
+      return buildResizeSnapCandidates(
+        billCanvasFields
+          .filter((field) => field.id !== fieldId)
+          .filter((field) => (
+            clampValue(
+              Number.isFinite(Number(field?.panelRow)) ? Number(field.panelRow) : BILL_HEADER_WORKBENCH_MIN_ROWS,
+              BILL_HEADER_WORKBENCH_MIN_ROWS,
+              billHeaderRowCount,
+            ) === targetRow
+          ))
+          .map((field) => Math.max(BILL_FORM_MIN_WIDTH, Number(field.width) || BILL_FORM_DEFAULT_WIDTH)),
+        {
+          minWidth: BILL_FORM_MIN_WIDTH,
+          maxWidth: BILL_FORM_MAX_WIDTH,
+          baseWidth: BILL_FORM_DEFAULT_WIDTH,
+        },
+      );
+    };
     const getBillHeaderFieldWidth = (field: any) => (
       Math.max(
         BILL_FORM_MIN_WIDTH,
@@ -4372,6 +5042,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         ),
       )
     );
+    const activeBillResizeTicks = activeBillResize
+      ? getResizeRulerTicks(getBillHeaderFieldWidth(activeBillResize), {
+          minWidth: BILL_FORM_MIN_WIDTH,
+          maxWidth: BILL_FORM_MAX_WIDTH,
+          snapCandidates: getBillResizeCandidates(activeBillResize.id),
+        })
+      : [];
     const getBillHeaderFieldRow = (field: any) => clampValue(
       Number.isFinite(Number(field?.panelRow)) ? Number(field.panelRow) : BILL_HEADER_WORKBENCH_MIN_ROWS,
       BILL_HEADER_WORKBENCH_MIN_ROWS,
@@ -4554,7 +5231,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     return (
       <div
         style={workspaceThemeVars}
-        className={`flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[34px] border border-white/70 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.96),rgba(242,247,253,0.88)_38%,rgba(233,241,251,0.78)_100%)] ${isConfigFullscreenActive ? 'shadow-none' : 'shadow-[0_46px_110px_-64px_rgba(15,23,42,0.42)]'} ${workspaceThemeStyles.tableSurface}`}
+        className={`flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-slate-50/55 ${isConfigFullscreenActive ? 'shadow-none' : 'shadow-[0_28px_64px_-48px_rgba(15,23,42,0.22)]'} ${workspaceThemeStyles.tableSurface}`}
       >
         <div ref={billDocumentViewportRef} className={`min-h-0 flex-1 overflow-hidden ${billViewportPaddingClass}`}>
           <div className={`flex h-full min-h-0 items-stretch overflow-hidden ${billPaperWrapClass}`}>
@@ -4564,7 +5241,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               style={{ zoom: billDocumentScale } as React.CSSProperties}
             >
               <div className={billPaperShellClass}>
-            <div className={`h-3 ${isConfigFullscreenActive ? 'rounded-t-[24px]' : 'rounded-t-[28px]'} ${billToneMeta.strip}`} />
+            <div className={`h-2 ${isConfigFullscreenActive ? 'rounded-t-lg' : 'rounded-t-xl'} ${billToneMeta.strip}`} />
 
             <div className={`border-b border-[#e8eef6] ${billHeaderPaddingClass}`}>
               <div className="relative">
@@ -4582,7 +5259,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   <div className={`text-[31px] font-black tracking-[0.22em] transition-colors ${billToneMeta.title}`}>{billDocumentTitle}</div>
                   <div className={`mx-auto mt-3 h-px w-[54%] transition-colors ${billToneMeta.divider}`} />
                   <div className="mt-4 flex items-center justify-center">
-                    <div className="inline-flex items-center gap-5 rounded-full border border-[#dbe6f2] bg-[linear-gradient(180deg,#ffffff,#f7fbff)] px-5 py-2 text-[12px] shadow-[0_14px_28px_-24px_rgba(15,23,42,0.16)]">
+                    <div className="inline-flex items-center gap-4 rounded-md border border-[#dbe6f2] bg-white px-4 py-1.5 text-[11px]">
                       <button
                         type="button"
                         onClick={() => setBillDocumentTone('blue')}
@@ -4620,17 +5297,27 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     activateTableConfigSelection('main');
                   }}
                   onPaste={handleBillHeaderPaste}
-                  className={`relative overflow-hidden rounded-[12px] border border-[#dce5f0] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(250,252,255,0.96))] px-5 py-5 outline-none transition-shadow ${
+                  className={`relative overflow-hidden rounded-lg border border-[#dce5f0] bg-white px-4 py-4 outline-none transition-shadow ${
                     isBillHeaderPanelActive ? 'shadow-[inset_0_0_0_2px_rgba(47,111,237,0.28)]' : ''
                   }`}
                 >
                   {activeBillResize ? (
                     <div className="pointer-events-none absolute right-3 top-2 z-10 inline-flex items-center gap-2 rounded-full border border-[color:var(--workspace-accent-border)] bg-white/96 px-3 py-1 text-[11px] font-bold text-[color:var(--workspace-accent)] shadow-[0_16px_28px_-24px_var(--workspace-accent-shadow)] dark:bg-slate-900/94">
-                      <span className="material-symbols-outlined text-[13px]">straighten</span>
-                      <span className="max-w-[120px] truncate">{activeBillResize.name}</span>
-                      <span className="rounded-full bg-[color:var(--workspace-accent-soft)] px-2 py-0.5">
-                        {Math.round(getBillHeaderFieldWidth(activeBillResize))}px
-                      </span>
+                      <div className="flex flex-col">
+                        <div className="inline-flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[13px]">straighten</span>
+                          <span className="max-w-[120px] truncate">{activeBillResize.name}</span>
+                          <span className="rounded-full bg-[color:var(--workspace-accent-soft)] px-2 py-0.5">
+                            {Math.round(getBillHeaderFieldWidth(activeBillResize))}px
+                          </span>
+                        </div>
+                        <ResizeTickRuler
+                          width={getBillHeaderFieldWidth(activeBillResize)}
+                          minWidth={BILL_FORM_MIN_WIDTH}
+                          maxWidth={BILL_FORM_MAX_WIDTH}
+                          ticks={activeBillResizeTicks}
+                        />
+                      </div>
                     </div>
                   ) : null}
 
@@ -4647,7 +5334,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                             key={`bill-header-row-${rowNumber}`}
                             onDragOver={handleBillHeaderRowDragOver(rowNumber)}
                             onDrop={handleBillHeaderRowDrop(rowNumber)}
-                            className={`scrollbar-none flex min-h-[52px] items-center overflow-x-auto rounded-[14px] px-2 py-1.5 transition-all ${
+                            className={`scrollbar-none flex min-h-[52px] items-center overflow-x-auto rounded-md px-2 py-1.5 transition-all ${
                               isRowDropTarget
                                 ? 'bg-[color:var(--workspace-accent-soft)] ring-1 ring-[color:var(--workspace-accent-border)]'
                                 : rowFields.length === 0
@@ -4699,7 +5386,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                           activateColumnSelection('main', column.id);
                                         }
                                       }}
-                                      className={`group relative flex h-[46px] shrink-0 items-center gap-1.5 rounded-[10px] px-1.5 py-1 pr-3 text-left transition-all ${
+                                      className={`group relative flex h-[44px] shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 pr-3 text-left transition-all ${
                                         isDragging ? 'cursor-grabbing' : 'cursor-grab'
                                       } ${getBillHeaderSelectionClass(isActive, isMarkedForDelete, isDragging, isInsertTarget)}`}
                                     >
@@ -4753,8 +5440,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     </div>
                   ) : (
                     <div className="flex min-h-[260px] items-center justify-center">
-                      <div className="rounded-[16px] border border-dashed border-[#cbd9eb] bg-[#fbfdff] px-8 py-10 text-center">
-                        <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-[#eef4ff] text-[#2f6fed]">
+                      <div className="rounded-md border border-dashed border-[#cbd9eb] bg-[#fbfdff] px-6 py-8 text-center">
+                        <div className="mx-auto flex size-12 items-center justify-center rounded-md bg-[#eef4ff] text-[#2f6fed]">
                           <span className="material-symbols-outlined text-[22px]">fact_check</span>
                         </div>
                         <div className="mt-4 text-[15px] font-bold text-slate-700">将 Excel 字段复制到单据抬头</div>
@@ -4763,7 +5450,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                   )}
                 </div>
 
-                <div className="mt-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border border-[#dce5f0] bg-white px-3 pb-3 pt-3">
+                <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[#dce5f0] bg-white px-3 pb-3 pt-3">
                   <div className="min-h-0 flex-1">
                     {renderTableBuilder(
                       'detail',
@@ -4784,14 +5471,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               </div>
 
               <aside className="flex min-h-0 w-[96px] shrink-0 border-l border-[#edf2f8] pl-5 pt-1">
-                <div className="rounded-[14px] border border-[#e3ebf4] bg-[linear-gradient(180deg,#fbfdff,#f7faff)] p-3 shadow-[0_20px_36px_-32px_rgba(15,23,42,0.22)]">
+                <div className="rounded-md border border-[#e3ebf4] bg-white p-2.5">
                   <div className="flex flex-col gap-3">
                     {actionRailItems.map((item) => (
                     <button
                       key={item.label}
                       type="button"
                       onClick={item.action}
-                      className="flex h-[86px] flex-col items-center justify-center gap-2.5 rounded-[10px] border border-[#dfe7f1] bg-white text-slate-500 shadow-[0_18px_30px_-28px_rgba(15,23,42,0.2)] transition-all hover:-translate-y-0.5 hover:border-[#bcd0ea] hover:text-[#2f6fed]"
+                      className="flex h-[78px] flex-col items-center justify-center gap-2 rounded-md border border-[#dfe7f1] bg-white text-slate-500 transition-all hover:border-[#bcd0ea] hover:text-[#2f6fed]"
                     >
                       <span className="material-symbols-outlined text-[24px]">{item.icon}</span>
                       <span className="text-[12px] font-semibold leading-5">{item.label}</span>
@@ -4899,27 +5586,27 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     );
     const addColumn = () => setCols((prev) => [...prev, buildColumn(scope === 'detail' ? 'd_col' : `${scope}_col`, prev.length + 1)]);
     const tableSurfaceClass = tableSelected
-      ? 'cloudy-glass-panel border-[3px] border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] shadow-[0_32px_68px_-44px_rgba(81,98,128,0.26)]'
-      : 'cloudy-glass-panel border-white/70';
+      ? 'cloudy-glass-panel border-[2px] border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] shadow-none'
+      : 'cloudy-glass-panel border-slate-200/80';
     const headerDividerClass = tableSelected ? 'border-[color:var(--workspace-accent-border)]' : 'border-slate-200/70 dark:border-slate-700/80';
     const getHeaderButtonClass = (isActive: boolean, isMarkedForDelete: boolean) => (
       isActive
-        ? 'bg-[linear-gradient(180deg,rgba(255,241,244,0.98),rgba(255,247,249,1))] shadow-[inset_0_0_0_1px_rgba(228,177,187,0.52)]'
+        ? 'bg-[color:var(--workspace-accent-tint)]'
         : isMarkedForDelete
-          ? 'bg-[linear-gradient(180deg,rgba(255,246,248,0.98),rgba(255,250,251,1))]'
+          ? 'bg-[#fff4f6]'
           : tableSelected
-            ? 'bg-[linear-gradient(180deg,rgba(255,248,250,0.9),rgba(255,251,252,0.98))] hover:bg-white/35 dark:hover:bg-white/5'
-            : 'bg-white/92 hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
+            ? 'bg-slate-50 hover:bg-white dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
+            : 'bg-white hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
     );
     const getHeaderLabelClass = (isActive: boolean, isMarkedForDelete: boolean) => {
       if (isActive) {
-        return 'bg-[#d86a80] text-white shadow-[0_14px_24px_-20px_rgba(216,106,128,0.92)]';
+        return 'text-[color:var(--workspace-accent-strong)]';
       }
       if (isMarkedForDelete) {
-        return 'bg-[#f9e9ed] text-[#bf5a70]';
+        return 'text-[#bf5a70]';
       }
       return tableSelected
-        ? 'bg-[#fff7f9] text-[#ba566d] dark:bg-white/8 dark:text-[#f4b5c1]'
+        ? 'text-[#ba566d] dark:text-[#f4b5c1]'
         : 'bg-transparent text-slate-700 dark:text-slate-100';
     };
     const getHeaderRequiredMarkClass = (isActive: boolean, isMarkedForDelete: boolean, isRequired: boolean) => {
@@ -4936,8 +5623,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           : ''
     );
     const tableCanvasClass = tableSelected
-      ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] text-[color:var(--workspace-accent-strong)] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]'
-      : 'border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(248,252,255,0.6))] text-slate-400 hover:border-white/90 hover:bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(248,252,255,0.66))] dark:text-slate-500';
+      ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] text-[color:var(--workspace-accent-strong)]'
+      : 'border-slate-200/80 bg-white text-slate-400 hover:border-slate-200/90 hover:bg-white dark:text-slate-500';
     const tableCanvasIconClass = tableSelected
       ? 'cloudy-glass-orb border-[color:var(--workspace-accent-border)] bg-white/96 text-[color:var(--workspace-accent-strong)]'
       : 'cloudy-glass-orb text-[color:var(--workspace-accent)]';
@@ -4971,9 +5658,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
     if (backgroundSelectable) {
       return (
-        <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-[26px] border ${themedTableSurfaceClass} ${isCompactCanvas ? 'flex h-full min-h-[184px]' : 'flex h-full min-h-[260px]'} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
+        <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-lg border ${themedTableSurfaceClass} ${isCompactCanvas ? 'flex h-full min-h-[184px]' : 'flex h-full min-h-[260px]'} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
           {visibleResizeTag && (
-            <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-full border border-[#0b6bcb]/15 bg-white/96 px-3 py-1.5 text-[11px] font-bold text-[#0b6bcb] shadow-[0_18px_32px_-24px_rgba(11,107,203,0.48)] dark:border-[#0b6bcb]/20 dark:bg-slate-900/92">
+            <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-md border border-[#0b6bcb]/15 bg-white/96 px-2.5 py-1 text-[11px] font-bold text-[#0b6bcb] dark:border-[#0b6bcb]/20 dark:bg-slate-900/92">
               <span className="material-symbols-outlined text-[14px]">straighten</span>
               <span className="max-w-[150px] truncate">{visibleResizeTag.label}</span>
               <span className="rounded-full bg-[#0b6bcb]/8 px-2 py-0.5">{Math.round(visibleResizeTag.width)}px</span>
@@ -5015,7 +5702,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                       >
                           <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
                             <div
-                              className={`inline-flex max-w-full items-center rounded-full font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : 'px-2.5 py-1'} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete)}`}
+                              className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : 'px-0 py-0'} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete)}`}
                               title={normalizedCol.name}
                             >
                               <span className="truncate">{normalizedCol.name}</span>
@@ -5041,10 +5728,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     <button
                       type="button"
                       onClick={addColumn}
-                      className={`flex h-full w-full items-center justify-center rounded-tr-[16px] transition-all ${isCompactModuleSetting ? 'min-h-[34px]' : 'min-h-[40px]'} hover:bg-white/55 dark:hover:bg-white/8`}
+                      className={`flex h-full w-full items-center justify-center rounded-tr-md transition-all ${isCompactModuleSetting ? 'min-h-[34px]' : 'min-h-[40px]'} hover:bg-white/55 dark:hover:bg-white/8`}
                       title="新增字段"
                     >
-                      <div className={`inline-flex items-center justify-center rounded-[14px] border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
+                        <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
                         <span className="material-symbols-outlined text-[17px]">add</span>
                       </div>
                     </button>
@@ -5060,16 +5747,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               event.stopPropagation();
               options?.onCanvasDoubleClick?.();
             }}
-            className={`relative mt-1 flex w-full overflow-hidden rounded-[20px] border text-center transition-all dark:border-slate-700 ${themedTableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] flex-1' : 'min-h-[188px] flex-1'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+            className={`relative mt-1 flex w-full overflow-hidden rounded-lg border text-center transition-all dark:border-slate-700 ${themedTableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] flex-1' : 'min-h-[188px] flex-1'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
           >
             <div className={`pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.28),transparent_62%)] ${tableSelected ? 'opacity-80' : 'opacity-100'}`} />
-            <div className={`relative z-10 flex h-full w-full flex-col items-center justify-center px-5 ${isCompactCanvas ? 'py-3' : 'py-6'}`}>
-              <div className="flex flex-col items-center gap-2 rounded-[20px] border border-white/72 bg-white/84 px-5 py-3 shadow-[0_18px_38px_-30px_rgba(15,23,42,0.28)] backdrop-blur-md dark:border-white/8 dark:bg-slate-900/78">
-                <div className={`flex items-center justify-center rounded-[18px] border ${isCompactModuleSetting ? 'size-10' : 'size-12'} ${tableCanvasIconClass}`}>
+              <div className={`relative z-10 flex h-full w-full flex-col items-center justify-center px-5 ${isCompactCanvas ? 'py-3' : 'py-6'}`}>
+              <div className="flex flex-col items-center gap-2 rounded-md border border-slate-200/80 bg-white/90 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/78">
+                <div className={`flex items-center justify-center rounded-md border ${isCompactModuleSetting ? 'size-10' : 'size-12'} ${tableCanvasIconClass}`}>
                   <span className={`material-symbols-outlined ${isCompactModuleSetting ? 'text-[16px]' : 'text-[20px]'} ${tableSelected ? 'text-[#c06b7d]' : 'text-slate-300 dark:text-slate-500'}`}>table_view</span>
                 </div>
                 {detailBoardFeatureLabel && (
-                  <div className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold ${detailBoardTheme.badge}`}>
+                    <div className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${detailBoardTheme.badge}`}>
                     {detailBoardFeatureLabel}
                   </div>
                 )}
@@ -5085,9 +5772,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     }
 
     return (
-      <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-w-max rounded-[26px] border ${themedTableSurfaceClass} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
+      <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-w-max rounded-lg border ${themedTableSurfaceClass} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
         {visibleResizeTag && (
-          <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-full border border-[#1686e3]/15 bg-white/96 px-3 py-1.5 text-[11px] font-bold text-[#1686e3] shadow-[0_18px_32px_-24px_rgba(22,134,227,0.58)] dark:border-[#1686e3]/20 dark:bg-slate-900/92">
+          <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-md border border-[#1686e3]/15 bg-white/96 px-2.5 py-1 text-[11px] font-bold text-[#1686e3] dark:border-[#1686e3]/20 dark:bg-slate-900/92">
             <span className="material-symbols-outlined text-[14px]">straighten</span>
             <span className="max-w-[150px] truncate">{visibleResizeTag.label}</span>
             <span className="rounded-full bg-[#1686e3]/8 px-2 py-0.5">{Math.round(visibleResizeTag.width)}px</span>
@@ -5095,7 +5782,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         )}
         <table
           style={{ minWidth: totalTableWidth, tableLayout: 'fixed' }}
-          className="table-fixed overflow-hidden rounded-[18px] border-separate border-spacing-0 text-left text-[12px]"
+          className="table-fixed overflow-hidden rounded-md border-separate border-spacing-0 text-left text-[12px]"
         >
           <colgroup>
             {cols.map((col) => {
@@ -5128,7 +5815,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     >
                       <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
                         <div
-                          className={`inline-flex max-w-full items-center rounded-full font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : 'px-2.5 py-1'} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete)}`}
+                          className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : 'px-0 py-0'} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete)}`}
                           title={normalizedCol.name}
                         >
                           <span className="truncate">{normalizedCol.name}</span>
@@ -5154,10 +5841,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 <button
                   type="button"
                   onClick={addColumn}
-                  className={`flex h-full w-full items-center justify-center rounded-tr-[16px] transition-all ${isCompactModuleSetting ? 'min-h-[38px]' : 'min-h-[46px]'} hover:bg-white/55 dark:hover:bg-white/8`}
+                  className={`flex h-full w-full items-center justify-center rounded-tr-md transition-all ${isCompactModuleSetting ? 'min-h-[38px]' : 'min-h-[46px]'} hover:bg-white/55 dark:hover:bg-white/8`}
                   title="新增字段"
                 >
-                  <div className={`inline-flex items-center justify-center rounded-[14px] border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
+                  <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
                     <span className="material-symbols-outlined text-[17px]">add</span>
                   </div>
                 </button>
@@ -5174,9 +5861,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     event.stopPropagation();
                     options?.onCanvasDoubleClick?.();
                   }}
-                  className={`flex w-full flex-col items-center justify-center ${isCompactModuleSetting ? 'min-h-[190px]' : 'min-h-[230px]'} rounded-b-[18px] border-t text-center transition-all ${tableSelected ? 'border-[#efd6db]/85 bg-[linear-gradient(180deg,rgba(255,245,247,0.96),rgba(255,250,251,0.98))] hover:bg-[linear-gradient(180deg,rgba(255,242,245,0.98),rgba(255,248,250,1))] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.08),transparent_42%),linear-gradient(180deg,rgba(250,252,255,0.94),rgba(246,249,252,0.98))] hover:bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.12),transparent_46%),linear-gradient(180deg,rgba(245,249,255,0.98),rgba(240,246,252,1))] dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+                    className={`flex w-full flex-col items-center justify-center ${isCompactModuleSetting ? 'min-h-[190px]' : 'min-h-[230px]'} rounded-b-md border-t text-center transition-all ${tableSelected ? 'border-[#efd6db]/85 bg-[#fff7f9] hover:bg-[#fff3f6] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
                 >
-                  <div className={`flex items-center justify-center rounded-[18px] border ${tableCanvasIconClass} ${isCompactModuleSetting ? 'size-11' : 'size-12'}`}>
+                  <div className={`flex items-center justify-center rounded-md border ${tableCanvasIconClass} ${isCompactModuleSetting ? 'size-11' : 'size-12'}`}>
                     <span className={`material-symbols-outlined ${isCompactModuleSetting ? 'text-[18px]' : 'text-[20px]'}`}>table_view</span>
                   </div>
                   {detailBoardFeatureLabel && (
@@ -5251,12 +5938,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         ...workspaceThemeVars,
         minHeight: 'clamp(620px, calc(100dvh - 220px), 704px)',
       };
-  const effectiveDocumentTopPaneHeight = !isConfigFullscreenActive && businessType === 'document'
-    ? Math.max(documentTopPaneHeight, 504)
-    : documentTopPaneHeight;
-  const currentDetailFillType = DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === tabFillTypes[activeTab])
-    ? tabFillTypes[activeTab]
-    : DETAIL_FILL_TYPE_OPTIONS[0].value;
+  const normalizeDetailFillTypeValue = (value: string | undefined | null) => (
+    DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === value)
+      ? value!
+      : DETAIL_FILL_TYPE_OPTIONS[0].value
+  );
+  const getDetailFillTypeByTabId = (tabId: string) => normalizeDetailFillTypeValue(detailTabConfigs[tabId]?.detailType);
+  const currentDetailFillType = getDetailFillTypeByTabId(activeTab);
   const treeRelationColumn = mainTableColumns.find((column) => normalizeColumn(column).type === '树形节点关联') ?? null;
   const parsedTreeSourceFields = useMemo(
     () => parseSqlFieldNames(treeRelationColumn?.dynamicSql ?? ''),
@@ -5271,17 +5959,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     setSelectedDetailForDelete([]);
     setSelectedDetailFiltersForDelete([]);
     setInspectorTarget((prev) => {
-      if (prev.kind === 'detail-col' || prev.kind === 'detail-filter') {
-        return { kind: 'detail-grid' };
-      }
-      if (prev.kind === 'detail-tab') {
-        return { kind: 'detail-tab', id: activeTab };
+      if (prev.kind === 'detail-col' || prev.kind === 'detail-filter' || prev.kind === 'detail-tab' || prev.kind === 'detail-grid') {
+        return { kind: 'detail-grid', id: currentDetailFillType };
       }
       return prev;
     });
     setBuilderSelectionContextMenu(null);
     setPreviewContextMenu(null);
-  }, [activeTab]);
+  }, [activeTab, currentDetailFillType]);
 
   useEffect(() => {
     setInspectorTarget((prev) => prev.kind === 'detail-filter' ? { kind: 'none' } : prev);
@@ -5306,7 +5991,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     if (activeTab !== tabId) {
       setActiveTab(tabId);
     }
-    setInspectorTarget({ kind: 'detail-tab', id: tabId });
+    setInspectorTarget({
+      kind: 'detail-grid',
+      id: getDetailFillTypeByTabId(tabId),
+    });
     setInspectorPanelTab('common');
     setSelectedArchiveNodeId(`detail-${tabId}`);
   };
@@ -5425,6 +6113,20 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   }, [mainTableConfig.colorRules, selectedMainColorRuleId]);
 
   useEffect(() => {
+    const groups = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns).groups;
+    if (!groups.some((group: any) => group.id === selectedDetailBoardGroupId)) {
+      setSelectedDetailBoardGroupId(groups[0]?.id ?? null);
+    }
+  }, [mainTableConfig.detailBoard, mainTableColumns, selectedDetailBoardGroupId]);
+
+  useEffect(() => {
+    const groups = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns).groups;
+    if (!groups.some((group: any) => group.id === selectedArchiveLayoutGroupId)) {
+      setSelectedArchiveLayoutGroupId(groups[0]?.id ?? null);
+    }
+  }, [mainTableConfig.detailBoard, mainTableColumns, selectedArchiveLayoutGroupId]);
+
+  useEffect(() => {
     const handlePointerMove = (event: MouseEvent) => {
       if (billFieldResizeRef.current) {
         const resize = billFieldResizeRef.current;
@@ -5432,9 +6134,33 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           BILL_FORM_MIN_WIDTH,
           Math.min(BILL_FORM_MAX_WIDTH, resize.boardWidth - resize.startCanvasX - BILL_FORM_LAYOUT_PADDING_X),
         );
+        const resizeField = billCanvasFieldsRef.current.find((column) => column.id === resize.id);
+        const resizeRow = clampValue(
+          Number.isFinite(Number(resizeField?.panelRow)) ? Number(resizeField.panelRow) : BILL_HEADER_WORKBENCH_MIN_ROWS,
+          BILL_HEADER_WORKBENCH_MIN_ROWS,
+          billHeaderWorkbenchConfig.rows,
+        );
+        const siblingWidths = billCanvasFieldsRef.current
+          .filter((column) => column.id !== resize.id)
+          .filter((column) => (
+            clampValue(
+              Number.isFinite(Number(column?.panelRow)) ? Number(column.panelRow) : BILL_HEADER_WORKBENCH_MIN_ROWS,
+              BILL_HEADER_WORKBENCH_MIN_ROWS,
+              billHeaderWorkbenchConfig.rows,
+            ) === resizeRow
+          ))
+          .map((column) => Math.max(BILL_FORM_MIN_WIDTH, Number(column?.width) || BILL_FORM_DEFAULT_WIDTH));
+        const snapCandidates = buildResizeSnapCandidates(siblingWidths, {
+          minWidth: BILL_FORM_MIN_WIDTH,
+          maxWidth,
+          baseWidth: BILL_FORM_DEFAULT_WIDTH,
+        });
         const rawWidth = resize.startWidth + (event.clientX - resize.startX);
-        const snappedWidth = Math.max(BILL_FORM_MIN_WIDTH, snapBillPositionToGrid(rawWidth, 0));
-        const nextWidth = Math.max(BILL_FORM_MIN_WIDTH, Math.min(maxWidth, snappedWidth));
+        const { width: nextWidth } = resolveResizeWidthWithSnap(rawWidth, {
+          minWidth: BILL_FORM_MIN_WIDTH,
+          maxWidth,
+          snapCandidates,
+        });
 
         pendingBillResizeRef.current = {
           id: resize.id,
@@ -5513,11 +6239,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       if (drag.type === 'document-detail-width') {
         const delta = drag.startX - event.clientX;
         setDocumentDetailPaneWidth(Math.min(520, Math.max(360, drag.startValue + delta)));
-      }
-
-      if (drag.type === 'document-top-height') {
-        const delta = event.clientY - drag.startY;
-        setDocumentTopPaneHeight(Math.min(620, Math.max(220, drag.startValue + delta)));
       }
     };
 
@@ -5608,7 +6329,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   const startLayoutDrag = (
-    type: 'document-left-width' | 'document-detail-width' | 'document-top-height',
+    type: 'document-left-width' | 'document-detail-width',
     event: React.MouseEvent,
   ) => {
     event.preventDefault();
@@ -5619,11 +6340,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       startValue:
         type === 'document-left-width'
           ? documentLeftPaneWidth
-          : type === 'document-detail-width'
-            ? documentDetailPaneWidth
-            : documentTopPaneHeight,
+          : documentDetailPaneWidth,
     };
-    document.body.style.cursor = type === 'document-top-height' ? 'row-resize' : 'col-resize';
+    document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
   };
 
@@ -5673,7 +6392,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
               {detailTabs.map((tab) => {
-                const tabMeta = getDetailFillTypeMeta(tabFillTypes[tab.id]);
+                const tabMeta = getDetailFillTypeMeta(getDetailFillTypeByTabId(tab.id));
                 const isActive = activeTab === tab.id;
 
                 return (
@@ -5832,10 +6551,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const selectedColumnContext = useMemo(() => {
     const panelTabId = activeTab;
     const activeDetailTabName = detailTabs.find((tab) => tab.id === panelTabId)?.name || '当前明细';
-    const currentDetailFillTypeMeta = getDetailFillTypeMeta(tabFillTypes[panelTabId]);
+    const currentDetailFillTypeMeta = getDetailFillTypeMeta(getDetailFillTypeByTabId(panelTabId));
     const selectedDetailInspectorFillType = inspectorTarget.kind === 'detail-grid' && DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === inspectorTarget.id)
       ? inspectorTarget.id
-      : '表格';
+      : getDetailFillTypeByTabId(panelTabId);
     const selectedDetailInspectorMeta = getDetailFillTypeMeta(selectedDetailInspectorFillType);
     const selectedLeftColId = inspectorTarget.kind === 'left-col' ? inspectorTarget.id ?? null : null;
     const selectedLeftFilterId = inspectorTarget.kind === 'left-filter' ? inspectorTarget.id ?? null : null;
@@ -6079,9 +6798,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       return {
         kind: 'grid' as const,
         scope: 'detail-grid' as const,
-        title: selectedDetailInspectorMeta.value === '表格'
-          ? `明细表配置 · ${activeDetailTabName}`
-          : `明细${selectedDetailInspectorMeta.label}配置 · ${activeDetailTabName}`,
+        title: `明细页签配置 · ${activeDetailTabName}`,
         description: '',
         icon: selectedDetailInspectorMeta.icon,
         iconClass: 'bg-sky-500/12 text-sky-500',
@@ -6173,7 +6890,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     billDetailConfig,
     billSourceDraft,
     billSources,
-    tabFillTypes,
     workspaceTheme,
   ]);
 
@@ -6191,14 +6907,29 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const mutedLabelClass = shadcnMutedLabelClass;
     const isDocumentScopedGridInspector = selectedColumnContext?.kind === 'grid'
       && businessType !== 'table'
-      && (selectedColumnContext.scope === 'main-grid' || selectedColumnContext.scope === 'left-grid');
+      && (
+        selectedColumnContext.scope === 'main-grid'
+        || selectedColumnContext.scope === 'left-grid'
+        || (
+          selectedColumnContext.scope === 'detail-grid'
+          && normalizeDetailFillTypeValue(
+            inspectorTarget.kind === 'detail-grid'
+              ? inspectorTarget.id
+              : getDetailFillTypeByTabId(activeTab),
+          ) === '表格'
+        )
+      );
     const documentScopedGridContextMenuCount = isDocumentScopedGridInspector
       ? (selectedColumnContext?.column?.contextMenuItems ?? []).length
       : 0;
     const documentScopedGridColorRuleCount = isDocumentScopedGridInspector
       ? (selectedColumnContext?.column?.colorRules ?? []).length
       : 0;
-    const documentScopedGridLabel = selectedColumnContext?.scope === 'left-grid' ? '左表' : '主表';
+    const documentScopedGridLabel = selectedColumnContext?.scope === 'left-grid'
+      ? '左表'
+      : selectedColumnContext?.scope === 'detail-grid'
+        ? '明细表'
+        : '主表';
     const inspectorTabs: Array<{ id: 'common' | 'advanced' | 'contextmenu' | 'color'; label: string; icon: string; count?: number }> = isDocumentScopedGridInspector
       ? [
           { id: 'common', label: documentScopedGridLabel, icon: 'dashboard_customize' },
@@ -6240,11 +6971,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       </div>
     );
     const renderAdvancedPlaceholder = (title: string) => (
-      <section className="rounded-[24px] border border-dashed border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,0.94))] px-5 py-8 text-center dark:border-slate-700 dark:bg-slate-900/35">
-        <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-white text-[#1686e3] shadow-[0_18px_30px_-24px_rgba(22,134,227,0.55)] dark:bg-slate-800">
+      <section className="rounded-md border border-dashed border-slate-200/80 bg-slate-50/50 px-4 py-6 text-center dark:border-slate-700 dark:bg-slate-900/35">
+        <div className="mx-auto flex size-10 items-center justify-center rounded-md border border-slate-200/80 bg-white text-[#1686e3] dark:border-slate-700 dark:bg-slate-900">
           <span className="material-symbols-outlined text-[20px]">inventory_2</span>
         </div>
-        <div className="mt-4 text-[14px] font-bold text-slate-700 dark:text-slate-100">{title}</div>
+        <div className="mt-3 text-[13px] font-semibold text-slate-700 dark:text-slate-100">{title}</div>
       </section>
     );
     const clonePlainData = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -6481,24 +7212,24 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         <div style={workspaceThemeVars} className={panelShellClass}>
           <div className={panelHeaderClass}>
             <div className="flex items-start gap-3">
-                <div className="flex size-10 items-center justify-center rounded-[14px] border border-slate-200/80 bg-slate-50 text-[#1686e3] dark:border-slate-800 dark:bg-slate-900 dark:text-[#7cc0ff]">
-                <span className="material-symbols-outlined text-[20px]">tune</span>
+                <div className="flex size-8 items-center justify-center rounded-md border border-slate-200/80 bg-slate-50 text-[#1686e3] dark:border-slate-800 dark:bg-slate-900 dark:text-[#7cc0ff]">
+                <span className="material-symbols-outlined text-[18px]">tune</span>
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={panelBadgeClass}>右侧检查器</span>
                 </div>
-                <h3 className="mt-2 text-[17px] font-bold tracking-[0.01em] text-slate-800 dark:text-slate-100">详细配置</h3>
+                <h3 className="mt-1.5 text-[15px] font-semibold tracking-[0.01em] text-slate-800 dark:text-slate-100">详细配置</h3>
               </div>
             </div>
           </div>
-          <div className="flex min-h-0 flex-1 items-center justify-center px-4 py-4">
-            <div className="w-full rounded-lg border border-dashed border-slate-200/80 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-900/40">
-              <div className="flex items-center gap-3 rounded-md border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[#eef6ff] text-[#1686e3] dark:bg-[#1686e3]/14 dark:text-[#7cc0ff]">
+          <div className="flex min-h-0 flex-1 items-center justify-center px-3 py-3">
+            <div className="w-full rounded-md border border-dashed border-slate-200/80 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+              <div className="flex items-center gap-3 rounded-md border border-slate-200/80 bg-white px-3 py-2.5 dark:border-slate-800 dark:bg-slate-950">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#eef6ff] text-[#1686e3] dark:bg-[#1686e3]/14 dark:text-[#7cc0ff]">
                   <span className="material-symbols-outlined text-[20px]">touch_app</span>
                 </div>
-                <div className="min-w-0 text-[13px] font-medium text-slate-600 dark:text-slate-200">选中对象后在这里编辑。</div>
+                <div className="min-w-0 text-[12px] font-medium text-slate-600 dark:text-slate-200">选中对象后在这里编辑。</div>
               </div>
             </div>
           </div>
@@ -6751,7 +7482,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       const currentTabId = activeTab;
       const currentTabMeta = detailTabs.find((tab) => tab.id === currentTabId);
       const currentTabName = currentTabMeta?.name || currentTabConfig.detailName || '当前明细模块';
-      const currentFillTypeMeta = getDetailFillTypeMeta(tabFillTypes[currentTabId]);
       const updateTabConfig = (patch: Record<string, any>) => {
         selectedColumnContext.setCols((prev: Record<string, any>) => ({
           ...prev,
@@ -6766,6 +7496,15 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               : tab
           )));
         }
+      };
+      const updateTabType = (nextType: string) => {
+        const normalizedType = normalizeDetailFillTypeValue(nextType);
+        updateTabConfig({ detailType: normalizedType });
+        setInspectorTarget((prev) => (
+          prev.kind === 'detail-grid'
+            ? { kind: 'detail-grid', id: normalizedType }
+            : prev
+        ));
       };
 
       return (
@@ -6810,6 +7549,18 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                           onChange={(e) => updateTabConfig({ detailName: e.target.value })}
                           className={fieldClass}
                         />
+                      </div>
+                      <div>
+                        <label className={mutedLabelClass}>类型</label>
+                        <select
+                          value={normalizeDetailFillTypeValue(currentTabConfig.detailType)}
+                          onChange={(e) => updateTabType(e.target.value)}
+                          className={fieldClass}
+                        >
+                          {DETAIL_FILL_TYPE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
                       </div>
                       <div>
                         <label className={mutedLabelClass}>tabKey</label>
@@ -6939,13 +7690,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         onChange={(e) => updateTabConfig({ mrpDragTag: e.target.value })}
                         className={fieldClass}
                       />
-                    </div>
-                    <div>
-                      <label className={mutedLabelClass}>当前明细</label>
-                      <div className={compactInfoCardClass}>
-                        <div className="text-[13px] font-semibold text-slate-900 dark:text-slate-100">{currentTabName}</div>
-                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{currentFillTypeMeta.label}</div>
-                      </div>
                     </div>
                   </div>
                 </section>
@@ -7265,10 +8009,27 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       const enabledMenuCount = contextMenuItems.filter((item: any) => !item.disabled).length;
       const colorRules = currentGridConfig.colorRules ?? [];
       const enabledColorRuleCount = colorRules.filter((rule: any) => !rule.disabled).length;
-      const activeContextMenuSelectionId = isLeftGridConfig ? selectedLeftContextMenuId : selectedMainContextMenuId;
-      const activeColorRuleSelectionId = isLeftGridConfig ? selectedLeftColorRuleId : selectedMainColorRuleId;
-      const setActiveContextMenuSelectionId = isLeftGridConfig ? setSelectedLeftContextMenuId : setSelectedMainContextMenuId;
-      const setActiveColorRuleSelectionId = isLeftGridConfig ? setSelectedLeftColorRuleId : setSelectedMainColorRuleId;
+      const canManageDetailGridDecorations = isDocumentDetailGrid && !isDetailChartInspector;
+      const activeContextMenuSelectionId = isLeftGridConfig
+        ? selectedLeftContextMenuId
+        : canManageDetailGridDecorations
+          ? selectedDetailContextMenuId
+          : selectedMainContextMenuId;
+      const activeColorRuleSelectionId = isLeftGridConfig
+        ? selectedLeftColorRuleId
+        : canManageDetailGridDecorations
+          ? selectedDetailColorRuleId
+          : selectedMainColorRuleId;
+      const setActiveContextMenuSelectionId = isLeftGridConfig
+        ? setSelectedLeftContextMenuId
+        : canManageDetailGridDecorations
+          ? setSelectedDetailContextMenuId
+          : setSelectedMainContextMenuId;
+      const setActiveColorRuleSelectionId = isLeftGridConfig
+        ? setSelectedLeftColorRuleId
+        : canManageDetailGridDecorations
+          ? setSelectedDetailColorRuleId
+          : setSelectedMainColorRuleId;
       const updateGridConfig = (patch: Record<string, any>) => {
         selectedColumnContext.setCols((prev: Record<string, any>) => ({
           ...prev,
@@ -7281,6 +8042,26 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           ...(prev ?? getDetailTabConfigById(activeTab)),
           ...patch,
         }));
+      };
+      const updateDetailTabWorkbenchConfig = (patch: Record<string, any>) => {
+        if (!isDocumentDetailGrid) return;
+        updateActiveDetailTabConfig(patch);
+        if (typeof patch.detailName === 'string') {
+          const nextName = patch.detailName.trim() || '未命名明细';
+          setDetailTabs((prev) => prev.map((tab) => (
+            tab.id === activeTab ? { ...tab, name: nextName } : tab
+          )));
+        }
+      };
+      const updateDetailWorkbenchType = (nextType: string) => {
+        if (!isDocumentDetailGrid) return;
+        const normalizedType = normalizeDetailFillTypeValue(nextType);
+        updateDetailTabWorkbenchConfig({ detailType: normalizedType });
+        setInspectorTarget((prev) => (
+          prev.kind === 'detail-grid' && prev.id === normalizedType
+            ? prev
+            : { kind: 'detail-grid', id: normalizedType }
+        ));
       };
       const updateDetailSourceConfig = (patch: Record<string, any>) => {
         if (!isDocumentDetailGrid) return;
@@ -7300,6 +8081,69 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         }
         if (Object.keys(tabPatch).length === 0) return;
         updateActiveDetailTabConfig(tabPatch);
+      };
+      const renderDetailTabWorkbenchSection = () => {
+        if (!isDocumentDetailGrid || !currentDetailTabConfig) return null;
+        return (
+          <section className={compactCardClass}>
+            <div className={sectionTitleClass}>
+              <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">tabs</span>
+              <h4>明细页签</h4>
+            </div>
+            <div className="grid gap-3">
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
+                <div>
+                  <label className={mutedLabelClass}>所属模块编号</label>
+                  <input
+                    type="text"
+                    value={currentDetailTabConfig.tab ?? currentModuleCode}
+                    onChange={(event) => updateDetailTabWorkbenchConfig({ tab: event.target.value })}
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={mutedLabelClass}>页签名称</label>
+                  <input
+                    type="text"
+                    value={currentDetailTabConfig.detailName ?? currentDetailTabName}
+                    onChange={(event) => updateDetailTabWorkbenchConfig({ detailName: event.target.value })}
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={mutedLabelClass}>类型</label>
+                  <select
+                    value={normalizeDetailFillTypeValue(currentDetailTabConfig.detailType)}
+                    onChange={(event) => updateDetailWorkbenchType(event.target.value)}
+                    className={fieldClass}
+                  >
+                    {DETAIL_FILL_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={mutedLabelClass}>tabKey</label>
+                  <input
+                    type="text"
+                    value={currentDetailTabConfig.tabKey ?? activeTab}
+                    onChange={(event) => updateDetailTabWorkbenchConfig({ tabKey: event.target.value })}
+                    className={fieldClass}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={mutedLabelClass}>DLL 模板</label>
+                  <input
+                    type="text"
+                    value={currentDetailTabConfig.dllTemplate ?? ''}
+                    onChange={(event) => updateDetailTabWorkbenchConfig({ dllTemplate: event.target.value })}
+                    className={fieldClass}
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+        );
       };
       const updateDetailChartConfig = (patch: Record<string, any>) => {
         updateGridConfig({
@@ -7345,17 +8189,21 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         });
       };
       const addDetailGroup = () => {
+        const nextGroup = buildDetailBoardGroup(currentDetailBoard.groups.length + 1);
         updateDetailBoard((current: any) => ({
           ...current,
-          groups: [...current.groups, buildDetailBoardGroup(current.groups.length + 1)],
+          groups: [...current.groups, nextGroup],
         }));
+        setSelectedDetailBoardGroupId(nextGroup.id);
       };
       const applySuggestedDetailLayout = () => {
+        const suggestedGroups = createSuggestedDetailBoardGroups(availableGridColumns);
         updateDetailBoard({
           ...currentDetailBoard,
-          groups: createSuggestedDetailBoardGroups(availableGridColumns),
+          groups: suggestedGroups,
           sortColumnId: availableGridColumns[0]?.id ?? null,
         });
+        setSelectedDetailBoardGroupId(suggestedGroups[0]?.id ?? null);
         showToast('已应用推荐详情分组布局');
       };
       const updateDetailGroup = (groupId: string, updater: Record<string, any> | ((group: any) => any)) => {
@@ -7371,9 +8219,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         }));
       };
       const mergeDetailGroupColumns = (groupId: string, columnIds: string[]) => {
-        const validIds = Array.from(new Set(columnIds.filter((columnId) => availableGridColumns.some((column) => column.id === columnId))));
+        const occupiedIds = new Set(
+          currentDetailBoard.groups
+            .filter((group: any) => group.id !== groupId)
+            .flatMap((group: any) => group.columnIds ?? []),
+        );
+        const validIds = Array.from(new Set(columnIds.filter((columnId) => (
+          availableGridColumns.some((column) => column.id === columnId)
+          && !occupiedIds.has(columnId)
+        ))));
         if (validIds.length === 0) {
-          showToast('剪贴板里没有匹配到主表字段');
+          showToast('剪贴板里没有可加入当前分组的主表字段');
           return;
         }
 
@@ -7389,6 +8245,10 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         updateDetailGroup(groupId, (group: any) => ({
           ...group,
           columnIds: nextIds,
+          columnRows: {
+            ...(group.columnRows ?? {}),
+            ...Object.fromEntries(validIds.map((columnId, index) => [columnId, getDetailBoardGroupRows(group)])),
+          },
         }));
         showToast(`已加入 ${addedCount} 个字段`);
       };
@@ -7396,6 +8256,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         updateDetailGroup(groupId, (group: any) => ({
           ...group,
           columnIds: group.columnIds.filter((id: string) => id !== columnId),
+          columnRows: Object.fromEntries(
+            Object.entries(group.columnRows ?? {}).filter(([key]) => key !== columnId),
+          ),
           columnWidths: Object.fromEntries(
             Object.entries(group.columnWidths ?? {}).filter(([key]) => key !== columnId),
           ),
@@ -7416,14 +8279,563 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           ...currentDetailBoard,
           groups: [],
         });
+        setSelectedDetailBoardGroupId(null);
       };
       const detailGroupCount = currentDetailBoard.groups.length;
       const assignedFieldCount = currentDetailBoard.groups.reduce((sum: number, group: any) => sum + group.columnIds.length, 0);
       const detailBoardReady = detailGroupCount > 0;
-      const selectedPopupMenuItem = isDocumentArchiveGrid
+      const selectedDetailGroup = currentDetailBoard.groups.find((group: any) => group.id === selectedDetailBoardGroupId) ?? currentDetailBoard.groups[0] ?? null;
+      const selectedDetailGroupRows = selectedDetailGroup ? getDetailBoardGroupRows(selectedDetailGroup) : DETAIL_BOARD_GROUP_MIN_ROWS;
+      const selectedDetailGroupRowNumbers = Array.from({ length: selectedDetailGroupRows }, (_, index) => index + 1);
+      const assignedDetailGroupFieldIds = new Set(
+        currentDetailBoard.groups.flatMap((group: any) => group.columnIds ?? []),
+      );
+      const availableUnassignedDetailColumns = availableGridColumns.filter((column: any) => !assignedDetailGroupFieldIds.has(column.id));
+      const moveDetailGroupColumn = (groupId: string, columnId: string, rowNumber: number, beforeId: string | null = null) => {
+        updateDetailGroup(groupId, (group: any) => {
+          const rows = getDetailBoardGroupRows(group);
+          const nextRow = clampValue(rowNumber, DETAIL_BOARD_GROUP_MIN_ROWS, rows);
+          const currentColumnIds = Array.isArray(group.columnIds) ? group.columnIds : [];
+          const sourceIndex = currentColumnIds.indexOf(columnId);
+          if (sourceIndex === -1) return group;
+          if (beforeId && beforeId === columnId) return group;
+
+          const remaining = currentColumnIds.filter((id: string) => id !== columnId);
+          let insertIndex = beforeId ? remaining.indexOf(beforeId) : -1;
+          if (insertIndex === -1) {
+            insertIndex = remaining.findIndex((id: string) => getDetailBoardGroupColumnRow(group, id) > nextRow);
+            if (insertIndex === -1) {
+              insertIndex = remaining.length;
+            }
+          }
+
+          return {
+            ...group,
+            columnIds: [
+              ...remaining.slice(0, insertIndex),
+              columnId,
+              ...remaining.slice(insertIndex),
+            ],
+            columnRows: {
+              ...(group.columnRows ?? {}),
+              [columnId]: nextRow,
+            },
+          };
+        });
+      };
+      const handleDetailGroupRowDragOver = (rowNumber: number) => (event: React.DragEvent<HTMLDivElement>) => {
+        if (!selectedDetailGroup || detailBoardWorkbenchDrag?.groupId !== selectedDetailGroup.id) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (
+          detailBoardWorkbenchDropTarget?.groupId !== selectedDetailGroup.id
+          || detailBoardWorkbenchDropTarget?.row !== rowNumber
+          || detailBoardWorkbenchDropTarget?.beforeId !== null
+        ) {
+          setDetailBoardWorkbenchDropTarget({
+            groupId: selectedDetailGroup.id,
+            row: rowNumber,
+            beforeId: null,
+          });
+        }
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = 'move';
+        }
+      };
+      const handleDetailGroupRowDrop = (rowNumber: number) => (event: React.DragEvent<HTMLDivElement>) => {
+        if (!selectedDetailGroup || detailBoardWorkbenchDrag?.groupId !== selectedDetailGroup.id) return;
+        event.preventDefault();
+        event.stopPropagation();
+        moveDetailGroupColumn(selectedDetailGroup.id, detailBoardWorkbenchDrag.columnId, rowNumber);
+        setDetailBoardWorkbenchDrag(null);
+        setDetailBoardWorkbenchDropTarget(null);
+      };
+      const handleDetailGroupItemDragOver = (rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
+        if (!selectedDetailGroup || detailBoardWorkbenchDrag?.groupId !== selectedDetailGroup.id || detailBoardWorkbenchDrag.columnId === beforeId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (
+          detailBoardWorkbenchDropTarget?.groupId !== selectedDetailGroup.id
+          || detailBoardWorkbenchDropTarget?.row !== rowNumber
+          || detailBoardWorkbenchDropTarget?.beforeId !== beforeId
+        ) {
+          setDetailBoardWorkbenchDropTarget({
+            groupId: selectedDetailGroup.id,
+            row: rowNumber,
+            beforeId,
+          });
+        }
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = 'move';
+        }
+      };
+      const handleDetailGroupItemDrop = (rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
+        if (!selectedDetailGroup || detailBoardWorkbenchDrag?.groupId !== selectedDetailGroup.id || detailBoardWorkbenchDrag.columnId === beforeId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        moveDetailGroupColumn(selectedDetailGroup.id, detailBoardWorkbenchDrag.columnId, rowNumber, beforeId);
+        setDetailBoardWorkbenchDrag(null);
+        setDetailBoardWorkbenchDropTarget(null);
+      };
+      const handleDetailGroupDragStart = (groupId: string, columnId: string) => (event: React.DragEvent<HTMLDivElement>) => {
+        event.stopPropagation();
+        setDetailBoardWorkbenchDrag({ groupId, columnId });
+        setDetailBoardWorkbenchDropTarget(null);
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', `${groupId}:${columnId}`);
+        }
+      };
+      const handleDetailGroupDragEnd = () => {
+        setDetailBoardWorkbenchDrag(null);
+        setDetailBoardWorkbenchDropTarget(null);
+      };
+      const isGridDecorationManagerAvailable = isDocumentArchiveGrid || canManageDetailGridDecorations;
+      const renderDetailBoardLayoutManager = () => {
+        if (availableGridColumns.length === 0) {
+          return renderAdvancedPlaceholder('还没有可分组字段');
+        }
+
+        if (!detailBoardReady) {
+          return (
+            <div className="rounded-[20px] border border-dashed border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-tint)] px-5 py-10 text-center">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-white text-[color:var(--workspace-accent)] shadow-[0_18px_30px_-24px_rgba(15,23,42,0.16)]">
+                <span className="material-symbols-outlined text-[22px]">view_stream</span>
+              </div>
+              <div className="mt-4 text-[13px] font-bold text-slate-700 dark:text-slate-100">当前还没有详情分组</div>
+              <button
+                type="button"
+                onClick={addDetailGroup}
+                className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent)] px-3 text-[12px] font-bold text-white transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+              >
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                创建第一个分组
+              </button>
+            </div>
+          );
+        }
+
+        return (
+          <section className="rounded-[18px] border border-slate-200/75 bg-white/94 p-3.5 shadow-[0_16px_28px_-24px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900/55">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100">
+                <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">view_stream</span>
+                <h4>详情分组布局</h4>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={addDetailGroup}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent)] px-3 text-[12px] font-bold text-white transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+                >
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  新增分组
+                </button>
+                <button
+                  type="button"
+                  onClick={clearDetailGroups}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-slate-200/80 bg-white px-3 text-[12px] font-bold text-slate-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                >
+                  <span className="material-symbols-outlined text-[16px]">layers_clear</span>
+                  清空分组
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid gap-2">
+                {currentDetailBoard.groups.map((group: any, groupIndex: number) => {
+                  const isSelectedGroup = selectedDetailGroup?.id === group.id;
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() => setSelectedDetailBoardGroupId(group.id)}
+                      className={`flex w-full items-start justify-between gap-3 rounded-[18px] border px-3.5 py-3 text-left transition-all ${
+                        isSelectedGroup
+                          ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)]'
+                          : 'border-slate-200/80 bg-white/90 hover:border-[color:var(--workspace-accent-border)] dark:border-slate-700 dark:bg-slate-950/55'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-bold text-slate-700 dark:text-slate-100">
+                          {group.name || `分组 ${groupIndex + 1}`}
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                          {group.columnIds.length} 项 · {getDetailBoardGroupRows(group)} 行
+                        </div>
+                      </div>
+                      {isSelectedGroup ? <span className="material-symbols-outlined text-[16px] text-[color:var(--workspace-accent)]">check_circle</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedDetailGroup ? (
+                <div className="space-y-3">
+                  <div className={`relative rounded-[20px] border px-4 py-4 shadow-[0_16px_28px_-24px_rgba(15,23,42,0.16)] ${detailBoardTheme.groupShell}`}>
+                    {activeDetailBoardResize?.groupId === selectedDetailGroup.id ? (
+                      <div className="pointer-events-none absolute right-4 top-3 inline-flex items-center gap-2 rounded-full border border-[color:var(--workspace-accent-border)] bg-white/96 px-3 py-1 text-[11px] font-bold text-[color:var(--workspace-accent)] shadow-[0_16px_28px_-24px_var(--workspace-accent-shadow)] dark:bg-slate-950/92">
+                        <span className="material-symbols-outlined text-[13px]">straighten</span>
+                        <span className="max-w-[120px] truncate">{activeDetailBoardResize.label}</span>
+                        <span className="rounded-full bg-[color:var(--workspace-accent-soft)] px-2 py-0.5">
+                          {Math.round(activeDetailBoardResize.width)}px
+                        </span>
+                      </div>
+                    ) : null}
+                    <div className="space-y-3">
+                      <div className="grid gap-3 [grid-template-columns:minmax(0,1fr)_108px]">
+                        <div>
+                          <label className={mutedLabelClass}>分组名称</label>
+                          <input
+                            type="text"
+                            value={selectedDetailGroup.name}
+                            onChange={(event) => updateDetailGroup(selectedDetailGroup.id, { name: event.target.value })}
+                            placeholder="例如：业务信息 / 审核信息"
+                            className={fieldClass}
+                          />
+                        </div>
+                        <div>
+                          <label className={mutedLabelClass}>控件行数</label>
+                          <input
+                            type="number"
+                            min={DETAIL_BOARD_GROUP_MIN_ROWS}
+                            max={DETAIL_BOARD_GROUP_MAX_ROWS}
+                            value={selectedDetailGroupRows}
+                            onChange={(event) => {
+                              const nextRows = clampValue(Number(event.target.value) || DETAIL_BOARD_GROUP_MIN_ROWS, DETAIL_BOARD_GROUP_MIN_ROWS, DETAIL_BOARD_GROUP_MAX_ROWS);
+                              updateDetailGroup(selectedDetailGroup.id, (group: any) => ({
+                                ...group,
+                                rows: nextRows,
+                                columnRows: Object.fromEntries(
+                                  (group.columnIds ?? []).map((columnId: string) => [
+                                    columnId,
+                                    clampValue(getDetailBoardGroupColumnRow(group, columnId), DETAIL_BOARD_GROUP_MIN_ROWS, nextRows),
+                                  ]),
+                                ),
+                              }));
+                            }}
+                            className={fieldClass}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => mergeDetailGroupColumns(selectedDetailGroup.id, detailBoardClipboardIds)}
+                          disabled={detailBoardClipboardIds.length === 0}
+                          className={`inline-flex h-10 items-center gap-1.5 rounded-[14px] px-3.5 text-[12px] font-bold transition-colors ${
+                            detailBoardClipboardIds.length > 0
+                              ? 'border border-[color:var(--workspace-accent-border)] bg-white text-[color:var(--workspace-accent)] hover:bg-[color:var(--workspace-accent-soft)]'
+                              : 'cursor-not-allowed border border-slate-200/80 bg-slate-100 text-slate-300 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-600'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[16px]">content_paste</span>
+                          粘贴字段
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const remainingGroups = currentDetailBoard.groups.filter((group: any) => group.id !== selectedDetailGroup.id);
+                            updateDetailBoard({
+                              ...currentDetailBoard,
+                              groups: remainingGroups,
+                            });
+                            setSelectedDetailBoardGroupId(remainingGroups[0]?.id ?? null);
+                          }}
+                          className="inline-flex h-10 items-center gap-1.5 rounded-[14px] border border-rose-200 bg-white px-3.5 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-50 dark:border-rose-500/20 dark:bg-slate-950/70 dark:hover:bg-rose-500/10"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                          删除分组
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <section
+                      onPaste={(event) => handleDetailGroupPaste(event, selectedDetailGroup.id)}
+                      className={`rounded-[20px] border px-4 py-4 shadow-[0_16px_28px_-24px_rgba(15,23,42,0.16)] ${detailBoardTheme.groupShell}`}
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100">
+                          <span className="material-symbols-outlined text-[16px] text-[color:var(--workspace-accent)]">dashboard_customize</span>
+                          分组字段排布
+                        </div>
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold ${detailBoardTheme.groupLabel}`}>
+                          {selectedDetailGroup.columnIds.length} 项
+                        </span>
+                      </div>
+                      <div className="space-y-2.5">
+                        {selectedDetailGroupRowNumbers.map((rowNumber) => {
+                          const rowColumns = selectedDetailGroup.columnIds
+                            .filter((columnId: string) => getDetailBoardGroupColumnRow(selectedDetailGroup, columnId) === rowNumber)
+                            .map((columnId: string) => availableGridColumns.find((column: any) => column.id === columnId))
+                            .filter(Boolean);
+                          const isRowDropTarget = detailBoardWorkbenchDrag?.groupId === selectedDetailGroup.id
+                            && detailBoardWorkbenchDropTarget?.groupId === selectedDetailGroup.id
+                            && detailBoardWorkbenchDropTarget?.row === rowNumber
+                            && detailBoardWorkbenchDropTarget?.beforeId === null;
+
+                          return (
+                            <div key={`${selectedDetailGroup.id}-row-${rowNumber}`} className="space-y-1.5">
+                              <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                                <span>第 {rowNumber} 行</span>
+                                <span className="h-px flex-1 bg-slate-200/80 dark:bg-slate-700/70" />
+                              </div>
+                              <div
+                                onDragOver={handleDetailGroupRowDragOver(rowNumber)}
+                                onDrop={handleDetailGroupRowDrop(rowNumber)}
+                                className={`flex min-h-[54px] items-center overflow-x-auto rounded-[16px] px-2 py-2 transition-all ${
+                                  isRowDropTarget
+                                    ? 'bg-[color:var(--workspace-accent-soft)] ring-1 ring-[color:var(--workspace-accent-border)]'
+                                    : rowColumns.length === 0
+                                      ? 'bg-slate-50/80 dark:bg-slate-900/30'
+                                      : 'bg-slate-50/35 dark:bg-slate-950/25'
+                                }`}
+                              >
+                                <div className="flex min-w-full items-center">
+                                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                                    {rowColumns.length > 0 ? rowColumns.map((column: any, columnIndex: number) => {
+                                      const normalizedColumn = normalizeColumn(column);
+                                      const fieldWidth = Math.round(
+                                        Number(selectedDetailGroup.columnWidths?.[column.id]) > 0
+                                          ? Number(selectedDetailGroup.columnWidths[column.id])
+                                          : DETAIL_BOARD_FIELD_DEFAULT_WIDTH,
+                                      );
+                                      const labelWidth = Math.max(54, Math.min(82, normalizedColumn.name.length * 12));
+                                      const isInsertTarget = detailBoardWorkbenchDrag?.groupId === selectedDetailGroup.id
+                                        && detailBoardWorkbenchDrag.columnId !== column.id
+                                        && detailBoardWorkbenchDropTarget?.groupId === selectedDetailGroup.id
+                                        && detailBoardWorkbenchDropTarget?.row === rowNumber
+                                        && detailBoardWorkbenchDropTarget?.beforeId === column.id;
+
+                                      return (
+                                        <div
+                                          key={column.id}
+                                          data-detail-field-item="true"
+                                          draggable
+                                          role="button"
+                                          tabIndex={0}
+                                          onDragStart={handleDetailGroupDragStart(selectedDetailGroup.id, column.id)}
+                                          onDragEnd={handleDetailGroupDragEnd}
+                                          onDragOver={handleDetailGroupItemDragOver(rowNumber, column.id)}
+                                          onDrop={handleDetailGroupItemDrop(rowNumber, column.id)}
+                                          onKeyDown={(event) => {
+                                            if (event.key === 'Delete' || event.key === 'Backspace') {
+                                              event.preventDefault();
+                                              removeDetailGroupColumn(selectedDetailGroup.id, column.id);
+                                            }
+                                          }}
+                                          style={{ width: fieldWidth, minWidth: fieldWidth }}
+                                          className="group relative flex h-[52px] shrink-0 items-center gap-1.5 rounded-[12px] px-1.5 py-1.5 text-left transition-all hover:bg-slate-100/80 dark:hover:bg-slate-900/42"
+                                        >
+                                          {isInsertTarget ? (
+                                            <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-[color:var(--workspace-accent)]" />
+                                          ) : null}
+                                          <div
+                                            className={`shrink-0 text-right text-[12px] font-semibold ${normalizedColumn.required ? 'text-[color:var(--workspace-accent-strong)]' : 'text-slate-600 dark:text-slate-200'}`}
+                                            style={{ width: labelWidth }}
+                                            title={normalizedColumn.name}
+                                          >
+                                            <span className="block truncate">{normalizedColumn.name}</span>
+                                          </div>
+                                          <div className="min-w-0 flex-1 pr-7">
+                                            {renderFieldPreview(normalizedColumn, columnIndex, 'filter')}
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              event.stopPropagation();
+                                              removeDetailGroupColumn(selectedDetailGroup.id, column.id);
+                                            }}
+                                            className="absolute right-3 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-slate-300 opacity-0 transition-all hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100 dark:text-slate-600 dark:hover:bg-rose-500/10"
+                                            title="移出当前分组"
+                                          >
+                                            <span className="material-symbols-outlined text-[14px]">close</span>
+                                          </button>
+                                          <div
+                                            className="absolute bottom-1.5 right-0.5 top-1.5 flex w-2 cursor-col-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
+                                            onMouseDown={(event) => startDetailBoardFieldResize(event, selectedDetailGroup.id, column.id, normalizedColumn.name)}
+                                            onDoubleClick={(event) => resetDetailBoardFieldWidth(event, selectedDetailGroup.id, column.id)}
+                                            title="拖动调整宽度，双击恢复自动排布"
+                                          >
+                                            <span className="h-5 w-px rounded-full bg-slate-300/90 transition-colors group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-600" />
+                                          </div>
+                                        </div>
+                                      );
+                                    }) : (
+                                      <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                                        拖入字段到本行，或从右侧“可加入字段”中追加
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+
+                    <section className="rounded-[20px] border border-slate-200/75 bg-white/94 px-4 py-4 shadow-[0_16px_28px_-24px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900/55">
+                      <div className="mb-3 flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100">
+                        <span className="material-symbols-outlined text-[16px] text-[color:var(--workspace-accent)]">playlist_add</span>
+                        可加入字段
+                      </div>
+                      {availableUnassignedDetailColumns.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {availableUnassignedDetailColumns.map((column: any) => {
+                            const normalizedColumn = normalizeColumn(column);
+                            return (
+                              <button
+                                key={`${selectedDetailGroup.id}-available-${column.id}`}
+                                type="button"
+                                onClick={() => mergeDetailGroupColumns(selectedDetailGroup.id, [column.id])}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition-colors hover:border-[color:var(--workspace-accent-border)] hover:bg-[color:var(--workspace-accent-soft)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-950/76 dark:text-slate-200"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">add</span>
+                                {normalizedColumn.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] font-medium leading-5 text-slate-400 dark:text-slate-500">
+                          当前主表字段已经全部分配到分组里了。
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="rounded-[20px] border border-slate-200/75 bg-white/94 px-4 py-4 shadow-[0_16px_28px_-24px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900/55">
+                      <div className="mb-3 flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100">
+                        <span className="material-symbols-outlined text-[16px] text-[color:var(--workspace-accent)]">frame_inspect</span>
+                        布局操作
+                      </div>
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={applySuggestedDetailLayout}
+                          className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[14px] border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 text-[12px] font-bold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">auto_fix_high</span>
+                          推荐布局
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openDetailBoardPreview(1)}
+                          className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[14px] border border-slate-200/90 bg-white px-3 text-[12px] font-bold text-slate-600 transition-colors hover:border-[color:var(--workspace-accent-border)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-950/72 dark:text-slate-200"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">preview</span>
+                          预览详情布局
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        );
+      };
+      const renderArchiveMainLayoutSummarySection = () => {
+        const groupCount = currentDetailBoard.groups.length;
+        const assignedFieldCount = currentDetailBoard.groups.reduce((sum: number, group: any) => sum + (group.columnIds?.length ?? 0), 0);
+        const unassignedFieldCount = Math.max(0, availableGridColumns.length - assignedFieldCount);
+
+        return (
+          <div className="space-y-4">
+            <section className={compactCardClass}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className={sectionTitleClass}>
+                    <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">dashboard_customize</span>
+                    <h4>主表分组布局</h4>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                    右侧只展示当前布局摘要，真正的分组、行数和字段排布统一在弹出式布局编辑器里处理。
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={openArchiveLayoutEditor}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[color:var(--workspace-accent)] px-3.5 text-[12px] font-semibold text-white transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">open_in_new</span>
+                    打开布局编辑器
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDetailBoardPreview(1, currentDetailBoard.sortColumnId)}
+                    disabled={groupCount === 0}
+                    className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-3.5 text-[12px] font-semibold transition-colors ${
+                      groupCount > 0
+                        ? 'border-slate-200 bg-white text-slate-600 hover:border-[color:var(--workspace-accent-border)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200'
+                        : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-600'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">preview</span>
+                    预览布局
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className={compactInfoCardClass}>
+                  <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">分组数量</div>
+                  <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{groupCount} 组</div>
+                </div>
+                <div className={compactInfoCardClass}>
+                  <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">已排布字段</div>
+                  <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{assignedFieldCount} 项</div>
+                </div>
+                <div className={compactInfoCardClass}>
+                  <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">待排布字段</div>
+                  <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{unassignedFieldCount} 项</div>
+                </div>
+              </div>
+            </section>
+
+            <section className={compactCardClass}>
+              <div className={sectionTitleClass}>
+                <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">tab_group</span>
+                <h4>分组摘要</h4>
+              </div>
+              {groupCount > 0 ? (
+                <div className="grid gap-2.5">
+                  {currentDetailBoard.groups.map((group: any, groupIndex: number) => (
+                    <div
+                      key={group.id}
+                      className="flex items-center justify-between gap-3 rounded-md border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/55"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-[12px] font-semibold text-slate-700 dark:text-slate-100">
+                          {group.name || `分组 ${groupIndex + 1}`}
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          {(group.columnIds?.length ?? 0)} 项字段 · {getDetailBoardGroupRows(group)} 行
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center rounded-md border border-slate-200/80 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                        {groupIndex + 1}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed border-slate-200/80 bg-slate-50/60 px-4 py-8 text-center text-[12px] text-slate-500 dark:border-slate-800 dark:bg-slate-900/35 dark:text-slate-400">
+                  还没有分组，点击上方“打开布局编辑器”开始创建。
+                </div>
+              )}
+            </section>
+          </div>
+        );
+      };
+      const selectedPopupMenuItem = isGridDecorationManagerAvailable
         ? contextMenuItems.find((item: any) => item.id === activeContextMenuSelectionId) ?? contextMenuItems[0] ?? null
         : null;
-      const selectedColorRule = isDocumentArchiveGrid
+      const selectedColorRule = isGridDecorationManagerAvailable
         ? colorRules.find((rule: any) => rule.id === activeColorRuleSelectionId) ?? colorRules[0] ?? null
         : null;
       const updateGridColumns = (updater: React.SetStateAction<any[]>) => {
@@ -7640,40 +9052,25 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         const sourceBadgeText = detailSourceModuleCode ? '模块继承' : 'SQL 构列';
 
         return (
-          <section className={`${compactCardClass} space-y-4`}>
+          <section className={`${compactCardClass} space-y-3`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className={sectionTitleClass}>
                 <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">dataset_linked</span>
                 <h4>表格数据来源</h4>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-full border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-1 text-[11px] font-bold text-[color:var(--workspace-accent-strong)]">
+                <span className="inline-flex items-center rounded-md border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--workspace-accent-strong)]">
                   {sourceBadgeText}
                 </span>
-                <span className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/92 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200">
-                  {detailSourceStatusText}
-                </span>
               </div>
             </div>
-            <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
-              <div className={compactInfoCardClass}>
-                <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">模块名称</div>
-                <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">
-                  {matchedDetailModuleCandidate?.moduleName || matchedDetailModuleCandidate?.moduleCode || '未指定'}
-                </div>
-              </div>
-              <div className={compactInfoCardClass}>
-                <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">主表</div>
-                <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">
-                  {matchedDetailModuleCandidate?.tableName || '按 SQL 构列'}
-                </div>
-              </div>
-              <div className={compactInfoCardClass}>
-                <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前列数</div>
-                <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{availableGridColumns.length} 个</div>
-              </div>
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-300">
+              <span className={panelBadgeClass}>状态：{detailSourceStatusText}</span>
+              <span className={panelBadgeClass}>模块：{matchedDetailModuleCandidate?.moduleName || matchedDetailModuleCandidate?.moduleCode || '未指定'}</span>
+              <span className={panelBadgeClass}>主表：{matchedDetailModuleCandidate?.tableName || '按 SQL 构列'}</span>
+              <span className={panelBadgeClass}>列数：{availableGridColumns.length}</span>
             </div>
-            <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+            <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(200px,1fr))]">
               <div>
                 <label className={mutedLabelClass}>模块编号</label>
                 <input
@@ -7723,9 +9120,32 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               </div>
             </div>
             <div>
+              <label className={mutedLabelClass}>生成描述</label>
+              <textarea
+                rows={3}
+                value={currentGridConfig.sqlPrompt || ''}
+                onChange={(e) => updateGridConfig({ sqlPrompt: e.target.value })}
+                placeholder="例如：生成一个附件列表，支持附件名称、上传人、上传时间查询。"
+                className={`${textareaClass} mb-3`}
+              />
               <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
                 <label className={`${mutedLabelClass} mb-0`}>明细 SQL</label>
                 <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={generateGridSqlDraft}
+                    disabled={isGeneratingSqlDraft}
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-semibold transition-colors ${
+                      isGeneratingSqlDraft
+                        ? 'cursor-wait bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
+                        : 'border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)] hover:bg-[color:var(--workspace-accent-tint)]'
+                    }`}
+                  >
+                    <span className={`material-symbols-outlined text-[14px] ${isGeneratingSqlDraft ? 'animate-spin' : ''}`}>
+                      {isGeneratingSqlDraft ? 'progress_activity' : 'auto_awesome'}
+                    </span>
+                    AI 生成
+                  </button>
                   <button
                     type="button"
                     onClick={syncDetailColumnsFromConfiguredModule}
@@ -7766,7 +9186,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     key={candidate.moduleCode}
                     type="button"
                     onClick={() => updateDetailSourceConfig({ sourceModuleCode: candidate.moduleCode })}
-                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                    className={`inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-[10px] font-semibold transition-colors ${
                       active
                         ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]'
                         : 'border-slate-200 bg-white text-slate-500 hover:border-[color:var(--workspace-accent-border)] hover:text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200'
@@ -7789,19 +9209,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">schema</span>
             <h4>落表映射</h4>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className={compactInfoCardClass}>
-              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">主配置</div>
-              <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">p_systemdlltab</div>
-            </div>
-            <div className={compactInfoCardClass}>
-              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">条件</div>
-              <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">p_systembillsourcecond</div>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={panelBadgeClass}>主配置 p_systemdlltab</span>
+            <span className={panelBadgeClass}>条件 p_systembillsourcecond</span>
+            <span className={panelBadgeClass}>右键 {contextMenuItems.length}</span>
+            <span className={panelBadgeClass}>颜色 {colorRules.length}</span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
             <button
               type="button"
               onClick={() => setInspectorPanelTab('contextmenu')}
-              className="flex items-center justify-between rounded-lg border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-2 text-left text-[12px] font-semibold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
+              className="flex items-center justify-between rounded-md border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-2 text-left text-[12px] font-semibold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
             >
               <span>右键菜单</span>
               <span className="rounded-md bg-white/90 px-2 py-0.5 text-[10px] font-black text-[color:var(--workspace-accent-strong)]">
@@ -7811,7 +9229,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             <button
               type="button"
               onClick={() => setInspectorPanelTab('color')}
-              className="flex items-center justify-between rounded-lg border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-2 text-left text-[12px] font-semibold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
+              className="flex items-center justify-between rounded-md border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-2 text-left text-[12px] font-semibold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
             >
               <span>颜色规则</span>
               <span className="rounded-md bg-white/90 px-2 py-0.5 text-[10px] font-black text-[color:var(--workspace-accent-strong)]">
@@ -7934,7 +9352,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               <div className="mt-3 space-y-2 text-[12px] text-slate-600 dark:text-slate-300">
                 <div className="flex items-center justify-between gap-3">
                   <span>{detailGridFillTypeMeta?.value === '图表' ? '当前填充' : '当前表格'}</span>
-                  <span className="text-right font-semibold text-slate-800 dark:text-slate-100">{selectedColumnContext.title}</span>
+                  <span className="text-right font-semibold text-slate-800 dark:text-slate-100">
+                    {isDocumentDetailGrid ? currentDetailTabName : selectedColumnContext.title}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <span>显示字段</span>
@@ -8251,21 +9671,21 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           </section>
         );
       };
-      const managerSectionClass = 'rounded-[18px] border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950';
-      const managerHeaderClass = 'mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3 dark:border-slate-800';
+      const managerSectionClass = 'rounded-md border border-slate-200/80 bg-white px-3 py-3 dark:border-slate-800 dark:bg-slate-950';
+      const managerHeaderClass = 'mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-2.5 dark:border-slate-800';
       const managerTitleWrapClass = 'flex min-w-0 items-center gap-3';
-      const managerTitleIconClass = 'inline-flex size-10 shrink-0 items-center justify-center rounded-[14px] border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]';
+      const managerTitleIconClass = 'inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]';
       const managerActionButtonClass = 'inline-flex h-9 items-center gap-1 rounded-md border border-[color:var(--workspace-accent)] bg-[color:var(--workspace-accent)] px-3.5 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-[color:var(--workspace-accent-strong)]';
-      const managerListSurfaceClass = 'space-y-2.5 rounded-[14px] border border-slate-200/80 bg-slate-50/70 p-2.5 dark:border-slate-800 dark:bg-slate-900/60';
-      const managerDetailNameClass = 'inline-flex max-w-full items-center rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300';
+      const managerListSurfaceClass = 'space-y-2 rounded-md border border-slate-200/80 bg-slate-50/70 p-2 dark:border-slate-800 dark:bg-slate-900/60';
+      const managerDetailNameClass = 'inline-flex max-w-full items-center rounded-md border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300';
       const managerHeaderToolsClass = 'ml-auto flex flex-wrap items-center justify-end gap-2';
-      const managerMetricCardClass = 'min-w-[64px] rounded-[12px] border border-slate-200/80 bg-slate-50 px-3 py-2 text-right dark:border-slate-800 dark:bg-slate-900';
+      const managerMetricCardClass = 'min-w-[58px] rounded-md border border-slate-200/80 bg-slate-50 px-2.5 py-1.5 text-right dark:border-slate-800 dark:bg-slate-900';
       const renderPopupMenuManagerSection = () => {
         const popupMenuParamFields = Array.from({ length: 10 }, (_, index) => ({
           key: `dllpar${index + 1}` as const,
           label: `参数 ${index + 1}`,
         }));
-        const detailCardClass = 'rounded-[16px] border border-slate-200/80 bg-slate-50/55 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/55';
+        const detailCardClass = 'rounded-md border border-slate-200/80 bg-slate-50/55 p-3 dark:border-slate-800 dark:bg-slate-900/55';
         const detailSectionTitleClass = 'mb-4 flex items-center justify-between gap-3';
         const detailSectionLabelClass = 'text-[12px] font-semibold tracking-[0.04em] text-slate-500 dark:text-slate-300';
         const popupMenuDisplayName = selectedPopupMenuItem?.menuname || selectedPopupMenuItem?.label || '未命名菜单';
@@ -8303,7 +9723,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           const normalized = value.replace(/\s+/g, ' ').trim();
           return normalized.length > 22 ? `${normalized.slice(0, 22)}...` : normalized;
         };
-        const popupMenuTabValue = isLeftGridConfig ? treeOwnerFieldKey : String(currentMenuDraft.moduleCode ?? '');
+        const popupMenuTabValue = isLeftGridConfig
+          ? treeOwnerFieldKey
+          : canManageDetailGridDecorations
+            ? String(currentDetailTabConfig?.tabKey || activeTab)
+            : String(currentMenuDraft.moduleCode ?? '');
 
         return (
         <div className="space-y-4">
@@ -8900,7 +10324,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className={panelTitleClass}>{selectedColumnContext.title}</h3>
-                  <span className={panelBadgeClass}>{isDocumentDetailGrid ? '内部视图' : '表格级配置'}</span>
+                  <span className={panelBadgeClass}>{isDocumentDetailGrid ? '明细页签' : '表格级配置'}</span>
+                  {isDocumentDetailGrid && (
+                    <span className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/92 px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200">
+                      {detailGridFillTypeMeta?.label || '表格'}
+                    </span>
+                  )}
                   {isDetailChartInspector && (
                     <span className="inline-flex items-center rounded-full border border-[#1686e3]/18 bg-[#1686e3]/8 px-2.5 py-1 text-[10px] font-bold text-[#1686e3]">
                       p_systemdlltabchart
@@ -8911,7 +10340,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
                 <div className="flex flex-wrap items-center gap-2">
-                {!isBillHeadGridConfig && !isBillDetailGridConfig && !isLeftGridConfig && !isDetailChartInspector && (
+                {!isBillHeadGridConfig && !isBillDetailGridConfig && !isLeftGridConfig && !isDetailChartInspector && !isMainGridConfig && (
                   <button
                     type="button"
                     onClick={applySuggestedDetailLayout}
@@ -8942,9 +10371,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
-            {isContextMenuPanelTab && isDocumentArchiveGrid ? (
+            {isContextMenuPanelTab && isGridDecorationManagerAvailable ? (
               renderPopupMenuManagerSection()
-            ) : isColorPanelTab && isDocumentArchiveGrid ? (
+            ) : isColorPanelTab && isGridDecorationManagerAvailable ? (
               renderColorRuleManagerSection()
             ) : isCommonPanelTab ? (
               isBillHeadGridConfig ? (
@@ -9032,6 +10461,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 </div>
               ) : isDocumentDetailGrid ? (
                 <div className="space-y-4">
+                  {renderDetailTabWorkbenchSection()}
                   {isDetailChartInspector ? (
                     renderDetailChartTableMappingSection()
                   ) : (
@@ -9069,143 +10499,17 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     </div>
                   </section>
                 </div>
+              ) : isDocumentArchiveGrid && isMainGridConfig ? (
+                <div className="space-y-3">
+                  {renderArchiveMainLayoutSummarySection()}
+                </div>
               ) : isDocumentDetailGrid && isDetailChartInspector ? (
                 <div className="space-y-3">
                   {renderAdvancedPlaceholder('图表视图暂无额外扩展配置')}
                 </div>
               ) : (
                 <div className="space-y-3">
-                <section className="rounded-[18px] border border-slate-200/75 bg-white/94 p-3.5 shadow-[0_16px_28px_-24px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900/55">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 text-[12px] font-bold text-slate-700 dark:text-slate-100">
-                      <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">view_stream</span>
-                      <h4>详情分组布局</h4>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {detailGroupCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={clearDetailGroups}
-                          className="inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-slate-200/80 bg-white px-3 text-[12px] font-bold text-slate-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">layers_clear</span>
-                          清空分组
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={addDetailGroup}
-                        className="inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent)] px-3 text-[12px] font-bold text-white transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">add</span>
-                        新增分组
-                      </button>
-                    </div>
-                  </div>
-
-                  {availableGridColumns.length > 0 ? (
-                    currentDetailBoard.groups.length > 0 ? (
-                      <div className="space-y-2.5">
-                        {currentDetailBoard.groups.map((group: any, groupIndex: number) => (
-                          <div key={group.id} className={`overflow-hidden rounded-[20px] border shadow-[0_16px_26px_-24px_rgba(15,23,42,0.12)] ${detailBoardTheme.groupShell}`}>
-                            <div className="flex items-center gap-3 border-b border-slate-200/70 px-3.5 py-3 dark:border-slate-700">
-                              <input
-                                type="text"
-                                value={group.name}
-                                onChange={(e) => updateDetailGroup(group.id, { name: e.target.value })}
-                                placeholder={`分组名 ${groupIndex + 1}`}
-                                className="h-10 min-w-0 flex-1 rounded-[14px] border border-slate-200/80 bg-white/92 px-3.5 text-[15px] font-bold tracking-[-0.01em] text-slate-800 outline-none transition focus:border-[color:var(--workspace-accent-border-strong)] focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/62 dark:text-slate-100"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => updateDetailBoard((current: any) => ({
-                                  ...current,
-                                  groups: current.groups.filter((item: any) => item.id !== group.id),
-                                }))}
-                                className="inline-flex size-9 shrink-0 items-center justify-center rounded-[14px] border border-rose-100 bg-white text-rose-500 transition-colors hover:bg-rose-50 dark:border-rose-500/20 dark:bg-slate-900/72 dark:hover:bg-rose-500/10"
-                                title="删除分组"
-                              >
-                                <span className="material-symbols-outlined text-[16px]">delete</span>
-                              </button>
-                            </div>
-
-                            <div className="p-3.5">
-                              <section className="rounded-[16px] border border-slate-200/75 bg-white/88 p-3 dark:border-slate-700 dark:bg-slate-900/52">
-                                <div
-                                  tabIndex={0}
-                                  onClick={(event) => event.currentTarget.focus()}
-                                  onPaste={(event) => handleDetailGroupPaste(event, group.id)}
-                                  className="relative min-h-[112px] rounded-[16px] border border-dashed border-[color:var(--workspace-accent-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.96))] p-3 outline-none transition focus:border-[color:var(--workspace-accent-border-strong)] focus:bg-white dark:bg-slate-900/58"
-                                >
-                                  {detailBoardClipboardIds.length > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => mergeDetailGroupColumns(group.id, detailBoardClipboardIds)}
-                                      className="absolute right-3 top-3 inline-flex h-7 items-center gap-1 rounded-full border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-2.5 text-[10px] font-bold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
-                                    >
-                                      <span className="material-symbols-outlined text-[13px]">content_paste</span>
-                                      粘贴
-                                    </button>
-                                  )}
-                                  {group.columnIds.length > 0 ? (
-                                    <div className="flex flex-wrap gap-2">
-                                      {group.columnIds.map((columnId: string) => {
-                                        const column = availableGridColumns.find((item: any) => item.id === columnId);
-                                        if (!column) return null;
-                                        const normalizedAvailableColumn = normalizeColumn(column);
-
-                                        return (
-                                          <div
-                                            key={`${group.id}-${column.id}`}
-                                            className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/92 px-3 shadow-[0_10px_18px_-16px_rgba(15,23,42,0.18)] dark:border-slate-700 dark:bg-slate-900/72"
-                                          >
-                                            <span className="truncate text-[11px] font-bold text-slate-700 dark:text-slate-100">{column.name}</span>
-                                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-                                              {normalizedAvailableColumn.type}
-                                            </span>
-                                            <button
-                                              type="button"
-                                              onClick={() => removeDetailGroupColumn(group.id, column.id)}
-                                              className="inline-flex size-5 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                                              title="移出当前分组"
-                                            >
-                                              <span className="material-symbols-outlined text-[12px]">close</span>
-                                            </button>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : (
-                                    <div className="flex min-h-[84px] flex-col items-center justify-center text-center">
-                                      <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-300">粘贴字段</div>
-                                    </div>
-                                  )}
-                                </div>
-                              </section>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-[20px] border border-dashed border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-tint)] px-5 py-10 text-center">
-                        <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-white text-[color:var(--workspace-accent)] shadow-[0_18px_30px_-24px_rgba(15,23,42,0.16)]">
-                          <span className="material-symbols-outlined text-[22px]">view_stream</span>
-                        </div>
-                        <div className="mt-4 text-[13px] font-bold text-slate-700 dark:text-slate-100">当前还没有详情分组</div>
-                        <button
-                          type="button"
-                          onClick={addDetailGroup}
-                          className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent)] px-3 text-[12px] font-bold text-white transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">add</span>
-                          创建第一个分组
-                        </button>
-                      </div>
-                    )
-                  ) : (
-                    renderAdvancedPlaceholder('还没有可分组字段')
-                  )}
-                </section>
+                  {renderDetailBoardLayoutManager()}
               </div>
               )
             )}
@@ -10288,6 +11592,23 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     const activeConditionResize = activeResize?.mode === 'filter' && currentConditionFields.some((field) => field.id === activeResize.id)
       ? activeResize
       : null;
+    const getConditionResizeCandidates = (fieldId: string) => buildResizeSnapCandidates(
+      currentConditionFields
+        .filter((field) => field.id !== fieldId)
+        .map((field) => Number(field.width) || CONDITION_PANEL_CONTROL_WIDTH),
+      {
+        minWidth: CONDITION_PANEL_RESIZE_MIN_WIDTH,
+        maxWidth: CONDITION_PANEL_RESIZE_MAX_WIDTH,
+        baseWidth: CONDITION_PANEL_CONTROL_WIDTH,
+      },
+    );
+    const activeConditionResizeTicks = activeConditionResize
+      ? getResizeRulerTicks(activeConditionResize.width, {
+          minWidth: CONDITION_PANEL_RESIZE_MIN_WIDTH,
+          maxWidth: CONDITION_PANEL_RESIZE_MAX_WIDTH,
+          snapCandidates: getConditionResizeCandidates(activeConditionResize.id),
+        })
+      : [];
     const workbenchHeight = currentConditionWorkbenchConfig.rows * CONDITION_PANEL_ROW_HEIGHT
       + Math.max(0, currentConditionWorkbenchConfig.rows - 1) * CONDITION_PANEL_ROW_GAP;
     const conditionRowNumbers = Array.from({ length: currentConditionWorkbenchConfig.rows }, (_, index) => index + 1);
@@ -10332,27 +11653,36 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       const startX = event.pageX;
       const startWidth = targetField.width || CONDITION_PANEL_CONTROL_WIDTH;
       const resizeLabel = targetField.name || '未命名字段';
+      const snapCandidates = getConditionResizeCandidates(fieldId);
       let latestWidth = startWidth;
 
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
       setActiveResize({ id: fieldId, label: resizeLabel, width: startWidth, mode: 'filter' });
 
-      const syncPreviewWidth = () => {
-        if (!container) return;
-        container.style.width = `${latestWidth}px`;
-        container.style.minWidth = `${latestWidth}px`;
-      };
-
       const handleMouseMove = (moveEvent: MouseEvent) => {
-        latestWidth = Math.max(
-          CONDITION_PANEL_RESIZE_MIN_WIDTH,
-          Math.min(CONDITION_PANEL_RESIZE_MAX_WIDTH, startWidth + (moveEvent.pageX - startX)),
-        );
-        syncPreviewWidth();
+        const { width } = resolveResizeWidthWithSnap(startWidth + (moveEvent.pageX - startX), {
+          minWidth: CONDITION_PANEL_RESIZE_MIN_WIDTH,
+          maxWidth: CONDITION_PANEL_RESIZE_MAX_WIDTH,
+          snapCandidates,
+        });
+        latestWidth = width;
+        if (conditionResizePreviewFrameRef.current !== null) return;
+        conditionResizePreviewFrameRef.current = window.requestAnimationFrame(() => {
+          conditionResizePreviewFrameRef.current = null;
+          if (container) {
+            container.style.width = `${latestWidth}px`;
+            container.style.minWidth = `${latestWidth}px`;
+          }
+          setActiveResize((prev) => prev?.id === fieldId ? { ...prev, width: latestWidth } : prev);
+        });
       };
 
       const handleMouseUp = () => {
+        if (conditionResizePreviewFrameRef.current !== null) {
+          window.cancelAnimationFrame(conditionResizePreviewFrameRef.current);
+          conditionResizePreviewFrameRef.current = null;
+        }
         if (conditionResizeHudFrameRef.current !== null) {
           window.cancelAnimationFrame(conditionResizeHudFrameRef.current);
           conditionResizeHudFrameRef.current = null;
@@ -10472,25 +11802,35 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           tabIndex={0}
           onClick={() => activateConditionPanelSelection(activeDocumentConditionScope)}
           onKeyDown={handlePanelKeyDown}
-          className={`relative rounded-[22px] border px-3 py-2.5 transition-all ${
+          className={`relative rounded-lg border px-3 py-2.5 transition-all ${
             isConditionPanelActive
-              ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-tint)] shadow-[0_18px_30px_-28px_var(--workspace-accent-shadow)]'
-              : 'border-slate-200/80 bg-white/84 shadow-[0_14px_26px_-28px_rgba(15,23,42,0.18)] dark:border-slate-700 dark:bg-slate-900/58'
+              ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-tint)]'
+              : 'border-slate-200/80 bg-white/92 dark:border-slate-700 dark:bg-slate-900/58'
           }`}
         >
           {activeConditionResize && (
-            <div className="pointer-events-none absolute right-3 top-2 z-10 inline-flex items-center gap-2 rounded-full border border-[color:var(--workspace-accent-border)] bg-white/96 px-3 py-1 text-[11px] font-bold text-[color:var(--workspace-accent)] shadow-[0_16px_28px_-24px_var(--workspace-accent-shadow)] dark:bg-slate-950/94">
-              <span className="material-symbols-outlined text-[13px]">straighten</span>
-              <span className="max-w-[120px] truncate">{activeConditionResize.label}</span>
-              <span className="rounded-full bg-[color:var(--workspace-accent-soft)] px-2 py-0.5">
-                {Math.round(activeConditionResize.width)}px
-              </span>
+          <div className="pointer-events-none absolute right-3 top-2 z-10 inline-flex items-center gap-2 rounded-md border border-[color:var(--workspace-accent-border)] bg-white/96 px-2.5 py-1 text-[11px] font-bold text-[color:var(--workspace-accent)] dark:bg-slate-950/94">
+            <div className="flex flex-col">
+              <div className="inline-flex items-center gap-2">
+                <span className="material-symbols-outlined text-[13px]">straighten</span>
+                <span className="max-w-[120px] truncate">{activeConditionResize.label}</span>
+                <span className="rounded-full bg-[color:var(--workspace-accent-soft)] px-2 py-0.5">
+                  {Math.round(activeConditionResize.width)}px
+                </span>
+              </div>
+              <ResizeTickRuler
+                width={activeConditionResize.width}
+                minWidth={CONDITION_PANEL_RESIZE_MIN_WIDTH}
+                maxWidth={CONDITION_PANEL_RESIZE_MAX_WIDTH}
+                ticks={activeConditionResizeTicks}
+              />
             </div>
+          </div>
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-2.5">
             <div className="flex min-w-0 items-center gap-2">
-              <div className={`inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-bold transition-colors ${
+              <div className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-semibold transition-colors ${
                 isConditionPanelActive
                   ? 'bg-[color:var(--workspace-accent)] text-white'
                   : 'bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent)]'
@@ -10505,7 +11845,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
             <div className="flex flex-wrap items-center gap-2" onClick={(event) => event.stopPropagation()}>
               {canSwitchConditionScope && (
-                <div className="inline-flex items-center rounded-[12px] border border-slate-200/80 bg-white/92 p-1 dark:border-slate-700 dark:bg-slate-950/88">
+                <div className="inline-flex items-center rounded-md border border-slate-200/80 bg-white/92 p-1 dark:border-slate-700 dark:bg-slate-950/88">
                   {(['main', 'left'] as const).map((scope) => {
                     const isActiveScope = activeDocumentConditionScope === scope;
                     return (
@@ -10513,11 +11853,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                         key={`condition-scope-${scope}`}
                         type="button"
                         onClick={() => handleDocumentConditionScopeSwitch(scope)}
-                        className={`inline-flex h-8 items-center gap-1 rounded-[9px] px-3 text-[11px] font-bold transition-all ${
-                          isActiveScope
-                            ? 'bg-[color:var(--workspace-accent)] text-white shadow-[0_12px_24px_-20px_var(--workspace-accent-shadow)]'
-                            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100'
-                        }`}
+                          className={`inline-flex h-7 items-center gap-1 rounded-[7px] px-2.5 text-[10px] font-semibold transition-all ${
+                            isActiveScope
+                              ? 'bg-[color:var(--workspace-accent)] text-white'
+                              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100'
+                          }`}
                       >
                         {scope === 'left' ? '左条件' : '主条件'}
                       </button>
@@ -10531,7 +11871,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     event.stopPropagation();
                     activeDocumentConditionConfig.onAdd();
                   }}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-[12px] bg-[color:var(--workspace-accent)] px-3.5 text-[11px] font-bold text-white shadow-[0_16px_28px_-22px_var(--workspace-accent-shadow)]"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[color:var(--workspace-accent)] px-3 text-[11px] font-semibold text-white"
                 >
                   <span className="material-symbols-outlined text-[15px]">add</span>
                   条件
@@ -10543,7 +11883,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     activeDocumentConditionConfig.onDelete();
                   }}
                   disabled={activeDocumentConditionConfig.selectedIds.length === 0}
-                  className={`inline-flex h-9 items-center gap-1.5 rounded-[12px] px-3.5 text-[11px] font-bold transition-colors ${
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-semibold transition-colors ${
                     activeDocumentConditionConfig.selectedIds.length > 0
                       ? 'border border-slate-200/90 bg-white/92 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/86 dark:text-slate-200 dark:hover:bg-slate-900'
                       : 'cursor-not-allowed border border-slate-200/80 bg-slate-100 text-slate-300 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-600'
@@ -10568,7 +11908,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     key={`condition-row-${rowNumber}`}
                     onDragOver={handleConditionRowDragOver(rowNumber)}
                     onDrop={handleConditionRowDrop(rowNumber)}
-                    className={`flex min-h-[46px] items-center overflow-x-auto rounded-[14px] px-2 py-1.5 transition-all ${
+                    className={`flex min-h-[46px] items-center overflow-x-auto rounded-md px-2 py-1.5 transition-all ${
                       isDropTarget
                         ? 'bg-[color:var(--workspace-accent-soft)] ring-1 ring-[color:var(--workspace-accent-border)]'
                         : rowFields.length === 0
@@ -10614,7 +11954,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                 }
                               }}
                               style={{ width: conditionWidth, minWidth: conditionWidth }}
-                              className={`group relative flex h-[46px] shrink-0 items-center gap-1.5 rounded-[10px] px-1.5 py-1 text-left transition-all ${
+                              className={`group relative flex h-[44px] shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-all ${
                                 isActive || isMarked
                                   ? 'bg-[color:var(--workspace-accent-soft)]'
                                   : 'hover:bg-slate-100/80 dark:hover:bg-slate-900/42'
@@ -10765,28 +12105,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             {renderDetailFillPlaceholder()}
           </div>
         )}
-        <div className="shrink-0 border-t border-slate-200/80 bg-white/72 px-4 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/48">
-          <div className="flex flex-wrap items-center justify-end gap-3 rounded-[20px] border border-slate-200/80 bg-slate-50/88 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] dark:border-slate-800 dark:bg-slate-900/88">
-            <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-[14px] border border-slate-200/80 bg-white/92 p-1 shadow-[0_10px_26px_-24px_rgba(15,23,42,0.45)] dark:border-slate-700 dark:bg-slate-950/92">
-              {DETAIL_FILL_TYPE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  onClick={() => setTabFillTypes((prev) => ({ ...prev, [activeTab]: option.value }))}
-                  style={currentDetailFillType === option.value ? activeGlassTabStyle : undefined}
-                  className={`inline-flex h-9 items-center gap-1.5 rounded-[10px] px-3 text-[11px] font-semibold transition-all ${
-                    currentDetailFillType === option.value
-                      ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent)] text-white shadow-[0_18px_34px_-24px_var(--workspace-accent-shadow)]'
-                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100'
-                  }`}
-                  title={option.label}
-                >
-                  <span className="material-symbols-outlined text-[14px]">{option.icon}</span>
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
       </div>
     );
   };
@@ -11033,6 +12351,955 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     );
   };
 
+  const renderArchiveLayoutEditorModalLegacy = () => {
+    if (!isArchiveLayoutEditorOpen) return null;
+
+    const archiveLayoutConfig = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const selectedGroup = archiveLayoutConfig.groups.find((group: any) => group.id === selectedArchiveLayoutGroupId)
+      ?? archiveLayoutConfig.groups[0]
+      ?? null;
+    const rowNumbers = selectedGroup
+      ? Array.from({ length: getDetailBoardGroupRows(selectedGroup) }, (_, index) => index + 1)
+      : [];
+    const assignmentMap = new Map<string, string>();
+    archiveLayoutConfig.groups.forEach((group: any) => {
+      (group.columnIds ?? []).forEach((columnId: string) => {
+        assignmentMap.set(columnId, group.id);
+      });
+    });
+    const assignedFieldCount = archiveLayoutConfig.groups.reduce((sum: number, group: any) => sum + (group.columnIds?.length ?? 0), 0);
+
+    const handlePaletteDragStart = (columnId: string) => (event: React.DragEvent<HTMLButtonElement>) => {
+      setArchiveLayoutWorkbenchDrag({
+        groupId: assignmentMap.get(columnId) ?? null,
+        columnId,
+      });
+      setArchiveLayoutWorkbenchDropTarget(null);
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', columnId);
+      }
+    };
+    const handlePaletteDragEnd = () => {
+      setArchiveLayoutWorkbenchDrag(null);
+      setArchiveLayoutWorkbenchDropTarget(null);
+    };
+    const handleRowDragOver = (groupId: string, rowNumber: number) => (event: React.DragEvent<HTMLDivElement>) => {
+      if (!archiveLayoutWorkbenchDrag) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (
+        archiveLayoutWorkbenchDropTarget?.groupId !== groupId
+        || archiveLayoutWorkbenchDropTarget?.row !== rowNumber
+        || archiveLayoutWorkbenchDropTarget?.beforeId !== null
+      ) {
+        setArchiveLayoutWorkbenchDropTarget({ groupId, row: rowNumber, beforeId: null });
+      }
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'move';
+      }
+    };
+    const handleRowDrop = (groupId: string, rowNumber: number) => (event: React.DragEvent<HTMLDivElement>) => {
+      if (!archiveLayoutWorkbenchDrag) return;
+      event.preventDefault();
+      event.stopPropagation();
+      assignArchiveLayoutColumn(groupId, archiveLayoutWorkbenchDrag.columnId, rowNumber);
+      setArchiveLayoutWorkbenchDrag(null);
+      setArchiveLayoutWorkbenchDropTarget(null);
+    };
+    const handleItemDragOver = (groupId: string, rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
+      if (!archiveLayoutWorkbenchDrag || archiveLayoutWorkbenchDrag.columnId === beforeId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (
+        archiveLayoutWorkbenchDropTarget?.groupId !== groupId
+        || archiveLayoutWorkbenchDropTarget?.row !== rowNumber
+        || archiveLayoutWorkbenchDropTarget?.beforeId !== beforeId
+      ) {
+        setArchiveLayoutWorkbenchDropTarget({ groupId, row: rowNumber, beforeId });
+      }
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'move';
+      }
+    };
+    const handleItemDrop = (groupId: string, rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
+      if (!archiveLayoutWorkbenchDrag || archiveLayoutWorkbenchDrag.columnId === beforeId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      assignArchiveLayoutColumn(groupId, archiveLayoutWorkbenchDrag.columnId, rowNumber, beforeId);
+      setArchiveLayoutWorkbenchDrag(null);
+      setArchiveLayoutWorkbenchDropTarget(null);
+    };
+    const handleGroupFieldDragStart = (groupId: string, columnId: string) => (event: React.DragEvent<HTMLDivElement>) => {
+      setArchiveLayoutWorkbenchDrag({ groupId, columnId });
+      setArchiveLayoutWorkbenchDropTarget(null);
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', `${groupId}:${columnId}`);
+      }
+    };
+    const handleGroupFieldDragEnd = () => {
+      setArchiveLayoutWorkbenchDrag(null);
+      setArchiveLayoutWorkbenchDropTarget(null);
+    };
+
+    return (
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[79] flex items-center justify-center bg-slate-950/42 p-5 backdrop-blur-sm"
+          onClick={() => {
+            setIsArchiveLayoutEditorOpen(false);
+            setArchiveLayoutWorkbenchDrag(null);
+            setArchiveLayoutWorkbenchDropTarget(null);
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.985 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            onClick={(event) => event.stopPropagation()}
+            className="flex h-[88vh] w-full max-w-[1520px] flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_44px_120px_-36px_rgba(15,23,42,0.42)] dark:border-slate-800 dark:bg-slate-950"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <div className="flex size-9 items-center justify-center rounded-md border border-slate-200/80 bg-white text-[color:var(--workspace-accent)] dark:border-slate-800 dark:bg-slate-950">
+                    <span className="material-symbols-outlined text-[18px]">dashboard_customize</span>
+                  </div>
+                  <div className="text-[15px] font-semibold text-slate-900 dark:text-slate-50">主表分组布局编辑器</div>
+                </div>
+                <div className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+                  在这里新建分组、设置行数，并把主表字段拖入每一行完成布局。
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsArchiveLayoutEditorOpen(false);
+                  setArchiveLayoutWorkbenchDrag(null);
+                  setArchiveLayoutWorkbenchDropTarget(null);
+                }}
+                className="inline-flex size-9 items-center justify-center rounded-md border border-slate-200/80 bg-white text-slate-500 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-0 xl:grid-cols-[260px_minmax(0,1fr)_320px]">
+              <div className="min-h-0 border-r border-slate-200/80 bg-slate-50/55 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+                <div className={shadcnSectionCardClass}>
+                  <div className={shadcnSectionTitleClass}>
+                    <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">tab_group</span>
+                    <h4>分组列表</h4>
+                  </div>
+                  <div className="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                    <button
+                      type="button"
+                      onClick={addArchiveLayoutGroup}
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-[color:var(--workspace-accent)] px-3 text-[12px] font-semibold text-white transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">add</span>
+                      新增分组
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearArchiveLayoutGroups}
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 transition-colors hover:border-rose-200 hover:text-rose-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">layers_clear</span>
+                      清空
+                    </button>
+                  </div>
+                  <div className="mb-3 grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
+                    <div className={shadcnInfoCardClass}>
+                      <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">分组</div>
+                      <div className="mt-1 text-[13px] font-semibold text-slate-800 dark:text-slate-100">{archiveLayoutConfig.groups.length}</div>
+                    </div>
+                    <div className={shadcnInfoCardClass}>
+                      <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">已排布</div>
+                      <div className="mt-1 text-[13px] font-semibold text-slate-800 dark:text-slate-100">{assignedFieldCount}</div>
+                    </div>
+                    <div className={shadcnInfoCardClass}>
+                      <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">待排布</div>
+                      <div className="mt-1 text-[13px] font-semibold text-slate-800 dark:text-slate-100">{Math.max(0, mainTableColumns.length - assignedFieldCount)}</div>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {archiveLayoutConfig.groups.length > 0 ? archiveLayoutConfig.groups.map((group: any, index: number) => {
+                      const isSelected = selectedGroup?.id === group.id;
+                      return (
+                        <button
+                          key={group.id}
+                          type="button"
+                          onClick={() => setSelectedArchiveLayoutGroupId(group.id)}
+                          className={`flex w-full items-start justify-between gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${
+                            isSelected
+                              ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-soft)]'
+                              : 'border-slate-200 bg-white hover:border-[color:var(--workspace-accent-border)] dark:border-slate-800 dark:bg-slate-950'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-[12px] font-semibold text-slate-800 dark:text-slate-100">
+                              {group.name || `分组 ${index + 1}`}
+                            </div>
+                            <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                              {(group.columnIds?.length ?? 0)} 项 · {getDetailBoardGroupRows(group)} 行
+                            </div>
+                          </div>
+                          {isSelected ? <span className="material-symbols-outlined text-[15px] text-[color:var(--workspace-accent)]">check_circle</span> : null}
+                        </button>
+                      );
+                    }) : (
+                      <div className="rounded-md border border-dashed border-slate-200/80 bg-slate-50/70 px-3 py-8 text-center text-[12px] text-slate-500 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400">
+                        还没有分组
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-h-0 border-r border-slate-200/80 p-4 dark:border-slate-800">
+                <div className="flex h-full min-h-0 flex-col gap-4">
+                  {selectedGroup ? (
+                    <>
+                      <div className={shadcnSectionCardClass}>
+                        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_120px_auto]">
+                          <div>
+                            <label className={shadcnMutedLabelClass}>分组名称</label>
+                            <input
+                              type="text"
+                              value={selectedGroup.name}
+                              onChange={(event) => updateArchiveLayoutGroup(selectedGroup.id, { name: event.target.value })}
+                              className={shadcnFieldClass}
+                            />
+                          </div>
+                          <div>
+                            <label className={shadcnMutedLabelClass}>控件行数</label>
+                            <input
+                              type="number"
+                              min={DETAIL_BOARD_GROUP_MIN_ROWS}
+                              max={DETAIL_BOARD_GROUP_MAX_ROWS}
+                              value={getDetailBoardGroupRows(selectedGroup)}
+                              onChange={(event) => {
+                                const nextRows = clampValue(
+                                  Number(event.target.value) || DETAIL_BOARD_GROUP_MIN_ROWS,
+                                  DETAIL_BOARD_GROUP_MIN_ROWS,
+                                  DETAIL_BOARD_GROUP_MAX_ROWS,
+                                );
+                                updateArchiveLayoutGroup(selectedGroup.id, (group: any) => ({
+                                  ...group,
+                                  rows: nextRows,
+                                  columnRows: Object.fromEntries(
+                                    (group.columnIds ?? []).map((columnId: string) => [
+                                      columnId,
+                                      clampValue(
+                                        getDetailBoardGroupColumnRow(group, columnId),
+                                        DETAIL_BOARD_GROUP_MIN_ROWS,
+                                        nextRows,
+                                      ),
+                                    ]),
+                                  ),
+                                }));
+                              }}
+                              className={shadcnFieldClass}
+                            />
+                          </div>
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={() => removeArchiveLayoutGroup(selectedGroup.id)}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-rose-200 bg-white px-3 text-[12px] font-semibold text-rose-500 transition-colors hover:bg-rose-50 dark:border-rose-500/20 dark:bg-slate-950"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">delete</span>
+                              删除分组
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className={`${shadcnSectionCardClass} flex min-h-0 flex-1 flex-col`}>
+                        <div className={shadcnSectionTitleClass}>
+                          <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">dashboard</span>
+                          <h4>分组字段排布</h4>
+                        </div>
+                        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+                          {rowNumbers.map((rowNumber) => {
+                            const rowColumns = (selectedGroup.columnIds ?? [])
+                              .filter((columnId: string) => getDetailBoardGroupColumnRow(selectedGroup, columnId) === rowNumber)
+                              .map((columnId: string) => mainTableColumns.find((column: any) => column.id === columnId))
+                              .filter(Boolean);
+                            const isRowDropTarget = archiveLayoutWorkbenchDropTarget?.groupId === selectedGroup.id
+                              && archiveLayoutWorkbenchDropTarget?.row === rowNumber
+                              && archiveLayoutWorkbenchDropTarget?.beforeId === null;
+
+                            return (
+                              <div key={`${selectedGroup.id}-row-${rowNumber}`} className="space-y-1.5">
+                                <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                  <span>第 {rowNumber} 行</span>
+                                  <span className="h-px flex-1 bg-slate-200/80 dark:bg-slate-800" />
+                                </div>
+                                <div
+                                  onDragOver={handleRowDragOver(selectedGroup.id, rowNumber)}
+                                  onDrop={handleRowDrop(selectedGroup.id, rowNumber)}
+                                  className={`flex min-h-[60px] items-center overflow-x-auto rounded-md border px-2 py-2 transition-colors ${
+                                    isRowDropTarget
+                                      ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-soft)]'
+                                      : rowColumns.length > 0
+                                        ? 'border-slate-200/80 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/35'
+                                        : 'border-dashed border-slate-200/80 bg-slate-50/35 dark:border-slate-800 dark:bg-slate-900/20'
+                                  }`}
+                                >
+                                  <div className="flex min-w-full items-center gap-2">
+                                    {rowColumns.length > 0 ? rowColumns.map((column: any, columnIndex: number) => {
+                                      const normalizedColumn = normalizeColumn(column);
+                                      const isInsertTarget = archiveLayoutWorkbenchDropTarget?.groupId === selectedGroup.id
+                                        && archiveLayoutWorkbenchDropTarget?.row === rowNumber
+                                        && archiveLayoutWorkbenchDropTarget?.beforeId === column.id
+                                        && archiveLayoutWorkbenchDrag?.columnId !== column.id;
+
+                                      return (
+                                        <div
+                                          key={column.id}
+                                          draggable
+                                          onDragStart={handleGroupFieldDragStart(selectedGroup.id, column.id)}
+                                          onDragEnd={handleGroupFieldDragEnd}
+                                          onDragOver={handleItemDragOver(selectedGroup.id, rowNumber, column.id)}
+                                          onDrop={handleItemDrop(selectedGroup.id, rowNumber, column.id)}
+                                          className="group relative flex min-w-[220px] max-w-[320px] flex-1 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-2 transition-colors hover:border-[color:var(--workspace-accent-border)] dark:border-slate-800 dark:bg-slate-950"
+                                        >
+                                          {isInsertTarget ? (
+                                            <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-[color:var(--workspace-accent)]" />
+                                          ) : null}
+                                          <div className="min-w-0 flex-1">
+                                            <div className="truncate text-[12px] font-semibold text-slate-800 dark:text-slate-100">
+                                              {normalizedColumn.name}
+                                            </div>
+                                            <div className="mt-1 flex min-w-0 items-center gap-2">
+                                              <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                                                {normalizedColumn.type}
+                                              </span>
+                                              <div className="min-w-0 flex-1 truncate text-[11px] text-slate-400 dark:text-slate-500">
+                                                {renderFieldPreview(normalizedColumn, columnIndex, 'filter')}
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => removeArchiveLayoutColumn(selectedGroup.id, column.id)}
+                                            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 dark:text-slate-600"
+                                            title="移出当前分组"
+                                          >
+                                            <span className="material-symbols-outlined text-[14px]">close</span>
+                                          </button>
+                                        </div>
+                                      );
+                                    }) : (
+                                      <div className="text-[12px] text-slate-400 dark:text-slate-500">
+                                        直接把右侧主表字段拖到这一行。
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex h-full items-center justify-center rounded-md border border-dashed border-slate-200/80 bg-slate-50/60 text-center text-[13px] text-slate-500 dark:border-slate-800 dark:bg-slate-900/30 dark:text-slate-400">
+                      先在左侧新建或选择一个分组。
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="min-h-0 bg-slate-50/55 p-4 dark:bg-slate-950/60">
+                <div className={`${shadcnSectionCardClass} flex h-full min-h-0 flex-col`}>
+                  <div className={shadcnSectionTitleClass}>
+                    <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">toc</span>
+                    <h4>主表字段</h4>
+                  </div>
+                  <div className="mb-3 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                    从这里直接拖字段到中间分组行里。已经排布的字段也可以拖走重排或换组。
+                  </div>
+                  <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+                    {mainTableColumns.map((column: any) => {
+                      const normalizedColumn = normalizeColumn(column);
+                      const assignedGroupId = assignmentMap.get(column.id) ?? null;
+                      const assignedGroup = archiveLayoutConfig.groups.find((group: any) => group.id === assignedGroupId);
+                      const isInSelectedGroup = assignedGroupId === selectedGroup?.id;
+
+                      return (
+                        <button
+                          key={`archive-layout-palette-${column.id}`}
+                          type="button"
+                          draggable
+                          onDragStart={handlePaletteDragStart(column.id)}
+                          onDragEnd={handlePaletteDragEnd}
+                          onClick={() => {
+                            if (!selectedGroup) return;
+                            assignArchiveLayoutColumn(
+                              selectedGroup.id,
+                              column.id,
+                              getDetailBoardGroupRows(selectedGroup),
+                            );
+                          }}
+                          className={`flex w-full items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${
+                            isInSelectedGroup
+                              ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-soft)]'
+                              : 'border-slate-200 bg-white hover:border-[color:var(--workspace-accent-border)] dark:border-slate-800 dark:bg-slate-950'
+                          }`}
+                        >
+                          <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-200/80 bg-slate-50 text-[color:var(--workspace-accent)] dark:border-slate-800 dark:bg-slate-900">
+                            <span className="material-symbols-outlined text-[15px]">drag_indicator</span>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[12px] font-semibold text-slate-800 dark:text-slate-100">
+                              {normalizedColumn.name}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                                {normalizedColumn.type}
+                              </span>
+                              {assignedGroup ? (
+                                <span className="inline-flex items-center rounded-md border border-slate-200/80 bg-white px-1.5 py-0.5 text-[10px] text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                                  {isInSelectedGroup ? '当前分组' : assignedGroup.name}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center rounded-md border border-dashed border-slate-200/80 px-1.5 py-0.5 text-[10px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+                                  未排布
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
+    );
+  };
+
+  const renderArchiveLayoutCanvasModal = () => {
+    if (!isArchiveLayoutEditorOpen) return null;
+
+    const archiveLayoutConfig = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const highlightedGroupId = selectedArchiveLayoutGroupId ?? archiveLayoutConfig.groups[0]?.id ?? null;
+    const highlightedGroup = archiveLayoutConfig.groups.find((group: any) => group.id === highlightedGroupId) ?? null;
+    const assignmentMap = new Map<string, string>();
+    archiveLayoutConfig.groups.forEach((group: any) => {
+      (group.columnIds ?? []).forEach((columnId: string) => {
+        assignmentMap.set(columnId, group.id);
+      });
+    });
+    const assignedFieldCount = archiveLayoutConfig.groups.reduce((sum: number, group: any) => sum + (group.columnIds?.length ?? 0), 0);
+    const unassignedFieldCount = Math.max(0, mainTableColumns.length - assignedFieldCount);
+
+    const closeEditor = () => {
+      setIsArchiveLayoutEditorOpen(false);
+      setArchiveLayoutWorkbenchDrag(null);
+      setArchiveLayoutWorkbenchDropTarget(null);
+    };
+
+    const focusGroup = (groupId: string) => {
+      setSelectedArchiveLayoutGroupId((prev) => (prev === groupId ? prev : groupId));
+    };
+
+    const updateGroupRows = (groupId: string, nextValue: number) => {
+      const nextRows = clampValue(
+        Number(nextValue) || DETAIL_BOARD_GROUP_MIN_ROWS,
+        DETAIL_BOARD_GROUP_MIN_ROWS,
+        DETAIL_BOARD_GROUP_MAX_ROWS,
+      );
+      updateArchiveLayoutGroup(groupId, (group: any) => ({
+        ...group,
+        rows: nextRows,
+        columnRows: Object.fromEntries(
+          (group.columnIds ?? []).map((columnId: string) => [
+            columnId,
+            clampValue(getDetailBoardGroupColumnRow(group, columnId), DETAIL_BOARD_GROUP_MIN_ROWS, nextRows),
+          ]),
+        ),
+      }));
+    };
+
+    const handlePaletteDragStart = (columnId: string) => (event: React.DragEvent<HTMLButtonElement>) => {
+      setArchiveLayoutWorkbenchDrag({
+        groupId: assignmentMap.get(columnId) ?? null,
+        columnId,
+      });
+      setArchiveLayoutWorkbenchDropTarget(null);
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', columnId);
+      }
+    };
+
+    const handlePaletteDragEnd = () => {
+      setArchiveLayoutWorkbenchDrag(null);
+      setArchiveLayoutWorkbenchDropTarget(null);
+    };
+
+    const handleRowDragOver = (groupId: string, rowNumber: number) => (event: React.DragEvent<HTMLDivElement>) => {
+      if (!archiveLayoutWorkbenchDrag) return;
+      event.preventDefault();
+      event.stopPropagation();
+      focusGroup(groupId);
+      if (
+        archiveLayoutWorkbenchDropTarget?.groupId !== groupId
+        || archiveLayoutWorkbenchDropTarget?.row !== rowNumber
+        || archiveLayoutWorkbenchDropTarget?.beforeId !== null
+      ) {
+        setArchiveLayoutWorkbenchDropTarget({ groupId, row: rowNumber, beforeId: null });
+      }
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'move';
+      }
+    };
+
+    const handleRowDrop = (groupId: string, rowNumber: number) => (event: React.DragEvent<HTMLDivElement>) => {
+      if (!archiveLayoutWorkbenchDrag) return;
+      event.preventDefault();
+      event.stopPropagation();
+      assignArchiveLayoutColumn(groupId, archiveLayoutWorkbenchDrag.columnId, rowNumber);
+      focusGroup(groupId);
+      setArchiveLayoutWorkbenchDrag(null);
+      setArchiveLayoutWorkbenchDropTarget(null);
+    };
+
+    const handleItemDragOver = (groupId: string, rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
+      if (!archiveLayoutWorkbenchDrag || archiveLayoutWorkbenchDrag.columnId === beforeId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      focusGroup(groupId);
+      if (
+        archiveLayoutWorkbenchDropTarget?.groupId !== groupId
+        || archiveLayoutWorkbenchDropTarget?.row !== rowNumber
+        || archiveLayoutWorkbenchDropTarget?.beforeId !== beforeId
+      ) {
+        setArchiveLayoutWorkbenchDropTarget({ groupId, row: rowNumber, beforeId });
+      }
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'move';
+      }
+    };
+
+    const handleItemDrop = (groupId: string, rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
+      if (!archiveLayoutWorkbenchDrag || archiveLayoutWorkbenchDrag.columnId === beforeId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      assignArchiveLayoutColumn(groupId, archiveLayoutWorkbenchDrag.columnId, rowNumber, beforeId);
+      focusGroup(groupId);
+      setArchiveLayoutWorkbenchDrag(null);
+      setArchiveLayoutWorkbenchDropTarget(null);
+    };
+
+    const handleGroupFieldDragStart = (groupId: string, columnId: string) => (event: React.DragEvent<HTMLDivElement>) => {
+      focusGroup(groupId);
+      setArchiveLayoutWorkbenchDrag({ groupId, columnId });
+      setArchiveLayoutWorkbenchDropTarget(null);
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', `${groupId}:${columnId}`);
+      }
+    };
+
+    const handleGroupFieldDragEnd = () => {
+      setArchiveLayoutWorkbenchDrag(null);
+      setArchiveLayoutWorkbenchDropTarget(null);
+    };
+
+    const getGroupRowItems = (group: any, rowNumber: number) => (
+      (group.columnIds ?? [])
+        .filter((columnId: string) => getDetailBoardGroupColumnRow(group, columnId) === rowNumber)
+        .map((columnId: string) => {
+          const column = mainTableColumns.find((item: any) => item.id === columnId);
+          if (!column) return null;
+          const layoutMeta = getLayoutFieldWorkbenchMeta(column, group.columnWidths?.[columnId], group.columnHeights?.[columnId]);
+          const liveWidth = getDetailBoardFieldLiveWidth(group.id, columnId, layoutMeta.width);
+          const liveHeight = getDetailBoardFieldLiveHeight(group.id, columnId, layoutMeta.height);
+          const liveMeta = getLayoutFieldWorkbenchMeta(column, liveWidth, liveHeight);
+          return {
+            id: columnId,
+            field: column,
+            liveWidth,
+            liveHeight,
+            liveMeta,
+          };
+        })
+        .filter(Boolean)
+    );
+
+    const getRowBoundaryPositions = (rowItems: Array<{ liveWidth: number }>) => {
+      let cursor = 0;
+      return rowItems.map((item) => {
+        cursor += item.liveWidth;
+        const boundary = cursor;
+        cursor += ARCHIVE_LAYOUT_LANE_GAP;
+        return boundary;
+      });
+    };
+    const getRowActiveBoundaryPosition = (
+      rowItems: Array<{ id: string; liveWidth: number }>,
+      columnId?: string | null,
+    ) => {
+      if (!columnId) return null;
+      let cursor = 0;
+      for (const item of rowItems) {
+        cursor += item.liveWidth;
+        if (item.id === columnId) {
+          return cursor;
+        }
+        cursor += ARCHIVE_LAYOUT_LANE_GAP;
+      }
+      return null;
+    };
+
+    const renderGroupCanvas = (group: any) => {
+      const rowCount = getDetailBoardGroupRows(group);
+      const rowNumbers = Array.from({ length: rowCount }, (_, index) => index + 1);
+      const isHighlighted = highlightedGroupId === group.id;
+
+      return (
+        <section
+          key={group.id}
+          onMouseDown={() => focusGroup(group.id)}
+          className={`rounded-xl border px-3 py-3 transition-colors ${
+            isHighlighted
+              ? 'border-[color:var(--workspace-accent-border-strong)] bg-white shadow-[0_12px_30px_-28px_var(--workspace-accent-shadow)]'
+              : 'border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-950'
+          }`}
+        >
+          <div className="mb-2.5 flex flex-wrap items-end gap-2.5">
+            <div className="min-w-[220px] flex-[1.3]">
+              <label className={shadcnMutedLabelClass}>分组名称</label>
+              <input
+                type="text"
+                value={group.name}
+                onChange={(event) => updateArchiveLayoutGroup(group.id, { name: event.target.value })}
+                className={shadcnFieldClass}
+              />
+            </div>
+            <div className="w-24">
+              <label className={shadcnMutedLabelClass}>控件行数</label>
+              <input
+                type="number"
+                min={DETAIL_BOARD_GROUP_MIN_ROWS}
+                max={DETAIL_BOARD_GROUP_MAX_ROWS}
+                value={rowCount}
+                onChange={(event) => updateGroupRows(group.id, Number(event.target.value))}
+                className={shadcnFieldClass}
+              />
+            </div>
+            <div className="inline-flex h-10 min-w-[88px] items-center rounded-md border border-slate-200/80 bg-white px-3 text-[11px] font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+              {group.columnIds?.length ?? 0} 项
+            </div>
+            <button
+              type="button"
+              onClick={() => removeArchiveLayoutGroup(group.id)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-rose-200 bg-white px-3 text-[12px] font-semibold text-rose-500 transition-colors hover:bg-rose-50 dark:border-rose-500/20 dark:bg-slate-950"
+            >
+              <span className="material-symbols-outlined text-[14px]">delete</span>
+              删除分组
+            </button>
+          </div>
+
+          <div className="space-y-2.5">
+            {rowNumbers.map((rowNumber) => {
+              const rowItems = getGroupRowItems(group, rowNumber);
+              const previousRowItems = rowNumber > DETAIL_BOARD_GROUP_MIN_ROWS
+                ? getGroupRowItems(group, rowNumber - 1)
+                : [];
+              const isRowDropTarget = archiveLayoutWorkbenchDropTarget?.groupId === group.id
+                && archiveLayoutWorkbenchDropTarget?.row === rowNumber
+                && archiveLayoutWorkbenchDropTarget?.beforeId === null;
+              const isActiveResizeRow = activeDetailBoardResize?.groupId === group.id
+                && rowItems.some((item: any) => item.id === activeDetailBoardResize.columnId);
+              const previousRowGuidePositions = isActiveResizeRow ? getRowBoundaryPositions(previousRowItems) : [];
+              const activeResizeBoundary = isActiveResizeRow
+                ? getRowActiveBoundaryPosition(rowItems, activeDetailBoardResize?.columnId ?? null)
+                : null;
+
+              return (
+                <div key={`${group.id}-row-${rowNumber}`}>
+                  <div
+                    onDragOver={handleRowDragOver(group.id, rowNumber)}
+                    onDrop={handleRowDrop(group.id, rowNumber)}
+                    className={`relative overflow-x-auto px-1 py-1.5 transition-colors ${
+                      isRowDropTarget
+                        ? 'rounded-lg bg-[color:var(--workspace-accent-soft)]/65 outline outline-1 outline-[color:var(--workspace-accent-border-strong)]'
+                        : rowItems.length > 0
+                          ? ''
+                          : 'rounded-lg border border-dashed border-slate-200/80 bg-slate-50/55 dark:border-slate-800 dark:bg-slate-900/18'
+                    }`}
+                  >
+                    {previousRowGuidePositions.length > 0 || activeResizeBoundary !== null ? (
+                      <div className="pointer-events-none absolute inset-y-1 left-1 right-1">
+                        {previousRowGuidePositions.map((position, guideIndex) => (
+                          <span
+                            key={`${group.id}-row-${rowNumber}-guide-${guideIndex}`}
+                            data-archive-prev-row-guide="true"
+                            className="absolute inset-y-0 w-px -translate-x-1/2 border-l border-dashed border-[color:var(--workspace-accent)]/80 after:absolute after:left-1/2 after:top-0 after:size-1.5 after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-full after:bg-[color:var(--workspace-accent)] before:absolute before:bottom-0 before:left-1/2 before:size-1.5 before:-translate-x-1/2 before:translate-y-1/2 before:rounded-full before:bg-[color:var(--workspace-accent)]"
+                            style={{ left: position }}
+                          />
+                        ))}
+                        {activeResizeBoundary !== null ? (
+                          <span
+                            data-archive-active-row-guide="true"
+                            className="absolute inset-y-[-3px] w-[3px] -translate-x-1/2 rounded-full bg-[color:var(--workspace-accent)] shadow-[0_0_0_1px_rgba(255,255,255,0.78),0_0_0_8px_var(--workspace-accent-soft)] dark:shadow-[0_0_0_1px_rgba(15,23,42,0.66),0_0_0_10px_rgba(37,99,235,0.18)]"
+                            style={{ left: activeResizeBoundary }}
+                          />
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div className="flex min-w-full items-start gap-2">
+                      {rowItems.length > 0 ? rowItems.map((item: any, columnIndex: number) => {
+                        const { field: column, liveWidth, liveHeight, liveMeta } = item;
+                        const isInsertTarget = archiveLayoutWorkbenchDropTarget?.groupId === group.id
+                          && archiveLayoutWorkbenchDropTarget?.row === rowNumber
+                          && archiveLayoutWorkbenchDropTarget?.beforeId === column.id
+                          && archiveLayoutWorkbenchDrag?.columnId !== column.id;
+
+                        return (
+                          <div
+                            key={column.id}
+                            data-detail-field-item="true"
+                            draggable
+                            role="button"
+                            tabIndex={0}
+                            onDragStart={handleGroupFieldDragStart(group.id, column.id)}
+                            onDragEnd={handleGroupFieldDragEnd}
+                            onDragOver={handleItemDragOver(group.id, rowNumber, column.id)}
+                            onDrop={handleItemDrop(group.id, rowNumber, column.id)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Delete' || event.key === 'Backspace') {
+                                event.preventDefault();
+                                removeArchiveLayoutColumn(group.id, column.id);
+                              }
+                            }}
+                            style={{
+                              width: liveWidth,
+                              minWidth: liveMeta.minWidth,
+                              maxWidth: liveWidth,
+                              height: liveMeta.isTallControl ? liveHeight : undefined,
+                            }}
+                            className={`group relative shrink-0 self-start transition-[width,height,transform] duration-75 ${liveMeta.frameClass}`}
+                          >
+                            {isInsertTarget ? (
+                              <span className="pointer-events-none absolute inset-y-1 left-[-4px] w-[2px] rounded-full bg-[color:var(--workspace-accent)]" />
+                            ) : null}
+                            <div className="min-h-0 flex-1">
+                              {renderArchiveLayoutFieldShell(liveMeta.field, {
+                                rowIndex: columnIndex,
+                                width: liveWidth,
+                                height: liveHeight,
+                              })}
+                            </div>
+                            <div
+                              className="absolute bottom-1 right-[-2px] top-1 flex w-3 cursor-col-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                              onMouseDown={(event) => startDetailBoardFieldResize(event, group.id, column.id, liveMeta.field.name, liveMeta.minWidth)}
+                              onDoubleClick={(event) => resetDetailBoardFieldWidth(event, group.id, column.id)}
+                              title="拖动调整宽度，双击恢复自动排布"
+                            >
+                              <span className="h-7 w-px rounded-full bg-slate-300 transition-colors group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-600" />
+                            </div>
+                            {liveMeta.isTallControl ? (
+                              <button
+                                type="button"
+                                onMouseDown={(event) => startDetailBoardFieldHeightResize(event, group.id, column.id, liveMeta.field.name, liveMeta.minHeight)}
+                                onDoubleClick={(event) => resetDetailBoardFieldHeight(event, group.id, column.id)}
+                                className="absolute bottom-0 left-10 right-6 flex h-3 cursor-ns-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                                title="拖动调整高度，双击恢复默认高度"
+                              >
+                                <span className="h-px w-10 rounded-full bg-slate-300 transition-colors group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-600" />
+                              </button>
+                            ) : null}
+                          </div>
+                        );
+                      }) : (
+                        <div className="flex min-h-[48px] items-center text-[12px] text-slate-400 dark:text-slate-500">
+                          直接把右侧主表字段拖到这一行。
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      );
+    };
+
+    return (
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[79] flex items-center justify-center bg-slate-950/42 p-5 backdrop-blur-sm"
+          onClick={closeEditor}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.985 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            onClick={(event) => event.stopPropagation()}
+            className="flex h-[90vh] w-full max-w-[1640px] flex-col overflow-hidden rounded-2xl border border-slate-200/85 bg-white shadow-[0_44px_120px_-36px_rgba(15,23,42,0.42)] dark:border-slate-800 dark:bg-slate-950"
+          >
+            <div className="border-b border-slate-200/80 bg-slate-50/80 px-5 py-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className="flex size-9 items-center justify-center rounded-md border border-slate-200/80 bg-white text-[color:var(--workspace-accent)] dark:border-slate-800 dark:bg-slate-950">
+                      <span className="material-symbols-outlined text-[18px]">dashboard_customize</span>
+                    </div>
+                    <div className="text-[15px] font-semibold text-slate-900 dark:text-slate-50">主表分组布局画布</div>
+                  </div>
+                  <div className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">
+                    所有分组在同一张画布里直接排布。拖动宽度时会参考上一行边界，不再额外弹出顶部尺子。
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex flex-wrap items-center gap-2 rounded-full border border-slate-200/80 bg-white/82 px-3 py-2 text-[11px] text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-950/76 dark:text-slate-300">
+                    <span>分组 {archiveLayoutConfig.groups.length}</span>
+                    <span className="text-slate-300 dark:text-slate-600">/</span>
+                    <span>已排布 {assignedFieldCount}</span>
+                    <span className="text-slate-300 dark:text-slate-600">/</span>
+                    <span>待排布 {unassignedFieldCount}</span>
+                    <span className="text-slate-300 dark:text-slate-600">/</span>
+                    <span className="truncate">高亮 {highlightedGroup?.name || '未选择'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addArchiveLayoutGroup}
+                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-[color:var(--workspace-accent)] px-3 text-[12px] font-semibold text-white transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">add</span>
+                    新增分组
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearArchiveLayoutGroups}
+                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 transition-colors hover:border-rose-200 hover:text-rose-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">layers_clear</span>
+                    清空
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeEditor}
+                    className="inline-flex size-9 items-center justify-center rounded-md border border-slate-200/80 bg-white text-slate-500 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">close</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-0 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="min-h-0 p-4">
+                <div className={`${shadcnSectionCardClass} flex h-full min-h-0 flex-col`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className={shadcnSectionTitleClass}>
+                      <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">view_agenda</span>
+                      <h4>分组画布</h4>
+                    </div>
+                    <div className="text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                      点击某个分组即高亮。拖到字段前面时自动后移一位。
+                    </div>
+                  </div>
+                  <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+                    {archiveLayoutConfig.groups.length > 0 ? (
+                      <div className="space-y-4">
+                        {archiveLayoutConfig.groups.map(renderGroupCanvas)}
+                      </div>
+                    ) : (
+                      <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200/80 bg-slate-50/60 text-center dark:border-slate-800 dark:bg-slate-900/30">
+                        <div className="text-[14px] font-semibold text-slate-700 dark:text-slate-100">还没有分组</div>
+                        <div className="mt-2 text-[12px] text-slate-500 dark:text-slate-400">先新建一个分组，再把右侧主表字段拖进来。</div>
+                        <button
+                          type="button"
+                          onClick={addArchiveLayoutGroup}
+                          className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-md bg-[color:var(--workspace-accent)] px-3.5 text-[12px] font-semibold text-white transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">add</span>
+                          新增第一个分组
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-h-0 border-l border-slate-200/80 bg-slate-50/55 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+                <div className={`${shadcnSectionCardClass} flex h-full min-h-0 flex-col`}>
+                  <div className={shadcnSectionTitleClass}>
+                    <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">toc</span>
+                    <h4>主表字段</h4>
+                  </div>
+                  <div className="mb-3 rounded-lg border border-slate-200/80 bg-white px-3 py-2 text-[11px] text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                    当前高亮分组：<span className="font-semibold text-slate-700 dark:text-slate-100">{highlightedGroup?.name || '未选择'}</span>
+                  </div>
+                  <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+                    {mainTableColumns.map((column: any) => {
+                      const layoutMeta = getLayoutFieldWorkbenchMeta(column, 248);
+                      const assignedGroupId = assignmentMap.get(column.id) ?? null;
+                      const assignedGroup = archiveLayoutConfig.groups.find((group: any) => group.id === assignedGroupId);
+                      const isInHighlightedGroup = assignedGroupId === highlightedGroupId;
+
+                      return (
+                        <button
+                          key={`archive-layout-palette-${column.id}`}
+                          type="button"
+                          draggable
+                          onDragStart={handlePaletteDragStart(column.id)}
+                          onDragEnd={handlePaletteDragEnd}
+                          className={`w-full rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                            isInHighlightedGroup
+                              ? 'border-[color:var(--workspace-accent-border-strong)] bg-white shadow-[0_10px_24px_-24px_var(--workspace-accent-shadow)]'
+                              : 'border-slate-200 bg-white hover:border-[color:var(--workspace-accent-border)] dark:border-slate-800 dark:bg-slate-950'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <div className="mt-1.5 flex size-5 shrink-0 items-center justify-center text-[color:var(--workspace-accent)]">
+                              <span className="material-symbols-outlined text-[15px]">drag_indicator</span>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              {renderArchiveLayoutFieldShell(layoutMeta.field, {
+                                rowIndex: 0,
+                                width: layoutMeta.width,
+                                height: layoutMeta.height,
+                              })}
+                              <div className="mt-1 pl-0.5 text-[11px] text-slate-400 dark:text-slate-500">
+                                {assignedGroup ? `${isInHighlightedGroup ? '当前分组' : assignedGroup.name} · 已排布` : '未排布'}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
+    );
+  };
+
   const renderDetailBoardModal = () => {
     if (!isDetailBoardOpen) return null;
 
@@ -11065,7 +13332,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             transition={{ duration: 0.22 }}
           onClick={(event) => event.stopPropagation()}
           style={workspaceThemeVars}
-          className="flex h-[84vh] w-full max-w-[1160px] flex-col overflow-hidden rounded-[34px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.995),rgba(245,248,252,0.985))] shadow-[0_60px_140px_-52px_rgba(15,23,42,0.68)] dark:border-slate-700 dark:bg-slate-900"
+          className="flex h-[84vh] w-full max-w-[1160px] flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.995),rgba(245,248,252,0.985))] shadow-[0_60px_140px_-52px_rgba(15,23,42,0.68)] dark:border-slate-700 dark:bg-slate-900"
         >
             <div className={`border-b border-slate-200 px-6 py-4 dark:border-slate-700 ${detailBoardTheme.hero}`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -11077,9 +13344,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     <div className="min-w-0">
                       <div className="text-[17px] font-bold tracking-[-0.02em] text-slate-900 dark:text-white">详情布局预览</div>
                       <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
-                        {activeDetailBoardResize
-                          ? `${activeDetailBoardResize.label} ${Math.round(activeDetailBoardResize.width)}px`
-                          : '拖动字段右侧分隔线可调宽度，双击可恢复自动排布'}
+                        拖动字段右侧分隔线可调宽度，拖动下边缘可放大备注框。
                       </div>
                     </div>
                   </div>
@@ -11094,9 +13359,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </div>
 
             <div className="scrollbar-none min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,rgba(250,252,255,0.98),rgba(244,247,251,0.96))] dark:bg-slate-900">
-              <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-4 px-6 py-5">
+              <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-3 px-5 py-4">
                 {panelGroups.length === 0 ? (
-                  <section className={`rounded-[24px] border border-dashed px-6 py-12 text-center ${detailBoardTheme.groupShell}`}>
+                  <section className={`rounded-[18px] border border-dashed px-6 py-10 text-center ${detailBoardTheme.groupShell}`}>
                     <div className="mx-auto flex size-14 items-center justify-center rounded-3xl bg-white text-[color:var(--workspace-accent)] shadow-[0_18px_30px_-24px_rgba(15,23,42,0.16)]">
                       <span className="material-symbols-outlined text-[24px]">view_stream</span>
                     </div>
@@ -11108,60 +13373,83 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                     if (right.id === sortColumnId) return 1;
                     return 0;
                   });
-                  const columnsPerRow = Math.max(1, Math.min(4, Number(group.columnsPerRow) || 2));
-                  const groupGap = 12;
+                  const rowNumbers = Array.from({ length: getDetailBoardGroupRows(group) }, (_, index) => index + 1);
 
                   return (
                     <section
                       key={group.id}
-                      className={`overflow-hidden rounded-[26px] border shadow-[0_24px_44px_-36px_rgba(15,23,42,0.16)] ${detailBoardTheme.groupShell}`}
+                      className={`overflow-hidden rounded-xl border bg-white shadow-[0_12px_28px_-28px_rgba(15,23,42,0.2)] dark:bg-slate-950 ${detailBoardTheme.groupShell}`}
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 px-5 py-4 dark:border-slate-700">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-3 dark:border-slate-700">
                         <div className="min-w-0">
-                          <div className="text-[15px] font-bold text-slate-800 dark:text-slate-100">{group.name}</div>
+                          <div className="text-[14px] font-semibold text-slate-800 dark:text-slate-100">{group.name}</div>
                         </div>
                         <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold ${detailBoardTheme.groupLabel}`}>
                           {orderedColumns.length} 项
                         </span>
                       </div>
-                      <div className="px-5 py-4">
-                        <div className="flex flex-wrap gap-3">
-                        {orderedColumns.map((column: any, columnIndex: number) => {
-                          const normalizedColumn = normalizeColumn(column);
-                          const labelWidth = Math.max(54, Math.min(82, normalizedColumn.name.length * 12));
-                          const customWidth = Number(group.columnWidths?.[column.id]) > 0 ? Number(group.columnWidths[column.id]) : null;
-                          const defaultWidth = columnsPerRow === 1
-                            ? '100%'
-                            : `calc((100% - ${(columnsPerRow - 1) * groupGap}px) / ${columnsPerRow})`;
+                      <div className="px-3.5 py-3">
+                        <div className="space-y-2.5">
+                          {rowNumbers.map((rowNumber) => {
+                            const rowColumns = orderedColumns.filter((column: any) => getDetailBoardGroupColumnRow(group, column.id) === rowNumber);
+                            if (rowColumns.length === 0) return null;
 
-                          return (
-                            <div
-                              key={column.id}
-                              data-detail-field-item="true"
-                              style={{ width: customWidth ? `${customWidth}px` : defaultWidth, maxWidth: '100%' }}
-                              className="group relative min-w-0"
-                            >
-                              <div className="flex min-w-0 items-center gap-2 rounded-[14px] px-1 py-1.5">
-                                <div
-                                  className={`shrink-0 text-right text-[12px] font-semibold ${normalizedColumn.required ? 'text-[color:var(--workspace-accent-strong)]' : 'text-slate-600 dark:text-slate-200'}`}
-                                  style={{ width: labelWidth }}
-                                >
-                                  <span className="block truncate">{normalizedColumn.name}</span>
+                            return (
+                              <div
+                                key={`${group.id}-preview-row-${rowNumber}`}
+                                className="overflow-x-auto px-1 py-1.5"
+                              >
+                                <div className="flex items-start gap-2">
+                                  {rowColumns.map((column: any, columnIndex: number) => {
+                                    const layoutMeta = getLayoutFieldWorkbenchMeta(column, group.columnWidths?.[column.id]);
+                                    const liveWidth = getDetailBoardFieldLiveWidth(group.id, column.id, layoutMeta.width);
+                                    const liveHeight = getDetailBoardFieldLiveHeight(group.id, column.id, layoutMeta.height);
+                                    const liveMeta = getLayoutFieldWorkbenchMeta(column, liveWidth, liveHeight);
+
+                                    return (
+                                      <div
+                                        key={column.id}
+                                        data-detail-field-item="true"
+                                        style={{
+                                          width: liveWidth,
+                                          minWidth: liveMeta.minWidth,
+                                          maxWidth: liveWidth,
+                                          height: liveMeta.isTallControl ? liveHeight : undefined,
+                                        }}
+                                        className={`group relative min-w-0 shrink-0 self-start ${liveMeta.frameClass}`}
+                                      >
+                                        {renderArchiveLayoutFieldShell(liveMeta.field, {
+                                          rowIndex: columnIndex,
+                                          width: liveWidth,
+                                          height: liveHeight,
+                                        })}
+                                        <button
+                                          type="button"
+                                          onMouseDown={(event) => startDetailBoardFieldResize(event, group.id, column.id, liveMeta.field.name, liveMeta.minWidth)}
+                                          onDoubleClick={(event) => resetDetailBoardFieldWidth(event, group.id, column.id)}
+                                          className="absolute bottom-1.5 right-0 top-1.5 flex w-3 items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                                          title="拖动调整宽度，双击恢复自动排布"
+                                        >
+                                          <span className="h-8 w-px rounded-full bg-slate-300/90 transition-colors group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-600" />
+                                        </button>
+                                        {liveMeta.isTallControl ? (
+                                          <button
+                                            type="button"
+                                            onMouseDown={(event) => startDetailBoardFieldHeightResize(event, group.id, column.id, liveMeta.field.name, liveMeta.minHeight)}
+                                            onDoubleClick={(event) => resetDetailBoardFieldHeight(event, group.id, column.id)}
+                                            className="absolute bottom-0 left-10 right-6 flex h-3 items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                                            title="拖动调整高度，双击恢复默认高度"
+                                          >
+                                            <span className="h-px w-10 rounded-full bg-slate-300/90 transition-colors group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-600" />
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })}
                                 </div>
-                                <div className="min-w-0 flex-1 pr-4">{renderFieldPreview(normalizedColumn, columnIndex, 'filter')}</div>
-                                <button
-                                  type="button"
-                                  onMouseDown={(event) => startDetailBoardFieldResize(event, group.id, column.id, normalizedColumn.name)}
-                                  onDoubleClick={(event) => resetDetailBoardFieldWidth(event, group.id, column.id)}
-                                  className="absolute bottom-1.5 right-0 top-1.5 flex w-3 items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
-                                  title="拖动调整宽度，双击恢复自动排布"
-                                >
-                                  <span className="h-5 w-px rounded-full bg-slate-300/90 transition-colors group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-600" />
-                                </button>
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
                         </div>
                       </div>
                     </section>
@@ -12392,6 +14680,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               )}
             </AnimatePresence>
             {renderLongTextEditorModal()}
+            {renderArchiveLayoutCanvasModal()}
             {renderDetailBoardModal()}
             {renderBuilderSelectionContextMenu()}
             {renderPreviewContextMenu()}
@@ -13006,8 +15295,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                               )}
 
                               <div className="min-h-0 min-w-0 flex-1 px-1">
-                                <div className="cloudy-glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[32px] border border-white/75">
-                                  <div className="min-h-0 shrink-0 overflow-hidden pb-1" style={{ height: effectiveDocumentTopPaneHeight }}>
+                                <div className="grid h-full min-h-0 grid-rows-2 gap-3 overflow-hidden">
+                                  <div className="cloudy-glass-panel flex min-h-0 flex-col overflow-hidden rounded-[32px] border border-white/75">
                                     <div className="flex h-full min-h-0 flex-col overflow-hidden">
                                       <div
                                         className="scrollbar-none min-h-0 flex-1 overflow-auto bg-white/70 px-3 py-3 outline-none dark:bg-slate-900/90"
@@ -13033,19 +15322,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                                         },
                                         canvasLabel: '点击配置基础档案主表',
                                       })}
-                                    </div>
+                                      </div>
                                     </div>
                                   </div>
 
-                                  <div
-                                    className="group relative z-10 -my-1 flex h-4 shrink-0 cursor-row-resize items-center justify-center"
-                                    onMouseDown={(event) => startLayoutDrag('document-top-height', event)}
-                                  >
-                                    <div className="cloudy-divider h-[5px] w-32 rounded-full transition-colors group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-700" />
-                                  </div>
-
-                                  <div className="min-h-0 flex-1 overflow-hidden px-3 pb-2 pt-1.5">
-                                    {renderDocumentDetailWorkbench()}
+                                  <div className="cloudy-glass-panel min-h-0 overflow-hidden rounded-[32px] border border-white/75">
+                                    <div className="flex h-full min-h-0 overflow-hidden px-3 py-3">
+                                      {renderDocumentDetailWorkbench()}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -13567,3 +15851,5 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     </div>
   );
 }
+
+
