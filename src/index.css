@@ -880,6 +880,51 @@ body {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
+:root {
+  --app-scrollbar-size: 10px;
+  --app-scrollbar-track: rgba(226, 232, 240, 0.46);
+  --app-scrollbar-thumb: rgba(148, 163, 184, 0.82);
+  --app-scrollbar-thumb-hover: rgba(100, 116, 139, 0.92);
+  --app-scrollbar-thumb-border: rgba(255, 255, 255, 0.86);
+}
+
+.dark {
+  --app-scrollbar-track: rgba(30, 41, 59, 0.56);
+  --app-scrollbar-thumb: rgba(100, 116, 139, 0.84);
+  --app-scrollbar-thumb-hover: rgba(148, 163, 184, 0.92);
+  --app-scrollbar-thumb-border: rgba(15, 23, 42, 0.9);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: var(--app-scrollbar-size);
+  height: var(--app-scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--app-scrollbar-track);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--app-scrollbar-thumb);
+  border: 2px solid var(--app-scrollbar-thumb-border);
+  border-radius: 999px;
+  min-height: 28px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--app-scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .status-dot {
   width: 6px;
   height: 6px;

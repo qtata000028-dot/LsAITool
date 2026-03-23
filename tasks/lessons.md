@@ -192,6 +192,117 @@
 - In layout editors, per-control close buttons should not be mixed into every field shell when bulk selection/delete is the intended editing model. Extra close affordances add noise and make drag targets harder to judge.
 - Previous-row alignment feedback must be obvious enough to use while dragging. Subtle tick marks are not sufficient; prefer full-height lane guides plus a stronger active edge guide for the dragged control.
 
+## 2026-03-23 Table Canvas Panel Centering
+- When a table workbench includes an internal “click canvas to configure table” panel, do not bind that panel to the summed column widths. Column width feedback belongs to the header row and horizontal scroll area, not to the canvas card itself.
+- If both main-table and detail-table builders expose the same canvas interaction, keep them on one shared centered-panel presentation. Fixing only one branch will leave the product feeling visually inconsistent.
+
+## 2026-03-23 Workspace Scrollbar Styling
+- If the codebase already uses helper names like `custom-scrollbar`, verify the CSS definition actually exists. An undefined scrollbar helper silently falls back to the browser default and makes the UI look unfinished.
+- For workbench-heavy screens, visible scrollbar styling should be unified globally, while `scrollbar-none` stays the explicit opt-out. Styling one panel at a time is fragile and still leaves inconsistent native scrollbars in other high-frequency areas.
+
+## 2026-03-23 Table Header Compactness
+- When users complain that narrow columns still look empty, inspect header padding and selection chrome before touching minimum width constants. The wasted space is often inside the header button, not in the width data itself.
+- Column selection in dense table builders should use compact emphasis, such as a light inset border plus a small label chip. Large padded selection backgrounds force unnecessary whitespace into 70px-class narrow columns.
+
+## 2026-03-23 Condition Control Preview Minimalism
+- Condition bars should not reuse text-heavy field preview rendering by default. If the field name is already shown outside the control, putting placeholder or sample text inside the control makes the UI look duplicated and noisy.
+- When only condition previews need to change, add a condition-specific render mode instead of weakening every `filter` preview globally. That keeps layout previews informative while letting condition controls stay visually clean.
+
 ## 2026-03-23 Archive Layout Blue Alignment Markers
 - Previous-row width guides in layout editors should not stay neutral gray once users are actively using them for alignment. When the guides carry alignment meaning, use the same clear blue accent language as the active edge so the relationship reads immediately.
 - If a guide is meant to show top/bottom correspondence, plain dashed lines are too weak. Add distinct endpoints or caps so the guide reads like a full alignment reference, not a leftover separator.
+## 2026-03-23 项目切换与残留进程排查
+- 当用户说“已经换了项目，但 VSCode / 运行结果看起来还是旧项目”时，不要只检查当前工作目录；还要同时检查旧仓库的 dev 进程是否仍占用默认端口。
+- 对 Vite + 本地 API 这类双进程项目，切换仓库后必须同时核对三件事：当前会话路径、VSCode 打开的工作区、3000/3001 等常用端口实际归属的进程命令行。
+- 如果当前仓库首次启动报 `vite` / `tsx` 不存在，优先确认 `node_modules` 是否缺失，而不是误判为脚本配置错误。
+- 清理旧项目残留进程后，要重新启动当前仓库并直接验证前端首页和健康检查接口，避免只看“进程存在”就误判为切换完成。
+
+## 2026-03-23 Java 后端联调与 AI 代理分流
+- 当前端同时依赖 Java 业务后端和本地 AI 代理时，不要把所有 `/api/*` 一股脑代理到同一个目标；应先用 Swagger 核对接口归属，再按 `/api/ai/*` 和其他业务接口分流。
+- 如果业务接口已迁到本地 Java 后端，默认 `VITE_API_BASE_URL`、`.env.example` 和 README 也要一起更新；只改 Vite 代理而保留旧默认地址，下一次重启仍会连回旧环境。
+- 联调验证不能只看首页能打开。至少要同时验证一个无鉴权业务接口和一个 AI 健康检查接口，确认两条代理链路都实际生效。
+- 如果公司列表已通但员工列表接口仍超时或报错，应明确标记为后端环境阻塞，而不是在前端继续堆兜底逻辑掩盖接口问题。
+## 2026-03-23 Resize Preview Commit Split
+- In hot workbench resizing, the key optimization is not changing drag libraries; it is separating live preview from committed business state. If drag math is correct but every mousemove still rewrites the full column array, users will still read the interaction as sticky.
+- Verification for resize smoothness should compare two signals at once: the canvas/header width must change during drag, while the inspector width input should stay on the old committed value until mouseup. That proves preview and commit are actually decoupled.
+- When starting to modularize a giant dashboard file, split the hottest interaction path first into a feature module. Pulling resize state and preview scheduling out of the monolith is a safer first enterprise-style refactor than trying to explode the whole screen in one pass.
+
+## 2026-03-23 Shadcn UI Baseline First
+- When users explicitly require shadcn/ui and Tailwind consistency, do not keep patching old glass or material-icon branches in place. Establish the base primitives first: `cn()`, minimal shadcn UI components, and shared designer class helpers.
+- In a mixed legacy screen, unify the exact branches the user can currently see before expanding scope. For this workbench, the visible condition bar and detail workspace mattered more than untouched legacy modals.
+- For detail tab workspaces, keep the tab strip, empty state, and canvas shell on the same visual language. If only one of those three is migrated, the screen still reads as inconsistent.
+
+## 2026-03-23 Compact SaaS Condition Bar
+- When users say the previous overall style was fine and only the draggable controls needed work, do not keep pushing a full shell redesign. Narrow the scope back to the drag controls and their immediate container.
+- High-frequency condition bars should default to SaaS-style compactness: minimal outer framing, almost no explanatory copy, and controls that read as filters first, cards second.
+- If a design pass introduces bigger borders, extra titles, and explanatory paragraphs into a query bar, that is usually the wrong direction for admin/workbench UI. In dense business screens, the right move is often subtraction rather than more polish.
+
+## 2026-03-23 Tab Restore And No Shell Border
+- When a user asks for tabs to go back to the previous style, do not interpret that as “make them smaller.” In workbench screens, “previous style” often means stronger active-state recognition and clearer hierarchy, not less UI.
+- Any dark or primary-filled tab/background must default to white text. Relying on inherited foreground colors is too fragile once tab styles are adjusted repeatedly.
+- For drag-heavy workspaces, the outer region should not look like a card if the user wants to “directly drag layout.” Keep the control items themselves styled, but remove the surrounding shell border/background chrome first.
+
+## 2026-03-23 Final UI Corrections Need Literal Reading
+- When users enumerate UI issues line by line, do not keep inferring “style direction.” Apply the literal corrections first: remove the exact extra elements they named.
+- Resize HUDs and tick rulers are easy to over-justify, but if users want a plain workbench they should disappear from the visible UI even if the resize math stays intact.
+- If a tab is already color-filled, any non-white active text is a readability bug. Treat that as a correctness issue, not a design preference.
+- In drag-first workbenches, visible handle glyphs are optional. If the whole control is draggable and users say the dots are noisy, remove them.
+
+## 2026-03-23 Condition Bar Action Contrast And Density
+- In dense workbench toolbars, every primary-filled control must explicitly enforce white text. Relying on shared button variants is too fragile once local styling changes start layering on top.
+- Empty condition controls should not fake sophistication with gray placeholder bars. If users want a high-end enterprise feel, the better choice is a clean empty shell with only the minimum iconography needed.
+- Horizontal spacing in condition rows must be tuned against the real data-entry canvas, not left at default gaps. Even a `gap-3` row can read as wasteful once controls are already compact.
+
+## 2026-03-23 Condition Control Whitespace Is Mostly Label And Resize Reserve
+- When a condition control still looks loose after border and gap cleanup, inspect fixed label width and text alignment before touching outer width. A right-aligned 42px-plus label slot creates obvious dead air in front of short field names.
+- Large `pr-*` values combined with a wide absolute resize handle make the control tail look empty even when the resize affordance is visually subtle. Keep the resize hot zone small enough that it does not read like reserved blank layout.
+- Top filter bars and row workbench controls must share the same density rules. Tightening only one branch leaves the screen feeling inconsistent and users will continue to perceive the overall control system as too loose.
+
+## 2026-03-23 Top Filter Density Needs Width Rebalancing, Not Just Padding Cuts
+- If a top filter label starts truncating after whitespace reductions, do not simply widen the label slot in isolation. Rebalance total control width and label width together so the label can finish while the control body still shortens.
+- In compact filter bars, width formulas are product decisions. A `+24` style buffer may look harmless in code but becomes obvious tail slack when the control preview itself is intentionally empty.
+- When users complain about the second control looking too far away, treat it as a total-width issue first. Internal preview emptiness and inter-item gap both matter, but overshooting control width is usually the dominant reason the row reads stretched.
+
+## 2026-03-23 Top Filter Needs Content-Driven Labels
+- If users still say “no change” after numeric density tweaks, the top filter label should stop depending on a tiny fixed-width slot. Let short and medium field names size to content up to a sane cap.
+- For empty-shell condition previews, shrinking the preview body is more effective than endlessly trimming label padding. The tail of the control is what visually pushes the next control too far away.
+- When only the top filter row is wrong, isolate it. Reusing the same width formula as the lower workbench can keep reintroducing the same stretched feel in the visible header strip.
+
+## 2026-03-23 Verify The Actual Visible Branch Before Tuning Widths
+- In this screen there are multiple condition-like rows with similar markup. Before changing width formulas, confirm whether the user is looking at `document-filter-*` or `condition-item-*`; otherwise a visually correct patch can land on the wrong branch and appear to have no effect.
+- Accessibility snapshots and DOM class names are the fastest way to disambiguate duplicated UI patterns. If the rendered node class is `condition-item-label-*`, keep all spacing work inside the condition workbench branch instead of the top filter helper.
+
+## 2026-03-23 Native HTML Drag Is The Wrong Fit For Visible Sortable Controls
+- If users need the control to visibly follow the cursor during reordering, native HTML5 `draggable` is the wrong baseline. Its ghost image and browser-managed behavior make the UI feel detached and sticky.
+- For a dense sortable workbench, drag feedback belongs inside the page: mirror element, insertion cue, and stable spacing. If those matter, isolate that branch and move it to a page-level drag system instead of stacking more fixes on top of `onDragStart/onDrop`.
+- Resize handles on compact controls should sit on the border edge, not inside the content box. Internal resize affordances read as wasted padding before they read as interaction.
+## 2026-03-23 Fix The Exact Business Branch Before Polishing
+- When the user explicitly says “重点看看基础档案的条件”, stop broad visual tuning and isolate that exact branch first. Improvements on similar-looking rows elsewhere still count as a miss if the visible business area does not change.
+- In dense workbenches, “间距太大” usually means the combined result of item gap, trailing resize reserve, and drag affordance padding. Treat those three as one density problem instead of tuning only a single class.
+## 2026-03-23 Resize Can Be Broken Even After Sort Drag Is Fixed
+- Fixing reorder drag with `dnd-kit` does not mean width resize is solved. For workbench controls, verify resize separately with a real mousemove check; drag sorting and border resize are two different interaction chains.
+- If a resize handle sits inside a draggable item, explicitly exclude that handle from drag activation. Otherwise users will grab the border expecting width changes and instead trigger item dragging.
+- Never cap the rendered control width far below the configured resize max. A hidden visual cap makes resize feel dead even when the state math is still running underneath.
+
+## 2026-03-23 Condition Resize Must Stretch The Inner Preview Too
+- When users say the resize feels abrupt even after the outer shell follows the cursor, inspect the inner preview width classes before touching drag math again. A fixed preview slot can make a correct resize still look broken.
+- In compact condition controls, the rendered width is the combination of label slot and preview slot. If only the container width grows while the preview remains fixed, users will read the extra area as wasted blank space.
+- For `condition` mode previews, prefer letting the preview shell consume the remaining width derived from the active resize state. Rebuilding the preview component is usually unnecessary if its internal root already uses `w-full`.
+
+## 2026-03-23 Drag Overlay Can Be Visually Wrong Even If Sorting Works
+- If users say the dragged control floats to one side of the cursor, do not keep tuning spacing or activation distance first. Measure the actual pointer position against the rendered drag mirror and verify whether the overlay anchor is wrong.
+- In dense horizontal workbenches, a `DragOverlay` with fixed positioning can still feel detached inside complex shells. If the mirror anchor is off, prefer moving the dragged item itself with `dnd-kit` transform so the cursor and control stay visually attached.
+- When the user asks “是不是用的 dnd-kit”, answer concretely from the code and package state. For this branch, that means checking `@dnd-kit/core` plus the actual `DndContext/useDraggable` path, not guessing from behavior.
+## 2026-03-24 Cross-Row Drag Can Accidentally Apply Scale
+- In `dnd-kit` workbenches, do not assume the drag transform is only translation. When the active drop target is a full-width row lane, `scaleX/scaleY` can appear in the transform and make the dragged control suddenly balloon.
+- If a dragged item becomes huge or seems to vanish only when crossing rows, inspect the live transform matrix first. A row-sized scale factor can create both symptoms at once.
+- For compact business controls, the safer default is to render drag movement with translate-only styling unless scaling is intentionally designed. That keeps cross-row movement stable and avoids giant row-width drag mirrors.
+## 2026-03-24 Cross-Row Visibility Is A Separate Problem From Scale
+- Fixing cross-row scaling does not guarantee the dragged control stays visible. If users still say “dragging downward disappears,” inspect ancestor overflow clipping after the transform has already been corrected.
+- In row workbenches, `overflow-x-auto` is risky for drag interactions because it can effectively clip vertical overflow while the item is being translated into another row. Keep drag lanes visually scrollable only if the dragged element itself is no longer clipped by that lane.
+- When users ask to make main-table and detail configuration “use the same style and effect as conditions,” treat that as a system-consistency request, not a local styling nit. Confirm whether those branches are still using native HTML5 drag before claiming the interaction language is unified.
+
+## 2026-03-24 Drag Hit Area, Main Form Parity And Detail UI Subtraction
+- When a user says a condition control can only be dragged from the leading text, treat that as a hit-area bug, not a styling preference. The whole control body should be draggable, and only the explicit resize strip should keep width-drag ownership.
+- If the user says the bill head controls must be “exactly the same” as the archive condition controls, do not settle for visual similarity. Reuse the same compact workbench language and interaction pattern instead of maintaining a second near-match branch.
+- For archive detail configuration screens, “too ugly / too flashy / too many unnecessary elements” means the fix is subtraction first: remove redundant badges, summary cards, decorative rails, and explanatory chrome before adding any new styling.

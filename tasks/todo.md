@@ -840,3 +840,1083 @@
 ### Result Notes
 - The previous-row comparison guides now read as blue alignment markers instead of generic separators, so width tuning is easier to judge on 1080p screens.
 - The active edge guide stays stronger than the reference guides, preserving a clear primary/secondary hierarchy while dragging.
+## 2026-03-23 切换项目后的工作区与运行确认
+
+### Requirement Spec
+- 目标：确认当前 Codex 会话是否已经切到 `E:\ai项目\lsToolAll\LsAITool`，排查 VSCode 仍显示旧项目的原因，并实际启动当前项目。
+- 影响范围：工作区路径、VSCode 打开目录、项目启动链路。
+- 关键约束：
+  - 不修改业务代码，只做工作区与运行确认。
+  - 必须实际验证当前项目是否能运行，不能只看配置。
+  - 如果 VSCode 仍停留旧项目，需要给出明确原因和处理方式。
+- 不做什么：
+  - 不改动现有功能实现。
+  - 不处理与本次切换无关的历史任务。
+- 成功标准：
+  - 确认当前仓库路径无误。
+  - 确认 VSCode 已打开或可打开当前仓库。
+  - 确认 `npm run dev` 的实际启动结果。
+
+### Checklist
+- [x] 确认当前工作目录、项目类型与启动命令。
+- [x] 检查 VSCode 本地工作区配置是否指向当前目录。
+- [x] 重新用当前目录打开 VSCode 工作区。
+- [x] 运行 `npm install` 与 `npm run dev` 并检查启动结果。
+- [x] 记录验证结论与剩余风险。
+
+### Progress Summary
+- 已确认当前会话工作目录是 `E:\ai项目\lsToolAll\LsAITool`。
+- 已确认项目为 Vite + Node API，默认启动命令为 `npm run dev`。
+- 已确认 `.vscode/launch.json` 和 `.vscode/tasks.json` 属于当前仓库，并未指向旧目录。
+- 已执行 `code -r .`，将当前仓库重新发送给 VSCode 打开。
+- 已确认首次启动失败的直接原因是当前仓库缺少 `node_modules`。
+- 已进一步定位到旧仓库 `E:\ai项目\LsSmartTool\LsAITool` 的 dev 进程仍占用 `3000/3001`，导致看起来像还在旧项目。
+- 已清理旧仓库与本仓库冲突的 dev 进程，并重新启动当前仓库。
+
+### Verification
+- `node -v`: `v22.14.0`
+- `npm -v`: `10.9.2`
+- `npm install`: 成功，新增 259 个包，无漏洞。
+- `http://127.0.0.1:3000`: 返回 `200`。
+- `http://127.0.0.1:3001/api/ai/health`: 返回 `{"configured":false,"model":"MiniMax-M2.1"}`。
+- 进程核对：
+  - 旧仓库 `E:\ai项目\LsSmartTool\LsAITool` 的 `vite` / `tsx` 进程已清理。
+  - 当前仓库 `E:\ai项目\lsToolAll\LsAITool` 已重新启动 dev 服务。
+
+### Result Notes
+- 当前会话、当前 VSCode 配置和当前 dev 服务都已经切到 `E:\ai项目\lsToolAll\LsAITool`。
+- “VSCode 看着还是以前的项目”背后的主要干扰项不是仓库没切过来，而是旧仓库残留的开发进程还在占 `3000/3001`，新仓库启动后视觉和端口行为都会像旧项目还在运行。
+- 当前剩余风险是 `.env.local` 尚未创建，`MINIMAX_API_KEY` 也未配置；页面与本地 API 已可启动，但依赖 MiniMax 的接口会以 `configured: false` 运行，相关 AI 功能不可用，直到补齐环境变量。
+
+## 2026-03-23 前端对接本地 Java 后端并联调运行
+
+### Requirement Spec
+- 目标：将当前 Vite 前端对接到用户已启动的 Java 后端 `http://127.0.0.1:8080`，并保留本地 AI 代理能力，确保项目可联调运行。
+- 影响范围：前端 API 基地址配置、Vite 开发代理、运行文档与联调验证。
+- 关键约束：
+  - 业务接口应直接对接 `127.0.0.1:8080`。
+  - 本地 `MiniMax` 相关 `/api/ai/*` 仍需走本地 Node 代理，不能误转发到 Java 后端。
+  - 必须基于实际 Swagger / 运行结果验证，不做猜测式对接。
+- 不做什么：
+  - 不修改 Java 后端代码。
+  - 不重构现有前端业务数据模型。
+  - 不引入新的状态管理或请求库。
+- 成功标准：
+  - 本地前端开发环境能正确访问 `8080` 后端业务接口。
+  - `/api/ai/*` 仍能落到本地 `3001` 代理。
+  - 页面可以打开并至少完成未鉴权接口联调验证。
+
+### Checklist
+- [x] 核对 Swagger 中现有接口与前端封装路径是否一致。
+- [x] 修正默认 API 基地址与 Vite 代理拆分策略。
+- [x] 更新环境变量示例或运行文档，避免继续指向旧地址。
+- [x] 启动前端并验证业务接口、AI 代理接口与页面加载结果。
+- [x] 记录验证结论、限制与剩余风险。
+
+### Progress Summary
+- 已确认 Java 后端 `http://127.0.0.1:8080/v3/api-docs` 可访问。
+- 已确认前端现有 `/api/system/*`、`/api/auth/*`、`/api/single-table/*`、`/api/bill/*` 路径与 Swagger 基本对齐。
+- 已确认 `MiniMax` 相关 `/api/ai/*` 不在 Java 后端 Swagger 中，当前仍需保留本地 Node 代理。
+- 已确认当前默认 `VITE_API_BASE_URL` 与 Vite 代理仍指向旧地址 `http://192.168.0.55:9093`。
+
+### Verification
+- `npm run lint`: 通过。
+- Swagger 核对：
+  - `http://127.0.0.1:8080/v3/api-docs` 可访问。
+  - 前端现有 `/api/system/*`、`/api/auth/*`、`/api/single-table/*`、`/api/bill/*` 与后端 Swagger 对齐。
+  - `/api/ai/*` 不在 Java 后端 Swagger 中，继续保留本地 Node 代理。
+- 代理验证：
+  - `http://127.0.0.1:3000` 返回 `200`。
+  - `http://127.0.0.1:3000/api/system/all-servers` 返回公司列表。
+  - `http://127.0.0.1:3000/api/ai/health` 返回 `{"configured":false,"model":"MiniMax-M2.1"}`。
+- 浏览器验证：
+  - 登录页成功打开，标题为 `Ls AI 开发平台`。
+  - “所属机构”下拉可通过前端代理加载出 `测试xxx公司`。
+  - 选择机构后会触发 `/api/auth/employees` 请求。
+- 额外联调结论：
+  - `/api/auth/employees?basename=lserp_yw_jt&serverip=192.168.0.55&serverport=1433` 当前在浏览器侧表现为失败/超时，导致登录流程停在“正在加载该机构下的可登录人员...”。
+  - 控制台仅有既有 `favicon.ico 404`，无新的前端脚本错误。
+
+### Result Notes
+- 当前前端已经完成对接：
+  - 默认业务 API 基地址改为 `http://127.0.0.1:8080`。
+  - Vite 开发代理拆分为两路：`/api/* -> 8080`，`/api/ai/* -> 3001`。
+  - `.env.example`、`README.md` 和本地 `.env.local` 已同步到新的本地联调方式。
+- 为了完成验证，顺手修复了 `Dashboard.tsx` 中阻塞 `tsc` 的几个低风险类型问题和一个遗留的无效 `setTabFillTypes` 调用。
+- 目前剩余阻塞不在前端代理层，而在后端员工列表接口：公司列表接口已通，但员工列表接口未能在当前后端环境中返回可用结果，因此无法继续完成真实登录。
+
+## 2026-03-23 表格内部 Panel 居中展示
+
+### Requirement Spec
+- 目标：把表格构建区内部的画布 panel 从“跟随列总宽变化”调整为“始终以独立居中 panel 展示”，提升视觉稳定性。
+- 影响范围：`Dashboard.tsx` 中表格构建区的内部画布展示层，不改动列宽计算、列拖拽和整表选择逻辑。
+- 关键约束：
+  - 表头与列宽仍然按真实列宽渲染，不能破坏现有列拖拽与表格宽度反馈。
+  - 内部 panel 视觉上应独立于列总宽，不再随着列宽变化被拉伸。
+  - 需要兼容当前两种表格构建分支，避免只修其中一个入口导致体验不一致。
+- 不做什么：
+  - 不重构表格 builder 的数据结构。
+  - 不调整列宽算法、字段选择逻辑或右侧检查器逻辑。
+  - 不顺带修改无关主题样式。
+- 成功标准：
+  - 表格内部 panel 始终居中显示，不再按列总宽铺满。
+  - 列拖拽、整表点击和双击预览行为保持可用。
+  - 本地 lint 与页面验证通过。
+
+### Checklist
+- [x] 定位内部 panel 跟随列总宽的具体实现位置。
+- [x] 调整表格 builder 画布布局，解耦 panel 与列总宽。
+- [x] 运行 lint 并做页面验证。
+- [x] 更新验证记录与结果复盘。
+
+### Progress Summary
+- 已定位到 `src/components/Dashboard.tsx` 的表格 builder 逻辑：内部画布 panel 直接复用了 `tableBuilderContentStyle`，因此会跟随列总宽变化。
+- 已确认需要同时处理 `backgroundSelectable` 和常规表格分支，保证内部 panel 体验一致。
+- 已抽出统一的居中画布 panel 片段，并复用到主表与明细表两个 table builder 分支。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 通过 `http://127.0.0.1:3000/?debug=dashboard` 打开配置向导，并切到第 5 步“模块设置”。
+  - 主表表头当前宽度为 `1238px`，但内部画布按钮宽度为 `236px`，内部 panel 宽度为 `203px`，已不再跟随列总宽铺满。
+  - 明细表内部画布按钮宽度为 `211px`，内部 panel 宽度为 `177px`，同样保持居中独立展示。
+  - 截图已保存：`E:\ai项目\lsToolAll\LsAITool\output\playwright\table-centered-panel.png`
+
+### Result Notes
+- 当前表格 builder 仍然保留真实列宽和横向滚动能力，但内部画布改成了统一的居中小 panel，视觉上不再被列宽牵着走。
+- 主表和明细表两个入口现在使用同一套内部 panel 语法，避免一个分支已经居中、另一个分支仍然整行铺满的不一致体验。
+
+## 2026-03-23 工作台滚动条样式统一
+
+### Requirement Spec
+- 目标：重新调整当前项目可见滚动条的视觉样式，避免默认滚动条过重、突兀，提升工作台整体质感。
+- 影响范围：全局可见滚动条样式，包括页面纵向滚动、工作台面板滚动和表格横向滚动；保留已有 `scrollbar-none` 隐藏逻辑。
+- 关键约束：
+  - 不能破坏已有隐藏滚动条的区域。
+  - 新样式需要同时兼顾浅色和深色主题。
+  - 不做局部一次性修补，优先统一全局滚动条语法。
+- 不做什么：
+  - 不调整页面布局结构。
+  - 不改动具体业务交互逻辑。
+  - 不重构现有 workbench 容器层级。
+- 成功标准：
+  - 当前可见滚动条统一为更轻、更细、更圆润的样式。
+  - 隐藏滚动条区域保持原状。
+  - lint 与页面验证通过。
+
+### Checklist
+- [x] 定位当前滚动条样式来源和未统一区域。
+- [x] 在全局样式中补充统一滚动条语法并兼容暗色模式。
+- [x] 运行 lint 并在实际页面验证滚动条效果。
+- [x] 回写验证记录与结果复盘。
+
+### Progress Summary
+- 已确认项目中只有 `scrollbar-none` 被定义，`custom-scrollbar` 仅在组件里被使用但没有对应样式，因此多个区域实际落回浏览器默认滚动条。
+- 已确认当前工作台里同时存在纵向滚动和横向滚动场景，适合直接统一全局可见滚动条样式，再让 `scrollbar-none` 继续覆盖隐藏场景。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 通过 `http://127.0.0.1:3000/?debug=dashboard` 进入配置向导第 5 步，确认主工作台右侧纵向滚动条和表格横向滚动条都已切换为细圆角样式。
+  - 页面运行时读取到浅色态滚动条变量：`thumb = rgba(148, 163, 184, 0.82)`，`track = rgba(226, 232, 240, 0.46)`。
+  - 临时切换 `.dark` 类后，读取到深色态滚动条变量：`thumb = rgba(100, 116, 139, 0.84)`，`track = rgba(30, 41, 59, 0.56)`。
+  - 截图已保存：`E:\ai项目\lsToolAll\LsAITool\output\playwright\workspace-scrollbar-restyle.png`
+
+### Result Notes
+- 当前可见滚动条已经统一为更细、更圆润的工作台风格，不再回落到浏览器默认的重型样式。
+- 现有 `scrollbar-none` 仍然保留隐藏行为，因此不会把原本故意隐藏的滚动条重新暴露出来。
+
+## 2026-03-23 表格列头留白收紧
+
+### Requirement Spec
+- 目标：减少表格列头为了选中态预留的冗余留白，让窄列在 `70px` 左右时仍能更紧凑地容纳两字字段名。
+- 影响范围：`Dashboard.tsx` 中表格 builder 的列头按钮、列名标签和选中态视觉样式。
+- 关键约束：
+  - 保留现有列拖拽、双击自适配和列选中能力。
+  - 不修改列宽计算逻辑和宽度持久化数据。
+  - 主表和明细表两个表格 builder 分支要同步收紧，不能只改一个。
+- 不做什么：
+  - 不重构表格 builder 数据结构。
+  - 不改动右侧检查器字段逻辑。
+  - 不调整表格内部 panel 或滚动条逻辑。
+- 成功标准：
+  - 列头水平留白明显减少。
+  - 选中态仍然清晰，但不再靠大面积空白来支撑。
+  - lint 和页面验证通过。
+
+### Checklist
+- [x] 定位列头留白的主要来源和选中态实现。
+- [x] 收紧列头内边距并改轻量选中态。
+- [x] 运行 lint 并验证窄列展示效果。
+- [x] 回写验证记录与结果复盘。
+
+### Progress Summary
+- 已确认当前 `TABLE_COLUMN_MIN_WIDTH` 不是主要问题，实际冗余来自表头按钮的 `px/pr` 组合以及列名标签的胶囊 padding。
+- 已确认需要同步修改主表和明细表两个表格 builder 分支，共用更紧凑的列头语法。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 通过 `http://127.0.0.1:3000/?debug=dashboard` 进入配置向导第 5 步，点击“单位”列，确认右侧检查器正常切到字段配置。
+  - 在右侧“列宽 (px)”输入框中将“单位”列设置为 `70`，画布中的列头仍可完整显示“两字”字段名。
+  - 实测该列当前表头宽度为 `69px`，列头文字区域宽度约 `34px`，按钮内边距已收紧为 `padding-left: 6px`、`padding-right: 12px`。
+  - 截图已保存：`E:\ai项目\lsToolAll\LsAITool\output\playwright\column-compactness-70px.png`
+
+### Result Notes
+- 当前列头的主要空间已经还给字段名本身，窄列不再因为胖胶囊和过大的左右 padding 显得虚胖。
+- 选中态保留了清晰的边界和高亮，但不再靠整块大面积染色来制造“可选中”感，整体更紧凑。
+
+## 2026-03-23 条件控件去字化预览
+
+### Requirement Spec
+- 目标：让顶部条件区与条件 workbench 中的控件预览不再在控件内部显示文字，避免看起来像把标签或占位词硬塞进输入框。
+- 影响范围：`Dashboard.tsx` 中条件控件的预览渲染层，仅针对条件场景。
+- 关键约束：
+  - 保留条件字段名称在控件外部的显示。
+  - 保留条件项的选中、拖拽和宽度调整能力。
+  - 不影响其他表单/布局预览使用的 `filter` 预览语法。
+- 不做什么：
+  - 不修改条件数据结构。
+  - 不改动右侧条件配置项。
+  - 不重构顶部条件 workbench 布局。
+- 成功标准：
+  - 条件控件内部不再显示文字内容。
+  - 条件项仍然具备类型辨识度和可编辑感。
+  - lint 与页面验证通过。
+
+### Checklist
+- [x] 定位条件控件内部文字的来源。
+- [x] 为条件场景添加无文字控件预览语法。
+- [x] 运行 lint 并验证页面效果。
+- [x] 回写验证记录与结果复盘。
+
+### Progress Summary
+- 已确认当前文字来自 `renderFieldPreview(..., 'filter')` 在条件场景下直接渲染 placeholder / 示例值。
+- 已决定新增条件专用预览模式，只调整条件控件，不影响其它布局预览里的 filter 控件。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 通过 `http://127.0.0.1:3000/?debug=dashboard` 进入配置向导第 5 步，确认顶部条件区控件内部不再显示“请输入客户编号 / 请输入客户全称 / 请选择日期”等文字。
+  - 实际读取“客户编号”条件按钮的文本内容，仅剩字段名本身：`buttonText = 客户编号`，控件内部没有额外文字。
+  - 截图已保存：`E:\ai项目\lsToolAll\LsAITool\output\playwright\condition-control-no-text.png`
+
+### Result Notes
+- 当前条件控件预览已经改成无文字空壳语法，字段名仍然留在控件外侧，视觉上更像真实条件输入区而不是“标签 + 占位词塞在一个框里”。
+- 这次改动只作用在条件场景，其他布局或表单预览仍然保留原有的信息量。
+
+## 2026-03-23 dnd-kit 可行性评估
+
+### Requirement Spec
+- 目标：评估是否适合用 `dnd-kit` 重构当前项目中的拖拽与拖动交互，并明确它能解决什么、不能解决什么。
+- 影响范围：`Dashboard.tsx` 中现有的原生 HTML5 拖拽、鼠标拖动排序以及宽度 resize 交互。
+- 关键约束：
+  - 结论要基于当前代码实现，而不是泛泛而谈。
+  - 需要区分“排序拖拽”和“宽度拖动”两类交互，不能混为一谈。
+- 不做什么：
+  - 不在本轮直接安装或接入 `dnd-kit`。
+  - 不做大规模架构改动。
+- 成功标准：
+  - 明确 `dnd-kit` 是否适合当前场景。
+  - 明确当前卡顿是否会因为换库而自然消失。
+
+### Checklist
+- [x] 检查当前依赖中是否已有 `dnd-kit`。
+- [x] 盘点当前 `Dashboard` 里的拖拽/拖动实现方式。
+- [x] 给出适配范围与风险判断。
+
+### Progress Summary
+- 当前仓库依赖里没有 `dnd-kit`。
+- `Dashboard.tsx` 里已有大量原生 `draggable / onDragStart / onDragOver / onDrop` 的排序拖拽实现，另有独立的 `mousemove + requestAnimationFrame + setState` 宽度 resize 链路。
+- 当前列宽与条件控件宽度卡顿的根因更接近“拖拽过程中持续触发大范围 React 重渲染”，不是“缺少拖拽库”。
+
+## 2026-03-23 列宽拖动流畅度与 Dashboard 分文件重构
+
+### Requirement Spec
+- 目标：
+  - 优先解决表格列宽拖动明显卡顿的问题，并同步统一条件控件宽度拖动的实时预览链路。
+  - 以这次性能修复为切入口，把 `Dashboard.tsx` 中相关高频交互逻辑抽到独立模块，开始从单一大文件向可维护的特性目录过渡。
+- 用户目标：
+  - 列宽拖动时画布反馈要顺滑，不能再出现明显“拖一下，界面顿一下”的感觉。
+  - 后续项目代码不能继续只堆在一个超大文件里，至少要先把热点交互逻辑拆成企业级可维护的分文件结构。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中表格 builder 的列宽拖动逻辑与条件 workbench 的控件宽度拖动逻辑。
+  - `src/features/dashboard/**` 新增的特性目录与宽度拖动辅助模块。
+- 关键约束：
+  - 不引入 `dnd-kit` 作为本轮卡顿修复前提。
+  - 列宽需要保持拖动中实时可见，不能退化成“松手后才变化”。
+  - 自动适配宽度、最小/最大宽度、吸附候选和右上角宽度 HUD 不能丢。
+  - 分文件重构必须先切热点逻辑，不能为了拆而拆、把现有交互全部打散。
+- 不做什么：
+  - 不在本轮把整个 `Dashboard.tsx` 一次性完全拆完。
+  - 不重构全部拖拽排序系统。
+  - 不更换现有状态管理方案。
+- 成功标准：
+  - 列宽拖动改为轻量 live preview，拖动时不再每帧提交整列数组。
+  - 条件控件宽度拖动与列宽拖动使用统一的预览节流语法，体感一致。
+  - 宽度拖动相关逻辑至少拆出一个独立模块，`Dashboard.tsx` 不再独占这部分实现。
+  - `cmd /c npm run lint` 通过，并完成真实浏览器验证。
+
+### Checklist
+- [x] 复核 `Dashboard.tsx` 中列宽与条件宽度拖动链路，确认每帧重渲染来源。
+- [x] 将列宽拖动改为 live preview + rAF 节流 + mouseup 最终提交。
+- [x] 对齐条件控件宽度拖动链路，避免两套实现体感不一致。
+- [x] 新建 `src/features/dashboard/**` 模块并抽出宽度拖动辅助逻辑。
+- [x] 运行 lint 并在浏览器实际拖动验证效果。
+- [x] 更新验证记录、结果复盘与 lessons。
+
+### Risks / Assumptions
+- 假设当前最大卡顿来源是列宽拖动时每帧 `setCols` 触发的大范围重算；如果去掉这条路径后仍明显卡顿，下一步要继续缩小 `Dashboard` 的渲染边界，而不是继续堆 `requestAnimationFrame`。
+- 假设以“先抽热点交互模块”的方式开始分文件重构，比一次性拆整页风险更低，也更符合当前联调阶段的稳定性要求。
+
+### Progress Summary
+- 已重新核对现状：列宽拖动原来每帧都会 `setCols`，条件控件宽度拖动则是 DOM 临时宽度 + HUD 状态并存，两条高频链路并不统一。
+- 已新增 `src/features/dashboard/resize/use-workbench-resize-state.ts`，把宽度拖动的活动态、rAF 预览调度和通用宽度更新 helper 抽成独立模块，作为 `Dashboard` 分文件重构的第一步。
+- 已将表格列宽、顶部条件条宽度和条件 workbench 宽度统一接到同一套 preview helper 上：拖动中只更新预览态，mouseup 再提交实际字段数组。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5`，点击主表“单位”列进入字段检查器后拖动列宽。
+  - 实测“单位”列表头宽度从 `236px` 拖动中已经实时变为 `324px`，但右侧“列宽 (px)”输入在拖动过程中仍保持 `236`，直到 mouseup 后才更新为 `324`。
+  - 继续点击“客户编号”条件项进入条件检查器后拖动条件宽度。
+  - 实测条件项容器宽度从 `220px` 拖动中实时变为约 `283.45px`，右侧“控件总宽度”输入在拖动过程中保持 `220`，mouseup 后才更新为 `284`。
+  - 页面截图已生成于 Playwright 临时输出：`C:\Users\24485\AppData\Local\Temp\playwright-mcp-output\1774261191144\page-2026-03-23T12-27-18-472Z.png`
+
+### Result Notes
+- 这次宽度拖动的核心变化不是“换库”，而是把高频 resize 从“每帧改业务数组”改成了“每帧只改预览态，松手再提交”；这直接切掉了列宽拖动最重的更新路径。
+- `Dashboard.tsx` 虽然还没有一次性拆完，但宽度拖动这块已经不再独占在大文件里，后续可以继续沿 `src/features/dashboard/**` 把 table builder、condition workbench 等热点子域逐步拆开。
+
+## 2026-03-23 Shadcn UI 设计器语法统一
+
+### Requirement Spec
+- 目标：
+  - 按用户新给出的红线规范，统一单表条件区、单据主表工作台和详情区相关设计器控件的视觉语法。
+  - 后续新增代码严格使用 shadcn/ui + Tailwind + `cn()`，不再继续扩散混合样式写法。
+- 用户目标：
+  - 控件容器、拖拽把手、选中态、占位态在视觉上绝对统一，干净、克制、可维护。
+  - 最近生成的这些高频工作台区域，不能再出现一块是 cloudy glass、一块是自定义边框、一块是 material icon 的混搭。
+- 影响范围：
+  - `src/lib/utils.ts` 的 `cn()` 基础设施。
+  - `src/components/ui/**` 最小 shadcn 基础组件。
+  - `src/components/Dashboard.tsx` 中单表条件区、单据主表工作台和详情区相关设计器控件壳。
+  - `src/features/dashboard/**` 中新增的设计器样式辅助模块。
+- 关键约束：
+  - 动态/条件样式统一走 `cn()`。
+  - 图标统一改为 `lucide-react`。
+  - 视觉层尽量使用标准 shadcn 语法和 Tailwind token，不再继续写自定义“cloudy”风格壳层。
+  - 本轮优先治理用户明确点名的区域，不假装一次性改完整个大页。
+- 不做什么：
+  - 不在本轮把整个 `Dashboard.tsx` 的所有历史样式全部翻新。
+  - 不重写与这次范围无关的 inspector 表单区。
+  - 不引入新的拖拽库。
+- 成功标准：
+  - 单表条件区、单据主表/详情区的控件容器、把手、选中态和工作台壳层统一到同一套 shadcn/Tailwind 语法。
+  - 新增代码使用 `cn()` 与 `lucide-react`，并复用基础 UI 组件。
+  - lint 与浏览器验证通过。
+
+### Checklist
+- [x] 新增 `cn()` 和最小 shadcn 基础组件。
+- [x] 提炼设计器控件的统一 class 语法。
+- [x] 重构单表条件区的控件与工具栏样式。
+- [x] 重构单据主表工作台与详情区壳层样式。
+- [x] 运行 lint 并在浏览器验证视觉统一性。
+- [x] 更新验证记录与 lessons。
+
+### Risks / Assumptions
+- 项目当前并没有完整的 shadcn 组件基础，这意味着本轮不是简单替换 class，而是要先补最小底座再收敛目标区域。
+- 单据/条件控件存在运行时宽度逻辑，这部分会优先收敛视觉壳层和 `cn()` 组织方式；若需要彻底清除所有运行时样式对象，还需下一轮继续处理动态尺寸载体。
+
+### Progress Summary
+- 已确认项目里目前没有 `src/lib/utils.ts`，`src/components/ui` 也只有自定义的 `shadcn-inspector.ts`，所以要先补 `cn()` 和最小 UI primitives。
+- 已新增 `src/lib/utils.ts`，并补齐 `src/components/ui/button.tsx`、`src/components/ui/badge.tsx`、`src/components/ui/card.tsx`，作为本轮 shadcn 语法底座。
+- 已新增 `src/features/dashboard/designer/control-item-classes.ts` 与 `src/features/dashboard/designer/runtime-dimension-rules.ts`，统一设计器控件壳层 class 与运行时宽度 class 生成逻辑。
+- 已完成 `renderDocumentGridToolbar`、`renderDocumentConditionToolbar`、`renderDetailFillPlaceholder`、`renderDetailTabsWorkspace`、`renderDocumentDetailWorkbench` 的语法收敛；目标区域中的 `material icon`、`cloudy chip`、相关内联样式已替换为 `lucide-react` + shadcn/Tailwind 组合。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - 顶部条件区已显示新的 shadcn 工具条文案：`按行组织顶部条件，支持多选、拖拽排序和宽度微调。`
+  - 详情区已显示新的标题与说明：`明细详情区`、`统一管理页签、明细字段与非表格视图的占位配置。`
+  - 详情页签条已替换为 lucide 图标 + shadcn `Button/Badge` 结构，页签项显示为 `关联附件 / 操作日志 / 新页签`，不再是旧的 glass chip + material icon。
+  - 全页截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\shadcn-detail-workbench.png`。
+
+### Result Notes
+- 这次不是简单改几段 class，而是先补最小 shadcn 基础设施，再把条件区、详情页签区和详情工作台壳层统一到同一套 `cn() + Tailwind + lucide-react` 语法。
+- 当前用户明确点名的区域已经统一，但 `Dashboard.tsx` 里仍有大量历史 `material-symbols-outlined` 和旧式 panel 代码尚未迁移；如果继续做下一轮，应该按业务子域拆出组件并逐块替换，而不是继续在单文件里散点修样式。
+
+## 2026-03-23 紧凑 SaaS 条件栏回调
+
+### Requirement Spec
+- 目标：
+  - 按用户最新反馈，把刚刚做重的条件区和详情区头部重新收窄，回到更像成熟 SaaS 产品的紧凑条件栏语法。
+  - 只保留拖动控件本身的优化，不再把外层 panel、说明文案和大边框继续做重。
+- 用户目标：
+  - 以前整体风格可以保留，重点只改“可拖动的控件”。
+  - 条件区不要大边框、不要大卡片、不要冗余介绍，放上去就像常见 SaaS 查询条件栏一样直接、干净。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中 `renderDocumentGridToolbar`、`renderDocumentConditionToolbar`、`renderDetailTabsWorkspace`、`renderDocumentDetailWorkbench`。
+- 关键约束：
+  - 不再扩大视觉重构范围，不碰与这次反馈无关的 inspector 与弹窗分支。
+  - 保留现有拖动/调宽逻辑，只调整视觉外壳和文案密度。
+  - 继续使用 `cn()`、Tailwind 和当前已补好的基础组件，不回退到新的内联样式写法。
+- 不做什么：
+  - 不推翻前面新增的 `cn()` / shadcn 基础设施。
+  - 不重做整个页面的主题和布局。
+  - 不修改宽度拖动实现链路。
+- 成功标准：
+  - 条件栏变成紧凑、轻边框、低说明密度的 SaaS 风格。
+  - 可拖动条件控件保留但更轻、更窄，视觉焦点在控件而不是外层 panel。
+  - lint 和浏览器验证通过。
+
+### Checklist
+- [x] 记录本次用户纠偏并更新 lessons。
+- [x] 收紧条件栏外层边框、按钮和提示文案。
+- [x] 收紧拖动控件壳层，减少卡片感和冗余说明。
+- [x] 收掉详情区头部新增的大标题/说明，恢复为更轻的工作区头部。
+- [x] 运行 lint 并浏览器验证。
+
+### Risks / Assumptions
+- 用户说“以前的样式挺好的”，说明上一轮主要问题不是语法底座，而是把高频工作区做得太重；本轮应该优先做减法，不再继续加设计元素。
+- “像 SaaS 公司的条件一样”这里按通用紧凑查询栏理解执行：更轻的容器、更直接的筛选控件、更少解释性文案。如果用户后续有具体参考图，再继续贴近。
+
+### Progress Summary
+- 已把 `renderDocumentConditionToolbar` 收回为紧凑工作条：去掉顶部说明段落，缩小外层边框和 segmented/button 尺寸，条件 workbench 行与拖动控件统一改成更薄的横向壳。
+- 已把 `renderDocumentGridToolbar` 的条件条和操作条一起收轻，去掉大卡片感与说明段，只保留筛选标签、项数和必要的调宽 HUD。
+- 已把 `renderDetailTabStrip`、`renderDetailTabsWorkspace`、`renderDocumentDetailWorkbench` 新增的大标题/说明卡撤掉，详情区头部恢复为轻量页签工作条。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - 顶部条件区已不再显示“按行组织顶部条件，支持多选、拖拽排序和宽度微调。”这类说明文案。
+  - 详情区已不再显示“明细详情区 / 统一管理页签、明细字段与非表格视图的占位配置。”的大标题说明块。
+  - 全页截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\compact-saas-condition-bar.png`，当前条件栏与详情页签都已收成更轻的 SaaS 工作区语法。
+
+### Result Notes
+- 这轮是针对上一轮“做重了”的直接回调，不改拖动逻辑，只把条件栏和拖动控件外壳做减法。
+- 现在整体更接近你说的“以前样式基础上，只改拖动控件”的方向；如果你下一步要继续贴某个具体 SaaS 条件栏参考，我建议直接按参考图细修控件壳、把手显隐和输入框骨架。
+
+## 2026-03-23 页签回退与去壳层
+
+### Requirement Spec
+- 目标：
+  - 继续按用户反馈把 detail 页签恢复到上一版更有状态感的风格。
+  - 深色/主色背景上的文字改成白字，同时把拖动工作区的外层卡片边框去掉。
+- 用户目标：
+  - 页签回到之前的视觉风格。
+  - 深色底上的文字必须清楚，是白色。
+  - 拖动布局空间不要再有一层大卡片壳，只保留控件本体和布局画布。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中 `renderDetailTabStrip`、`renderDetailTabsWorkspace`、`renderDocumentGridToolbar`、`renderDocumentConditionToolbar`、`renderDocumentDetailWorkbench`。
+- 关键约束：
+  - 不动拖动/调宽逻辑。
+  - 继续保留上一轮已经做好的紧凑条件栏方向，只修页签状态感和外层壳层。
+- 成功标准：
+  - 页签回到之前那种更明显的 active 态样式。
+  - 深色底上的文字是白色。
+  - 条件区和详情区的拖动空间不再带外层卡片边框。
+
+### Checklist
+- [x] 恢复 detail 页签的上一版风格。
+- [x] 确保主色/深色背景上的页签文字为白色。
+- [x] 去掉条件区与详情区拖动空间的外层卡片边框。
+- [x] 运行 lint 并浏览器验证。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - detail 页签已恢复为上一版更强状态感的样式，激活态在主色背景上使用白字。
+  - 顶部条件区与下方详情区工作面已去掉外层大卡片边框，只保留控件本体和内部画布区域。
+  - 全页截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\tab-restore-no-shell-border.png`。
+
+### Result Notes
+- 这轮不是再做“更简”，而是把页签识别度拉回去，同时把拖动空间的大壳层撤掉，让工作区更像直接布局面。
+
+## 2026-03-23 控件细修二次回调
+
+### Requirement Spec
+- 目标：
+  - 继续按用户截图和逐条反馈，把条件控件、页签和拖拽手柄收敛到更干净的最终状态。
+- 用户目标：
+  - 条件控件边框继续压薄，不要再显得厚重。
+  - 拖动控件上方不要出现刻度/HUD 区域。
+  - 选中页签文字必须清晰，主色背景上要是白字。
+  - 页签只显示名字，不要图标，也不要“表格”这类副文案。
+  - 控件右侧不需要六点拖拽手柄，整个控件本体即可直接拖动。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中 `renderDocumentGridToolbar`、`renderDocumentConditionToolbar`、`renderDetailTabStrip`、`renderDocumentDetailWorkbench`。
+- 关键约束：
+  - 不动拖拽/调宽逻辑，只动视觉壳层与显示元素。
+  - 不再扩大到其它 inspector、弹窗或历史分支。
+- 成功标准：
+  - 页面上不再出现控件顶部刻度显示区。
+  - 页签只保留名称，选中态白字可读。
+  - 条件控件边框明显收薄，右侧六点消失。
+
+### Checklist
+- [x] 记录本次用户反馈并更新 lessons。
+- [x] 去掉条件条和 workbench 中的 resize 刻度/HUD 展示。
+- [x] 收薄条件控件边框并移除右侧六点拖拽手柄。
+- [x] 页签只保留名字，去掉图标和副文案，确保激活态白字。
+- [x] 运行 lint 并浏览器验证。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - 顶部条件区已不再显示 resize 刻度/HUD，条件控件右侧六点拖拽图标已移除，整个控件本体可直接拖动。
+  - 页签区现在只显示名称，不再出现图标或“表格”这类副文案。
+  - Playwright 实测激活页签按钮文字颜色为 `rgb(255, 255, 255)`，截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\condition-tab-final-tighten.png`。
+
+### Result Notes
+- 这轮只按用户点名的三类元素做减法，没有再扩散改动到其它工作台区域。
+- 条件控件从“可拖卡片”收回为更轻的过滤器本体，保留右侧调宽热区，但去掉了单独拖把手和顶部刻度反馈。
+- 页签保留原来的状态感，只修正为名字单行显示和激活态白字，避免再次出现信息冗余和可读性问题。
+
+## 2026-03-23 条件栏精修三次回调
+
+### Requirement Spec
+- 目标：
+  - 继续按最新截图，把顶部条件栏的操作区、控件内部预览和控件间距收敛到更高级、更紧凑的状态。
+- 用户目标：
+  - 右上角操作区里凡是深色背景按钮，文字都必须是白色。
+  - 条件控件内部不要再出现灰色长条占位。
+  - 条件控件之间的间距再缩窄，整体更紧凑。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中 `renderFieldPreview`、`renderDocumentConditionToolbar`。
+- 关键约束：
+  - 不动拖动和调宽逻辑。
+  - 不把改动扩散到无关工作台和 inspector 分支。
+- 成功标准：
+  - 右上角主按钮在深色背景下使用白字。
+  - 条件控件内部不再有灰色长条。
+  - 条件控件横向间距明显变窄。
+
+### Checklist
+- [x] 更新 lessons，记录这次视觉纠偏。
+- [x] 修正条件栏右上角操作区按钮的深底白字问题。
+- [x] 去掉条件控件内部灰色长条占位，改成更干净的空壳语法。
+- [x] 收窄条件控件之间的横向间距。
+- [x] 运行 lint 并浏览器验证。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - Playwright 实测右上角“条件”按钮样式为 `background = rgb(37, 99, 235)`、`color = rgb(255, 255, 255)`，深底白字已生效。
+  - 条件控件内部不再存在宽度大于 `24px` 的灰色占位条，扫描结果 `grayBars = []`。
+  - 条件行父容器当前 `gap = 8px`，已经从上一轮更宽的间距继续收窄。
+  - 全页截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\condition-actionbar-tighten-v2.png`。
+
+### Result Notes
+- 这轮继续做减法，没有去动拖拽或调宽逻辑，只把顶部条件栏里仍然显得廉价和松散的几个可见点位收掉。
+- 条件控件现在是更干净的空壳预览，日期/下拉只保留最小图标提示，不再靠灰色长条冒充内容。
+- 右上角操作区里所有这轮涉及到的深底按钮都已经显式白字，不再依赖共享按钮变体的默认色。
+
+## 2026-03-23 条件控件留白再收窄
+
+### Requirement Spec
+- 目标：
+  - 按最新反馈继续收窄条件控件内部留白，解决名字前方空白过大和右侧调宽预留过宽的问题。
+- 用户目标：
+  - 控件名字前面不要再空一大块。
+  - 控件右侧不要再为了调宽预留太大的区域。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中顶部条件条与条件工作台控件渲染。
+- 关键约束：
+  - 不动拖宽能力本身，只收视觉和预留尺寸。
+  - 顶部条件条和条件工作台要统一，不允许一处紧一处松。
+- 成功标准：
+  - 标签宽度与对齐方式更紧凑，名字前面空白明显减少。
+  - 右侧 resize 预留缩小，控件尾部不再显得空。
+
+### Checklist
+- [x] 更新 lessons 并记录这次“留白过大”的根因。
+- [x] 收窄顶部条件条控件的标签区、内边距和右侧 resize 预留。
+- [x] 收窄条件工作台控件的标签区、内边距和右侧 resize 预留。
+- [x] 运行 lint 并浏览器验证。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - Playwright 实测顶部条件控件当前为：`padding-left = 8px`、`padding-right = 20px`、`gap = 6px`、`labelWidth = 42px`、`labelTextAlign = left`、`resizeWidth = 6px`。
+  - 条件工作台行容器当前 `gap = 6px`，已继续缩小。
+  - 全页截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\condition-whitespace-tighten-v3.png`。
+
+### Result Notes
+- 这轮不是再改视觉风格，而是把“控件前后为什么空一截”的直接根因收掉：标签宽度下限变小、标签改左对齐、右侧 resize 预留缩窄。
+- 顶部条件条和条件工作台现在走同一套更紧的密度语法，避免一处收紧后一处还显得松。
+
+## 2026-03-23 顶部条件标签完整与控件宽度平衡
+
+### Requirement Spec
+- 目标：
+  - 继续按最新截图，把顶部条件条里“名字被截断”和“控件整体太长”这两个相互牵扯的问题一起收平衡。
+- 用户目标：
+  - 第一段字段名要完整显示。
+  - 第二个控件前后的间隙更短，整体别拉得太长。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中顶部条件条宽度与标签宽度计算。
+- 关键约束：
+  - 不能通过重新放大整体控件宽度来硬保标签，否则又会把尾部空白拉回来。
+  - 只改顶部条件条，不扩散到无关分支。
+- 成功标准：
+  - 当前示例字段名不再出现省略号。
+  - 顶部条件控件总宽度继续缩短，第二个控件前后的空白变小。
+
+### Checklist
+- [x] 记录这次“标签完整 vs 控件过长”的平衡问题。
+- [x] 调整顶部条件条标签宽度公式，保证短到中等字段名能完整显示。
+- [x] 缩小顶部条件条整体宽度公式与项间距。
+- [x] 运行 lint 并浏览器验证。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - Playwright 实测顶部“客户编号”条件控件当前 `itemWidth = 220px`，相比上一轮明显缩短。
+  - 同一控件标签当前 `labelScrollWidth = 42`、`labelClientWidth = 42`、`truncated = false`，说明示例字段名已完整显示。
+  - 顶部条件条当前 `rowGap = 6px`，没有再放大间距。
+
+### Result Notes
+- 这轮是对顶部条件条做“宽度重平衡”，不是单纯继续砍 padding。
+- 现在顶部条件控件通过“标签稍放宽、总宽明显收短”的方式同时解决了截字和尾部过长的问题。
+
+## 2026-03-23 顶部条件条改为内容驱动短宽度
+
+### Requirement Spec
+- 目标：
+  - 继续按最新截图修正顶部条件条，解决“字段名仍被截断、控件后半段仍太长”的实际问题。
+- 用户目标：
+  - 字段名必须完整显示。
+  - 控件后半段要明显变短，第二个控件与第三个控件之间不能再被长控件撑开。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中顶部条件条的宽度和标签渲染逻辑。
+- 关键约束：
+  - 不继续只砍 padding，要直接改总宽分配方式。
+  - 不影响下方条件工作台，先把顶部条件条修准。
+- 成功标准：
+  - 顶部条件字段名完整显示，不再出现省略号。
+  - 顶部条件控件整体明显更短。
+
+### Checklist
+- [x] 记录这次“无明显变化”的反馈并更新 lessons。
+- [x] 把顶部条件条标签改为内容驱动宽度，不再靠过窄固定槽位。
+- [x] 重算顶部条件条总宽，缩短后半段预览壳。
+- [x] 运行 lint 并浏览器验证。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - 顶部条件条当前实测：
+    - `客户编号`: `itemWidth = 220px`, `truncated = false`
+    - `客户全称`: `itemWidth = 240px`, `truncated = false`
+    - `测试日期`: `itemWidth = 180px`, `truncated = false`
+  - 顶部条件条截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\top-filter-width-rebalanced-v4.png`。
+
+### Result Notes
+- 这轮不再靠缩 padding 碰运气，而是把顶部条件条改成“标签按内容撑开、预览壳固定短宽、总宽重新分配”的结构。
+- 现在顶部条件条三个示例字段名都能完整显示，同时控件本体已经显著短于之前的长条版本。
+
+## 2026-03-23 条件工作台分支纠偏
+
+### Requirement Spec
+- 目标：
+  - 按用户最新截图修正当前真实可见的条件工作台控件，解决前面只显示两个字和后半段过长的问题。
+- 用户目标：
+  - 当前这排条件控件前面的字段名必须完整。
+  - 控件整体更短，第二、第三个控件之间不要被长空白撑开。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中 `condition-item-*` 分支的标签宽度、预览宽度和总宽分配。
+- 关键约束：
+  - 不再改错到 `document-filter-*` 分支。
+  - 只处理用户截图里当前实际可见的条件工作台行。
+- 成功标准：
+  - 条件工作台字段名前缀不再只显示两个字。
+  - 条件工作台控件总宽更短，间距视觉收紧。
+
+### Checklist
+- [x] 记录这次“改偏分支”的反馈并更新 lessons。
+- [x] 重算 `condition-item-*` 的标签宽度、预览宽度和总宽。
+- [x] 运行 lint 并浏览器验证当前可见条件工作台行。
+
+### Verification
+- `cmd /c npm run lint`: 通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - 当前实际可见的 `condition-item-*` 条件控件实测：
+    - `客户编号`: `labelWidth = 66px`, `itemWidth = 176px`
+    - `客户全称`: `labelWidth = 66px`, `itemWidth = 196px`
+    - `测试日期`: `labelWidth = 66px`, `itemWidth = 142px`
+  - 当前截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\condition-item-actual-branch-v5.png`。
+
+### Result Notes
+- 这轮真正命中了用户截图里那排控件所在的 `condition-item-*` 分支，前一轮改到 `document-filter-*` 的偏差已经纠正。
+- 现在这排条件控件的标签槽明显放宽，控件本体明显缩短，不再是前面只剩两个字、后面拖着长空白的布局。
+
+## 2026-03-23 基础档案条件拖拽与间距重构
+
+### Requirement Spec
+- 目标：
+  - 重点修正“基础档案条件”这一块的间距、拖拽跟手和调宽边线位置。
+- 用户目标：
+  - 条件控件之间的间距继续缩小。
+  - 拖动时控件要跟手，不要再是原生拖拽那种卡顿且看不到页面内镜像。
+  - 调宽竖线直接贴到控件围边边框上。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中基础档案条件工作台分支。
+  - 如采用更合适的拖拽方案，则影响 `package.json` 依赖。
+- 关键约束：
+  - 只改“基础档案条件”这一块，不扩散到别的工作台拖拽。
+  - 验证必须包含真实浏览器拖拽，而不是只看代码。
+- 风险与假设：
+  - 目前这块使用原生 HTML5 `draggable`，这是“拖动没跟着走”的直接原因；若继续在原生拖拽上补丁，收益有限。
+  - 更优雅的方案是给这块单独切换到页面内跟手的拖拽语法，并保留当前数据结构和落位逻辑。
+  - 当前用户截图里的真实分支是 `condition-item-*`，不是上方的 `document-filter-*`；所有这轮改动都必须锁定在这条基础档案条件工作台链路。
+- 成功标准：
+  - 条件间距变窄。
+  - 拖动时有页面内跟手镜像，排序可用。
+  - 调宽竖线贴边。
+
+### Checklist
+- [x] 记录这次“基础档案条件”反馈并更新 lessons。
+- [x] 确认当前拖拽实现与是否需要补拖拽依赖。
+- [x] 重构基础档案条件拖拽为跟手交互，并收窄间距。
+- [x] 将调宽竖线贴到控件边框位置。
+- [x] 运行 lint 并做真实浏览器拖拽验证。
+
+### Progress Summary
+- 已确认用户截图命中的就是基础档案条件工作台里的 `condition-item-*` 渲染分支，当前它仍然使用原生 `draggable/onDrop`，这是“拖动卡顿且控件不跟手”的直接根因。
+- 本轮不再继续在 HTML5 拖拽上补丁，而是改成页面内跟手的拖拽交互；同时顺手把行内间距和 resize 热区一起收掉，避免只修一半。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - 使用 Playwright 实际拖动顶部基础档案条件控件，页面出现站内跟手镜像，不再是浏览器原生 ghost；拖动中的截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\archive-condition-drag-following.png`。
+  - 实际拖动后条件顺序从 `客户编号 / 客户全称 / 测试日期` 变为 `客户编号 / 测试日期 / 客户全称`，证明重排已生效。
+  - 条件控件当前实测：
+    - `gapToNext = 4px`
+    - `resizeOffsetToBorder = 1px`
+    - `resizeHostWidth = 8px`
+  - 当前静态结果截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\archive-condition-tightened.png`。
+
+### Result Notes
+- 这轮关键不是继续修 class，而是把基础档案条件这一支从原生 HTML5 拖拽切成了页面内拖拽；这样控件本体会跟手，插入目标和行级落点也能稳定留在页面里。
+- 条件密度这次是连着一起收的：行间距改小、控件内 gap 改小、右侧 resize 热区贴到边框，避免用户继续把“尾部空一截”理解成控件本身太长。
+
+## 2026-03-23 基础档案条件宽度拖动跟手纠偏
+
+### Requirement Spec
+- 目标：
+  - 修正基础档案条件控件“宽度拖动不跟手”的真实问题。
+- 用户目标：
+  - 右侧边线拖动时，控件宽度要在拖动过程中实时变化，而不是拖完才变或根本不变。
+  - 这次只盯基础档案条件这一排，不再把排序拖拽和宽度拖动混为一谈。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中基础档案条件工作台的 resize 句柄、DnD 传感器与运行时宽度公式。
+- 关键约束：
+  - 必须基于真实浏览器 resize 验证，而不是靠代码推断。
+  - 不允许再次改偏到别的条件分支。
+- 风险与假设：
+  - 当前右侧 resize 句柄仍会触发 `dnd-kit` 的拖拽激活，导致 resize 根本没有接管事件。
+  - 当前 `condition-item-*` 的显示宽度被 `196px` 硬上限截断，即使底层 width 在变，界面也不会继续跟手。
+- 成功标准：
+  - 拖动右侧边线时，控件宽度在 mousemove 阶段实时变化。
+  - resize 起手不会再误触发排序拖拽。
+
+### Checklist
+- [x] 记录这次“宽度拖动没跟手”的纠偏并更新 lessons。
+- [x] 让 resize 句柄不再触发 `dnd-kit` 拖拽激活。
+- [x] 去掉基础档案条件控件显示宽度的错误硬上限，让运行时宽度真正跟随拖动。
+- [x] 运行 lint 并做真实浏览器 resize 验证。
+
+### Progress Summary
+- 已用 Playwright 实测当前问题：拖动右侧边线时，控件宽度 `before = during = after = 196px`，同时页面状态提示显示的是 `dnd-kit` 的拖拽落点而不是 resize 预览，说明这次用户指出的是对的。
+- 本轮将直接修两条根因：先阻止 resize 句柄触发拖拽传感器，再把 `condition-item-*` 的可见宽度改回真实跟随 `activeResize.width`。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - Playwright 实测右侧边线拖动前后：
+    - `beforeWidth = 220px`
+    - `duringWidth = 260px`
+    - `afterWidth = 260px`
+  - 同一次验证里 `rowStatus = ""`，不再出现 `Draggable item ... dropped over droppable area ...` 这类排序拖拽提示，说明 resize 起手已经从 `dnd-kit` 里豁免。
+  - 继续拖动后的当前控件宽度和右侧检查器宽度输入都更新到了 `292px`。
+  - resize 过程截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\archive-condition-resize-following.png`。
+
+### Result Notes
+- 这轮真正修的是“宽度拖动”而不是“排序拖动”。根因一是 resize 句柄仍会唤起 `dnd-kit` 传感器，根因二是可见宽度被 `196px` 假上限锁死。
+- 现在基础档案条件的边线拖动已经会在 mousemove 阶段实时改宽，视觉跟手；同时 resize 起手不会再误触发整项拖拽。
+
+## 2026-03-23 基础档案条件内部预览跟随伸长
+
+### Requirement Spec
+- 目标：
+  - 修正基础档案条件控件“外壳变宽了，但内部白色控件预览没有跟着伸长”的突兀感。
+- 用户目标：
+  - 拖动条件宽度时，内部输入框/日期框预览也要同步变长，而不是只在右侧留下空白。
+  - 这次只处理基础档案条件的实际可见分支，不扩散到其他过滤条或表格预览。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中 `condition-item-*` 的运行时宽度规则与条件模式预览容器。
+- 关键约束：
+  - 保留当前已经修好的 resize 跟手体验，不能因为补内层预览而再次破坏拖动。
+  - 必须通过真实浏览器拖动验证“外壳”和“内部预览”都会在 mousemove 阶段同步伸长。
+- 风险与假设：
+  - 当前外层宽度已经跟随 `activeResize.width`，但 `condition-item-preview` 仍是固定宽度，这是主要根因。
+  - `renderFieldPreview(..., 'condition')` 本身已经支持 `w-full`，所以更合理的修法是改预览容器宽度分配，而不是重写控件预览结构。
+- 成功标准：
+  - 基础档案条件控件在拖宽过程中，外壳和内部白色预览同时变长。
+  - 控件尾部不再出现明显的固定空白区。
+
+### Checklist
+- [x] 记录这次“内层预览未跟随伸长”的反馈并更新 lessons。
+- [x] 改造 `condition-item-*` 的标签宽度、预览宽度与总宽分配关系。
+- [x] 运行 lint 并做真实浏览器 resize 验证。
+
+### Progress Summary
+- 已确认当前“拖动丝滑了，但里面控件没有跟着延长”的根因不在 `dnd-kit` 和 resize 数学，而在 `condition-item-preview-*` 这层宽度仍是固定值。
+- 本轮不重写控件预览结构，只把基础档案条件这一支改成“标签保留内容宽度，内部预览占满剩余空间”，这样可以在不破坏已修好的 resize 跟手体验前提下，把视觉断层消掉。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - Playwright 实测第一项基础档案条件控件在 resize 过程中：
+    - `before`: `itemWidth = 220px`, `previewShellWidth = 136px`, `previewInnerWidth = 136px`
+    - `during`: `itemWidth = 312px`, `previewShellWidth = 228px`, `previewInnerWidth = 228px`
+    - `after`: `itemWidth = 312px`, `previewShellWidth = 228px`, `previewInnerWidth = 228px`
+  - 说明外层控件和内部白色预览都在 mousemove 阶段同步伸长，不再只剩外壳变宽。
+  - 当前截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\archive-condition-preview-stretching.png`。
+
+### Result Notes
+- 这轮命中的是真正用户可见的“基础档案条件”宽度链路。之前外层已经跟手，但内层预览仍是固定宽度，所以用户会感知为“拖宽了，但里面没动”。
+- 现在内部预览宽度直接从当前控件总宽里扣出剩余空间，输入框/日期框会随着边线拖动一起变长，视觉上不再突兀。
+
+## 2026-03-23 基础档案条件默认预览宽度统一
+
+### Requirement Spec
+- 目标：
+  - 收敛基础档案条件中不同控件类型的默认预览长度，让文本、搜索、日期的默认体感更一致。
+- 用户目标：
+  - 在不破坏当前 resize 跟手的前提下，让基础档案条件默认状态更整齐，不要某些控件天生更短或更突兀。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中基础档案条件 `condition-item-*` 的基础预览宽度规则。
+- 关键约束：
+  - 只改默认宽度基线，不重做拖拽和选中样式。
+  - 保持上一轮“内部预览随拖动一起伸长”的行为不回退。
+- 风险与假设：
+  - 当前不同字段类型的 `basePreviewWidth` 差异过大，会让默认状态看起来松紧不一。
+  - 统一到更接近的宽度带能改善整体体感，同时继续保留日期/搜索的最低显示空间。
+- 成功标准：
+  - 基础档案条件默认状态下，多种控件的内层预览视觉更接近。
+  - 拖动后内层预览仍会同步伸长。
+
+### Checklist
+- [x] 量当前不同控件类型的默认宽度差异。
+- [x] 收敛基础预览宽度规则。
+- [x] 运行 lint 并做浏览器验证。
+
+### Progress Summary
+- 已确认当前可见的基础档案条件里，默认体感不一致主要来自 `basePreviewWidth` 的类型差异过大，而不是拖动逻辑本身。
+- 本轮仅收敛 `condition-item-*` 的最低预览宽度带：普通输入、搜索、日期都拉到同一档，数字控件保留稍紧但不再明显偏小。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - Playwright 实测当前默认状态：
+    - `客户编号`: `itemWidth = 220px`, `previewInnerWidth = 136px`
+    - `客户全称`: `itemWidth = 240px`, `previewInnerWidth = 156px`
+    - `测试日期`: `itemWidth = 204px`, `previewInnerWidth = 120px`
+  - 相比上一轮，`测试日期` 已从 `180 / 96` 拉到 `204 / 120`，默认带宽明显更接近前两项。
+  - 继续拖动 `测试日期` 右侧边线时，实测到 `itemWidth = 240px`, `previewInnerWidth = 156px`，说明统一默认宽度后，内层预览仍会同步伸长。
+  - 当前截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\archive-condition-preview-baseline-unified.png`。
+
+### Result Notes
+- 这轮没有改拖拽，只统一了基础档案条件默认预览宽度的基线，所以风险低且效果集中。
+- 现在日期这类之前偏短的条件控件，默认状态已经回到和普通输入更接近的视觉长度，不会一眼显得短一截。
+
+## 2026-03-23 基础档案条件拖拽镜像锚点纠偏
+
+### Requirement Spec
+- 目标：
+  - 修正基础档案条件控件拖拽时，控件镜像飘到鼠标右侧的错位问题。
+- 用户目标：
+  - 拖动控件时，控件本体要和鼠标保持一体，不要再出现明显的横向偏移。
+  - 明确确认当前这块是否已经在使用 `dnd-kit`。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中基础档案条件 workbench 的拖拽实现、overlay/transform 渲染方式。
+- 关键约束：
+  - 只改基础档案条件拖拽镜像链路，不回退已修好的 resize。
+  - 必须通过真实浏览器拖拽验证鼠标与控件位置关系。
+- 风险与假设：
+  - 当前问题很可能不在排序逻辑，而在 `DragOverlay` 的 fixed 镜像锚点与当前工作台布局不一致。
+  - 更稳的方案是让被拖控件本体直接使用 `dnd-kit` 的 transform 跟手，而不是继续依赖外部 overlay 镜像。
+- 成功标准：
+  - 拖动条件控件时，控件本体紧跟鼠标，不再明显偏到右侧。
+  - 保留当前 `dnd-kit` 排序能力。
+
+### Checklist
+- [x] 记录这次“拖拽镜像偏右”的反馈并更新 lessons。
+- [x] 确认当前基础档案条件拖拽是否使用 `dnd-kit` 并定位镜像错位根因。
+- [x] 修正拖拽渲染，让控件跟手不偏移。
+- [x] 运行 lint 并做真实浏览器拖拽验证。
+
+### Progress Summary
+- 已确认这块基础档案条件拖拽当前确实使用的是 `dnd-kit`，代码路径是 `DndContext + useDraggable`，依赖来自 `@dnd-kit/core`。
+- 本轮抓到的根因不是排序失败，而是 `DragOverlay` 的 fixed 镜像锚点在当前工作台里严重偏右；继续调 overlay 坐标风险更高，所以直接改成被拖控件本体使用 `dnd-kit` transform 跟手。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - Playwright 实测拖动第一项基础档案条件时：
+    - 旧实现下：`pointerX = 441`, overlay `left = 722`，镜像明显飘到鼠标右侧。
+    - 新实现下：`pointerX = 441`, `itemLeft = 417`, `pointerOffsetInsideItem = 24`。
+  - 说明现在控件本体保持了与鼠标一致的抓取偏移，拖到哪里跟到哪里，不再横向飘移。
+  - 当前拖动中的截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\archive-condition-drag-anchor-fixed.png`。
+
+### Result Notes
+- 这轮保留了 `dnd-kit`，但撤掉了基础档案条件这条链路上的 `DragOverlay`，改成控件本体直接吃 transform。
+- 这样不需要继续和 fixed overlay 坐标搏斗，也不会破坏已有的排序和 resize 修复；对用户感知最直接的变化就是控件和鼠标重新贴在一起了。
+
+## 2026-03-24 基础档案条件跨行拖动缩放纠偏
+
+### Requirement Spec
+- 目标：
+  - 修正基础档案条件控件跨行拖动时“消失”和“碰到换行线就突然变巨大”的问题。
+- 用户目标：
+  - 同行拖动保持现有效果。
+  - 换到下一行时，控件仍然可见且大小稳定，不要被拉成整条。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中基础档案条件 `ConditionWorkbenchDraggableItem` 的 drag transform 渲染。
+- 关键约束：
+  - 保留当前 `dnd-kit` 排序实现，不回退前一轮鼠标锚点修复。
+  - 必须用真实浏览器把条件行数调到 2 后复现并验证。
+- 风险与假设：
+  - 当前跨行时问题不是 drop 逻辑失效，而是 `dnd-kit` 返回的 transform 带了 `scaleX/scaleY`，目标整行 droppable 宽度太大时会把控件一并放大。
+  - 只使用 translate 而忽略 scale，更符合这种紧凑业务控件的预期拖拽表现。
+- 成功标准：
+  - 跨行拖动时控件保持原始宽高，不再突然变巨大。
+  - 拖动到第二行时控件仍持续可见。
+
+### Checklist
+- [x] 记录这次“跨行拖动巨大/消失”的反馈并更新 lessons。
+- [x] 复现并测量跨行拖动时的 transform/尺寸异常。
+- [x] 改为 translate-only 的拖拽位移渲染。
+- [x] 运行 lint 并做真实浏览器跨行拖动验证。
+
+### Progress Summary
+- 已在真实页面中把“控件行数”切到 `2`，确认问题只在跨行时出现。
+- 根因不是拖拽库切换失败，而是当前被拖控件直接使用了 `dnd-kit` 的完整 transform；当目标变成整行 droppable 时，transform 里带入了超大的 `scaleX`，导致控件被拉成整条。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- 浏览器验证：
+  - 打开 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`。
+  - 点击“顶部条件”，把右侧“控件行数”改成 `2` 后进行跨行拖动。
+  - 修复前实测：
+    - `itemRect.width = 1763px`
+    - `itemTransform = matrix(8.01212, 0, 0, 1.09091, 93, 55)`
+  - 修复后实测：
+    - `itemRect.width = 220px`
+    - `itemRect.height = 44px`
+    - `itemTransform = matrix(1, 0, 0, 1, 93.3333, 54.6667)`
+  - 说明跨行时现在只保留平移，不再带整行级别的缩放。
+  - 截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\archive-condition-cross-row-after-fix.png`。
+
+### Result Notes
+- 这轮没有回退到 overlay，也没有动排序逻辑；只把被拖控件的实时渲染从“完整 transform”收成了“纯 translate”。
+- 结果就是同行拖动效果保留，跨行时也不再突然放大或看起来像消失。
+
+## 2026-03-24 条件跨行可见性与主表详情拖拽统一
+
+### Requirement Spec
+- 目标：
+  - 继续优化基础档案条件跨行拖动的可见性，并把单据主表、详情配置的拖拽样式和反馈统一到条件区这套语法。
+- 用户目标：
+  - 条件区拖到下一行时，控件全程可见，不要再“拖下去就消失”。
+  - 单据主表和详情配置的拖拽视觉与拖动反馈要和条件区一致，不再一块用 `dnd-kit`、另一块还是原生 ghost。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中条件区 workbench、单据主表字段 workbench、详情配置字段排布 workbench。
+- 关键约束：
+  - 不回退已修好的 resize 跟手与鼠标锚点。
+  - 优先统一实际可见业务区，不扩到所有历史工作台。
+- 风险与假设：
+  - 条件区当前跨行“消失”大概率还和行容器的 overflow 裁剪有关，不只是 transform。
+  - 单据主表和详情配置当前仍是原生 HTML5 拖拽，必须至少统一拖拽外观与反馈，否则用户仍会感知为三套系统。
+- 成功标准：
+  - 条件区跨行拖动时控件持续可见。
+  - 主表、详情配置与条件区的拖拽样式和反馈更接近且不再明显割裂。
+
+### Checklist
+- [ ] 更新 lessons 记录这次“跨行仍消失、三块拖拽要统一”的反馈。
+- [ ] 修正条件区跨行拖动的 overflow/可见性问题。
+- [ ] 统一主表与详情配置的拖拽行/控件视觉和拖拽反馈。
+- [ ] 运行 lint 并在浏览器里分别验证三块拖拽表现。
+
+## 2026-03-24 基础档案条件拖拽命中区、主单控件同构与详情配置瘦身
+
+### Requirement Spec
+- 目标：
+  - 修正向导配置里基础档案条件控件的拖拽命中区，让控件主体都能直接拖动，只有最右侧保留宽度拖动热区。
+  - 让单据主单控件在视觉、拖拽反馈、插入语义、尺寸手柄语法上与基础档案条件工作台保持一模一样。
+  - 整体优化基础档案详情配置界面，去掉中部和右侧面板里浮夸、低价值、重复性的装饰与摘要块。
+- 用户目标：
+  - 条件控件前半段和中段都能直接拖动，不再只有前面文本区域能拖。
+  - 主单控件不能只是“类似”，必须与基础档案条件是同一套工作台体验。
+  - 基础档案详情配置界面更克制、更紧凑，右侧控件不再堆过多徽标、提示、统计和装饰按钮。
+- 影响范围：
+  - `src/components/Dashboard.tsx` 中基础档案条件 workbench。
+  - `src/components/Dashboard.tsx` 中单据主单 `renderBillDocumentWorkbench` 分支。
+  - `src/components/Dashboard.tsx` 中基础档案详情 workbench 与 `detail-grid/detail-tab` 右侧检查器分支。
+- 关键约束：
+  - 必须基于真实浏览器验证拖拽和宽度拖动，不靠代码猜测。
+  - 主单控件应尽量复用条件 workbench 的现有紧凑语法，避免再维护一套平行样式。
+  - 详情配置优化以“删减冗余”和“统一骨架”为优先，不引入新的大块说明卡。
+- 不做什么：
+  - 不改业务数据模型与字段口径。
+  - 不扩散到当前未被用户指出的其它工作台分支。
+- 成功标准：
+  - 基础档案条件控件除最右侧 resize 热区外，其余主体区域都能触发拖拽排序。
+  - 单据主单控件与条件控件呈现相同的拖拽项语法和反馈。
+  - 基础档案详情配置界面明显减噪，右侧检查器不再出现过量装饰性元素。
+
+### Checklist
+- [x] 更新 `tasks/lessons.md`，记录本轮用户修正带来的新规则。
+- [x] 修正基础档案条件控件拖拽命中区与 resize 热区边界。
+- [x] 统一单据主单控件与基础档案条件控件的工作台语法。
+- [x] 精简基础档案详情配置界面和右侧检查器冗余元素。
+- [x] 运行 `npm run lint` 并做真实浏览器拖拽/界面回归验证。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+- 浏览器验证：
+  - 基础档案模式 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=document`
+  - 单据模式 `http://127.0.0.1:3000/?debug=dashboard&config=1&step=5&mode=table`
+- 基础档案条件拖拽与拉宽实测：
+  - 从 `客户编号` 中段开始拖到 `测试日期` 前，顺序从 `客户编号 / 客户全称 / 测试日期` 变为 `客户全称 / 客户编号 / 测试日期`。
+  - 从 `客户编号` 靠右主体区域（避开最右侧 resize 热区）拖回 `客户全称` 前，顺序恢复为 `客户编号 / 客户全称 / 测试日期`。
+  - 从最右侧边缘拉宽 `客户编号`，宽度从 `220px` 变为 `272px`，说明 resize 热区仍然独立生效。
+- 单据主单控件拖拽与拉宽实测：
+  - 从 `物料编码` 中段拖到 `规格型号` 前，顺序变为 `物料名称 / 物料编码 / 规格型号 ...`。
+  - 从 `物料编码` 靠右主体区域拖回 `物料名称` 前，顺序恢复。
+  - 从最右侧边缘拉宽 `物料编码`，宽度从 `236px` 变为 `280px`。
+- 详情配置界面回归：
+  - 点击基础档案详情区 `点击配置明细表属性` 后，右侧只保留页签、来源、整表属性、字段标识等直接配置块，不再出现成组夸张统计卡和悬浮徽标。
+  - 截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\archive-detail-inspector-quiet.png`。
+  - 单据主单工作台截图已保存到 `E:\ai项目\lsToolAll\LsAITool\output\playwright\bill-main-workbench-condition-like.png`。
+
+### Result Notes
+- 基础档案条件项把标签区和预览区都改成了不拦截指针事件，拖拽命中区回到整个控件主体，只有最右侧细窄热区负责宽度拖动。
+- 单据主单工作台不再维护一套单独的控件语法，而是直接复用条件控件的预览壳、密度、插入语义和 resize 手柄表现，交互已经和基础档案条件对齐。
+- 基础档案详情配置去掉了右侧浮夸的摘要块、数量徽标和多余说明卡，改成更克制的标题、摘要行和表单骨架，阅读负担明显降低。

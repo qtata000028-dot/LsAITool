@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE_URL = 'http://192.168.0.55:9093';
+const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8080';
 
 function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, '');

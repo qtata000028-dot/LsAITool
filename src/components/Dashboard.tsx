@@ -2,6 +2,33 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDeferredValue, useMemo } from 'react';
 import {
+  DndContext,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import {
+  BarChart3,
+  CalendarDays,
+  ChevronDown,
+  FileSpreadsheet,
+  Filter,
+  FolderTree,
+  Globe,
+  LayoutPanelTop,
+  Plus,
+  Search,
+  Save,
+  Table2,
+  Trash2,
+  X,
+} from 'lucide-react';
+import {
   fetchSubsystemMenuTree,
   fetchSubsystemSecondLevelMenus,
   type BackendMenuNode,
@@ -49,6 +76,25 @@ import {
   shadcnTabListClass,
   shadcnTextareaClass,
 } from './ui/shadcn-inspector';
+import {
+  resolveWorkbenchPreviewWidth,
+  updateItemWidthById,
+  useWorkbenchResizeState,
+  type WorkbenchResizeMode,
+} from '../features/dashboard/resize/use-workbench-resize-state';
+import {
+  designerWorkbenchRowActiveClass,
+  designerWorkbenchRowEmptyClass,
+} from '../features/dashboard/designer/control-item-classes';
+import {
+  createRuntimeClassName,
+  createRuntimeDeclarationBlock,
+  joinRuntimeDeclarationBlocks,
+} from '../features/dashboard/designer/runtime-dimension-rules';
+import { cn } from '../lib/utils';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 
 interface DashboardProps {
   currentUserName: string;
@@ -141,6 +187,348 @@ type MenuModuleTypeProfile = {
   icon: string;
   label: string;
 };
+type ConditionWorkbenchScope = 'main' | 'left';
+type ConditionWorkbenchDragData =
+  | {
+    type: 'condition-item';
+    scope: ConditionWorkbenchScope;
+    row: number;
+    fieldId: string;
+  }
+  | {
+    type: 'condition-row';
+    scope: ConditionWorkbenchScope;
+    row: number;
+  };
+type BillHeaderWorkbenchDragData =
+  | {
+    type: 'bill-header-item';
+    fieldId: string;
+    row: number;
+    scope: BillCanvasFieldScope;
+  }
+  | {
+    type: 'bill-header-row';
+    row: number;
+  };
+type DetailBoardWorkbenchDragData =
+  | {
+    type: 'detail-board-item';
+    fieldId: string;
+    groupId: string;
+    row: number;
+  }
+  | {
+    type: 'detail-board-row';
+    groupId: string;
+    row: number;
+  };
+
+function getConditionDragItemId(scope: ConditionWorkbenchScope, fieldId: string) {
+  return `condition-item:${scope}:${fieldId}`;
+}
+
+function getConditionDropItemId(scope: ConditionWorkbenchScope, fieldId: string) {
+  return `condition-drop:${scope}:${fieldId}`;
+}
+
+function getConditionRowDropId(scope: ConditionWorkbenchScope, row: number) {
+  return `condition-row:${scope}:${row}`;
+}
+
+function isConditionWorkbenchDragData(value: unknown): value is ConditionWorkbenchDragData {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  return 'type' in value && 'scope' in value && 'row' in value;
+}
+
+function getBillHeaderDragItemId(fieldId: string, scope: BillCanvasFieldScope) {
+  return `bill-header-item:${scope}:${fieldId}`;
+}
+
+function getBillHeaderDropItemId(fieldId: string, scope: BillCanvasFieldScope) {
+  return `bill-header-drop:${scope}:${fieldId}`;
+}
+
+function getBillHeaderRowDropId(row: number) {
+  return `bill-header-row:${row}`;
+}
+
+function isBillHeaderWorkbenchDragData(value: unknown): value is BillHeaderWorkbenchDragData {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  return 'type' in value && 'row' in value;
+}
+
+function getDetailBoardDragItemId(groupId: string, fieldId: string) {
+  return `detail-board-item:${groupId}:${fieldId}`;
+}
+
+function getDetailBoardDropItemId(groupId: string, fieldId: string) {
+  return `detail-board-drop:${groupId}:${fieldId}`;
+}
+
+function getDetailBoardRowDropId(groupId: string, row: number) {
+  return `detail-board-row:${groupId}:${row}`;
+}
+
+function isDetailBoardWorkbenchDragData(value: unknown): value is DetailBoardWorkbenchDragData {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  return 'type' in value && 'groupId' in value && 'row' in value;
+}
+
+class ConditionWorkbenchPointerSensor extends PointerSensor {
+  static activators = [
+    {
+      eventName: 'onPointerDown' as const,
+      handler: ({ nativeEvent }: React.PointerEvent<Element>) => {
+        if (!nativeEvent.isPrimary || nativeEvent.button !== 0) {
+          return false;
+        }
+
+        const target = nativeEvent.target;
+        return !(target instanceof HTMLElement && target.closest('[data-condition-resize-handle="true"]'));
+      },
+    },
+  ];
+}
+
+class DesignerWorkbenchPointerSensor extends PointerSensor {
+  static activators = [
+    {
+      eventName: 'onPointerDown' as const,
+      handler: ({ nativeEvent }: React.PointerEvent<Element>) => {
+        if (!nativeEvent.isPrimary || nativeEvent.button !== 0) {
+          return false;
+        }
+
+        const target = nativeEvent.target;
+        return !(target instanceof HTMLElement && target.closest('[data-drag-resize-handle="true"]'));
+      },
+    },
+  ];
+}
+
+type DesignerWorkbenchDropLaneProps = {
+  children: React.ReactNode;
+  className: string;
+  dropId: string;
+  data: Record<string, unknown>;
+  key?: React.Key;
+};
+
+function DesignerWorkbenchDropLane({
+  children,
+  className,
+  data,
+  dropId,
+}: DesignerWorkbenchDropLaneProps): React.JSX.Element {
+  const { setNodeRef } = useDroppable({
+    id: dropId,
+    data,
+  });
+
+  return (
+    <div ref={setNodeRef} className={className}>
+      {children}
+    </div>
+  );
+}
+
+type DesignerWorkbenchDraggableItemProps = {
+  children: React.ReactNode;
+  className: string;
+  data: Record<string, unknown>;
+  dragId: string;
+  dropId: string;
+  itemAttributes?: Record<string, string>;
+  key?: React.Key;
+  onClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onContextMenu?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onKeyDown?: (event: React.KeyboardEvent<HTMLDivElement>) => void;
+  role?: string;
+  style?: React.CSSProperties;
+  tabIndex?: number;
+};
+
+function DesignerWorkbenchDraggableItem({
+  children,
+  className,
+  data,
+  dragId,
+  dropId,
+  itemAttributes,
+  onClick,
+  onContextMenu,
+  onKeyDown,
+  role = 'button',
+  style,
+  tabIndex = 0,
+}: DesignerWorkbenchDraggableItemProps): React.JSX.Element {
+  const { attributes, listeners, setNodeRef: setDragNodeRef, transform } = useDraggable({
+    id: dragId,
+    data,
+  });
+  const { setNodeRef: setDropNodeRef } = useDroppable({
+    id: dropId,
+    data,
+  });
+  const setNodeRef = (node: HTMLDivElement | null) => {
+    setDragNodeRef(node);
+    setDropNodeRef(node);
+  };
+  const dragStyle = transform
+    ? { ...(style ?? {}), transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+    : style;
+
+  return (
+    <div
+      ref={setNodeRef}
+      role={role}
+      tabIndex={tabIndex}
+      className={className}
+      style={dragStyle}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      onKeyDown={onKeyDown}
+      {...itemAttributes}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </div>
+  );
+}
+
+function getCompactWorkbenchItemClass(options?: {
+  dragging?: boolean;
+  insertTarget?: boolean;
+  selected?: boolean;
+}) {
+  const isSelected = options?.selected || options?.insertTarget;
+
+  return cn(
+    'group relative flex shrink-0 select-none flex-row items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors',
+    options?.dragging ? 'z-20 cursor-grabbing border-primary/35 bg-background/95 shadow-lg shadow-primary/10' : 'cursor-grab active:cursor-grabbing',
+    options?.dragging
+      ? 'border-primary/35 bg-background/95 shadow-lg shadow-primary/10'
+      : isSelected
+        ? 'border-primary/30 bg-background/95 shadow-[inset_0_0_0_1px_rgba(37,99,235,0.08)]'
+        : 'border-transparent bg-transparent hover:border-border/40 hover:bg-background/70',
+  );
+}
+
+function configureNativeDragPreview(event: React.DragEvent<HTMLElement>) {
+  if (!event.dataTransfer) {
+    return;
+  }
+
+  const rect = event.currentTarget.getBoundingClientRect();
+  const offsetX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+  const offsetY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+  event.dataTransfer.setDragImage(event.currentTarget, offsetX, offsetY);
+}
+
+type ConditionWorkbenchDropLaneProps = {
+  children: React.ReactNode;
+  className: string;
+  key?: React.Key;
+  row: number;
+  scope: ConditionWorkbenchScope;
+};
+
+function ConditionWorkbenchDropLane({
+  children,
+  className,
+  row,
+  scope,
+}: ConditionWorkbenchDropLaneProps): React.JSX.Element {
+  const { setNodeRef } = useDroppable({
+    id: getConditionRowDropId(scope, row),
+    data: {
+      type: 'condition-row',
+      scope,
+      row,
+    } satisfies ConditionWorkbenchDragData,
+  });
+
+  return (
+    <div ref={setNodeRef} className={className}>
+      {children}
+    </div>
+  );
+}
+
+type ConditionWorkbenchDraggableItemProps = {
+  children: React.ReactNode;
+  className: string;
+  fieldId: string;
+  key?: React.Key;
+  onClick: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
+  row: number;
+  scope: ConditionWorkbenchScope;
+};
+
+function ConditionWorkbenchDraggableItem({
+  children,
+  className,
+  fieldId,
+  onClick,
+  onKeyDown,
+  row,
+  scope,
+}: ConditionWorkbenchDraggableItemProps): React.JSX.Element {
+  const { attributes, listeners, setNodeRef: setDragNodeRef, transform } = useDraggable({
+    id: getConditionDragItemId(scope, fieldId),
+    data: {
+      type: 'condition-item',
+      scope,
+      row,
+      fieldId,
+    } satisfies ConditionWorkbenchDragData,
+  });
+  const { setNodeRef: setDropNodeRef } = useDroppable({
+    id: getConditionDropItemId(scope, fieldId),
+    data: {
+      type: 'condition-item',
+      scope,
+      row,
+      fieldId,
+    } satisfies ConditionWorkbenchDragData,
+  });
+  const setNodeRef = (node: HTMLDivElement | null) => {
+    setDragNodeRef(node);
+    setDropNodeRef(node);
+  };
+  const dragStyle = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+    : undefined;
+
+  return (
+    <div
+      ref={setNodeRef}
+      data-condition-item-id={fieldId}
+      role="button"
+      tabIndex={0}
+      className={className}
+      style={dragStyle}
+      onClick={onClick}
+      onKeyDown={onKeyDown}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </div>
+  );
+}
 
 function getDashboardErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim()) {
@@ -158,8 +546,8 @@ function normalizeMenuCode(value?: string) {
   return value?.trim() || '';
 }
 
-function getEnabledMenuNodes<T extends { enabled: boolean }>(nodes: T[] | undefined) {
-  return (nodes ?? []).filter((node) => node.enabled !== false);
+function getEnabledMenuNodes<T extends { enabled: boolean }>(nodes?: readonly T[] | null): T[] {
+  return (nodes ?? []).filter((node): node is T => node.enabled !== false);
 }
 
 function isUseflagEnabled(useflag: number | string | undefined, enabled: boolean) {
@@ -3054,12 +3442,26 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   );
   const [billDocumentTone, setBillDocumentTone] = useState<'blue' | 'red'>('blue');
   const [billDocumentScale, setBillDocumentScale] = useState(1);
-  const [activeResize, setActiveResize] = useState<{
-    id: string;
-    label: string;
-    width: number;
-    mode: 'column' | 'filter';
-  } | null>(null);
+  const {
+    activeResize,
+    clearResizePreview,
+    scheduleResizePreview,
+    setActiveResize,
+  } = useWorkbenchResizeState();
+  const conditionWorkbenchSensors = useSensors(
+    useSensor(ConditionWorkbenchPointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+  );
+  const designerWorkbenchSensors = useSensors(
+    useSensor(DesignerWorkbenchPointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+  );
   const [isDetailBoardOpen, setIsDetailBoardOpen] = useState(initialDetailPreview);
   const [detailBoardSortColumnId, setDetailBoardSortColumnId] = useState<string | null>(initialDetailPreview ? mainTableColumns[0]?.id ?? null : null);
   const [detailBoardOpenedRowId, setDetailBoardOpenedRowId] = useState<number | null>(initialDetailPreview ? 1 : null);
@@ -3122,7 +3524,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     beforeId: string | null;
   } | null>(null);
   const [conditionWorkbenchDrag, setConditionWorkbenchDrag] = useState<{
-    scope: 'main' | 'left';
+    scope: ConditionWorkbenchScope;
     fieldId: string;
   } | null>(null);
   const [conditionWorkbenchDropTarget, setConditionWorkbenchDropTarget] = useState<{
@@ -3195,10 +3597,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     scope: BillCanvasFieldScope;
     width: number;
   } | null>(null);
-  const resizeFrameRef = useRef<number | null>(null);
-  const conditionResizeHudFrameRef = useRef<number | null>(null);
-  const conditionResizePreviewFrameRef = useRef<number | null>(null);
-
   const selectedLeftColId = inspectorTarget.kind === 'left-col' ? inspectorTarget.id ?? null : null;
   const selectedMainColId = inspectorTarget.kind === 'main-col' ? inspectorTarget.id ?? null : null;
   const selectedDetailColId = inspectorTarget.kind === 'detail-col' ? inspectorTarget.id ?? null : null;
@@ -5188,7 +5586,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setCols: React.Dispatch<React.SetStateAction<any[]>>,
     minWidth = TABLE_COLUMN_MIN_WIDTH,
     maxWidth = TABLE_COLUMN_AUTO_FIT_MAX_WIDTH,
-    mode: 'column' | 'filter' = 'column',
+    mode: WorkbenchResizeMode = 'column',
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -5197,13 +5595,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
     const nextWidth = estimateColumnWidth(targetCol, minWidth, maxWidth);
     setActiveResize({ id: colId, label: targetCol.name || '未命名字段', width: nextWidth, mode });
-    setCols((prev) => {
-      const targetIndex = prev.findIndex((item) => item.id === colId);
-      if (targetIndex === -1 || prev[targetIndex]?.width === nextWidth) return prev;
-      const next = prev.slice();
-      next[targetIndex] = { ...next[targetIndex], width: nextWidth };
-      return next;
-    });
+    setCols((prev) => updateItemWidthById(prev, colId, nextWidth));
     window.setTimeout(() => setActiveResize((prev) => prev?.id === colId ? null : prev), 720);
   };
 
@@ -5214,7 +5606,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setCols: React.Dispatch<React.SetStateAction<any[]>>,
     minWidth = TABLE_COLUMN_MIN_WIDTH,
     maxWidth = TABLE_COLUMN_RESIZE_MAX_WIDTH,
-    mode: 'column' | 'filter' = 'column',
+    mode: WorkbenchResizeMode = 'column',
   ) => {
     e.preventDefault();
     e.stopPropagation();
@@ -5230,33 +5622,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       latestWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + (moveEvent.pageX - startX)));
-      setActiveResize((prev) => prev?.id === colId ? { ...prev, width: latestWidth } : prev);
-      if (resizeFrameRef.current !== null) return;
-      resizeFrameRef.current = window.requestAnimationFrame(() => {
-        resizeFrameRef.current = null;
-        setCols((prev) => {
-          const targetIndex = prev.findIndex((item) => item.id === colId);
-          if (targetIndex === -1 || prev[targetIndex]?.width === latestWidth) return prev;
-          const next = prev.slice();
-          next[targetIndex] = { ...next[targetIndex], width: latestWidth };
-          return next;
-        });
-      });
+      scheduleResizePreview({ id: colId, label: resizeLabel, width: latestWidth, mode });
     };
 
     const handleMouseUp = () => {
-      if (resizeFrameRef.current !== null) {
-        window.cancelAnimationFrame(resizeFrameRef.current);
-        resizeFrameRef.current = null;
-      }
-      setCols((prev) => {
-        const targetIndex = prev.findIndex((item) => item.id === colId);
-        if (targetIndex === -1 || prev[targetIndex]?.width === latestWidth) return prev;
-        const next = prev.slice();
-        next[targetIndex] = { ...next[targetIndex], width: latestWidth };
-        return next;
-      });
-      setActiveResize((prev) => prev?.id === colId ? null : prev);
+      clearResizePreview({ id: colId, mode });
+      setCols((prev) => updateItemWidthById(prev, colId, latestWidth));
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       document.removeEventListener('mousemove', handleMouseMove);
@@ -5341,11 +5712,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     return `${fieldName}${rowIndex + 1}`;
   };
 
-  const renderFieldPreview = (rawField: any, rowIndex: number, mode: 'table' | 'filter' = 'table') => {
+  const renderFieldPreview = (rawField: any, rowIndex: number, mode: 'table' | 'filter' | 'condition' = 'table') => {
     const field = normalizeColumn(rawField);
     const previewValue = getPreviewCellValue(field, rowIndex);
     const optionValues = getFieldOptionValues(field);
-    const isFilterMode = mode === 'filter';
+    const isFilterMode = mode !== 'table';
+    const isConditionMode = mode === 'condition';
     const inputClass = isFilterMode
       ? 'h-10 w-full rounded-xl border border-slate-200/90 bg-white/96 px-3 text-[12px] text-slate-700 outline-none transition shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] focus:border-[color:var(--workspace-accent-border-strong)] focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/88 dark:text-slate-200'
       : 'h-10 w-full rounded-xl border border-slate-200/80 bg-white/94 px-3 text-[12px] text-slate-700 outline-none transition shadow-[0_10px_20px_-18px_rgba(15,23,42,0.22),inset_0_1px_0_rgba(255,255,255,0.72)] focus:border-[color:var(--workspace-accent-border-strong)] focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/88 dark:text-slate-100';
@@ -5357,15 +5729,56 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     };
 
     if (isFilterMode) {
-      const shellClass = 'flex h-9 w-full items-center justify-between gap-2 rounded-[10px] border border-slate-200/90 bg-white px-3 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200';
+      const shellClass = `flex h-9 w-full items-center justify-between gap-2 rounded-[10px] border border-slate-200/90 bg-white text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 ${isConditionMode ? 'pointer-events-none px-2.5' : 'px-3'}`;
       const staticValue = field.placeholder || previewValue || `${field.name}示例值`;
       const trailingIcon = field.type === '日期框'
-        ? 'calendar_month'
+        ? 'calendar'
         : field.type === '下拉框' || field.type === '多选框'
-          ? 'expand_more'
+          ? 'expand'
           : field.type === '搜索框'
             ? 'search'
             : '';
+
+      if (isConditionMode) {
+        if (field.type === '多选框') {
+          return (
+            <div className={shellClass}>
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className="h-4.5 w-4.5 rounded-md border border-slate-200/80 bg-white/90 dark:border-slate-700 dark:bg-slate-900/70" />
+                <span className="h-4.5 w-4.5 rounded-md border border-slate-200/80 bg-white/90 dark:border-slate-700 dark:bg-slate-900/70" />
+              </div>
+              <ChevronDown className="size-4 text-slate-300 dark:text-slate-500" />
+            </div>
+          );
+        }
+
+        if (field.type === '单选框') {
+          return (
+            <div className={shellClass}>
+              <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                <span className="h-3.5 w-3.5 rounded-full border border-[color:var(--workspace-accent)] bg-[color:var(--workspace-accent)]/14" />
+                <span className="h-3.5 w-3.5 rounded-full border border-slate-300 dark:border-slate-600" />
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className={shellClass}>
+            {field.type === '搜索框' ? (
+              <Search className="size-4 text-slate-300 dark:text-slate-500" />
+            ) : null}
+            <div className="min-w-0 flex-1" />
+            {trailingIcon && field.type !== '搜索框' ? (
+              trailingIcon === 'calendar' ? (
+                <CalendarDays className="size-4 text-slate-300 dark:text-slate-500" />
+              ) : (
+                <ChevronDown className="size-4 text-slate-300 dark:text-slate-500" />
+              )
+            ) : null}
+          </div>
+        );
+      }
 
       if (field.type === '多选框') {
         const tags = (optionValues.length > 0 ? optionValues : ['标签A', '标签B']).slice(0, 2);
@@ -6138,7 +6551,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const billHeaderRowCount = getBillHeaderRowCount();
     const billCanvasFields = getOrderedBillHeaderFields(billMetaFields, mainTableColumns, billHeaderRowCount);
     const billHeaderRows = Array.from({ length: billHeaderRowCount }, (_, index) => index + 1);
-    const headerWorkbenchHeight = billHeaderRowCount * 58 + Math.max(0, billHeaderRowCount - 1) * 10;
+    const headerWorkbenchHeight = billHeaderRowCount * CONDITION_PANEL_ROW_HEIGHT
+      + Math.max(0, billHeaderRowCount - 1) * CONDITION_PANEL_ROW_GAP;
     const buildSelectedIds = (columnId: string, append: boolean) => (
       selectedMainForDelete.includes(columnId)
         ? selectedMainForDelete
@@ -6147,34 +6561,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           : [columnId]
     );
     const isBillHeaderPanelActive = selectedTableConfigScope === 'main';
-    const activeBillResize = activeBillResizeId
-      ? billCanvasFields.find((field) => field.id === activeBillResizeId) ?? null
-      : null;
-    const getBillResizeCandidates = (fieldId: string) => {
-      const targetField = billCanvasFields.find((field) => field.id === fieldId);
-      const targetRow = clampValue(
-        Number.isFinite(Number(targetField?.panelRow)) ? Number(targetField.panelRow) : BILL_HEADER_WORKBENCH_MIN_ROWS,
-        BILL_HEADER_WORKBENCH_MIN_ROWS,
-        billHeaderRowCount,
-      );
-      return buildResizeSnapCandidates(
-        billCanvasFields
-          .filter((field) => field.id !== fieldId)
-          .filter((field) => (
-            clampValue(
-              Number.isFinite(Number(field?.panelRow)) ? Number(field.panelRow) : BILL_HEADER_WORKBENCH_MIN_ROWS,
-              BILL_HEADER_WORKBENCH_MIN_ROWS,
-              billHeaderRowCount,
-            ) === targetRow
-          ))
-          .map((field) => Math.max(BILL_FORM_MIN_WIDTH, Number(field.width) || BILL_FORM_DEFAULT_WIDTH)),
-        {
-          minWidth: BILL_FORM_MIN_WIDTH,
-          maxWidth: BILL_FORM_MAX_WIDTH,
-          baseWidth: BILL_FORM_DEFAULT_WIDTH,
-        },
-      );
-    };
     const getBillHeaderFieldWidth = (field: any) => (
       Math.max(
         BILL_FORM_MIN_WIDTH,
@@ -6184,35 +6570,15 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         ),
       )
     );
-    const activeBillResizeTicks = activeBillResize
-      ? getResizeRulerTicks(getBillHeaderFieldWidth(activeBillResize), {
-          minWidth: BILL_FORM_MIN_WIDTH,
-          maxWidth: BILL_FORM_MAX_WIDTH,
-          snapCandidates: getBillResizeCandidates(activeBillResize.id),
-        })
-      : [];
     const getBillHeaderFieldRow = (field: any) => clampValue(
       Number.isFinite(Number(field?.panelRow)) ? Number(field.panelRow) : BILL_HEADER_WORKBENCH_MIN_ROWS,
       BILL_HEADER_WORKBENCH_MIN_ROWS,
       billHeaderRowCount,
     );
-    const getBillHeaderSelectionClass = (isActive: boolean, isMarkedForDelete: boolean, isDragging: boolean, isInsertTarget: boolean) => (
-      isDragging
-        ? 'bg-white shadow-[0_0_0_3px_var(--workspace-accent-soft)]'
-        : isInsertTarget
-          ? 'bg-white shadow-[0_0_0_3px_var(--workspace-accent-soft)]'
-          : isActive
-            ? 'bg-[color:var(--workspace-accent-soft)] shadow-[0_0_0_3px_var(--workspace-accent-soft)]'
-            : isMarkedForDelete
-              ? 'bg-[color:var(--workspace-accent-soft)]/70'
-              : 'hover:bg-slate-100/80 dark:hover:bg-slate-900/42'
-    );
-    const getBillHeaderPreviewShellClass = (isActive: boolean, isMarkedForDelete: boolean) => (
-      isActive
-        ? '[&>div]:border-[color:var(--workspace-accent-border-strong)] [&>div]:bg-white [&>div]:shadow-[0_0_0_3px_var(--workspace-accent-soft)] dark:[&>div]:bg-slate-900/88'
-        : isMarkedForDelete
-          ? '[&>div]:border-[color:var(--workspace-accent-border)] [&>div]:bg-[color:var(--workspace-accent-tint)]'
-          : ''
+    const getBillHeaderPreviewShellClass = (fieldId: string, isSelected: boolean) => cn(
+      createRuntimeClassName('bill-header-field-preview', fieldId),
+      'pointer-events-none min-w-0 shrink-0',
+      isSelected && '[&>div]:border-border/60 [&>div]:bg-background [&>div]:shadow-none',
     );
     const toggleBillFieldSelection = (columnId: string) => {
       const nextSelectedIds = selectedMainForDelete.includes(columnId)
@@ -6253,62 +6619,66 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         ids: nextSelectedIds,
       });
     };
-    const handleBillHeaderDragStart = (columnId: string, scope: BillCanvasFieldScope) => (event: React.DragEvent<HTMLDivElement>) => {
-      event.stopPropagation();
-      setBillHeaderWorkbenchDrag({ id: columnId, scope });
-      setBillHeaderWorkbenchDropTarget(null);
-      if (event.dataTransfer) {
-        event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData('text/plain', `${scope}:${columnId}`);
-      }
-    };
-    const handleBillHeaderDragEnd = () => {
+    const clearBillHeaderWorkbenchDragState = () => {
       setBillHeaderWorkbenchDrag(null);
       setBillHeaderWorkbenchDropTarget(null);
     };
-    const handleBillHeaderRowDragOver = (rowNumber: number) => (event: React.DragEvent<HTMLDivElement>) => {
-      if (!billHeaderWorkbenchDrag) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (
-        billHeaderWorkbenchDropTarget?.row !== rowNumber
-        || billHeaderWorkbenchDropTarget?.beforeId !== null
-      ) {
-        setBillHeaderWorkbenchDropTarget({ row: rowNumber, beforeId: null });
+    const handleBillHeaderWorkbenchDragStart = (event: DragStartEvent) => {
+      const activeData = event.active.data.current;
+      if (!isBillHeaderWorkbenchDragData(activeData) || activeData.type !== 'bill-header-item') {
+        return;
       }
-      if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = 'move';
-      }
-    };
-    const handleBillHeaderRowDrop = (rowNumber: number) => (event: React.DragEvent<HTMLDivElement>) => {
-      if (!billHeaderWorkbenchDrag) return;
-      event.preventDefault();
-      event.stopPropagation();
-      moveBillHeaderField(billHeaderWorkbenchDrag.id, rowNumber);
-      setBillHeaderWorkbenchDrag(null);
+
+      setBillHeaderWorkbenchDrag({ id: activeData.fieldId, scope: activeData.scope });
       setBillHeaderWorkbenchDropTarget(null);
     };
-    const handleBillHeaderItemDragOver = (rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
-      if (!billHeaderWorkbenchDrag || billHeaderWorkbenchDrag.id === beforeId) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (
-        billHeaderWorkbenchDropTarget?.row !== rowNumber
-        || billHeaderWorkbenchDropTarget?.beforeId !== beforeId
-      ) {
-        setBillHeaderWorkbenchDropTarget({ row: rowNumber, beforeId });
+    const handleBillHeaderWorkbenchDragOver = (event: DragOverEvent) => {
+      const activeData = event.active.data.current;
+      const overData = event.over?.data.current;
+      if (!isBillHeaderWorkbenchDragData(activeData) || activeData.type !== 'bill-header-item') {
+        return;
       }
-      if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = 'move';
+
+      if (!isBillHeaderWorkbenchDragData(overData)) {
+        setBillHeaderWorkbenchDropTarget(null);
+        return;
       }
+
+      if (overData.type === 'bill-header-item') {
+        if (overData.fieldId === activeData.fieldId) {
+          setBillHeaderWorkbenchDropTarget(null);
+          return;
+        }
+
+        setBillHeaderWorkbenchDropTarget({ row: overData.row, beforeId: overData.fieldId });
+        return;
+      }
+
+      setBillHeaderWorkbenchDropTarget({ row: overData.row, beforeId: null });
     };
-    const handleBillHeaderItemDrop = (rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
-      if (!billHeaderWorkbenchDrag || billHeaderWorkbenchDrag.id === beforeId) return;
-      event.preventDefault();
-      event.stopPropagation();
-      moveBillHeaderField(billHeaderWorkbenchDrag.id, rowNumber, beforeId);
-      setBillHeaderWorkbenchDrag(null);
-      setBillHeaderWorkbenchDropTarget(null);
+    const handleBillHeaderWorkbenchDragEnd = (event: DragEndEvent) => {
+      const activeData = event.active.data.current;
+      const overData = event.over?.data.current;
+      if (!isBillHeaderWorkbenchDragData(activeData) || activeData.type !== 'bill-header-item') {
+        clearBillHeaderWorkbenchDragState();
+        return;
+      }
+
+      if (!isBillHeaderWorkbenchDragData(overData)) {
+        clearBillHeaderWorkbenchDragState();
+        return;
+      }
+
+      if (overData.type === 'bill-header-item') {
+        if (overData.fieldId !== activeData.fieldId) {
+          moveBillHeaderField(activeData.fieldId, overData.row, overData.fieldId);
+        }
+        clearBillHeaderWorkbenchDragState();
+        return;
+      }
+
+      moveBillHeaderField(activeData.fieldId, overData.row);
+      clearBillHeaderWorkbenchDragState();
     };
     const handleBillHeaderPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
       const text = event.clipboardData.getData('text');
@@ -6364,17 +6734,43 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       backgroundSize: '24px 24px',
     };
     const actionRailItems = [
-      { icon: 'database', label: '来源表', action: () => activateSourceGridSelection() },
-      { icon: 'auto_awesome_motion', label: '整理', action: () => autoArrangeBillHeaderFields() },
-      { icon: 'add_box', label: '控件', action: appendBillHeaderField },
-      { icon: 'save', label: '暂存', action: () => showToast('已暂存单据模板布局') },
+      { icon: Table2, label: '来源表', action: () => activateSourceGridSelection() },
+      { icon: LayoutPanelTop, label: '整理', action: () => autoArrangeBillHeaderFields() },
+      { icon: Plus, label: '控件', action: appendBillHeaderField },
+      { icon: Save, label: '暂存', action: () => showToast('已暂存单据模板布局') },
     ];
+    const headerWorkbenchHeightClass = createRuntimeClassName('bill-header-height', `rows-${billHeaderRowCount}`);
+    const billHeaderRuntimeRules = joinRuntimeDeclarationBlocks([
+      createRuntimeDeclarationBlock(headerWorkbenchHeightClass, { 'min-height': headerWorkbenchHeight }),
+      ...billCanvasFields.flatMap((column) => {
+        const normalizedColumn = normalizeColumn(column);
+        const fieldWidth = getBillHeaderFieldWidth(column);
+        const labelWidth = Math.max(60, Math.min(132, normalizedColumn.name.length * 14 + 10));
+        const fontSize = Math.max(11, Math.min(18, Number(normalizedColumn.fontSize) || BILL_FORM_DEFAULT_FONT_SIZE)) + 1;
+        const previewWidth = Math.max(104, fieldWidth - labelWidth - 18);
+        const widthClassName = createRuntimeClassName('bill-header-field-width', column.id);
+        const labelClassName = createRuntimeClassName('bill-header-field-label', column.id);
+        const fontClassName = createRuntimeClassName('bill-header-field-font', column.id);
+        const previewClassName = createRuntimeClassName('bill-header-field-preview', column.id);
+
+        return [
+          createRuntimeDeclarationBlock(widthClassName, { width: fieldWidth, 'min-width': fieldWidth }),
+          createRuntimeDeclarationBlock(labelClassName, { width: labelWidth, 'min-width': labelWidth }),
+          createRuntimeDeclarationBlock(fontClassName, { 'font-size': fontSize }),
+          createRuntimeDeclarationBlock(previewClassName, { width: previewWidth, 'min-width': previewWidth }),
+        ];
+      }),
+    ]);
+    const draggedBillHeaderField = billHeaderWorkbenchDrag
+      ? billCanvasFields.find((field) => field.id === billHeaderWorkbenchDrag.id) ?? null
+      : null;
 
     return (
       <div
         style={workspaceThemeVars}
         className={`flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-slate-50/55 ${isConfigFullscreenActive ? 'shadow-none' : 'shadow-[0_28px_64px_-48px_rgba(15,23,42,0.22)]'} ${workspaceThemeStyles.tableSurface}`}
       >
+        {billHeaderRuntimeRules ? <style>{billHeaderRuntimeRules}</style> : null}
         <div ref={billDocumentViewportRef} className={`min-h-0 flex-1 overflow-hidden ${billViewportPaddingClass}`}>
           <div className={`flex h-full min-h-0 items-stretch overflow-hidden ${billPaperWrapClass}`}>
             <div
@@ -6443,157 +6839,183 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                     isBillHeaderPanelActive ? 'shadow-[inset_0_0_0_2px_rgba(47,111,237,0.28)]' : ''
                   }`}
                 >
-                  {activeBillResize ? (
-                    <div className="pointer-events-none absolute right-3 top-2 z-10 inline-flex items-center gap-2 rounded-full border border-[color:var(--workspace-accent-border)] bg-white/96 px-3 py-1 text-[11px] font-bold text-[color:var(--workspace-accent)] shadow-[0_16px_28px_-24px_var(--workspace-accent-shadow)] dark:bg-slate-900/94">
-                      <div className="flex flex-col">
-                        <div className="inline-flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[13px]">straighten</span>
-                          <span className="max-w-[120px] truncate">{activeBillResize.name}</span>
-                          <span className="rounded-full bg-[color:var(--workspace-accent-soft)] px-2 py-0.5">
-                            {Math.round(getBillHeaderFieldWidth(activeBillResize))}px
-                          </span>
-                        </div>
-                        <ResizeTickRuler
-                          width={getBillHeaderFieldWidth(activeBillResize)}
-                          minWidth={BILL_FORM_MIN_WIDTH}
-                          maxWidth={BILL_FORM_MAX_WIDTH}
-                          ticks={activeBillResizeTicks}
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-
                   {billCanvasFields.length > 0 ? (
-                    <div className="flex flex-col gap-2.5" style={{ minHeight: headerWorkbenchHeight }}>
-                      {billHeaderRows.map((rowNumber) => {
-                        const rowFields = billCanvasFields.filter((field) => getBillHeaderFieldRow(field) === rowNumber);
-                        const isRowDropTarget = billHeaderWorkbenchDrag !== null
-                          && billHeaderWorkbenchDropTarget?.row === rowNumber
-                          && billHeaderWorkbenchDropTarget.beforeId === null;
+                    <DndContext
+                      sensors={designerWorkbenchSensors}
+                      onDragStart={handleBillHeaderWorkbenchDragStart}
+                      onDragOver={handleBillHeaderWorkbenchDragOver}
+                      onDragEnd={handleBillHeaderWorkbenchDragEnd}
+                      onDragCancel={clearBillHeaderWorkbenchDragState}
+                    >
+                      <div className={cn(headerWorkbenchHeightClass, 'flex flex-col gap-1')}>
+                        {billHeaderRows.map((rowNumber) => {
+                          const rowFields = billCanvasFields.filter((field) => getBillHeaderFieldRow(field) === rowNumber);
+                          const isRowDropTarget = billHeaderWorkbenchDrag !== null
+                            && billHeaderWorkbenchDropTarget?.row === rowNumber
+                            && billHeaderWorkbenchDropTarget.beforeId === null;
 
-                        return (
-                          <div
-                            key={`bill-header-row-${rowNumber}`}
-                            onDragOver={handleBillHeaderRowDragOver(rowNumber)}
-                            onDrop={handleBillHeaderRowDrop(rowNumber)}
-                            className={`scrollbar-none flex min-h-[52px] items-center overflow-x-auto rounded-md px-2 py-1.5 transition-all ${
-                              isRowDropTarget
-                                ? 'bg-[color:var(--workspace-accent-soft)] ring-1 ring-[color:var(--workspace-accent-border)]'
-                                : rowFields.length === 0
-                                  ? 'bg-slate-50/80 dark:bg-slate-900/28'
-                                  : 'bg-transparent'
-                            }`}
-                          >
-                            <div className="flex min-w-full items-center">
-                              <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                                {rowFields.length > 0 ? rowFields.map((column, index) => {
-                                  const normalizedColumn = normalizeColumn(column);
-                                  const columnScope = column.__scope;
-                                  const isActive = selectedMainForDelete.length <= 1
-                                    && selectedMainForDelete.includes(column.id)
-                                    && selectedMainColId === column.id;
-                                  const isMarkedForDelete = selectedMainForDelete.includes(column.id);
-                                  const isDragging = billHeaderWorkbenchDrag?.id === column.id || activeBillResizeId === column.id;
-                                  const isInsertTarget = billHeaderWorkbenchDrag !== null
-                                    && billHeaderWorkbenchDropTarget?.row === rowNumber
-                                    && billHeaderWorkbenchDropTarget.beforeId === column.id
-                                    && billHeaderWorkbenchDrag.id !== column.id;
-                                  const fieldWidth = getBillHeaderFieldWidth(column);
-                                  const labelWidth = Math.max(54, Math.min(82, Number(normalizedColumn.labelWidth) || BILL_FORM_DEFAULT_LABEL_WIDTH));
-                                  const fontSize = Math.max(11, Math.min(18, Number(normalizedColumn.fontSize) || BILL_FORM_DEFAULT_FONT_SIZE));
+                          return (
+                            <DesignerWorkbenchDropLane
+                              key={`bill-header-row-${rowNumber}`}
+                              dropId={getBillHeaderRowDropId(rowNumber)}
+                              data={{
+                                type: 'bill-header-row',
+                                row: rowNumber,
+                              } satisfies BillHeaderWorkbenchDragData}
+                              className={cn(
+                                'scrollbar-none flex min-h-[48px] items-center overflow-visible rounded-lg border border-transparent bg-transparent px-0.5 py-1 transition-colors',
+                                isRowDropTarget && designerWorkbenchRowActiveClass,
+                                rowFields.length === 0 && designerWorkbenchRowEmptyClass,
+                              )}
+                            >
+                              <div className="flex min-w-full items-center">
+                                <div className="flex min-w-0 flex-1 items-center gap-1">
+                                  {rowFields.length > 0 ? rowFields.map((column, index) => {
+                                    const normalizedColumn = normalizeColumn(column);
+                                    const columnScope = column.__scope;
+                                    const isActive = selectedMainForDelete.length <= 1
+                                      && selectedMainForDelete.includes(column.id)
+                                      && selectedMainColId === column.id;
+                                    const isMarkedForDelete = selectedMainForDelete.includes(column.id);
+                                    const isDragging = billHeaderWorkbenchDrag?.id === column.id || activeBillResizeId === column.id;
+                                    const isInsertTarget = billHeaderWorkbenchDrag !== null
+                                      && billHeaderWorkbenchDropTarget?.row === rowNumber
+                                      && billHeaderWorkbenchDropTarget.beforeId === column.id
+                                      && billHeaderWorkbenchDrag.id !== column.id;
+                                    const widthClassName = createRuntimeClassName('bill-header-field-width', column.id);
+                                    const labelClassName = createRuntimeClassName('bill-header-field-label', column.id);
+                                    const fontClassName = createRuntimeClassName('bill-header-field-font', column.id);
+                                    const previewClassName = createRuntimeClassName('bill-header-field-preview', column.id);
+                                    const isSelected = isActive || isMarkedForDelete || isInsertTarget;
 
-                                  return (
-                                    <div
-                                      key={column.id}
-                                      role="button"
-                                      tabIndex={0}
-                                      draggable
-                                      data-bill-field-id={column.id}
-                                      data-bill-field-scope={columnScope}
-                                      style={{ width: fieldWidth, minWidth: fieldWidth }}
-                                      onDragStart={handleBillHeaderDragStart(column.id, columnScope)}
-                                      onDragEnd={handleBillHeaderDragEnd}
-                                      onDragOver={handleBillHeaderItemDragOver(rowNumber, column.id)}
-                                      onDrop={handleBillHeaderItemDrop(rowNumber, column.id)}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        handleBillFieldSelect(event, column.id, columnScope);
-                                      }}
-                                      onContextMenu={(event) => handleBillFieldContextMenu(event, column.id, columnScope)}
-                                      onKeyDown={(event) => {
-                                        if (event.key === 'Enter' || event.key === ' ') {
-                                          event.preventDefault();
+                                    return (
+                                      <DesignerWorkbenchDraggableItem
+                                        key={column.id}
+                                        dragId={getBillHeaderDragItemId(column.id, columnScope)}
+                                        dropId={getBillHeaderDropItemId(column.id, columnScope)}
+                                        data={{
+                                          type: 'bill-header-item',
+                                          fieldId: column.id,
+                                          row: rowNumber,
+                                          scope: columnScope,
+                                        } satisfies BillHeaderWorkbenchDragData}
+                                        itemAttributes={{
+                                          'data-bill-field-id': String(column.id),
+                                          'data-bill-field-scope': String(columnScope),
+                                        }}
+                                        onClick={(event) => {
                                           event.stopPropagation();
-                                          setSelectedMainForDelete([column.id]);
-                                          activateColumnSelection('main', column.id);
-                                        }
-                                      }}
-                                      className={`group relative flex h-[44px] shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 pr-3 text-left transition-all ${
-                                        isDragging ? 'cursor-grabbing' : 'cursor-grab'
-                                      } ${getBillHeaderSelectionClass(isActive, isMarkedForDelete, isDragging, isInsertTarget)}`}
+                                          handleBillFieldSelect(event, column.id, columnScope);
+                                        }}
+                                        onContextMenu={(event) => handleBillFieldContextMenu(event, column.id, columnScope)}
+                                        onKeyDown={(event) => {
+                                          if (event.key === 'Enter' || event.key === ' ') {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            setSelectedMainForDelete([column.id]);
+                                            activateColumnSelection('main', column.id);
+                                          }
+                                        }}
+                                        className={cn(
+                                          getCompactWorkbenchItemClass({
+                                            selected: isSelected,
+                                            dragging: isDragging,
+                                            insertTarget: isInsertTarget,
+                                          }),
+                                          widthClassName,
+                                          'h-[44px] shrink-0 gap-1 pr-3.5 text-left',
+                                        )}
+                                      >
+                                        {isInsertTarget ? (
+                                          <span className="pointer-events-none absolute inset-y-1 left-0 w-[3px] rounded-full bg-primary" />
+                                        ) : null}
+                                        <div
+                                          className={cn(
+                                            labelClassName,
+                                            fontClassName,
+                                            'pointer-events-none shrink-0 truncate text-left text-[11px] font-medium text-foreground',
+                                            isSelected && 'text-foreground',
+                                          )}
+                                          title={normalizedColumn.name}
+                                        >
+                                          <span className="block truncate">
+                                            {normalizedColumn.name}
+                                          </span>
+                                        </div>
+                                        <div className={cn(previewClassName, getBillHeaderPreviewShellClass(column.id, isSelected))}>
+                                          {renderFieldPreview(normalizedColumn, index, 'condition')}
+                                        </div>
+                                        <div
+                                          data-drag-resize-handle="true"
+                                          className="absolute inset-y-0 right-0 flex w-2 cursor-col-resize items-stretch justify-end"
+                                          onMouseDown={(event) => startBillFieldResize(event, column.id, columnScope)}
+                                          title="拖动调整控件宽度"
+                                        >
+                                          <span className="h-full w-px bg-border/80 transition-colors group-hover:bg-primary" />
+                                        </div>
+                                      </DesignerWorkbenchDraggableItem>
+                                    );
+                                  }) : isRowDropTarget && draggedBillHeaderField ? (
+                                    <div
+                                      className={cn(
+                                        createRuntimeClassName('bill-header-field-width', draggedBillHeaderField.id),
+                                        getCompactWorkbenchItemClass({ selected: true }),
+                                        'pointer-events-none h-[44px] shrink-0 gap-1 rounded-md border-dashed border-primary/35 bg-background/85 pr-3.5 text-left shadow-sm',
+                                      )}
                                     >
-                                      {isInsertTarget ? (
-                                        <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-[color:var(--workspace-accent)]" />
-                                      ) : null}
                                       <div
-                                        className={`shrink-0 truncate text-right text-[12px] font-medium ${
-                                          normalizedColumn.required
-                                            ? 'text-[color:var(--workspace-accent-strong)]'
-                                            : isActive || isMarkedForDelete
-                                              ? 'text-[color:var(--workspace-accent)]'
-                                              : 'text-slate-500 dark:text-slate-300'
-                                        }`}
-                                        style={{ width: labelWidth, fontSize: fontSize + 1 }}
-                                        title={normalizedColumn.name}
+                                        className={cn(
+                                          createRuntimeClassName('bill-header-field-label', draggedBillHeaderField.id),
+                                          createRuntimeClassName('bill-header-field-font', draggedBillHeaderField.id),
+                                          'pointer-events-none shrink-0 truncate text-left text-[11px] font-medium text-foreground',
+                                        )}
+                                        title={normalizeColumn(draggedBillHeaderField).name}
                                       >
-                                        <span className="block truncate">
-                                          {normalizedColumn.name}
-                                          {normalizedColumn.required ? <span className="ml-1 text-[#ef4444]">*</span> : null}
-                                        </span>
+                                        <span className="block truncate">{normalizeColumn(draggedBillHeaderField).name}</span>
                                       </div>
-                                      <div className={`min-w-0 flex-1 pr-3 ${getBillHeaderPreviewShellClass(isActive, isMarkedForDelete)}`}>
-                                        {renderBillFormControlPreview(normalizedColumn, index)}
-                                      </div>
-                                      <div
-                                        className={`absolute bottom-1.5 right-0.5 top-1.5 flex w-2 cursor-col-resize items-center justify-center transition-opacity ${
-                                          isActive || isMarkedForDelete ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                                        }`}
-                                        onMouseDown={(event) => startBillFieldResize(event, column.id, columnScope)}
-                                        title="拖动调整控件宽度"
-                                      >
-                                        <span className={`h-5 w-px rounded-full transition-colors ${
-                                          isActive || isMarkedForDelete
-                                            ? 'bg-[color:var(--workspace-accent)]'
-                                            : 'bg-slate-300/90 group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-600'
-                                        }`} />
+                                      <div className={cn(createRuntimeClassName('bill-header-field-preview', draggedBillHeaderField.id), 'pointer-events-none min-w-0 shrink-0')}>
+                                        {renderFieldPreview(normalizeColumn(draggedBillHeaderField), 0, 'condition')}
                                       </div>
                                     </div>
-                                  );
-                                }) : (
-                                  <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                                    拖入本行或粘贴 Excel 字段
-                                  </div>
-                                )}
+                                  ) : (
+                                    <div className="text-xs font-medium text-muted-foreground">
+                                      拖入本行
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                            </DesignerWorkbenchDropLane>
+                          );
+                        })}
+                      </div>
+                    </DndContext>
                   ) : (
                     <div className="flex min-h-[260px] items-center justify-center">
-                      <div className="rounded-md border border-dashed border-[#cbd9eb] bg-[#fbfdff] px-6 py-8 text-center">
-                        <div className="mx-auto flex size-12 items-center justify-center rounded-md bg-[#eef4ff] text-[#2f6fed]">
-                          <span className="material-symbols-outlined text-[22px]">fact_check</span>
-                        </div>
-                        <div className="mt-4 text-[15px] font-bold text-slate-700">将 Excel 字段复制到单据抬头</div>
-                      </div>
+                      <Card className="border-dashed border-border bg-muted/30 px-6 py-8 text-center shadow-none">
+                        <CardContent className="flex flex-col items-center gap-4 p-0">
+                          <div className="flex size-12 items-center justify-center rounded-md bg-primary/10 text-primary">
+                            <FileSpreadsheet className="size-5" />
+                          </div>
+                          <div className="text-sm font-semibold text-foreground">将 Excel 字段复制到单据抬头</div>
+                        </CardContent>
+                      </Card>
                     </div>
                   )}
                 </div>
 
-                <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[#dce5f0] bg-white px-3 pb-3 pt-3">
-                  <div className="min-h-0 flex-1">
+                <Card className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden border-border/80 bg-card">
+                  <CardHeader className="border-b border-border/80 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex size-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+                        <Table2 className="size-4" />
+                      </div>
+                      <div>
+                        <CardTitle>单据明细区</CardTitle>
+                        <CardDescription className="text-xs">明细表属性、字段和画布配置统一收在这里。</CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="min-h-0 flex-1 p-3">
                     {renderTableBuilder(
                       'detail',
                       detailCols,
@@ -6608,26 +7030,28 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                         canvasLabel: '点击配置单据明细表',
                       },
                     )}
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               </div>
 
-              <aside className="flex min-h-0 w-[96px] shrink-0 border-l border-[#edf2f8] pl-5 pt-1">
-                <div className="rounded-md border border-[#e3ebf4] bg-white p-2.5">
+              <aside className="flex min-h-0 w-[112px] shrink-0 border-l border-border/80 pl-5 pt-1">
+                <Card className="w-full border-border/80 bg-card">
+                  <CardContent className="p-2.5">
                   <div className="flex flex-col gap-3">
                     {actionRailItems.map((item) => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={item.action}
-                      className="flex h-[78px] flex-col items-center justify-center gap-2 rounded-md border border-[#dfe7f1] bg-white text-slate-500 transition-all hover:border-[#bcd0ea] hover:text-[#2f6fed]"
-                    >
-                      <span className="material-symbols-outlined text-[24px]">{item.icon}</span>
-                      <span className="text-[12px] font-semibold leading-5">{item.label}</span>
-                    </button>
+                      <Button
+                        key={item.label}
+                        variant="outline"
+                        className="flex h-[78px] w-full flex-col items-center justify-center gap-2 rounded-md px-3 text-xs font-semibold"
+                        onClick={item.action}
+                      >
+                        <item.icon className="size-5" />
+                        <span className="leading-5">{item.label}</span>
+                      </Button>
                     ))}
                   </div>
-                </div>
+                  </CardContent>
+                </Card>
               </aside>
             </div>
           </div>
@@ -6681,10 +7105,14 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       return append ? Array.from(new Set([...currentIds, id])) : [id];
     };
     const getColumnRenderWidth = (rawColumn: any) => {
-      const normalizedWidth = Number(normalizeColumn(rawColumn).width);
-      return Math.max(
+      const normalizedColumn = normalizeColumn(rawColumn);
+      return resolveWorkbenchPreviewWidth(
+        normalizedColumn.width,
+        TABLE_COLUMN_MIN_WIDTH,
         TABLE_COLUMN_COLLAPSED_RENDER_WIDTH,
-        Number.isFinite(normalizedWidth) ? Math.round(normalizedWidth) : TABLE_COLUMN_MIN_WIDTH,
+        activeResize,
+        normalizedColumn.id,
+        'column',
       );
     };
 
@@ -6733,9 +7161,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const headerDividerClass = tableSelected ? 'border-[color:var(--workspace-accent-border)]' : 'border-slate-200/70 dark:border-slate-700/80';
     const getHeaderButtonClass = (isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => (
       isActive
-        ? 'bg-[color:var(--workspace-accent-tint)]'
+        ? 'bg-[linear-gradient(180deg,rgba(255,252,253,0.98),rgba(255,247,250,1))] shadow-[inset_0_0_0_1px_var(--workspace-accent-border-strong)] dark:bg-[linear-gradient(180deg,rgba(80,7,36,0.26),rgba(59,7,30,0.18))]'
         : isMarkedForDelete
-          ? 'bg-[linear-gradient(180deg,rgba(255,246,248,0.98),rgba(255,250,251,1))]'
+          ? 'bg-[linear-gradient(180deg,rgba(255,248,250,0.98),rgba(255,251,252,1))] shadow-[inset_0_0_0_1px_rgba(191,90,112,0.18)]'
           : isTreeRelation
             ? 'bg-[linear-gradient(180deg,rgba(237,247,255,0.98),rgba(245,250,255,1))] shadow-[inset_0_0_0_1px_rgba(125,176,255,0.46)]'
           : tableSelected
@@ -6744,17 +7172,17 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     );
     const getHeaderLabelClass = (isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => {
       if (isActive) {
-        return 'text-[color:var(--workspace-accent-strong)]';
+        return 'rounded-md bg-[color:var(--workspace-accent-soft)] px-1.5 py-[3px] text-[color:var(--workspace-accent-strong)] shadow-[inset_0_0_0_1px_var(--workspace-accent-border)]';
       }
       if (isMarkedForDelete) {
-        return 'text-[#bf5a70]';
+        return 'rounded-md bg-[#fff1f4] px-1.5 py-[3px] text-[#bf5a70] shadow-[inset_0_0_0_1px_rgba(191,90,112,0.12)] dark:bg-rose-500/12 dark:text-rose-200';
       }
       if (isTreeRelation) {
-        return 'bg-[#eaf4ff] text-[#2563eb] shadow-[0_12px_20px_-18px_rgba(59,130,246,0.7)] dark:bg-sky-500/16 dark:text-sky-200';
+        return 'rounded-md bg-[#eaf4ff] px-1.5 py-[3px] text-[#2563eb] shadow-[0_12px_20px_-18px_rgba(59,130,246,0.7)] dark:bg-sky-500/16 dark:text-sky-200';
       }
       return tableSelected
-        ? 'text-[#ba566d] dark:text-[#f4b5c1]'
-        : 'bg-transparent text-slate-700 dark:text-slate-100';
+        ? 'px-0 py-0 text-[#ba566d] dark:text-[#f4b5c1]'
+        : 'bg-transparent px-0 py-0 text-slate-700 dark:text-slate-100';
     };
     const getHeaderRequiredMarkClass = (isActive: boolean, isMarkedForDelete: boolean, isRequired: boolean, isTreeRelation: boolean) => {
       if (!isRequired) return 'hidden';
@@ -6781,6 +7209,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       : 'text-slate-500 dark:text-slate-300';
     const themedTableSurfaceClass = tableSurfaceClass;
     const themedTableCanvasClass = tableCanvasClass;
+    const tableCanvasPanelShellClass = tableSelected
+      ? 'border-[color:var(--workspace-accent-border)] bg-white/96 shadow-[0_24px_56px_-36px_rgba(192,107,125,0.5)] dark:bg-slate-950/86'
+      : 'border-white/85 bg-white/94 shadow-[0_24px_48px_-36px_rgba(15,23,42,0.24)] dark:border-slate-800/90 dark:bg-slate-950/84';
     const getHeaderCornerClass = (index: number) => (index === 0 ? 'rounded-tl-[16px]' : '');
     const addColumnHeaderShellClass = tableSelected
       ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] dark:bg-white/6'
@@ -6791,6 +7222,42 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const tableBuilderContentStyle: React.CSSProperties = {
       width: totalTableWidth,
       minWidth: totalTableWidth,
+    };
+    const renderCenteredCanvasPanel = () => {
+      if (isCompactCanvas) {
+        return (
+          <div className="pointer-events-none relative z-10 flex w-full max-w-[340px] items-center gap-2 rounded-xl border border-slate-200/80 bg-white/92 px-3 py-2 text-left text-[11px] text-slate-500 shadow-[0_18px_36px_-34px_rgba(15,23,42,0.22)] backdrop-blur-sm dark:border-slate-700 dark:bg-slate-950/84 dark:text-slate-300">
+            <span className="material-symbols-outlined text-[15px] text-[color:var(--workspace-accent)]">table_view</span>
+            <span className="min-w-0 flex-1 truncate font-medium text-slate-600 dark:text-slate-100">
+              {canvasLabel}
+            </span>
+            <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
+              {hasDetailBoardFeature ? '可预览分组' : '点击配置'}
+            </span>
+          </div>
+        );
+      }
+
+      return (
+        <div
+          className={`pointer-events-none relative z-10 flex w-full flex-col items-center gap-2 rounded-[18px] border text-center backdrop-blur-sm ${tableCanvasPanelShellClass} ${isCompactCanvas ? 'max-w-[320px] px-4 py-3' : 'max-w-[420px] px-5 py-4'}`}
+        >
+          <div className={`flex items-center justify-center rounded-md border ${isCompactModuleSetting ? 'size-10' : 'size-12'} ${tableCanvasIconClass}`}>
+            <span className={`material-symbols-outlined ${isCompactModuleSetting ? 'text-[16px]' : 'text-[20px]'} ${tableSelected ? 'text-[#c06b7d]' : 'text-slate-300 dark:text-slate-500'}`}>table_view</span>
+          </div>
+          {detailBoardFeatureLabel && (
+            <div className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${detailBoardTheme.badge}`}>
+              {detailBoardFeatureLabel}
+            </div>
+          )}
+          <div className={`font-semibold ${isCompactCanvas ? 'text-[12px]' : 'text-[13px]'} ${tableCanvasTitleClass}`}>
+            {canvasLabel}
+          </div>
+          <div className="text-[11px] text-slate-400">
+            {hasDetailBoardFeature ? '双击画布可预览详情分组布局' : '点击画布即可切换到整表配置'}
+          </div>
+        </div>
+      );
     };
     if (cols.length === 0) {
       return (
@@ -6851,11 +7318,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                         type="button"
                         onClick={(event) => handleColumnHeaderClick(event, col.id)}
                         onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
-                        className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-2 py-0' : isCompactModuleSetting ? 'min-h-[34px] px-3 pr-4 py-0' : 'min-h-[40px] px-3.5 pr-5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+                        className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-1.5 py-0' : isCompactModuleSetting ? 'min-h-[32px] px-1.5 pr-3 py-0' : 'min-h-[38px] px-2 pr-3.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`}
                       >
                           <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
                             <div
-                              className={`inline-flex max-w-full items-center rounded-full font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : 'px-2.5 py-1'} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+                              className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
                               title={normalizedCol.name}
                             >
                               <span className="truncate">{normalizedCol.name}</span>
@@ -6864,7 +7331,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                                   树
                                 </span>
                               )}
-                              <span className={`ml-1 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
+                              <span className={`ml-0.5 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
                             </div>
                           </div>
                         </button>
@@ -6905,25 +7372,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               event.stopPropagation();
               options?.onCanvasDoubleClick?.();
             }}
-            style={tableBuilderContentStyle}
-            className={`relative mt-1 flex w-full overflow-hidden rounded-[20px] border text-center transition-all dark:border-slate-700 ${themedTableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] flex-1' : 'min-h-[188px] flex-1'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+            className={`relative mt-1 flex w-full items-center justify-center overflow-hidden rounded-[20px] border px-4 text-center transition-all dark:border-slate-700 ${themedTableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] flex-1 py-3' : 'min-h-[188px] flex-1 py-6'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
           >
             <div className={`pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.28),transparent_62%)] ${tableSelected ? 'opacity-80' : 'opacity-100'}`} />
-              <div className={`relative z-10 flex h-full w-full flex-col items-center justify-center px-5 ${isCompactCanvas ? 'py-3' : 'py-6'}`}>
-              <div className="flex flex-col items-center gap-2 rounded-md border border-slate-200/80 bg-white/90 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/78">
-                <div className={`flex items-center justify-center rounded-md border ${isCompactModuleSetting ? 'size-10' : 'size-12'} ${tableCanvasIconClass}`}>
-                  <span className={`material-symbols-outlined ${isCompactModuleSetting ? 'text-[16px]' : 'text-[20px]'} ${tableSelected ? 'text-[#c06b7d]' : 'text-slate-300 dark:text-slate-500'}`}>table_view</span>
-                </div>
-                {detailBoardFeatureLabel && (
-                    <div className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${detailBoardTheme.badge}`}>
-                    {detailBoardFeatureLabel}
-                  </div>
-                )}
-                <div className={`font-semibold ${isCompactCanvas ? 'text-[12px]' : 'text-[13px]'} ${tableCanvasTitleClass}`}>
-                  {canvasLabel}
-                </div>
-                <div className="text-[11px] text-slate-400">{hasDetailBoardFeature ? '双击画布可预览详情分组布局' : '点击画布即可切换到整表配置'}</div>
-              </div>
+            <div className="relative z-10 flex h-full w-full items-center justify-center">
+              {renderCenteredCanvasPanel()}
             </div>
           </button>
         </div>
@@ -6971,11 +7424,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                       type="button"
                       onClick={(event) => handleColumnHeaderClick(event, col.id)}
                       onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
-                        className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[38px] px-0 pr-2 py-0' : isCompactModuleSetting ? 'min-h-[38px] px-3 pr-4 py-0' : 'min-h-[46px] px-3.5 pr-5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+                        className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[36px] px-0 pr-1.5 py-0' : isCompactModuleSetting ? 'min-h-[34px] px-1.5 pr-3 py-0' : 'min-h-[42px] px-2 pr-3.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`}
                     >
                       <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
                         <div
-                          className={`inline-flex max-w-full items-center rounded-full font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : 'px-2.5 py-1'} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+                          className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
                           title={normalizedCol.name}
                         >
                           <span className="truncate">{normalizedCol.name}</span>
@@ -6984,7 +7437,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                               树
                             </span>
                           )}
-                          <span className={`ml-1 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
+                          <span className={`ml-0.5 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
                         </div>
                       </div>
                     </button>
@@ -7026,22 +7479,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                     event.stopPropagation();
                     options?.onCanvasDoubleClick?.();
                   }}
-                    className={`flex w-full flex-col items-center justify-center ${isCompactModuleSetting ? 'min-h-[190px]' : 'min-h-[230px]'} rounded-b-md border-t text-center transition-all ${tableSelected ? 'border-[#efd6db]/85 bg-[#fff7f9] hover:bg-[#fff3f6] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+                  className={`flex w-full items-center justify-center px-4 ${isCompactModuleSetting ? 'min-h-[190px] py-4' : 'min-h-[230px] py-6'} rounded-b-md border-t text-center transition-all ${tableSelected ? 'border-[#efd6db]/85 bg-[#fff7f9] hover:bg-[#fff3f6] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
                 >
-                  <div className={`flex items-center justify-center rounded-md border ${tableCanvasIconClass} ${isCompactModuleSetting ? 'size-11' : 'size-12'}`}>
-                    <span className={`material-symbols-outlined ${isCompactModuleSetting ? 'text-[18px]' : 'text-[20px]'}`}>table_view</span>
-                  </div>
-                  {detailBoardFeatureLabel && (
-                    <div className={`mt-3 inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold ${detailBoardTheme.badge}`}>
-                      {detailBoardFeatureLabel}
-                    </div>
-                  )}
-                  <div className={`mt-3 font-semibold ${isCompactModuleSetting ? 'text-[12px]' : 'text-[13px]'} ${tableCanvasTitleClass}`}>
-                    {canvasLabel}
-                  </div>
-                  <div className="mt-1 text-[11px] text-slate-400">
-                    {hasDetailBoardFeature ? '双击画布可预览详情分组布局' : '点击画布即可切换到整表配置'}
-                  </div>
+                  {renderCenteredCanvasPanel()}
                 </button>
               </td>
             </tr>
@@ -7430,7 +7870,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           return;
         }
 
-        const mappedColumns = rows.map((field, index) => mapSingleTableFieldRecordToColumn(field, index));
+        const mappedColumns = rows.map((field, index) => mapSingleTableFieldRecordToColumn(field, index)) as typeof mainTableColumns;
         setMainTableColumns(mappedColumns);
         setSelectedMainForDelete([]);
         setInspectorTarget((prev) => {
@@ -7596,7 +8036,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
         const mappedDetails = rows.map((detail, index) => mapSingleTableDetailRecord(detail, index));
         const nextTabs = mappedDetails.map((item) => item.tab);
-        const nextTabFillTypes = Object.fromEntries(mappedDetails.map((item) => [item.tab.id, item.fillType]));
         const nextTabConfigs = Object.fromEntries(mappedDetails.map((item) => [item.tab.id, item.config]));
         const nextGridConfigs = Object.fromEntries(mappedDetails.map((item) => [item.tab.id, item.gridConfig]));
         const nextDetailColumns = Object.fromEntries(mappedDetails.map((item) => [item.tab.id, [] as any[]]));
@@ -7604,7 +8043,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         const nextActiveTab = nextTabs[0]?.id ?? '';
 
         setDetailTabs(nextTabs);
-        setTabFillTypes(nextTabFillTypes);
         setDetailTabConfigs(nextTabConfigs);
         setDetailTableConfigs(nextGridConfigs);
         setDetailTableColumns(nextDetailColumns);
@@ -7990,10 +8428,103 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     DETAIL_FILL_TYPE_OPTIONS.find((option) => option.value === fillType) ?? DETAIL_FILL_TYPE_OPTIONS[0]
   );
 
-  const activeGlassTabStyle: React.CSSProperties = {
-    background: 'var(--workspace-accent)',
-    borderColor: 'var(--workspace-accent-border-strong)',
-    boxShadow: '0 18px 34px -24px var(--workspace-accent-shadow)',
+  const getDetailFillTypeIcon = (fillType?: string) => {
+    const detailFillType = getDetailFillTypeMeta(fillType).value;
+
+    switch (detailFillType) {
+      case '树表格':
+        return FolderTree;
+      case '图表':
+        return BarChart3;
+      case '网页':
+        return Globe;
+      default:
+        return Table2;
+    }
+  };
+
+  const renderDetailTabStrip = (options?: {
+    addLabel?: string;
+    showModeBadge?: boolean;
+  }) => {
+    const activeTabMeta = getDetailFillTypeMeta(currentDetailFillType);
+    const ActiveDetailIcon = getDetailFillTypeIcon(currentDetailFillType);
+
+    return (
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          {detailTabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+
+            return (
+              <div
+                key={tab.id}
+                className={cn(
+                  'group flex min-w-[124px] items-center gap-1.5 rounded-[14px] border px-2 py-1.5 transition-all',
+                  isActive
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-border/70 bg-background/88 text-slate-600 shadow-[0_12px_22px_-22px_rgba(15,23,42,0.18)] hover:border-primary/30 hover:bg-background dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:border-primary/30 dark:hover:bg-slate-900/80',
+                )}
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => activateDetailWorkbenchTab(tab.id)}
+                  className={cn(
+                    'h-auto min-w-0 flex-1 justify-start rounded-[10px] px-2 py-1 text-left shadow-none hover:bg-transparent',
+                    isActive
+                      ? 'text-white hover:bg-transparent hover:text-white'
+                      : 'text-foreground hover:bg-transparent hover:text-foreground',
+                  )}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className={cn('block truncate text-[12px] font-semibold', isActive && 'text-white')}>
+                      {tab.name}
+                    </span>
+                  </span>
+                </Button>
+                {detailTabs.length > 1 ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(event) => deleteTab(tab.id, event)}
+                    className={cn(
+                      'size-8 shrink-0 rounded-2xl',
+                      isActive
+                        ? 'text-white/80 hover:bg-white/12 hover:text-white'
+                        : 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive',
+                    )}
+                    title="删除页签"
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                ) : null}
+              </div>
+            );
+          })}
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={addTab}
+            className="h-10 gap-1.5 rounded-[12px] border-dashed border-primary/30 bg-primary/5 px-3 text-[11px] font-semibold text-primary hover:bg-primary/10 hover:text-primary"
+          >
+            <Plus className="size-4" />
+            {options?.addLabel ?? '新增页签'}
+          </Button>
+        </div>
+
+        {options?.showModeBadge !== false ? (
+          <Badge
+            variant="muted"
+            className="h-10 gap-2 rounded-md border-border px-3 font-medium text-foreground"
+          >
+            <ActiveDetailIcon className="size-4" />
+            <span>{activeTabMeta.label}视图</span>
+          </Badge>
+        ) : null}
+      </div>
+    );
   };
 
   const startLayoutDrag = (
@@ -8016,6 +8547,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   const renderDetailFillPlaceholder = () => {
     const fillTypeMeta = getDetailFillTypeMeta(currentDetailFillType);
+    const FillTypeIcon = getDetailFillTypeIcon(fillTypeMeta.value);
     const isDetailViewSelected = inspectorTarget.kind === 'detail-grid' && inspectorTarget.id === fillTypeMeta.value;
     const handleActivateDetailView = () => {
       setSelectedArchiveNodeId(`detail-${activeTab}`);
@@ -8027,18 +8559,19 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       <button
         type="button"
         onClick={handleActivateDetailView}
-        className={`flex min-h-[156px] w-full flex-col items-center justify-center gap-3 rounded-[20px] border border-dashed px-6 py-7 text-center text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] transition-all dark:text-slate-400 ${
+        className={cn(
+          'flex min-h-[156px] w-full flex-col items-center justify-center gap-3 rounded-md border border-dashed px-6 py-7 text-center shadow-sm transition-all',
           isDetailViewSelected
-            ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-soft)]/65'
-            : 'border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(247,250,253,0.86))] hover:border-[color:var(--workspace-accent-border)] hover:bg-white dark:border-slate-700 dark:bg-slate-900/38 dark:hover:bg-slate-900/48'
-        }`}
+            ? 'border-primary bg-primary/5 text-foreground ring-2 ring-primary ring-offset-1'
+            : 'border-border bg-background text-muted-foreground hover:border-primary/40 hover:bg-accent/30',
+        )}
       >
-        <div className="flex size-11 items-center justify-center rounded-2xl bg-white text-primary shadow-[0_16px_28px_-24px_rgba(37,99,235,0.42)] dark:bg-slate-800">
-          <span className="material-symbols-outlined text-[22px]">{fillTypeMeta.icon}</span>
+        <div className="flex size-11 items-center justify-center rounded-md border border-border bg-muted text-primary">
+          <FillTypeIcon className="size-5" />
         </div>
         <div className="space-y-1.5">
-          <div className="text-[13px] font-semibold text-slate-800 dark:text-slate-200">{fillTypeMeta.label} 视图预留区</div>
-          <div className="max-w-sm text-[11px] leading-5 text-slate-400">
+          <div className="text-[13px] font-semibold text-foreground">{fillTypeMeta.label} 视图预留区</div>
+          <div className="max-w-sm text-[11px] leading-5 text-muted-foreground">
             {fillTypeMeta.value === '图表' ? '点击配置明细图表' : `点击配置明细${fillTypeMeta.label}`}
           </div>
         </div>
@@ -8047,7 +8580,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   };
 
   const renderDetailTabsWorkspace = (panelMode: 'document' | 'builder') => {
-    const activeTabMeta = getDetailFillTypeMeta(currentDetailFillType);
     const contentPadding = isConfigFullscreenActive
       ? 'p-4'
       : panelMode === 'document'
@@ -8056,109 +8588,45 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
     return (
       <div className={`flex h-full min-h-0 flex-col ${contentPadding}`}>
-        <div className={`rounded-[16px] border border-slate-200 bg-white p-3 shadow-[0_14px_26px_-24px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900/70 ${isConfigFullscreenActive ? 'mb-3' : 'mb-4'}`}>
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-              {detailTabs.map((tab) => {
-                const tabMeta = getDetailFillTypeMeta(getDetailFillTypeByTabId(tab.id));
-                const isActive = activeTab === tab.id;
-
-                return (
-                  <div
-                    key={tab.id}
-                    style={isActive ? activeGlassTabStyle : undefined}
-                    className={`group flex min-w-[148px] items-center gap-2 rounded-[16px] border px-2 py-1.5 transition-all ${
-                      isActive
-                        ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent)] text-white shadow-[0_18px_32px_-22px_var(--workspace-accent-shadow)]'
-                        : 'border-slate-200/80 bg-white/88 text-slate-600 shadow-[0_12px_22px_-22px_rgba(15,23,42,0.18)] hover:border-[color:var(--workspace-accent-border)] hover:bg-white dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:border-[color:var(--workspace-accent-border)] dark:hover:bg-slate-900/80'
-                    }`}
-                  >
-                    <button
-                      onClick={() => activateDetailWorkbenchTab(tab.id)}
-                      className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[12px] px-2 py-1 text-left"
-                    >
-                      <div className={`flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors ${
-                        isActive
-                          ? 'bg-white/18 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
-                          : 'bg-slate-50 text-slate-400 dark:bg-slate-800'
-                      }`}>
-                        <span className="material-symbols-outlined text-[16px]">{tabMeta.icon}</span>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className={`truncate text-[12px] font-semibold ${isActive ? 'text-white' : ''}`}>{tab.name}</div>
-                        <div className={`mt-0.5 truncate text-[10px] ${isActive ? 'text-white/75' : 'text-slate-400'}`}>{tabMeta.label}</div>
-                      </div>
-                    </button>
-                    {detailTabs.length > 1 && (
-                      <button
-                        onClick={(e) => deleteTab(tab.id, e)}
-                        className={`flex size-8 shrink-0 items-center justify-center rounded-2xl transition-colors ${
-                          isActive
-                            ? 'text-white/80 hover:bg-white/12 hover:text-white'
-                            : 'text-slate-400 hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-500/10'
-                        }`}
-                        title="删除页签"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">close</span>
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-
-              <button
-                onClick={addTab}
-                className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-[12px] border border-dashed border-primary/30 bg-primary/5 px-3 text-[11px] font-semibold text-primary transition-all hover:bg-primary/10"
-              >
-                <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                新增页签
-              </button>
-            </div>
-
-            <div className="inline-flex shrink-0 items-center gap-2 rounded-[16px] border border-slate-200/80 bg-slate-50/88 px-3 py-2 text-[12px] font-semibold text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] dark:border-slate-700 dark:bg-slate-900/58 dark:text-slate-200">
-              <span className="material-symbols-outlined text-[16px] text-[color:var(--workspace-accent)]">{activeTabMeta.icon}</span>
-              <span>{activeTabMeta.label}视图</span>
-            </div>
-          </div>
+        <div className={cn('mb-3 flex flex-wrap items-center justify-between gap-2 px-1', isConfigFullscreenActive ? 'mb-3' : 'mb-4')}>
+          {renderDetailTabStrip({ addLabel: '新增页签', showModeBadge: false })}
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col rounded-[24px] border border-slate-200/80 bg-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] dark:border-slate-700 dark:bg-slate-900/50">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
           {currentDetailFillType === '表格' ? (
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex items-center justify-between border-b border-slate-200/80 px-4 py-3 dark:border-slate-700">
+              <div className="flex items-center justify-between px-4 py-2">
                 <div className="flex items-center gap-2">
-                  <div className="flex size-8 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                    <span className="material-symbols-outlined text-[16px]">table_rows</span>
-                  </div>
-                    <div>
-                      <div className="text-[13px] font-bold text-slate-700 dark:text-slate-200">明细字段配置</div>
-                      <div className="text-[11px] text-slate-400">支持粘贴字段名并批量生成列</div>
-                    </div>
+                  <Table2 className="size-4 text-primary" />
+                  <div className="text-[12px] font-medium text-foreground">明细字段</div>
                 </div>
                 <div className="flex items-center gap-2">
                   {selectedDetailForDelete.length > 0 && (
-                    <button
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => deleteSelectedColumns('detail', selectedDetailForDelete)}
-                      className="inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-[12px] font-bold text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                      className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
                     >
-                      <span className="material-symbols-outlined text-[14px]">delete</span>
+                      <Trash2 className="size-4" />
                       删除 ({selectedDetailForDelete.length})
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button
+                    size="sm"
                     onClick={() => setDetailTableColumns((prev) => ({
                       ...prev,
                       [activeTab]: [...(prev[activeTab] || []), { id: `d_col_${Date.now()}`, name: `新字段 ${(prev[activeTab] || []).length + 1}`, type: '文本', width: 120 }],
                     }))}
-                    className="inline-flex items-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-[12px] font-bold text-white shadow-[0_16px_26px_-18px_rgba(14,116,144,0.65)] transition-all hover:bg-erp-blue"
+                    className="gap-1"
                   >
-                    <span className="material-symbols-outlined text-[14px]">add</span>
+                    <Plus className="size-4" />
                     新增字段
-                  </button>
+                  </Button>
                 </div>
               </div>
               <div
-                className="min-h-0 flex-1 overflow-auto outline-none"
+                className="scrollbar-none min-h-0 flex-1 overflow-auto bg-transparent outline-none"
                 tabIndex={0}
                 onPaste={(e) => {
                   const text = e.clipboardData.getData('text');
@@ -8197,20 +8665,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               {renderDetailFillPlaceholder()}
             </div>
           )}
-        </div>
-
-        <div className={`flex items-center justify-between rounded-[20px] border border-slate-200/70 bg-white/80 px-4 py-3 text-[12px] text-slate-500 shadow-[0_16px_30px_-28px_rgba(15,23,42,0.35)] dark:border-slate-700 dark:bg-slate-900/50 ${isConfigFullscreenActive ? 'mt-3' : 'mt-4'}`}>
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[16px] text-primary">info</span>
-            当前页签:
-            <span className="font-bold text-slate-700 dark:text-slate-200">
-              {detailTabs.find((tab) => tab.id === activeTab)?.name || '未选择'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full bg-primary/10 px-2.5 py-1 font-bold text-primary">{activeTabMeta.label}</span>
-            <span>{activeTabMeta.description}</span>
-          </div>
         </div>
       </div>
     );
@@ -8573,6 +9027,10 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const compactCardClass = shadcnSectionCardClass;
     const sectionTitleClass = shadcnSectionTitleClass;
     const mutedLabelClass = shadcnMutedLabelClass;
+    const quietDocumentInspectorCardClass = 'rounded-[16px] border border-slate-200/75 bg-white px-4 py-3 shadow-none dark:border-slate-800 dark:bg-slate-950/78';
+    const quietDocumentInspectorSummaryClass = 'rounded-[12px] border border-slate-200/70 bg-slate-50/80 px-3 py-2 text-[11px] leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-300';
+    const quietDocumentInspectorActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200/80 bg-white px-3 text-[11px] font-medium text-slate-600 transition-colors hover:border-[color:var(--workspace-accent-border)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200';
+    const quietDocumentInspectorPrimaryActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-md bg-[color:var(--workspace-accent)] px-3 text-[11px] font-medium text-white shadow-none transition-colors hover:bg-[color:var(--workspace-accent-strong)]';
     const isDocumentScopedGridInspector = selectedColumnContext?.kind === 'grid'
       && businessType !== 'table'
       && (
@@ -8629,9 +9087,15 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               <span className={`material-symbols-outlined text-[16px] ${isActive ? 'text-[#1686e3]' : 'text-slate-400 dark:text-slate-500'}`}>{tab.icon}</span>
               <span className="truncate">{tab.label}</span>
               {hasCountBadge && (
-                <span className="absolute right-2 top-1.5 inline-flex min-w-[16px] items-center justify-center rounded-full bg-[#e04f5f] px-1.5 py-0.5 text-[9px] font-black leading-none text-white shadow-[0_10px_18px_-14px_rgba(224,79,95,0.78)]">
-                  {tab.count! > 9 ? '9+' : tab.count}
-                </span>
+                isDocumentScopedGridInspector ? (
+                  <span className="ml-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold leading-none text-slate-500 dark:bg-slate-800 dark:text-slate-200">
+                    {tab.count! > 9 ? '9+' : tab.count}
+                  </span>
+                ) : (
+                  <span className="absolute right-2 top-1.5 inline-flex min-w-[16px] items-center justify-center rounded-full bg-[#e04f5f] px-1.5 py-0.5 text-[9px] font-black leading-none text-white shadow-[0_10px_18px_-14px_rgba(224,79,95,0.78)]">
+                    {tab.count! > 9 ? '9+' : tab.count}
+                  </span>
+                )
               )}
             </button>
           );
@@ -9638,6 +10102,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       const isBillDetailGridConfig = businessType === 'table' && selectedColumnContext.scope === 'detail-grid';
       const isDocumentDetailGrid = businessType !== 'table' && selectedColumnContext.scope === 'detail-grid';
       const isDocumentArchiveGrid = businessType !== 'table' && (isMainGridConfig || isLeftGridConfig);
+      const useQuietDocumentInspector = isDocumentDetailGrid || isDocumentArchiveGrid;
+      const quietInspectorCardClass = useQuietDocumentInspector ? quietDocumentInspectorCardClass : compactCardClass;
       const selectedDetailInspectorFillType = isDocumentDetailGrid && DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === inspectorTarget.id)
         ? inspectorTarget.id
         : '表格';
@@ -9753,61 +10219,64 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       const renderDetailTabWorkbenchSection = () => {
         if (!isDocumentDetailGrid || !currentDetailTabConfig) return null;
         return (
-          <section className={compactCardClass}>
+          <section className={quietInspectorCardClass}>
             <div className={sectionTitleClass}>
               <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">tabs</span>
-              <h4>明细页签</h4>
+              <div className="min-w-0">
+                <h4>明细页签</h4>
+                <p className="mt-1 text-[11px] font-normal text-slate-500 dark:text-slate-300">
+                  页签名称、类型和模板统一在这里维护。
+                </p>
+              </div>
             </div>
-            <div className="grid gap-3">
-              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(180px,1fr))]">
-                <div>
-                  <label className={mutedLabelClass}>所属模块编号</label>
-                  <input
-                    type="text"
-                    value={currentDetailTabConfig.tab ?? currentModuleCode}
-                    onChange={(event) => updateDetailTabWorkbenchConfig({ tab: event.target.value })}
-                    className={fieldClass}
-                  />
-                </div>
-                <div>
-                  <label className={mutedLabelClass}>页签名称</label>
-                  <input
-                    type="text"
-                    value={currentDetailTabConfig.detailName ?? currentDetailTabName}
-                    onChange={(event) => updateDetailTabWorkbenchConfig({ detailName: event.target.value })}
-                    className={fieldClass}
-                  />
-                </div>
-                <div>
-                  <label className={mutedLabelClass}>类型</label>
-                  <select
-                    value={normalizeDetailFillTypeValue(currentDetailTabConfig.detailType)}
-                    onChange={(event) => updateDetailWorkbenchType(event.target.value)}
-                    className={fieldClass}
-                  >
-                    {DETAIL_FILL_TYPE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={mutedLabelClass}>tabKey</label>
-                  <input
-                    type="text"
-                    value={currentDetailTabConfig.tabKey ?? activeTab}
-                    onChange={(event) => updateDetailTabWorkbenchConfig({ tabKey: event.target.value })}
-                    className={fieldClass}
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className={mutedLabelClass}>DLL 模板</label>
-                  <input
-                    type="text"
-                    value={currentDetailTabConfig.dllTemplate ?? ''}
-                    onChange={(event) => updateDetailTabWorkbenchConfig({ dllTemplate: event.target.value })}
-                    className={fieldClass}
-                  />
-                </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className={mutedLabelClass}>所属模块编号</label>
+                <input
+                  type="text"
+                  value={currentDetailTabConfig.tab ?? currentModuleCode}
+                  onChange={(event) => updateDetailTabWorkbenchConfig({ tab: event.target.value })}
+                  className={fieldClass}
+                />
+              </div>
+              <div>
+                <label className={mutedLabelClass}>页签名称</label>
+                <input
+                  type="text"
+                  value={currentDetailTabConfig.detailName ?? currentDetailTabName}
+                  onChange={(event) => updateDetailTabWorkbenchConfig({ detailName: event.target.value })}
+                  className={fieldClass}
+                />
+              </div>
+              <div>
+                <label className={mutedLabelClass}>类型</label>
+                <select
+                  value={normalizeDetailFillTypeValue(currentDetailTabConfig.detailType)}
+                  onChange={(event) => updateDetailWorkbenchType(event.target.value)}
+                  className={fieldClass}
+                >
+                  {DETAIL_FILL_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={mutedLabelClass}>tabKey</label>
+                <input
+                  type="text"
+                  value={currentDetailTabConfig.tabKey ?? activeTab}
+                  onChange={(event) => updateDetailTabWorkbenchConfig({ tabKey: event.target.value })}
+                  className={fieldClass}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className={mutedLabelClass}>DLL 模板</label>
+                <input
+                  type="text"
+                  value={currentDetailTabConfig.dllTemplate ?? ''}
+                  onChange={(event) => updateDetailTabWorkbenchConfig({ dllTemplate: event.target.value })}
+                  className={fieldClass}
+                />
               </div>
             </div>
           </section>
@@ -10010,53 +10479,74 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           event.dataTransfer.dropEffect = 'move';
         }
       };
-      const handleDetailGroupRowDrop = (rowNumber: number) => (event: React.DragEvent<HTMLDivElement>) => {
-        if (!selectedDetailGroup || detailBoardWorkbenchDrag?.groupId !== selectedDetailGroup.id) return;
-        event.preventDefault();
-        event.stopPropagation();
-        moveDetailGroupColumn(selectedDetailGroup.id, detailBoardWorkbenchDrag.columnId, rowNumber);
+      const clearDetailBoardWorkbenchDragState = () => {
         setDetailBoardWorkbenchDrag(null);
         setDetailBoardWorkbenchDropTarget(null);
       };
-      const handleDetailGroupItemDragOver = (rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
-        if (!selectedDetailGroup || detailBoardWorkbenchDrag?.groupId !== selectedDetailGroup.id || detailBoardWorkbenchDrag.columnId === beforeId) return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (
-          detailBoardWorkbenchDropTarget?.groupId !== selectedDetailGroup.id
-          || detailBoardWorkbenchDropTarget?.row !== rowNumber
-          || detailBoardWorkbenchDropTarget?.beforeId !== beforeId
-        ) {
+      const handleDetailGroupWorkbenchDragStart = (event: DragStartEvent) => {
+        const activeData = event.active.data.current;
+        if (!isDetailBoardWorkbenchDragData(activeData) || activeData.type !== 'detail-board-item') {
+          return;
+        }
+
+        setDetailBoardWorkbenchDrag({ groupId: activeData.groupId, columnId: activeData.fieldId });
+        setDetailBoardWorkbenchDropTarget(null);
+      };
+      const handleDetailGroupWorkbenchDragOver = (event: DragOverEvent) => {
+        const activeData = event.active.data.current;
+        const overData = event.over?.data.current;
+        if (!isDetailBoardWorkbenchDragData(activeData) || activeData.type !== 'detail-board-item') {
+          return;
+        }
+
+        if (!selectedDetailGroup || activeData.groupId !== selectedDetailGroup.id || !isDetailBoardWorkbenchDragData(overData) || overData.groupId !== selectedDetailGroup.id) {
+          setDetailBoardWorkbenchDropTarget(null);
+          return;
+        }
+
+        if (overData.type === 'detail-board-item') {
+          if (overData.fieldId === activeData.fieldId) {
+            setDetailBoardWorkbenchDropTarget(null);
+            return;
+          }
+
           setDetailBoardWorkbenchDropTarget({
             groupId: selectedDetailGroup.id,
-            row: rowNumber,
-            beforeId,
+            row: overData.row,
+            beforeId: overData.fieldId,
           });
+          return;
         }
-        if (event.dataTransfer) {
-          event.dataTransfer.dropEffect = 'move';
+
+        setDetailBoardWorkbenchDropTarget({
+          groupId: selectedDetailGroup.id,
+          row: overData.row,
+          beforeId: null,
+        });
+      };
+      const handleDetailGroupWorkbenchDragEnd = (event: DragEndEvent) => {
+        const activeData = event.active.data.current;
+        const overData = event.over?.data.current;
+        if (!isDetailBoardWorkbenchDragData(activeData) || activeData.type !== 'detail-board-item') {
+          clearDetailBoardWorkbenchDragState();
+          return;
         }
-      };
-      const handleDetailGroupItemDrop = (rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
-        if (!selectedDetailGroup || detailBoardWorkbenchDrag?.groupId !== selectedDetailGroup.id || detailBoardWorkbenchDrag.columnId === beforeId) return;
-        event.preventDefault();
-        event.stopPropagation();
-        moveDetailGroupColumn(selectedDetailGroup.id, detailBoardWorkbenchDrag.columnId, rowNumber, beforeId);
-        setDetailBoardWorkbenchDrag(null);
-        setDetailBoardWorkbenchDropTarget(null);
-      };
-      const handleDetailGroupDragStart = (groupId: string, columnId: string) => (event: React.DragEvent<HTMLDivElement>) => {
-        event.stopPropagation();
-        setDetailBoardWorkbenchDrag({ groupId, columnId });
-        setDetailBoardWorkbenchDropTarget(null);
-        if (event.dataTransfer) {
-          event.dataTransfer.effectAllowed = 'move';
-          event.dataTransfer.setData('text/plain', `${groupId}:${columnId}`);
+
+        if (!selectedDetailGroup || activeData.groupId !== selectedDetailGroup.id || !isDetailBoardWorkbenchDragData(overData) || overData.groupId !== selectedDetailGroup.id) {
+          clearDetailBoardWorkbenchDragState();
+          return;
         }
-      };
-      const handleDetailGroupDragEnd = () => {
-        setDetailBoardWorkbenchDrag(null);
-        setDetailBoardWorkbenchDropTarget(null);
+
+        if (overData.type === 'detail-board-item') {
+          if (overData.fieldId !== activeData.fieldId) {
+            moveDetailGroupColumn(selectedDetailGroup.id, activeData.fieldId, overData.row, overData.fieldId);
+          }
+          clearDetailBoardWorkbenchDragState();
+          return;
+        }
+
+        moveDetailGroupColumn(selectedDetailGroup.id, activeData.fieldId, overData.row);
+        clearDetailBoardWorkbenchDragState();
       };
       const isGridDecorationManagerAvailable = isDocumentArchiveGrid || canManageDetailGridDecorations;
       const renderDetailBoardLayoutManager = () => {
@@ -10234,117 +10724,170 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                           {selectedDetailGroup.columnIds.length} 项
                         </span>
                       </div>
-                      <div className="space-y-2.5">
-                        {selectedDetailGroupRowNumbers.map((rowNumber) => {
-                          const rowColumns = selectedDetailGroup.columnIds
-                            .filter((columnId: string) => getDetailBoardGroupColumnRow(selectedDetailGroup, columnId) === rowNumber)
-                            .map((columnId: string) => availableGridColumns.find((column: any) => column.id === columnId))
-                            .filter(Boolean);
-                          const isRowDropTarget = detailBoardWorkbenchDrag?.groupId === selectedDetailGroup.id
-                            && detailBoardWorkbenchDropTarget?.groupId === selectedDetailGroup.id
-                            && detailBoardWorkbenchDropTarget?.row === rowNumber
-                            && detailBoardWorkbenchDropTarget?.beforeId === null;
+                      <DndContext
+                        sensors={designerWorkbenchSensors}
+                        onDragStart={handleDetailGroupWorkbenchDragStart}
+                        onDragOver={handleDetailGroupWorkbenchDragOver}
+                        onDragEnd={handleDetailGroupWorkbenchDragEnd}
+                        onDragCancel={clearDetailBoardWorkbenchDragState}
+                      >
+                        <div className="space-y-2.5">
+                          {selectedDetailGroupRowNumbers.map((rowNumber) => {
+                            const rowColumns = selectedDetailGroup.columnIds
+                              .filter((columnId: string) => getDetailBoardGroupColumnRow(selectedDetailGroup, columnId) === rowNumber)
+                              .map((columnId: string) => availableGridColumns.find((column: any) => column.id === columnId))
+                              .filter(Boolean);
+                            const draggedDetailColumn = detailBoardWorkbenchDrag?.groupId === selectedDetailGroup.id
+                              ? availableGridColumns.find((column: any) => column.id === detailBoardWorkbenchDrag.columnId) ?? null
+                              : null;
+                            const isRowDropTarget = detailBoardWorkbenchDrag?.groupId === selectedDetailGroup.id
+                              && detailBoardWorkbenchDropTarget?.groupId === selectedDetailGroup.id
+                              && detailBoardWorkbenchDropTarget?.row === rowNumber
+                              && detailBoardWorkbenchDropTarget?.beforeId === null;
 
-                          return (
-                            <div key={`${selectedDetailGroup.id}-row-${rowNumber}`} className="space-y-1.5">
-                              <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 dark:text-slate-500">
-                                <span>第 {rowNumber} 行</span>
-                                <span className="h-px flex-1 bg-slate-200/80 dark:bg-slate-700/70" />
-                              </div>
-                              <div
-                                onDragOver={handleDetailGroupRowDragOver(rowNumber)}
-                                onDrop={handleDetailGroupRowDrop(rowNumber)}
-                                className={`flex min-h-[54px] items-center overflow-x-auto rounded-[16px] px-2 py-2 transition-all ${
-                                  isRowDropTarget
-                                    ? 'bg-[color:var(--workspace-accent-soft)] ring-1 ring-[color:var(--workspace-accent-border)]'
-                                    : rowColumns.length === 0
-                                      ? 'bg-slate-50/80 dark:bg-slate-900/30'
-                                      : 'bg-slate-50/35 dark:bg-slate-950/25'
-                                }`}
-                              >
-                                <div className="flex min-w-full items-center">
-                                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                                    {rowColumns.length > 0 ? rowColumns.map((column: any, columnIndex: number) => {
-                                      const normalizedColumn = normalizeColumn(column);
-                                      const fieldWidth = Math.round(
-                                        Number(selectedDetailGroup.columnWidths?.[column.id]) > 0
-                                          ? Number(selectedDetailGroup.columnWidths[column.id])
-                                          : DETAIL_BOARD_FIELD_DEFAULT_WIDTH,
-                                      );
-                                      const labelWidth = Math.max(54, Math.min(82, normalizedColumn.name.length * 12));
-                                      const isInsertTarget = detailBoardWorkbenchDrag?.groupId === selectedDetailGroup.id
-                                        && detailBoardWorkbenchDrag.columnId !== column.id
-                                        && detailBoardWorkbenchDropTarget?.groupId === selectedDetailGroup.id
-                                        && detailBoardWorkbenchDropTarget?.row === rowNumber
-                                        && detailBoardWorkbenchDropTarget?.beforeId === column.id;
+                            return (
+                              <div key={`${selectedDetailGroup.id}-row-${rowNumber}`} className="space-y-1.5">
+                                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                                  <span>第 {rowNumber} 行</span>
+                                  <span className="h-px flex-1 bg-slate-200/80 dark:bg-slate-700/70" />
+                                </div>
+                                <DesignerWorkbenchDropLane
+                                  dropId={getDetailBoardRowDropId(selectedDetailGroup.id, rowNumber)}
+                                  data={{
+                                    type: 'detail-board-row',
+                                    groupId: selectedDetailGroup.id,
+                                    row: rowNumber,
+                                  } satisfies DetailBoardWorkbenchDragData}
+                                  className={cn(
+                                    'scrollbar-none flex min-h-[48px] items-center overflow-visible rounded-lg border border-transparent bg-transparent px-0.5 py-1 transition-colors',
+                                    isRowDropTarget && designerWorkbenchRowActiveClass,
+                                    rowColumns.length === 0 && designerWorkbenchRowEmptyClass,
+                                  )}
+                                >
+                                  <div className="flex min-w-full items-center">
+                                    <div className="flex min-w-0 flex-1 items-center gap-1">
+                                      {rowColumns.length > 0 ? rowColumns.map((column: any, columnIndex: number) => {
+                                        const normalizedColumn = normalizeColumn(column);
+                                        const fieldWidth = Math.round(
+                                          Number(selectedDetailGroup.columnWidths?.[column.id]) > 0
+                                            ? Number(selectedDetailGroup.columnWidths[column.id])
+                                            : DETAIL_BOARD_FIELD_DEFAULT_WIDTH,
+                                        );
+                                        const labelWidth = Math.max(54, Math.min(82, normalizedColumn.name.length * 12));
+                                        const isInsertTarget = detailBoardWorkbenchDrag?.groupId === selectedDetailGroup.id
+                                          && detailBoardWorkbenchDrag.columnId !== column.id
+                                          && detailBoardWorkbenchDropTarget?.groupId === selectedDetailGroup.id
+                                          && detailBoardWorkbenchDropTarget?.row === rowNumber
+                                          && detailBoardWorkbenchDropTarget?.beforeId === column.id;
 
-                                      return (
-                                        <div
-                                          key={column.id}
-                                          data-detail-field-item="true"
-                                          draggable
-                                          role="button"
-                                          tabIndex={0}
-                                          onDragStart={handleDetailGroupDragStart(selectedDetailGroup.id, column.id)}
-                                          onDragEnd={handleDetailGroupDragEnd}
-                                          onDragOver={handleDetailGroupItemDragOver(rowNumber, column.id)}
-                                          onDrop={handleDetailGroupItemDrop(rowNumber, column.id)}
-                                          onKeyDown={(event) => {
-                                            if (event.key === 'Delete' || event.key === 'Backspace') {
-                                              event.preventDefault();
-                                              removeDetailGroupColumn(selectedDetailGroup.id, column.id);
-                                            }
-                                          }}
-                                          style={{ width: fieldWidth, minWidth: fieldWidth }}
-                                          className="group relative flex h-[52px] shrink-0 items-center gap-1.5 rounded-[12px] px-1.5 py-1.5 text-left transition-all hover:bg-slate-100/80 dark:hover:bg-slate-900/42"
-                                        >
-                                          {isInsertTarget ? (
-                                            <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-[color:var(--workspace-accent)]" />
-                                          ) : null}
-                                          <div
-                                            className={`shrink-0 text-right text-[12px] font-semibold ${normalizedColumn.required ? 'text-[color:var(--workspace-accent-strong)]' : 'text-slate-600 dark:text-slate-200'}`}
-                                            style={{ width: labelWidth }}
-                                            title={normalizedColumn.name}
+                                        return (
+                                          <DesignerWorkbenchDraggableItem
+                                            key={column.id}
+                                            dragId={getDetailBoardDragItemId(selectedDetailGroup.id, column.id)}
+                                            dropId={getDetailBoardDropItemId(selectedDetailGroup.id, column.id)}
+                                            data={{
+                                              type: 'detail-board-item',
+                                              fieldId: column.id,
+                                              groupId: selectedDetailGroup.id,
+                                              row: rowNumber,
+                                            } satisfies DetailBoardWorkbenchDragData}
+                                            itemAttributes={{
+                                              'data-detail-field-item': 'true',
+                                            }}
+                                            onKeyDown={(event) => {
+                                              if (event.key === 'Delete' || event.key === 'Backspace') {
+                                                event.preventDefault();
+                                                removeDetailGroupColumn(selectedDetailGroup.id, column.id);
+                                              }
+                                            }}
+                                            style={{ width: fieldWidth, minWidth: fieldWidth }}
+                                            className={cn(
+                                              getCompactWorkbenchItemClass({
+                                                dragging: detailBoardWorkbenchDrag?.groupId === selectedDetailGroup.id && detailBoardWorkbenchDrag.columnId === column.id,
+                                                insertTarget: isInsertTarget,
+                                              }),
+                                              'h-[48px] shrink-0 gap-1.5 pr-6',
+                                            )}
                                           >
-                                            <span className="block truncate">{normalizedColumn.name}</span>
+                                            {isInsertTarget ? (
+                                              <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-[color:var(--workspace-accent)]" />
+                                            ) : null}
+                                            <div
+                                              className={`shrink-0 text-left text-[11px] font-medium ${normalizedColumn.required ? 'text-[color:var(--workspace-accent-strong)]' : 'text-slate-600 dark:text-slate-200'}`}
+                                              style={{ width: labelWidth }}
+                                              title={normalizedColumn.name}
+                                            >
+                                              <span className="block truncate">{normalizedColumn.name}</span>
+                                            </div>
+                                            <div className="min-w-0 flex-1 pr-7">
+                                              {renderFieldPreview(normalizedColumn, columnIndex, 'filter')}
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={(event) => {
+                                                event.preventDefault();
+                                                event.stopPropagation();
+                                                removeDetailGroupColumn(selectedDetailGroup.id, column.id);
+                                              }}
+                                              className="absolute right-3 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-slate-300 opacity-0 transition-all hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100 dark:text-slate-600 dark:hover:bg-rose-500/10"
+                                              title="移出当前分组"
+                                            >
+                                              <span className="material-symbols-outlined text-[14px]">close</span>
+                                            </button>
+                                            <div
+                                              data-drag-resize-handle="true"
+                                              className="absolute bottom-1.5 right-0.5 top-1.5 flex w-2 cursor-col-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
+                                              onMouseDown={(event) => startDetailBoardFieldResize(event, selectedDetailGroup.id, column.id, normalizedColumn.name)}
+                                              onDoubleClick={(event) => resetDetailBoardFieldWidth(event, selectedDetailGroup.id, column.id)}
+                                              title="拖动调整宽度，双击恢复自动排布"
+                                            >
+                                              <span className="h-5 w-px rounded-full bg-slate-300/90 transition-colors group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-600" />
+                                            </div>
+                                          </DesignerWorkbenchDraggableItem>
+                                        );
+                                      }) : isRowDropTarget && draggedDetailColumn ? (
+                                        <div
+                                          className={cn(
+                                            getCompactWorkbenchItemClass({ selected: true }),
+                                            'pointer-events-none h-[48px] shrink-0 gap-1.5 rounded-md border-dashed border-primary/35 bg-background/85 pr-6 shadow-sm',
+                                          )}
+                                          style={{
+                                            width: Math.round(
+                                              Number(selectedDetailGroup.columnWidths?.[draggedDetailColumn.id]) > 0
+                                                ? Number(selectedDetailGroup.columnWidths[draggedDetailColumn.id])
+                                                : DETAIL_BOARD_FIELD_DEFAULT_WIDTH,
+                                            ),
+                                            minWidth: Math.round(
+                                              Number(selectedDetailGroup.columnWidths?.[draggedDetailColumn.id]) > 0
+                                                ? Number(selectedDetailGroup.columnWidths[draggedDetailColumn.id])
+                                                : DETAIL_BOARD_FIELD_DEFAULT_WIDTH,
+                                            ),
+                                          }}
+                                        >
+                                          <div
+                                            className={`shrink-0 text-left text-[11px] font-medium ${normalizeColumn(draggedDetailColumn).required ? 'text-[color:var(--workspace-accent-strong)]' : 'text-foreground'}`}
+                                            style={{ width: Math.max(54, Math.min(82, normalizeColumn(draggedDetailColumn).name.length * 12)) }}
+                                            title={normalizeColumn(draggedDetailColumn).name}
+                                          >
+                                            <span className="block truncate">{normalizeColumn(draggedDetailColumn).name}</span>
                                           </div>
                                           <div className="min-w-0 flex-1 pr-7">
-                                            {renderFieldPreview(normalizedColumn, columnIndex, 'filter')}
-                                          </div>
-                                          <button
-                                            type="button"
-                                            onClick={(event) => {
-                                              event.preventDefault();
-                                              event.stopPropagation();
-                                              removeDetailGroupColumn(selectedDetailGroup.id, column.id);
-                                            }}
-                                            className="absolute right-3 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-slate-300 opacity-0 transition-all hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100 dark:text-slate-600 dark:hover:bg-rose-500/10"
-                                            title="移出当前分组"
-                                          >
-                                            <span className="material-symbols-outlined text-[14px]">close</span>
-                                          </button>
-                                          <div
-                                            className="absolute bottom-1.5 right-0.5 top-1.5 flex w-2 cursor-col-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
-                                            onMouseDown={(event) => startDetailBoardFieldResize(event, selectedDetailGroup.id, column.id, normalizedColumn.name)}
-                                            onDoubleClick={(event) => resetDetailBoardFieldWidth(event, selectedDetailGroup.id, column.id)}
-                                            title="拖动调整宽度，双击恢复自动排布"
-                                          >
-                                            <span className="h-5 w-px rounded-full bg-slate-300/90 transition-colors group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-600" />
+                                            {renderFieldPreview(normalizeColumn(draggedDetailColumn), 0, 'filter')}
                                           </div>
                                         </div>
-                                      );
-                                    }) : (
-                                      <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                                        拖入字段到本行，或从右侧“可加入字段”中追加
-                                      </div>
-                                    )}
+                                      ) : (
+                                        <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                                          拖入字段到本行，或从右侧“可加入字段”中追加
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
+                                </DesignerWorkbenchDropLane>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })}
+                        </div>
+                      </DndContext>
                     </section>
 
                     <section className="rounded-[20px] border border-slate-200/75 bg-white/94 px-4 py-4 shadow-[0_16px_28px_-24px_rgba(15,23,42,0.16)] dark:border-slate-700 dark:bg-slate-900/55">
@@ -10678,20 +11221,25 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         </section>
       );
       const renderIdentifierTranslationSection = () => (
-        <section className={compactCardClass}>
+        <section className={quietInspectorCardClass}>
           <div className="flex items-start justify-between gap-3">
             <div className={sectionTitleClass}>
               <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">translate</span>
-              <h4>字段标识</h4>
+              <div className="min-w-0">
+                <h4>字段标识</h4>
+                <p className="mt-1 text-[11px] font-normal text-slate-500 dark:text-slate-300">
+                  批量把字段显示名同步到标识字段。
+                </p>
+              </div>
             </div>
             <button
               type="button"
               onClick={translateGridIdentifiers}
               disabled={isTranslatingIdentifiers}
-              className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[12px] px-3 text-[11px] font-bold transition-colors ${
+              className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-[11px] font-medium transition-colors ${
                 isTranslatingIdentifiers
                   ? 'cursor-wait bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
-                  : 'border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)] hover:bg-[color:var(--workspace-accent-tint)]'
+                  : quietDocumentInspectorActionClass
               }`}
             >
               <span className={`material-symbols-outlined text-[14px] ${isTranslatingIdentifiers ? 'animate-spin' : ''}`}>
@@ -10700,15 +11248,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               一键翻译
             </button>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className={compactInfoCardClass}>
-              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">当前列数</div>
-              <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{availableGridColumns.length} 个</div>
-            </div>
-            <div className={compactInfoCardClass}>
-              <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">待翻译</div>
-              <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{translatableColumns.length} 个</div>
-            </div>
+          <div className={quietDocumentInspectorSummaryClass}>
+            当前列数 {availableGridColumns.length} 个，待翻译 {translatableColumns.length} 个。
           </div>
         </section>
       );
@@ -10720,25 +11261,21 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         const sourceBadgeText = detailSourceModuleCode ? '模块继承' : 'SQL 构列';
 
         return (
-          <section className={`${compactCardClass} space-y-3`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className={sectionTitleClass}>
-                <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">dataset_linked</span>
+          <section className={`${quietInspectorCardClass} space-y-3`}>
+            <div className={sectionTitleClass}>
+              <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">dataset_linked</span>
+              <div className="min-w-0">
                 <h4>表格数据来源</h4>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-md border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-2.5 py-1 text-[10px] font-semibold text-[color:var(--workspace-accent-strong)]">
-                  {sourceBadgeText}
-                </span>
+                <p className="mt-1 text-[11px] font-normal text-slate-500 dark:text-slate-300">
+                  {sourceBadgeText} · {detailSourceStatusText}
+                </p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-300">
-              <span className={panelBadgeClass}>状态：{detailSourceStatusText}</span>
-              <span className={panelBadgeClass}>模块：{matchedDetailModuleCandidate?.moduleName || matchedDetailModuleCandidate?.moduleCode || '未指定'}</span>
-              <span className={panelBadgeClass}>主表：{matchedDetailModuleCandidate?.tableName || '按 SQL 构列'}</span>
-              <span className={panelBadgeClass}>列数：{availableGridColumns.length}</span>
+            <div className={quietDocumentInspectorSummaryClass}>
+              模块 {matchedDetailModuleCandidate?.moduleName || matchedDetailModuleCandidate?.moduleCode || '未指定'}，
+              主表 {matchedDetailModuleCandidate?.tableName || '按 SQL 构列'}，当前字段 {availableGridColumns.length} 个。
             </div>
-            <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(200px,1fr))]">
+            <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <label className={mutedLabelClass}>模块编号</label>
                 <input
@@ -10787,26 +11324,31 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 />
               </div>
             </div>
-            <div>
-              <label className={mutedLabelClass}>生成描述</label>
-              <textarea
-                rows={3}
-                value={currentGridConfig.sqlPrompt || ''}
-                onChange={(e) => updateGridConfig({ sqlPrompt: e.target.value })}
-                placeholder="例如：生成一个附件列表，支持附件名称、上传人、上传时间查询。"
-                className={`${textareaClass} mb-3`}
-              />
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-3">
+              <div>
+                <label className={mutedLabelClass}>生成描述</label>
+                <textarea
+                  rows={3}
+                  value={currentGridConfig.sqlPrompt || ''}
+                  onChange={(e) => updateGridConfig({ sqlPrompt: e.target.value })}
+                  placeholder="例如：生成一个附件列表，支持附件名称、上传人、上传时间查询。"
+                  className={textareaClass}
+                />
+              </div>
+              <div className={quietDocumentInspectorSummaryClass}>
+                明细 SQL 会直接决定字段构列；需要继承主表时先填写模块编号。
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <label className={`${mutedLabelClass} mb-0`}>明细 SQL</label>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={generateGridSqlDraft}
                     disabled={isGeneratingSqlDraft}
-                    className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-semibold transition-colors ${
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-medium transition-colors ${
                       isGeneratingSqlDraft
                         ? 'cursor-wait bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
-                        : 'border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)] hover:bg-[color:var(--workspace-accent-tint)]'
+                        : quietDocumentInspectorActionClass
                     }`}
                   >
                     <span className={`material-symbols-outlined text-[14px] ${isGeneratingSqlDraft ? 'animate-spin' : ''}`}>
@@ -10818,11 +11360,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                     type="button"
                     onClick={syncDetailColumnsFromConfiguredModule}
                     disabled={!detailSourceModuleCode}
-                    className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-semibold transition-colors ${
-                      detailSourceModuleCode
-                        ? 'bg-[color:var(--workspace-accent)] text-white hover:bg-[color:var(--workspace-accent-strong)]'
-                        : 'cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
-                    }`}
+                    className={detailSourceModuleCode ? quietDocumentInspectorPrimaryActionClass : 'inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-100 px-3 text-[11px] font-medium text-slate-400 dark:bg-slate-800 dark:text-slate-500'}
                   >
                     <span className="material-symbols-outlined text-[14px]">table_rows</span>
                     继承主表配置
@@ -10830,7 +11368,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                   <button
                     type="button"
                     onClick={() => syncDetailColumnsFromSqlById(activeTab, currentGridConfig.mainSql || '')}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition-colors hover:border-[color:var(--workspace-accent-border)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                    className={quietDocumentInspectorActionClass}
                   >
                     <span className="material-symbols-outlined text-[14px]">schema</span>
                     按 SQL 构列
@@ -10838,7 +11376,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 </div>
               </div>
               <textarea
-                rows={6}
+                rows={5}
                 value={currentGridConfig.mainSql || ''}
                 onChange={(e) => updateGridConfig({ mainSql: e.target.value })}
                 onBlur={(e) => syncDetailColumnsFromSqlById(activeTab, e.target.value, { notify: false })}
@@ -10846,63 +11384,54 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 className={textareaClass}
               />
             </div>
-            <div className="flex flex-wrap gap-2">
-              {detailSourceModuleCandidates.map((candidate) => {
-                const active = candidate.moduleCode === detailSourceModuleCode;
-                return (
-                  <button
-                    key={candidate.moduleCode}
-                    type="button"
-                    onClick={() => updateDetailSourceConfig({ sourceModuleCode: candidate.moduleCode })}
-                    className={`inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-[10px] font-semibold transition-colors ${
-                      active
-                        ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]'
-                        : 'border-slate-200 bg-white text-slate-500 hover:border-[color:var(--workspace-accent-border)] hover:text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200'
-                    }`}
-                  >
-                    {candidate.moduleCode}
-                    {candidate.isCurrent && (
-                      <span className="rounded-full bg-emerald-500/12 px-1.5 py-0.5 text-[10px] font-black text-emerald-600 dark:text-emerald-300">当前</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            {detailSourceModuleCandidates.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {detailSourceModuleCandidates.map((candidate) => {
+                  const active = candidate.moduleCode === detailSourceModuleCode;
+                  return (
+                    <button
+                      key={candidate.moduleCode}
+                      type="button"
+                      onClick={() => updateDetailSourceConfig({ sourceModuleCode: candidate.moduleCode })}
+                      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[10px] font-medium transition-colors ${
+                        active
+                          ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]'
+                          : 'border-slate-200/80 bg-white text-slate-500 hover:border-[color:var(--workspace-accent-border)] hover:text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200'
+                      }`}
+                    >
+                      {candidate.moduleCode}
+                      {candidate.isCurrent ? <span className="text-[10px] text-emerald-600 dark:text-emerald-300">当前</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </section>
         );
       };
       const renderDocumentTableMappingSection = () => (
-        <section className={`${compactCardClass} space-y-3`}>
+        <section className={`${quietInspectorCardClass} space-y-3`}>
           <div className={sectionTitleClass}>
             <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">schema</span>
             <h4>落表映射</h4>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={panelBadgeClass}>主配置 p_systemdlltab</span>
-            <span className={panelBadgeClass}>条件 p_systembillsourcecond</span>
-            <span className={panelBadgeClass}>右键 {contextMenuItems.length}</span>
-            <span className={panelBadgeClass}>颜色 {colorRules.length}</span>
+          <div className={quietDocumentInspectorSummaryClass}>
+            主配置 `p_systemdlltab`，条件 `p_systembillsourcecond`，右键 {contextMenuItems.length} 项，颜色 {colorRules.length} 条。
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setInspectorPanelTab('contextmenu')}
-              className="flex items-center justify-between rounded-md border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-2 text-left text-[12px] font-semibold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
+              className={quietDocumentInspectorActionClass}
             >
-              <span>右键菜单</span>
-              <span className="rounded-md bg-white/90 px-2 py-0.5 text-[10px] font-black text-[color:var(--workspace-accent-strong)]">
-                {contextMenuItems.length}
-              </span>
+              右键菜单 {contextMenuItems.length}
             </button>
             <button
               type="button"
               onClick={() => setInspectorPanelTab('color')}
-              className="flex items-center justify-between rounded-md border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] px-3 py-2 text-left text-[12px] font-semibold text-[color:var(--workspace-accent-strong)] transition-colors hover:bg-[color:var(--workspace-accent-tint)]"
+              className={quietDocumentInspectorActionClass}
             >
-              <span>颜色规则</span>
-              <span className="rounded-md bg-white/90 px-2 py-0.5 text-[10px] font-black text-[color:var(--workspace-accent-strong)]">
-                {colorRules.length}
-              </span>
+              颜色规则 {colorRules.length}
             </button>
           </div>
         </section>
@@ -10974,7 +11503,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         </section>
       );
       const renderGridConfigSummarySection = (title: string) => (
-        <section className={compactCardClass}>
+        <section className={quietInspectorCardClass}>
           <div className={sectionTitleClass}>
             <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">
               {detailGridFillTypeMeta?.icon || 'table_chart'}
@@ -11013,42 +11542,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                 </div>
               )}
             </div>
-            <div className="rounded-lg border border-slate-200/80 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/60">
-              <div className="text-[11px] font-semibold tracking-[0.08em] text-slate-400">
-                {detailGridFillTypeMeta?.value === '图表' ? '图表摘要' : '表格摘要'}
-              </div>
-              <div className="mt-3 space-y-2 text-[12px] text-slate-600 dark:text-slate-300">
-                <div className="flex items-center justify-between gap-3">
-                  <span>{detailGridFillTypeMeta?.value === '图表' ? '当前填充' : '当前表格'}</span>
-                  <span className="text-right font-semibold text-slate-800 dark:text-slate-100">
-                    {isDocumentDetailGrid ? currentDetailTabName : selectedColumnContext.title}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span>显示字段</span>
-                  <span className="text-right font-semibold text-slate-800 dark:text-slate-100">{availableGridColumns.length} 个</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span>右键菜单</span>
-                  <span className="text-right font-semibold text-slate-800 dark:text-slate-100">{contextMenuItems.length} 项</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span>{detailGridFillTypeMeta?.value === '图表' ? '颜色规则' : '颜色规则'}</span>
-                  <span className="text-right font-semibold text-slate-800 dark:text-slate-100">{enabledColorRuleCount} 条生效</span>
-                </div>
-                {detailGridFillTypeMeta?.value === '图表' && (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>X轴字段</span>
-                      <span className="text-right font-semibold text-slate-800 dark:text-slate-100">{currentDetailChartConfig.XLabelField || '未设置'}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Y轴字段</span>
-                      <span className="text-right font-semibold text-slate-800 dark:text-slate-100">{currentDetailChartConfig.YValueField || '未设置'}</span>
-                    </div>
-                  </>
-                )}
-              </div>
+            <div className={quietDocumentInspectorSummaryClass}>
+              {detailGridFillTypeMeta?.value === '图表' ? '当前填充' : '当前表格'} {isDocumentDetailGrid ? currentDetailTabName : selectedColumnContext.title}
+              ，显示字段 {availableGridColumns.length} 个，右键菜单 {contextMenuItems.length} 项，颜色规则 {enabledColorRuleCount} 条生效。
+              {detailGridFillTypeMeta?.value === '图表'
+                ? ` X轴 ${currentDetailChartConfig.XLabelField || '未设置'}，Y轴 ${currentDetailChartConfig.YValueField || '未设置'}。`
+                : ''}
             </div>
           </div>
         </section>
@@ -11992,18 +12491,20 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className={panelTitleClass}>{selectedColumnContext.title}</h3>
-                  <span className={panelBadgeClass}>{isDocumentDetailGrid ? '明细页签' : '表格级配置'}</span>
-                  {isDocumentDetailGrid && (
-                    <span className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/92 px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200">
-                      {detailGridFillTypeMeta?.label || '表格'}
-                    </span>
-                  )}
+                  {!useQuietDocumentInspector ? <span className={panelBadgeClass}>{isDocumentDetailGrid ? '明细页签' : '表格级配置'}</span> : null}
                   {isDetailChartInspector && (
                     <span className="inline-flex items-center rounded-full border border-[#1686e3]/18 bg-[#1686e3]/8 px-2.5 py-1 text-[10px] font-bold text-[#1686e3]">
                       p_systemdlltabchart
                     </span>
                   )}
                 </div>
+                {useQuietDocumentInspector ? (
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
+                    {isDocumentDetailGrid
+                      ? `${detailGridFillTypeMeta?.label || '表格'} · 右侧直接维护页签、来源和整表配置`
+                      : '右侧只保留当前表格的直接配置，去掉低价值摘要和装饰信息'}
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -12012,7 +12513,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                   <button
                     type="button"
                     onClick={applySuggestedDetailLayout}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-slate-200/80 bg-white/92 px-3 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200"
+                    className={useQuietDocumentInspector ? quietDocumentInspectorActionClass : 'inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-slate-200/80 bg-white/92 px-3 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200'}
                   >
                     <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
                     推荐布局
@@ -12023,9 +12524,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                     type="button"
                     onClick={() => openDetailBoardPreview(1, currentDetailBoard.sortColumnId)}
                     disabled={!detailBoardReady}
-                    className={`inline-flex h-9 items-center gap-1.5 rounded-[14px] px-3 text-[12px] font-bold transition-colors ${
+                    className={`${useQuietDocumentInspector ? 'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-medium transition-colors' : 'inline-flex h-9 items-center gap-1.5 rounded-[14px] px-3 text-[12px] font-bold transition-colors'} ${
                       detailBoardReady
-                        ? 'bg-[color:var(--workspace-accent)] text-white shadow-[0_16px_28px_-22px_rgba(15,23,42,0.24)] hover:bg-[color:var(--workspace-accent-strong)]'
+                        ? `${useQuietDocumentInspector ? 'shadow-none' : 'shadow-[0_16px_28px_-22px_rgba(15,23,42,0.24)]'} bg-[color:var(--workspace-accent)] text-white hover:bg-[color:var(--workspace-accent-strong)]`
                         : 'cursor-not-allowed bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600'
                     }`}
                   >
@@ -13117,9 +13618,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const filterFields = filterConfig?.fields ?? columns.slice(0, 3);
     const hideFilterBar = options?.hideFilterBar ?? false;
     const hideFilterQuickActions = options?.hideFilterQuickActions ?? false;
-    const activeFilterResize = activeResize?.mode === 'filter' && filterFields.some((field) => field.id === activeResize.id)
-      ? activeResize
-      : null;
     const hideActionBar = options?.hideActionBar ?? false;
     const filterSelectionCount = filterConfig?.selectedIds.length ?? 0;
     const buildFilterSelectionIds = (fieldId: string, append: boolean) => {
@@ -13161,52 +13659,86 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         ids: nextSelectedIds,
       });
     };
-    const getFilterRowClass = (isActive: boolean, isMarkedForDelete: boolean) => (
-      isActive
-        ? 'bg-[color:var(--workspace-accent-soft)] shadow-[inset_0_0_0_1px_var(--workspace-accent-border)]'
-        : isMarkedForDelete
-          ? 'bg-[color:var(--workspace-accent-soft)] shadow-[inset_0_0_0_1px_var(--workspace-accent-border)]'
-          : 'bg-transparent hover:bg-slate-50/70 dark:hover:bg-slate-800/35'
+    const filterRuntimeRules = joinRuntimeDeclarationBlocks(
+      filterFields.flatMap((field) => {
+        const normalizedField = normalizeConditionField(field);
+        const filterControlWidth = resolveWorkbenchPreviewWidth(
+          normalizedField.width,
+          168,
+          148,
+          activeResize,
+          normalizedField.id,
+          'filter',
+        );
+        const labelWidth = Math.max(60, Math.min(132, normalizedField.name.length * 14 + 12));
+        const previewWidth = normalizedField.type === '日期框'
+          ? 58
+          : normalizedField.type === '数字'
+            ? 48
+            : normalizedField.type === '搜索框'
+              ? 64
+              : 52;
+        const minimumFilterWidth = labelWidth + previewWidth + 18;
+        const filterWidth = Math.max(
+          minimumFilterWidth,
+          Math.min(188, Math.max(minimumFilterWidth, filterControlWidth - 60)),
+        );
+        const widthClassName = createRuntimeClassName('document-filter-width', normalizedField.id);
+        const labelClassName = createRuntimeClassName('document-filter-label', normalizedField.id);
+        const previewClassName = createRuntimeClassName('document-filter-preview', normalizedField.id);
+
+        return [
+          createRuntimeDeclarationBlock(widthClassName, { width: filterWidth, 'min-width': filterWidth }),
+          createRuntimeDeclarationBlock(labelClassName, { width: labelWidth, 'min-width': labelWidth }),
+          createRuntimeDeclarationBlock(previewClassName, { width: previewWidth, 'min-width': previewWidth }),
+        ];
+      }),
     );
-    const getFilterNameClass = (isActive: boolean, isMarkedForDelete: boolean, isRequired: boolean) => {
-      if (isRequired) {
-        return 'text-[color:var(--workspace-accent-strong)]';
-      }
-      return isActive || isMarkedForDelete ? 'text-[color:var(--workspace-accent)]' : 'text-slate-500 dark:text-slate-300';
-    };
-    const getFilterPreviewShellClass = (isActive: boolean, isMarkedForDelete: boolean) => (
-      isActive
-        ? '[&>div]:border-[color:var(--workspace-accent-border-strong)] [&>div]:bg-white [&>div]:shadow-[0_0_0_3px_var(--workspace-accent-soft)] dark:[&>div]:bg-slate-900/88'
-        : isMarkedForDelete
-          ? '[&>div]:border-[color:var(--workspace-accent-border)] [&>div]:bg-[color:var(--workspace-accent-tint)]'
-          : ''
+
+    const getFilterNameClass = (isSelected: boolean, isRequired: boolean) => cn(
+      'shrink-0 overflow-hidden text-ellipsis whitespace-nowrap text-left text-[11px] font-medium text-muted-foreground',
+      isRequired && 'text-primary',
+      isSelected && 'text-foreground',
     );
+
+    const getFilterPreviewShellClass = (isSelected: boolean) => cn(
+      'shrink-0 pr-0.5',
+      isSelected && '[&>div]:border-border/60 [&>div]:bg-background [&>div]:shadow-none',
+    );
+
     return (
-      <div style={workspaceThemeVars} className="shrink-0">
+      <div className="shrink-0">
         {!hideFilterBar && (
-        <div className="cloudy-glass-toolbar relative px-4 py-3">
-          {activeFilterResize && (
-            <div className="pointer-events-none absolute right-3 top-2 z-10 inline-flex items-center gap-2 rounded-full border border-[color:var(--workspace-accent-border)] bg-white/96 px-3 py-1 text-[11px] font-bold text-[color:var(--workspace-accent)] shadow-[0_18px_32px_-24px_rgba(15,23,42,0.24)] dark:bg-slate-900/92">
-              <span className="material-symbols-outlined text-[13px]">tune</span>
-              <span className="max-w-[140px] truncate">{activeFilterResize.label}</span>
-              <span className="rounded-full bg-[color:var(--workspace-accent-soft)] px-2 py-0.5">{Math.round(activeFilterResize.width)}px</span>
-            </div>
-          )}
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
+          <div className="px-1 py-1">
+              {filterRuntimeRules ? <style>{filterRuntimeRules}</style> : null}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="gap-1.5 rounded-xl border-border/60 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-foreground">
+                      <Filter className="size-3.5" />
+                      查询条件
+                    </Badge>
+                    <span className="text-[11px] font-medium text-muted-foreground">{filterFields.length} 项</span>
+                </div>
+                {options?.filterAccessory ? (
+                  <div className="flex shrink-0 items-center gap-2">{options.filterAccessory}</div>
+                ) : null}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1">
                 {filterFields.map((field, index) => {
                   const normalizedField = normalizeConditionField(field);
                   const isActive = filterConfig?.selectedId === field.id;
                   const isMarkedForDelete = filterConfig?.selectedIds.includes(field.id) ?? false;
-                  const filterWidth = Math.max(198, Math.min(312, (normalizedField.width || 188) + 36));
-                  const labelWidth = Math.max(52, Math.min(76, normalizedField.name.length * 13));
+                  const isSelected = isActive || isMarkedForDelete;
+                  const widthClassName = createRuntimeClassName('document-filter-width', normalizedField.id);
+                  const labelClassName = createRuntimeClassName('document-filter-label', normalizedField.id);
+                  const previewClassName = createRuntimeClassName('document-filter-preview', normalizedField.id);
 
                   return (
                     <div
                       key={field.id}
                       role="button"
                       tabIndex={0}
+                      aria-pressed={isSelected}
                       onClick={(event) => handleFilterSelect(field.id, event)}
                       onContextMenu={(event) => handleFilterContextMenu(event, field.id)}
                       onKeyDown={(event) => {
@@ -13215,103 +13747,84 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                           handleFilterSelect(field.id, event);
                         }
                       }}
-                    style={{ width: filterWidth, minWidth: filterWidth }}
-                    className={`group relative flex h-10 shrink-0 items-center gap-1 rounded-[12px] px-1.5 py-1 transition-all ${getFilterRowClass(isActive, isMarkedForDelete)}`}
-                  >
+                      className={cn(
+                        widthClassName,
+                        'group relative flex h-11 shrink-0 cursor-grab select-none flex-row items-center gap-1 rounded-lg border pl-2 pr-3.5 py-1.5 transition-colors active:cursor-grabbing',
+                        isSelected
+                          ? 'border-primary/20 bg-background/90'
+                          : 'border-transparent bg-transparent hover:border-border/40 hover:bg-background/70',
+                      )}
+                    >
                       <div
-                        className={`shrink-0 text-right text-[12px] font-medium tracking-[0.01em] ${getFilterNameClass(isActive, isMarkedForDelete, normalizedField.required)}`}
-                        style={{ width: labelWidth }}
+                        className={cn(labelClassName, getFilterNameClass(isSelected, normalizedField.required))}
                         title={normalizedField.name}
                       >
-                        <span className="block truncate">{normalizedField.name}</span>
+                        <span className="block truncate">
+                          {normalizedField.name}
+                          {normalizedField.required ? <span className="ml-1 text-primary">*</span> : null}
+                        </span>
                       </div>
-                      <div className={`min-w-0 flex-1 pr-3 ${getFilterPreviewShellClass(isActive, isMarkedForDelete)}`}>
-                        {renderFieldPreview(normalizedField, index, 'filter')}
+                      <div className={cn(previewClassName, getFilterPreviewShellClass(isSelected))}>
+                        {renderFieldPreview(normalizedField, index, 'condition')}
                       </div>
                       <div
-                        className={`absolute right-1 top-1.5 bottom-1.5 flex w-2 cursor-col-resize items-center justify-center transition-opacity ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                        className="absolute inset-y-2 right-0.5 flex w-1.5 cursor-col-resize items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                         onMouseDown={(event) => startResize(event, field.id, filterFields, filterConfig.setFields, 160, 620, 'filter')}
                         onDoubleClick={(event) => autoFitColumnWidth(event, field.id, filterFields, filterConfig.setFields, 160, 620, 'filter')}
                         title="拖动调整条件宽度，双击可自动适配"
                       >
-                        <span className="h-5 w-px rounded-full bg-slate-300/90 transition-colors group-hover:bg-[#1686e3] dark:bg-slate-600 dark:group-hover:bg-[#1686e3]" />
+                        <span className="h-3.5 w-px rounded-full bg-border transition-colors group-hover:bg-primary" />
                       </div>
                     </div>
                   );
                 })}
-                {filterConfig && !hideFilterQuickActions && (
-                    <button
-                      type="button"
-                      onClick={filterConfig.onAdd}
-                    className="cloudy-glass-chip inline-flex h-9 shrink-0 items-center justify-center rounded-[14px] border border-[color:var(--workspace-accent-border)] px-3 text-[11px] font-semibold text-[color:var(--workspace-accent)] transition-colors hover:bg-[color:var(--workspace-accent-soft)]"
+                {filterConfig && !hideFilterQuickActions ? (
+                  <Button size="sm" className="h-8 gap-1.5 rounded-xl px-3" onClick={filterConfig.onAdd}>
+                    <Plus className="size-4" />
+                    条件
+                  </Button>
+                ) : null}
+                {filterConfig && !hideFilterQuickActions ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3"
+                    onClick={filterConfig.onDelete}
+                    disabled={filterSelectionCount === 0}
                   >
-                      <span className="material-symbols-outlined text-[15px]">playlist_add</span>
-                      条件
-                    </button>
-                )}
+                    <Trash2 className="size-4" />
+                    删除条件{filterSelectionCount > 1 ? ` (${filterSelectionCount})` : ''}
+                  </Button>
+                ) : null}
               </div>
-            </div>
-            <div className="cloudy-glass-chip flex shrink-0 items-center self-center rounded-[18px] border border-[color:var(--workspace-accent-border)] px-2 py-1.5">
-              {filterConfig && !hideFilterQuickActions && (
-                <button
-                  type="button"
-                  onClick={filterConfig.onDelete}
-                  disabled={filterSelectionCount === 0}
-                  className={`inline-flex h-9 items-center justify-center rounded-xl px-3 text-[12px] font-bold transition-colors ${
-                    filterSelectionCount > 0
-                      ? 'text-slate-600 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800'
-                      : 'cursor-not-allowed text-slate-300 dark:text-slate-600'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[15px]">delete</span>
-                  删除条件{filterSelectionCount > 1 ? ` (${filterSelectionCount})` : ''}
-                </button>
-              )}
-              {options?.filterAccessory}
-            </div>
           </div>
-        </div>
         )}
         {!hideActionBar && (
-          <div className="cloudy-glass-toolbar flex items-center justify-between px-4 py-3">
-            <button
-              type="button"
-              onClick={tableConfigAction?.onSelect}
-                className={`cloudy-glass-chip inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] font-bold transition-colors ${
-                tableConfigAction?.active
-                  ? 'border-[#1686e3] bg-[#eef6ff] text-[#1686e3] dark:border-[#1686e3] dark:bg-primary/10 dark:text-primary'
-                  : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-800'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[15px]">table_view</span>
-              {title}
-            </button>
-            <div className="flex items-center gap-2">
-              {extraActions}
-              <button
-                onClick={onAdd}
-                className="cloudy-glass-chip inline-flex items-center gap-1 rounded border border-[#1686e3] bg-[#1686e3] px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-[#1176ca]"
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-3 px-1 py-1">
+              <Button
+                variant={tableConfigAction?.active ? 'secondary' : 'ghost'}
+                size="sm"
+                className="gap-1.5 rounded-xl"
+                onClick={tableConfigAction?.onSelect}
               >
-                <span className="material-symbols-outlined text-[14px]">add</span>
-                新增
-              </button>
-              <button
-                onClick={onDelete}
-                disabled={selectedCount === 0}
-                className={`cloudy-glass-chip inline-flex items-center gap-1 rounded border px-3 py-1.5 text-[12px] font-bold transition-colors ${
-                  selectedCount > 0
-                    ? 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'
-                    : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-300 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-600'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[14px]">delete</span>
-                删除
-              </button>
-              <button className="cloudy-glass-chip inline-flex items-center gap-1 rounded border border-slate-300 px-3 py-1.5 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:text-slate-200">
-                <span className="material-symbols-outlined text-[14px]">save</span>
-                保存
-              </button>
-            </div>
+                <Table2 className="size-4" />
+                {title}
+              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {extraActions}
+                <Button size="sm" className="h-8 gap-1.5 rounded-xl px-3" onClick={onAdd}>
+                  <Plus className="size-4" />
+                  新增
+                </Button>
+                <Button size="sm" variant="outline" className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3" onClick={onDelete} disabled={selectedCount === 0}>
+                  <Trash2 className="size-4" />
+                  删除
+                </Button>
+                <Button size="sm" variant="outline" className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3">
+                  <Save className="size-4" />
+                  保存
+                </Button>
+              </div>
           </div>
         )}
       </div>
@@ -13320,16 +13833,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   const renderDocumentConditionToolbar = () => {
     const canSwitchConditionScope = Boolean(leftDocumentConditionConfig);
-    const currentScopeLabel = activeDocumentConditionScope === 'left' ? '左条件' : '主条件';
+    const currentScope = activeDocumentConditionScope as ConditionWorkbenchScope;
+    const currentScopeLabel = currentScope === 'left' ? '左条件' : '主条件';
     const currentConditionWorkbenchConfig = getConditionWorkbenchConfig(activeDocumentConditionScope);
     const currentConditionFields = activeDocumentConditionConfig.fields.map(normalizeConditionField);
     const selectedConditionIds = new Set(activeDocumentConditionConfig.selectedIds);
-    const isConditionPanelActive = activeDocumentConditionScope === 'left'
-      ? inspectorTarget.kind === 'left-filter-panel'
-      : inspectorTarget.kind === 'main-filter-panel';
-    const activeConditionResize = activeResize?.mode === 'filter' && currentConditionFields.some((field) => field.id === activeResize.id)
-      ? activeResize
-      : null;
+    const conditionFieldIndexMap = new Map(currentConditionFields.map((field, index) => [field.id, index]));
     const getConditionResizeCandidates = (fieldId: string) => buildResizeSnapCandidates(
       currentConditionFields
         .filter((field) => field.id !== fieldId)
@@ -13340,16 +13849,45 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         baseWidth: CONDITION_PANEL_CONTROL_WIDTH,
       },
     );
-    const activeConditionResizeTicks = activeConditionResize
-      ? getResizeRulerTicks(activeConditionResize.width, {
-          minWidth: CONDITION_PANEL_RESIZE_MIN_WIDTH,
-          maxWidth: CONDITION_PANEL_RESIZE_MAX_WIDTH,
-          snapCandidates: getConditionResizeCandidates(activeConditionResize.id),
-        })
-      : [];
     const workbenchHeight = currentConditionWorkbenchConfig.rows * CONDITION_PANEL_ROW_HEIGHT
       + Math.max(0, currentConditionWorkbenchConfig.rows - 1) * CONDITION_PANEL_ROW_GAP;
+    const workbenchHeightClass = createRuntimeClassName('condition-workbench-height', activeDocumentConditionScope);
     const conditionRowNumbers = Array.from({ length: currentConditionWorkbenchConfig.rows }, (_, index) => index + 1);
+    const conditionRuntimeRules = joinRuntimeDeclarationBlocks([
+      createRuntimeDeclarationBlock(workbenchHeightClass, { 'min-height': workbenchHeight }),
+      ...currentConditionFields.flatMap((field) => {
+        const rawConditionWidth = resolveWorkbenchPreviewWidth(
+          field.width,
+          CONDITION_PANEL_CONTROL_WIDTH,
+          CONDITION_PANEL_RESIZE_MIN_WIDTH,
+          activeResize,
+          field.id,
+          'filter',
+        );
+        const labelWidth = Math.max(60, Math.min(132, field.name.length * 14 + 10));
+        const sharedPreviewWidthFloor = 120;
+        const compactPreviewWidthFloor = 104;
+        const basePreviewWidth = field.type === '数字'
+          ? compactPreviewWidthFloor
+          : sharedPreviewWidthFloor;
+        const conditionChromeWidth = 18;
+        const minimumConditionWidth = labelWidth + basePreviewWidth + conditionChromeWidth;
+        const conditionWidth = Math.max(
+          minimumConditionWidth,
+          Math.min(CONDITION_PANEL_RESIZE_MAX_WIDTH, Math.max(minimumConditionWidth, rawConditionWidth)),
+        );
+        const previewWidth = Math.max(basePreviewWidth, conditionWidth - labelWidth - conditionChromeWidth);
+        const widthClassName = createRuntimeClassName('condition-item-width', field.id);
+        const labelClassName = createRuntimeClassName('condition-item-label', field.id);
+        const previewClassName = createRuntimeClassName('condition-item-preview', field.id);
+
+        return [
+          createRuntimeDeclarationBlock(widthClassName, { width: conditionWidth, 'min-width': conditionWidth }),
+          createRuntimeDeclarationBlock(labelClassName, { width: labelWidth, 'min-width': labelWidth }),
+          createRuntimeDeclarationBlock(previewClassName, { width: previewWidth, 'min-width': previewWidth }),
+        ];
+      }),
+    ]);
     const getConditionDisplayRow = (field: any) => clampValue(
       Number.isFinite(Number(field?.panelRow)) ? Number(field.panelRow) : CONDITION_PANEL_MIN_ROWS,
       CONDITION_PANEL_MIN_ROWS,
@@ -13386,7 +13924,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       const targetIndex = activeDocumentConditionConfig.fields.findIndex((item: any) => item.id === fieldId);
       if (targetIndex === -1) return;
 
-      const container = event.currentTarget.closest('[data-condition-item-id]') as HTMLDivElement | null;
       const targetField = normalizeConditionField(activeDocumentConditionConfig.fields[targetIndex]);
       const startX = event.pageX;
       const startWidth = targetField.width || CONDITION_PANEL_CONTROL_WIDTH;
@@ -13405,38 +13942,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           snapCandidates,
         });
         latestWidth = width;
-        if (conditionResizePreviewFrameRef.current !== null) return;
-        conditionResizePreviewFrameRef.current = window.requestAnimationFrame(() => {
-          conditionResizePreviewFrameRef.current = null;
-          if (container) {
-            container.style.width = `${latestWidth}px`;
-            container.style.minWidth = `${latestWidth}px`;
-          }
-          setActiveResize((prev) => prev?.id === fieldId ? { ...prev, width: latestWidth } : prev);
-        });
+        scheduleResizePreview({ id: fieldId, label: resizeLabel, width: latestWidth, mode: 'filter' });
       };
 
       const handleMouseUp = () => {
-        if (conditionResizePreviewFrameRef.current !== null) {
-          window.cancelAnimationFrame(conditionResizePreviewFrameRef.current);
-          conditionResizePreviewFrameRef.current = null;
-        }
-        if (conditionResizeHudFrameRef.current !== null) {
-          window.cancelAnimationFrame(conditionResizeHudFrameRef.current);
-          conditionResizeHudFrameRef.current = null;
-        }
-        if (container) {
-          container.style.width = '';
-          container.style.minWidth = '';
-        }
-        activeDocumentConditionConfig.setFields((prev: any[]) => {
-          const nextIndex = prev.findIndex((item) => item.id === fieldId);
-          if (nextIndex === -1 || prev[nextIndex]?.width === latestWidth) return prev;
-          const next = prev.slice();
-          next[nextIndex] = { ...next[nextIndex], width: latestWidth };
-          return next;
-        });
-        setActiveResize((prev) => prev?.id === fieldId ? null : prev);
+        clearResizePreview({ id: fieldId, mode: 'filter' });
+        activeDocumentConditionConfig.setFields((prev: any[]) => updateItemWidthById(prev, fieldId, latestWidth));
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
         document.removeEventListener('mousemove', handleMouseMove);
@@ -13479,274 +13990,316 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         ];
       });
     };
-    const handleConditionRowDragOver = (rowNumber: number) => (event: React.DragEvent<HTMLDivElement>) => {
-      if (conditionWorkbenchDrag?.scope !== activeDocumentConditionScope) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (conditionWorkbenchDropTarget?.row !== rowNumber || conditionWorkbenchDropTarget?.beforeId !== null) {
-        setConditionWorkbenchDropTarget({ row: rowNumber, beforeId: null });
+    const updateConditionWorkbenchDropTarget = (nextTarget: { row: number; beforeId: string | null } | null) => {
+      if (
+        conditionWorkbenchDropTarget?.row === nextTarget?.row
+        && conditionWorkbenchDropTarget?.beforeId === nextTarget?.beforeId
+      ) {
+        return;
       }
-      if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = 'move';
-      }
+
+      setConditionWorkbenchDropTarget(nextTarget);
     };
-    const handleConditionRowDrop = (rowNumber: number) => (event: React.DragEvent<HTMLDivElement>) => {
-      if (conditionWorkbenchDrag?.scope !== activeDocumentConditionScope) return;
-      event.preventDefault();
-      event.stopPropagation();
-      moveConditionField(conditionWorkbenchDrag.fieldId, rowNumber);
+    const clearConditionWorkbenchDragState = () => {
       setConditionWorkbenchDrag(null);
       setConditionWorkbenchDropTarget(null);
     };
-    const handleConditionItemDragOver = (rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
-      if (conditionWorkbenchDrag?.scope !== activeDocumentConditionScope) return;
-      if (conditionWorkbenchDrag.fieldId === beforeId) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (conditionWorkbenchDropTarget?.row !== rowNumber || conditionWorkbenchDropTarget?.beforeId !== beforeId) {
-        setConditionWorkbenchDropTarget({ row: rowNumber, beforeId });
+    const handleConditionWorkbenchDragStart = (event: DragStartEvent) => {
+      const activeData = event.active.data.current;
+      if (!isConditionWorkbenchDragData(activeData) || activeData.type !== 'condition-item' || activeData.scope !== currentScope) {
+        return;
       }
-      if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = 'move';
-      }
-    };
-    const handleConditionItemDrop = (rowNumber: number, beforeId: string) => (event: React.DragEvent<HTMLDivElement>) => {
-      if (conditionWorkbenchDrag?.scope !== activeDocumentConditionScope) return;
-      if (conditionWorkbenchDrag.fieldId === beforeId) return;
-      event.preventDefault();
-      event.stopPropagation();
-      moveConditionField(conditionWorkbenchDrag.fieldId, rowNumber, beforeId);
-      setConditionWorkbenchDrag(null);
+
+      setConditionWorkbenchDrag({ scope: activeData.scope, fieldId: activeData.fieldId });
       setConditionWorkbenchDropTarget(null);
     };
-    const handleConditionDragStart = (fieldId: string) => (event: React.DragEvent<HTMLDivElement>) => {
-      event.stopPropagation();
-      setConditionWorkbenchDrag({ scope: activeDocumentConditionScope, fieldId });
-      setConditionWorkbenchDropTarget(null);
-      if (event.dataTransfer) {
-        event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData('text/plain', fieldId);
+    const handleConditionWorkbenchDragOver = (event: DragOverEvent) => {
+      const activeData = event.active.data.current;
+      const overData = event.over?.data.current;
+      if (!isConditionWorkbenchDragData(activeData) || activeData.type !== 'condition-item' || activeData.scope !== currentScope) {
+        return;
       }
+
+      if (!isConditionWorkbenchDragData(overData) || overData.scope !== currentScope) {
+        updateConditionWorkbenchDropTarget(null);
+        return;
+      }
+
+      if (overData.type === 'condition-item') {
+        if (!('fieldId' in overData) || overData.fieldId === activeData.fieldId) {
+          updateConditionWorkbenchDropTarget(null);
+          return;
+        }
+
+        updateConditionWorkbenchDropTarget({ row: overData.row, beforeId: overData.fieldId });
+        return;
+      }
+
+      updateConditionWorkbenchDropTarget({ row: overData.row, beforeId: null });
     };
-    const handleConditionDragEnd = () => {
-      setConditionWorkbenchDrag(null);
-      setConditionWorkbenchDropTarget(null);
+    const handleConditionWorkbenchDragEnd = (event: DragEndEvent) => {
+      const activeData = event.active.data.current;
+      const overData = event.over?.data.current;
+      if (!isConditionWorkbenchDragData(activeData) || activeData.type !== 'condition-item' || activeData.scope !== currentScope) {
+        clearConditionWorkbenchDragState();
+        return;
+      }
+
+      if (!isConditionWorkbenchDragData(overData) || overData.scope !== currentScope) {
+        clearConditionWorkbenchDragState();
+        return;
+      }
+
+      if (overData.type === 'condition-item') {
+        if ('fieldId' in overData && overData.fieldId !== activeData.fieldId) {
+          moveConditionField(activeData.fieldId, overData.row, overData.fieldId);
+        }
+        clearConditionWorkbenchDragState();
+        return;
+      }
+
+      moveConditionField(activeData.fieldId, overData.row);
+      clearConditionWorkbenchDragState();
+    };
+    const getConditionItemRuntimeClasses = (fieldId: string) => ({
+      widthClassName: createRuntimeClassName('condition-item-width', fieldId),
+      labelClassName: createRuntimeClassName('condition-item-label', fieldId),
+      previewClassName: createRuntimeClassName('condition-item-preview', fieldId),
+    });
+    const getConditionItemClassName = (
+      fieldId: string,
+      options: {
+        dragging?: boolean;
+        insertTarget?: boolean;
+        overlay?: boolean;
+        selected?: boolean;
+      } = {},
+    ) => {
+      const { widthClassName } = getConditionItemRuntimeClasses(fieldId);
+
+      return cn(
+        widthClassName,
+        'h-[44px] gap-1 pr-3.5',
+        getCompactWorkbenchItemClass(options),
+        options.overlay && 'cursor-grabbing',
+      );
+    };
+    const renderConditionItemContent = (
+      field: any,
+      fieldIndex: number,
+      options: {
+        insertTarget?: boolean;
+        selected?: boolean;
+        showResizeHandle?: boolean;
+      } = {},
+    ) => {
+      const { labelClassName, previewClassName } = getConditionItemRuntimeClasses(field.id);
+      const isSelected = options.selected || options.insertTarget;
+
+      return (
+        <>
+          {options.insertTarget ? (
+            <span className="pointer-events-none absolute inset-y-1 left-0 w-[3px] rounded-full bg-primary" />
+          ) : null}
+          <div
+            className={cn(
+              labelClassName,
+              'pointer-events-none shrink-0 text-left text-[11px] font-medium text-foreground',
+            )}
+            title={field.name}
+          >
+            <span className="block truncate">{field.name}</span>
+          </div>
+          <div
+            className={cn(
+              previewClassName,
+              'pointer-events-none min-w-0 shrink-0',
+              isSelected && '[&>div]:border-border/60 [&>div]:bg-background [&>div]:shadow-none',
+            )}
+          >
+            {renderFieldPreview(field, fieldIndex, 'condition')}
+          </div>
+          {options.showResizeHandle !== false ? (
+            <div
+              data-condition-resize-handle="true"
+              className="absolute inset-y-0 right-0 flex w-2 cursor-col-resize items-stretch justify-end"
+              onPointerDown={(event) => event.stopPropagation()}
+              onMouseDown={(event) => {
+                event.stopPropagation();
+                startConditionResize(event, field.id);
+              }}
+              onDoubleClick={(event) => autoFitColumnWidth(
+                event,
+                field.id,
+                activeDocumentConditionConfig.fields,
+                activeDocumentConditionConfig.setFields,
+                CONDITION_PANEL_CONTROL_WIDTH,
+                CONDITION_PANEL_RESIZE_MAX_WIDTH,
+                'filter',
+              )}
+              title="拖动调整条件宽度，双击可自动适配"
+            >
+              <span className="h-full w-px bg-border/80 transition-colors group-hover:bg-primary" />
+            </div>
+          ) : null}
+        </>
+      );
     };
 
     return (
       <div className="shrink-0 px-1 pb-2">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => activateConditionPanelSelection(activeDocumentConditionScope)}
-          onKeyDown={handlePanelKeyDown}
-          className={`relative rounded-lg border px-3 py-2.5 transition-all ${
-            isConditionPanelActive
-              ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-tint)]'
-              : 'border-slate-200/80 bg-white/92 dark:border-slate-700 dark:bg-slate-900/58'
-          }`}
-        >
-          {activeConditionResize && (
-          <div className="pointer-events-none absolute right-3 top-2 z-10 inline-flex items-center gap-2 rounded-md border border-[color:var(--workspace-accent-border)] bg-white/96 px-2.5 py-1 text-[11px] font-bold text-[color:var(--workspace-accent)] dark:bg-slate-950/94">
-            <div className="flex flex-col">
-              <div className="inline-flex items-center gap-2">
-                <span className="material-symbols-outlined text-[13px]">straighten</span>
-                <span className="max-w-[120px] truncate">{activeConditionResize.label}</span>
-                <span className="rounded-full bg-[color:var(--workspace-accent-soft)] px-2 py-0.5">
-                  {Math.round(activeConditionResize.width)}px
+        <div className="px-1 py-1">
+          {conditionRuntimeRules ? <style>{conditionRuntimeRules}</style> : null}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => activateConditionPanelSelection(activeDocumentConditionScope)}
+            onKeyDown={handlePanelKeyDown}
+            className="space-y-2 outline-none"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="gap-1.5 rounded-xl border-border/60 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-foreground">
+                  <Filter className="size-3.5 text-primary" />
+                  顶部条件
+                </Badge>
+                <span className="text-[11px] font-medium text-muted-foreground">
+                  {currentScopeLabel} · {currentConditionFields.length} 项
                 </span>
               </div>
-              <ResizeTickRuler
-                width={activeConditionResize.width}
-                minWidth={CONDITION_PANEL_RESIZE_MIN_WIDTH}
-                maxWidth={CONDITION_PANEL_RESIZE_MAX_WIDTH}
-                ticks={activeConditionResizeTicks}
-              />
-            </div>
-          </div>
-          )}
 
-          <div className="flex flex-wrap items-center justify-between gap-2.5">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-semibold transition-colors ${
-                isConditionPanelActive
-                  ? 'bg-[color:var(--workspace-accent)] text-white'
-                  : 'bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent)]'
-              }`}>
-                <span className="material-symbols-outlined text-[15px]">filter_alt</span>
-                顶部条件
+              <div className="flex flex-wrap items-center gap-1.5" onClick={(event) => event.stopPropagation()}>
+                  {canSwitchConditionScope ? (
+                    <div className="flex items-center gap-1 rounded-xl border border-border/60 bg-background/75 p-1">
+                      {(['main', 'left'] as const).map((scope) => {
+                        const isActiveScope = activeDocumentConditionScope === scope;
+                        return (
+                          <Button
+                            key={`condition-scope-${scope}`}
+                            size="sm"
+                            variant={isActiveScope ? 'secondary' : 'ghost'}
+                            className={cn(
+                              'h-7 rounded-lg px-2.5 text-[11px] font-medium',
+                              isActiveScope
+                                ? 'bg-primary text-white hover:bg-primary/90 hover:text-white'
+                                : 'text-muted-foreground hover:text-foreground',
+                            )}
+                            onClick={() => handleDocumentConditionScopeSwitch(scope)}
+                          >
+                            {scope === 'left' ? '左条件' : '主条件'}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    className="h-8 gap-1.5 rounded-xl bg-primary px-3 text-white shadow-none hover:bg-primary/90 hover:text-white"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      activeDocumentConditionConfig.onAdd();
+                    }}
+                  >
+                    <Plus className="size-4" />
+                    条件
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      activeDocumentConditionConfig.onDelete();
+                    }}
+                    disabled={activeDocumentConditionConfig.selectedIds.length === 0}
+                  >
+                    <Trash2 className="size-4" />
+                    删除
+                  </Button>
+                </div>
               </div>
-              <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                {currentScopeLabel} · {currentConditionFields.length} 项
-              </div>
-            </div>
 
-            <div className="flex flex-wrap items-center gap-2" onClick={(event) => event.stopPropagation()}>
-              {canSwitchConditionScope && (
-                <div className="inline-flex items-center rounded-md border border-slate-200/80 bg-white/92 p-1 dark:border-slate-700 dark:bg-slate-950/88">
-                  {(['main', 'left'] as const).map((scope) => {
-                    const isActiveScope = activeDocumentConditionScope === scope;
+            <div className="overflow-auto">
+              <DndContext
+                sensors={conditionWorkbenchSensors}
+                onDragStart={handleConditionWorkbenchDragStart}
+                onDragOver={handleConditionWorkbenchDragOver}
+                onDragEnd={handleConditionWorkbenchDragEnd}
+                onDragCancel={clearConditionWorkbenchDragState}
+              >
+                <div className={cn(workbenchHeightClass, 'flex flex-col gap-1')}>
+                  {conditionRowNumbers.map((rowNumber) => {
+                    const rowFields = currentConditionFields.filter((field) => getConditionDisplayRow(field) === rowNumber);
+                    const isDropTarget = conditionWorkbenchDrag?.scope === currentScope
+                      && conditionWorkbenchDropTarget?.row === rowNumber
+                      && conditionWorkbenchDropTarget.beforeId === null;
+
                     return (
-                      <button
-                        key={`condition-scope-${scope}`}
-                        type="button"
-                        onClick={() => handleDocumentConditionScopeSwitch(scope)}
-                          className={`inline-flex h-7 items-center gap-1 rounded-[7px] px-2.5 text-[10px] font-semibold transition-all ${
-                            isActiveScope
-                              ? 'bg-[color:var(--workspace-accent)] text-white'
-                              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100'
-                          }`}
+                      <ConditionWorkbenchDropLane
+                        key={`condition-row-${rowNumber}`}
+                        scope={currentScope}
+                        row={rowNumber}
+                        className={cn(
+                          'scrollbar-none flex min-h-[48px] items-center overflow-visible rounded-lg border border-transparent bg-transparent px-0.5 py-1 transition-colors',
+                          isDropTarget && 'border-primary/20 bg-primary/5',
+                          rowFields.length === 0 && 'border-dashed border-border/30 bg-transparent text-muted-foreground',
+                        )}
                       >
-                        {scope === 'left' ? '左条件' : '主条件'}
-                      </button>
+                        <div className="flex min-w-full items-center">
+                          <div className="flex min-w-0 flex-1 items-center gap-1">
+                            {rowFields.length > 0 ? rowFields.map((field, index) => {
+                              const isActive = activeDocumentConditionConfig.selectedId === field.id;
+                              const isMarked = selectedConditionIds.has(field.id);
+                              const fieldIndex = conditionFieldIndexMap.get(field.id) ?? index;
+                              const isDragging = conditionWorkbenchDrag?.scope === currentScope
+                                && conditionWorkbenchDrag.fieldId === field.id;
+                              const isInsertTarget = conditionWorkbenchDrag?.scope === currentScope
+                                && conditionWorkbenchDrag.fieldId !== field.id
+                                && conditionWorkbenchDropTarget?.row === rowNumber
+                                && conditionWorkbenchDropTarget.beforeId === field.id;
+                              const isSelected = isActive || isMarked || isInsertTarget;
+
+                              return (
+                                <ConditionWorkbenchDraggableItem
+                                  key={field.id}
+                                  scope={currentScope}
+                                  row={rowNumber}
+                                  fieldId={field.id}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleConditionCardSelect(field.id, event);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      handleConditionCardSelect(field.id, event);
+                                    }
+                                  }}
+                                  className={getConditionItemClassName(field.id, {
+                                    dragging: isDragging,
+                                    insertTarget: isInsertTarget,
+                                    selected: isSelected,
+                                  })}
+                                >
+                                  {renderConditionItemContent(field, fieldIndex, {
+                                    insertTarget: isInsertTarget,
+                                    selected: isSelected,
+                                  })}
+                                </ConditionWorkbenchDraggableItem>
+                              );
+                            }) : (
+                              <div className="text-[11px] font-medium text-muted-foreground">
+                                拖入本行
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </ConditionWorkbenchDropLane>
                     );
                   })}
                 </div>
-              )}
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    activeDocumentConditionConfig.onAdd();
-                  }}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[color:var(--workspace-accent)] px-3 text-[11px] font-semibold text-white"
-                >
-                  <span className="material-symbols-outlined text-[15px]">add</span>
-                  条件
-                </button>
-              <button
-                type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    activeDocumentConditionConfig.onDelete();
-                  }}
-                  disabled={activeDocumentConditionConfig.selectedIds.length === 0}
-                  className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-semibold transition-colors ${
-                    activeDocumentConditionConfig.selectedIds.length > 0
-                      ? 'border border-slate-200/90 bg-white/92 text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950/86 dark:text-slate-200 dark:hover:bg-slate-900'
-                      : 'cursor-not-allowed border border-slate-200/80 bg-slate-100 text-slate-300 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-600'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[15px]">delete</span>
-                删除
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-2.5 overflow-auto pt-1">
-            <div className="flex flex-col gap-2" style={{ minHeight: workbenchHeight }}>
-              {conditionRowNumbers.map((rowNumber) => {
-                const rowFields = currentConditionFields.filter((field) => getConditionDisplayRow(field) === rowNumber);
-                const isDropTarget = conditionWorkbenchDrag?.scope === activeDocumentConditionScope
-                  && conditionWorkbenchDropTarget?.row === rowNumber
-                  && conditionWorkbenchDropTarget.beforeId === null;
-
-                return (
-                  <div
-                    key={`condition-row-${rowNumber}`}
-                    onDragOver={handleConditionRowDragOver(rowNumber)}
-                    onDrop={handleConditionRowDrop(rowNumber)}
-                    className={`flex min-h-[46px] items-center overflow-x-auto rounded-md px-2 py-1.5 transition-all ${
-                      isDropTarget
-                        ? 'bg-[color:var(--workspace-accent-soft)] ring-1 ring-[color:var(--workspace-accent-border)]'
-                        : rowFields.length === 0
-                          ? 'bg-slate-50/75 dark:bg-slate-900/28'
-                          : 'bg-transparent'
-                    }`}
-                  >
-                    <div className="flex min-w-full items-center">
-                      <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                        {rowFields.length > 0 ? rowFields.map((field, index) => {
-                          const isActive = activeDocumentConditionConfig.selectedId === field.id;
-                          const isMarked = selectedConditionIds.has(field.id);
-                          const conditionWidth = Math.round(field.width || CONDITION_PANEL_CONTROL_WIDTH);
-                          const labelWidth = Math.max(42, Math.min(64, field.name.length * 11 + 4));
-                          const isInsertTarget = conditionWorkbenchDrag?.scope === activeDocumentConditionScope
-                            && conditionWorkbenchDrag.fieldId !== field.id
-                            && conditionWorkbenchDropTarget?.row === rowNumber
-                            && conditionWorkbenchDropTarget.beforeId === field.id;
-                          const previewHighlightClass = isActive || isMarked
-                            ? '[&>div]:border-[color:var(--workspace-accent-border-strong)] [&>div]:bg-white [&>div]:shadow-[0_0_0_3px_var(--workspace-accent-soft)] dark:[&>div]:bg-slate-900/88'
-                            : '';
-
-                          return (
-                            <div
-                              key={field.id}
-                              data-condition-item-id={field.id}
-                              draggable
-                              role="button"
-                              tabIndex={0}
-                              onDragStart={handleConditionDragStart(field.id)}
-                              onDragEnd={handleConditionDragEnd}
-                              onDragOver={handleConditionItemDragOver(rowNumber, field.id)}
-                              onDrop={handleConditionItemDrop(rowNumber, field.id)}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleConditionCardSelect(field.id, event);
-                              }}
-                              onKeyDown={(event) => {
-                                if (event.key === 'Enter' || event.key === ' ') {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  handleConditionCardSelect(field.id, event);
-                                }
-                              }}
-                              style={{ width: conditionWidth, minWidth: conditionWidth }}
-                              className={`group relative flex h-[44px] shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-all ${
-                                isActive || isMarked
-                                  ? 'bg-[color:var(--workspace-accent-soft)]'
-                                  : 'hover:bg-slate-100/80 dark:hover:bg-slate-900/42'
-                              }`}
-                            >
-                              {isInsertTarget ? (
-                                <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-[color:var(--workspace-accent)]" />
-                              ) : null}
-                              <div
-                                className={`shrink-0 text-right text-[12px] font-medium ${
-                                  isActive || isMarked ? 'text-[color:var(--workspace-accent-strong)]' : 'text-slate-500 dark:text-slate-300'
-                                }`}
-                                style={{ width: labelWidth }}
-                                title={field.name}
-                              >
-                                <span className="block truncate">{field.name}</span>
-                              </div>
-                              <div className={`min-w-0 flex-1 pr-3 ${previewHighlightClass}`}>
-                                {renderFieldPreview(field, index, 'filter')}
-                              </div>
-                              <div
-                                className={`absolute bottom-1.5 right-0.5 top-1.5 flex w-2 cursor-col-resize items-center justify-center transition-opacity ${
-                                  isActive || isMarked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                                }`}
-                                onMouseDown={(event) => startConditionResize(event, field.id)}
-                                onDoubleClick={(event) => autoFitColumnWidth(
-                                  event,
-                                  field.id,
-                                  activeDocumentConditionConfig.fields,
-                                  activeDocumentConditionConfig.setFields,
-                                  CONDITION_PANEL_CONTROL_WIDTH,
-                                  CONDITION_PANEL_RESIZE_MAX_WIDTH,
-                                  'filter',
-                                )}
-                                title="拖动调整条件宽度，双击可自动适配"
-                              >
-                                <span className={`h-5 w-px rounded-full transition-colors ${
-                                  isActive || isMarked
-                                    ? 'bg-[color:var(--workspace-accent)]'
-                                    : 'bg-slate-300/90 group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-600'
-                                }`} />
-                              </div>
-                            </div>
-                          );
-                        }) : (
-                          <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                            拖入本行或在右侧批量生成条件
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              </DndContext>
             </div>
           </div>
         </div>
@@ -13759,42 +14312,13 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const detailBoardTheme = getDetailBoardTheme(workspaceTheme);
 
     return (
-      <div style={workspaceThemeVars} className={`cloudy-glass-panel relative flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-white/70 ${detailBoardTheme.tableSurface}`}>
-        <div className="cloudy-glass-toolbar px-4 py-4">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {detailTabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => activateDetailWorkbenchTab(tab.id)}
-                style={activeTab === tab.id ? activeGlassTabStyle : undefined}
-                className={`cloudy-glass-chip inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all ${
-                  activeTab === tab.id
-                    ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent)] text-white shadow-[0_18px_34px_-24px_var(--workspace-accent-shadow)]'
-                    : 'border-white/70 bg-white/72 text-slate-600 hover:border-[color:var(--workspace-accent-border)] hover:bg-white dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:border-[color:var(--workspace-accent-border)] dark:hover:bg-slate-900/76'
-                }`}
-              >
-                {tab.name}
-                {detailTabs.length > 1 && (
-                  <span
-                    onClick={(event) => deleteTab(tab.id, event)}
-                    className={`material-symbols-outlined text-[14px] ${activeTab === tab.id ? 'text-white/85' : 'text-slate-400'}`}
-                  >
-                    close
-                  </span>
-                )}
-              </button>
-            ))}
-            <button
-              onClick={addTab}
-              className="cloudy-glass-chip inline-flex items-center gap-1.5 rounded-full border border-[color:var(--workspace-accent-border)] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--workspace-accent)]"
-            >
-              <span className="material-symbols-outlined text-[14px]">add</span>
-              新页签
-            </button>
-          </div>
+      <div className={cn('relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-transparent', detailBoardTheme.tableSurface)}>
+        <div className="px-3 py-2.5">
+          {renderDetailTabStrip({ addLabel: '新页签', showModeBadge: false })}
         </div>
         {currentDetailFillType === '表格' ? (
-          <div className="scrollbar-none min-h-0 flex-1 overflow-auto bg-white/24 px-3 pb-2 pt-2 outline-none dark:bg-slate-900/28"
+          <div
+            className="scrollbar-none min-h-0 flex-1 overflow-auto bg-transparent px-3 pb-3 pt-1 outline-none"
             tabIndex={0}
             onPaste={(e) => {
               const text = e.clipboardData.getData('text');
@@ -13839,7 +14363,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             )}
           </div>
         ) : (
-          <div className="min-h-0 flex-1 bg-white/24 px-3 pb-2 pt-2 dark:bg-slate-900/28">
+          <div className="min-h-0 flex-1 bg-transparent px-3 pb-3 pt-1">
             {renderDetailFillPlaceholder()}
           </div>
         )}
@@ -16112,7 +16636,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                   <div className="ml-2 mt-2 space-y-1">
                     {subsystemMenus.map((subsystem) => {
                       const isExpanded = expandedSubsystemId === subsystem.id;
-                      const subsystemFirstLevelMenus = getEnabledMenuNodes(subsystem.children);
+                      const subsystemFirstLevelMenus = getEnabledMenuNodes<BackendMenuNode>(subsystem.children);
                       const isCurrentSubsystem = activeSubsystem === subsystem.id;
 
                       return (
