@@ -2248,11 +2248,48 @@
   - 推送后新的优化轮次已经开始，而不是停留在 checkpoint。
 
 ### Checklist
-- [ ] 确认可提交文件范围，只纳入性能优化相关变更。
-- [ ] 提交当前 Dashboard 性能优化 checkpoint。
-- [ ] 推送到当前远端分支。
-- [ ] 继续下一轮热点优化并完成至少一轮验证。
+- [x] 确认可提交文件范围，只纳入性能优化相关变更。
+- [x] 提交当前 Dashboard 性能优化 checkpoint。
+- [x] 推送到当前远端分支。
+- [x] 继续下一轮热点优化并完成至少一轮验证。
 
 ### Risks / Assumptions
 - 假设当前工作区里 `server/index.ts`、`vite.config.ts`、`server/local-dev-backend.ts` 不是本轮性能优化的一部分，应保持在本地不入提交。
 - 若推送失败，优先保住本地 commit，再单独处理远端同步。
+
+### Verification
+- 本地 checkpoint 已提交为 `46e8c47`，提交信息：`perf: isolate dashboard workbench hot paths`。
+- `git push origin HEAD` 已成功，远端分支 `origin/codex/模块配置优化` 已接收该提交。
+- 推送后继续完成了一轮 `MemoTableBuilder` 内部缓存优化，并再次通过 `lint`、`build` 和浏览器回归验证。
+
+### Result Notes
+- 这次提交只带上了 `src/components/Dashboard.tsx`、`tasks/todo.md`、`tasks/lessons.md`，没有混入本地的 `server/index.ts`、`vite.config.ts` 和 `server/local-dev-backend.ts`。
+- 当前推送出去的是“表格构建器与条件 workbench 隔离”这一版稳定 checkpoint；后续新一轮优化已经在本地继续推进。
+
+## 2026-03-24 Dashboard Phase 4 表格构建器内部派生缓存
+
+### Requirement Spec
+- 目标：在已经完成 `MemoTableBuilder` 组件隔离的基础上，继续减少它内部每次渲染时的重复计算，把列宽、表头元数据和画布节点等高频派生收敛成稳定缓存。
+- 影响范围：`src/components/Dashboard.tsx` 中 `MemoTableBuilder` 的列宽计算、表头渲染元数据、`colgroup` 和中心画布节点。
+- 关键约束：
+  - 不改表格交互语义、字段结构和选择逻辑。
+  - 继续保持范围局部，不扩散到 inspector 或其他面板。
+  - 验证必须覆盖 `lint`、`build` 和 document 模式浏览器运行态。
+- 成功标准：
+  - `MemoTableBuilder` 内部不再重复做同一批列宽/列头派生。
+  - document 模式表格工作台行为保持不变。
+
+### Checklist
+- [x] 提取表格列宽和表头元数据缓存。
+- [x] 提取 `colgroup` / 中心画布节点缓存。
+- [x] 运行 `lint`、`build` 和浏览器回归验证。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+- Playwright 复验：打开 `http://127.0.0.1:3000/?config=1&step=5&mode=document` 后，主表和明细表头仍正常渲染，主表/明细配置画布均可见。
+- `browser_console_messages(level="error")`：返回 `0`。
+
+### Result Notes
+- `MemoTableBuilder` 内部现在会缓存 `headerColumns`、`colgroup`、标准/紧凑表头节点以及中心画布节点，减少同一轮渲染里的重复列宽计算和节点重建。
+- 几个表头样式 helper 也改成了稳定回调，避免刚做好的 memo 缓存被函数引用变化打穿。
