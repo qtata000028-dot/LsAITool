@@ -306,3 +306,7 @@
 - When a user says a condition control can only be dragged from the leading text, treat that as a hit-area bug, not a styling preference. The whole control body should be draggable, and only the explicit resize strip should keep width-drag ownership.
 - If the user says the bill head controls must be “exactly the same” as the archive condition controls, do not settle for visual similarity. Reuse the same compact workbench language and interaction pattern instead of maintaining a second near-match branch.
 - For archive detail configuration screens, “too ugly / too flashy / too many unnecessary elements” means the fix is subtraction first: remove redundant badges, summary cards, decorative rails, and explanatory chrome before adding any new styling.
+## 2026-03-24 Memo Hoisting Can Break Runtime Before Type Check Notices
+- In a giant function component, moving a `useMemo` earlier can trigger Temporal Dead Zone failures if the memoized code calls helpers backed by later `const` declarations. `tsc` and `vite build` can still pass while the page crashes at runtime.
+- For shared numeric helpers such as `clampValue`, prefer module-level function declarations before introducing early memoized derivations. That removes initialization-order risk and keeps later refactors safer.
+- After any performance refactor that reorders derivations, verify the real page in a browser. Static build success is not enough for this file.

@@ -1,6 +1,6 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useDeferredValue, useMemo } from 'react';
+import { useMemo } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -80,6 +80,7 @@ import {
   resolveWorkbenchPreviewWidth,
   updateItemWidthById,
   useWorkbenchResizeState,
+  type ActiveWorkbenchResize,
   type WorkbenchResizeMode,
 } from '../features/dashboard/resize/use-workbench-resize-state';
 import {
@@ -1557,6 +1558,1903 @@ function ResizeTickRuler({
   );
 }
 
+function buildDocumentFilterRuntimeRules(
+  fields: any[],
+  activeResizeState: ActiveWorkbenchResize | null,
+) {
+  return joinRuntimeDeclarationBlocks(
+    fields.flatMap((field) => {
+      const normalizedWidth = Math.min(
+        CONDITION_PANEL_RESIZE_MAX_WIDTH,
+        Math.max(
+          CONDITION_PANEL_RESIZE_MIN_WIDTH,
+          Number.isFinite(Number(field?.width)) ? Number(field.width) : CONDITION_PANEL_CONTROL_WIDTH,
+        ),
+      );
+      const normalizedField = {
+        ...field,
+        name: field?.name ?? '',
+        type: field?.type ?? '文本',
+        width: normalizedWidth,
+      };
+      const filterControlWidth = resolveWorkbenchPreviewWidth(
+        normalizedField.width,
+        168,
+        148,
+        activeResizeState,
+        normalizedField.id,
+        'filter',
+      );
+      const labelWidth = Math.max(60, Math.min(132, normalizedField.name.length * 14 + 12));
+      const previewWidth = normalizedField.type === '日期框'
+        ? 58
+        : normalizedField.type === '数字'
+          ? 48
+          : normalizedField.type === '搜索框'
+            ? 64
+            : 52;
+      const minimumFilterWidth = labelWidth + previewWidth + 18;
+      const filterWidth = Math.max(
+        minimumFilterWidth,
+        Math.min(188, Math.max(minimumFilterWidth, filterControlWidth - 60)),
+      );
+      const widthClassName = createRuntimeClassName('document-filter-width', normalizedField.id);
+      const labelClassName = createRuntimeClassName('document-filter-label', normalizedField.id);
+      const previewClassName = createRuntimeClassName('document-filter-preview', normalizedField.id);
+
+      return [
+        createRuntimeDeclarationBlock(widthClassName, { width: filterWidth, 'min-width': filterWidth }),
+        createRuntimeDeclarationBlock(labelClassName, { width: labelWidth, 'min-width': labelWidth }),
+        createRuntimeDeclarationBlock(previewClassName, { width: previewWidth, 'min-width': previewWidth }),
+      ];
+    }),
+  );
+}
+
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+const buildColumn = (prefix: string, index: number, overrides: Record<string, any> = {}) => ({
+  id: `${prefix}_${Date.now()}_${index}`,
+  name: `新字段 ${index}`,
+  type: '文本',
+  fieldSqlTag: FIELD_TYPE_DEFAULT_SQL_TAG_IDS['文本'],
+  fieldSqlTagName: FIELD_SQL_TAG_LABEL_FALLBACKS[FIELD_TYPE_DEFAULT_SQL_TAG_IDS['文本']],
+  width: 104,
+  ...getBillFieldLayout(index - 1, BILL_FORM_DEFAULT_WIDTH),
+  required: false,
+  visible: true,
+  searchable: false,
+  readonly: false,
+  align: '左对齐',
+  placeholder: '',
+  defaultValue: '',
+  dictCode: '',
+  formula: '',
+  relationSql: '',
+  dynamicSql: '',
+  helpText: '',
+  ...overrides,
+});
+
+function buildDetailBoardGroup(index: number, columnIds: string[] = [], overrides: Record<string, any> = {}) {
+  const presets = [
+    { name: '主信息', description: '适合放编号、名称、主抬头字段' },
+    { name: '业务状态', description: '适合放状态、归属、业务阶段' },
+    { name: '扩展补充', description: '适合放备注、说明和补充字段' },
+  ];
+  const preset = presets[index - 1] ?? { name: `信息分组 ${index}`, description: '用于详情流布局展示的一组字段' };
+
+  return {
+    id: `detail_group_${Date.now()}_${index}`,
+    name: preset.name,
+    description: preset.description,
+    columnIds,
+    rows: Math.min(3, Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, Math.ceil(Math.max(columnIds.length, 1) / 2))),
+    columnRows: Object.fromEntries(columnIds.map((columnId, columnIndex) => [columnId, Math.floor(columnIndex / 2) + 1])),
+    columnsPerRow: 2,
+    columnWidths: {},
+    columnHeights: {},
+    ...overrides,
+  };
+}
+
+function createSuggestedDetailBoardGroups(columns: any[]) {
+  const columnIds = columns.map((column) => column.id).filter(Boolean);
+
+  if (columnIds.length === 0) {
+    return [
+      buildDetailBoardGroup(1),
+      buildDetailBoardGroup(2, [], { name: '业务信息', description: '勾选字段后会按流式卡片自动排布' }),
+    ];
+  }
+
+  const chunks = [
+    columnIds.slice(0, 2),
+    columnIds.slice(2, 5),
+    columnIds.slice(5, 8),
+  ].filter((chunk) => chunk.length > 0);
+
+  return chunks.map((columnIdsChunk, index) => (
+    buildDetailBoardGroup(index + 1, columnIdsChunk)
+  ));
+}
+
+function normalizeDetailBoardConfig(config: any, columns: any[] = []) {
+  const availableColumnIds = new Set(columns.map((column) => column.id));
+  const suggestedGroups = createSuggestedDetailBoardGroups(columns);
+  const hasCustomGroups = Array.isArray(config?.groups);
+  const rawGroups = hasCustomGroups ? config.groups : suggestedGroups;
+  const normalizedGroups = rawGroups.map((group: any, index: number) => (
+    (() => {
+      const columnIds = Array.from(new Set((group?.columnIds ?? []).filter((columnId: string) => availableColumnIds.has(columnId))));
+      const legacyColumnsPerRow = Math.max(1, Math.min(4, Number(group?.columnsPerRow) || 2));
+      const rows = clampValue(
+        Number.isFinite(Number(group?.rows))
+          ? Number(group.rows)
+          : Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, Math.ceil(Math.max(columnIds.length, 1) / legacyColumnsPerRow)),
+        DETAIL_BOARD_GROUP_MIN_ROWS,
+        DETAIL_BOARD_GROUP_MAX_ROWS,
+      );
+      const rawColumnRows = Object.fromEntries(
+        columnIds.map((columnId: string, columnIndex: number) => {
+          const explicitRow = Number(group?.columnRows?.[columnId]);
+          const row = Number.isFinite(explicitRow)
+            ? explicitRow
+            : Math.floor(columnIndex / legacyColumnsPerRow) + 1;
+          return [columnId, clampValue(row, DETAIL_BOARD_GROUP_MIN_ROWS, rows)];
+        }),
+      );
+
+      return {
+        id: group?.id ?? buildDetailBoardGroup(index + 1).id,
+        name: typeof group?.name === 'string' ? group.name : `信息分组 ${index + 1}`,
+        description: group?.description ?? '',
+        columnIds,
+        rows,
+        columnRows: rawColumnRows,
+        columnsPerRow: legacyColumnsPerRow,
+        columnWidths: Object.fromEntries(
+          Object.entries(group?.columnWidths ?? {}).filter(([columnId, width]) => (
+            availableColumnIds.has(columnId) && Number(width) > 0
+          )),
+        ),
+        columnHeights: Object.fromEntries(
+          Object.entries(group?.columnHeights ?? {}).filter(([columnId, height]) => (
+            availableColumnIds.has(columnId) && Number(height) > 0
+          )),
+        ),
+      };
+    })()
+  ));
+
+  return {
+    enabled: Boolean(config?.enabled),
+    theme: DETAIL_BOARD_THEME_OPTIONS.some((option) => option.value === config?.theme) ? config.theme : 'aurora',
+    sortColumnId: availableColumnIds.has(config?.sortColumnId) ? config.sortColumnId : columns[0]?.id ?? null,
+    groups: hasCustomGroups ? normalizedGroups : suggestedGroups,
+  };
+}
+
+function getDetailBoardTheme(theme?: string) {
+  return DETAIL_BOARD_THEME_STYLES[theme || 'aurora'] ?? DETAIL_BOARD_THEME_STYLES.aurora;
+}
+
+const normalizeColumn = (col: any) => ({
+  ...getBillFieldLayout(0, BILL_FORM_DEFAULT_WIDTH),
+  required: false,
+  visible: true,
+  searchable: false,
+  readonly: false,
+  align: '左对齐',
+  placeholder: '',
+  defaultValue: '',
+  dictCode: '',
+  formula: '',
+  relationSql: '',
+  dynamicSql: '',
+  helpText: '',
+  ...col,
+  type: resolveColumnFieldType(col),
+  fieldSqlTag: resolveColumnFieldSqlTagId(col),
+  fieldSqlTagName: toRecordText(getRecordFieldValue(col, 'fieldsqltagname', 'fieldSqlTagName')),
+});
+
+const isRenderableMainColumn = (column: any) => {
+  const normalizedColumn = normalizeColumn(column);
+  return normalizedColumn.visible !== false && Number(normalizedColumn.width) > 0;
+};
+
+type DocumentGridToolbarFilterConfig = {
+  fields: any[];
+  selectedId: string | null;
+  selectedIds: string[];
+  setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>;
+  onActivate: (id: string) => void;
+  onAdd: () => void;
+  onDelete: () => void;
+  setFields: React.Dispatch<React.SetStateAction<any[]>>;
+  scope: 'left' | 'main' | 'detail';
+};
+
+type DocumentGridToolbarProps = {
+  columns: any[];
+  title: string;
+  selectedCount: number;
+  onDelete: () => void;
+  onAdd: () => void;
+  activeResize: ActiveWorkbenchResize | null;
+  extraActions?: React.ReactNode;
+  filterConfig?: DocumentGridToolbarFilterConfig;
+  tableConfigAction?: {
+    active?: boolean;
+    onSelect: () => void;
+  };
+  options?: {
+    hideActionBar?: boolean;
+    hideFilterBar?: boolean;
+    hideFilterQuickActions?: boolean;
+    filterAccessory?: React.ReactNode;
+    filterRuntimeRules?: string;
+  };
+  onSetBuilderSelectionContextMenu: React.Dispatch<React.SetStateAction<any>>;
+  renderFieldPreview: (rawField: any, rowIndex: number, mode?: 'table' | 'filter' | 'condition') => React.ReactNode;
+  startResize: (
+    e: React.MouseEvent,
+    colId: string,
+    cols: any[],
+    setCols: React.Dispatch<React.SetStateAction<any[]>>,
+    minWidth?: number,
+    maxWidth?: number,
+    mode?: WorkbenchResizeMode,
+  ) => void;
+  autoFitColumnWidth: (
+    event: React.MouseEvent,
+    colId: string,
+    cols: any[],
+    setCols: React.Dispatch<React.SetStateAction<any[]>>,
+    minWidth?: number,
+    maxWidth?: number,
+    mode?: WorkbenchResizeMode,
+  ) => void;
+};
+
+const MemoDocumentGridToolbar = React.memo(function DocumentGridToolbar({
+  columns,
+  title,
+  selectedCount,
+  onDelete,
+  onAdd,
+  activeResize,
+  extraActions,
+  filterConfig,
+  tableConfigAction,
+  options,
+  onSetBuilderSelectionContextMenu,
+  renderFieldPreview,
+  startResize,
+  autoFitColumnWidth,
+}: DocumentGridToolbarProps) {
+  const filterFields = filterConfig?.fields ?? columns.slice(0, 3);
+  const hideFilterBar = options?.hideFilterBar ?? false;
+  const hideFilterQuickActions = options?.hideFilterQuickActions ?? false;
+  const hideActionBar = options?.hideActionBar ?? false;
+  const filterSelectionCount = filterConfig?.selectedIds.length ?? 0;
+  const buildFilterSelectionIds = (fieldId: string, append: boolean) => {
+    if (!filterConfig) return [];
+    if (filterConfig.selectedIds.includes(fieldId)) {
+      return filterConfig.selectedIds;
+    }
+    return append ? Array.from(new Set([...filterConfig.selectedIds, fieldId])) : [fieldId];
+  };
+  const handleFilterSelect = (fieldId: string, event?: React.MouseEvent | React.KeyboardEvent) => {
+    if (!filterConfig) return;
+    const allowMulti = Boolean(event && ('ctrlKey' in event) && (event.ctrlKey || event.metaKey));
+
+    onSetBuilderSelectionContextMenu(null);
+    if (allowMulti) {
+      filterConfig.setSelectedIds((prev) => (
+        prev.includes(fieldId) ? prev.filter((item) => item !== fieldId) : [...prev, fieldId]
+      ));
+      filterConfig.onActivate(fieldId);
+      return;
+    }
+
+    filterConfig.setSelectedIds([fieldId]);
+    filterConfig.onActivate(fieldId);
+  };
+  const handleFilterContextMenu = (event: React.MouseEvent<HTMLDivElement>, fieldId: string) => {
+    if (!filterConfig) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const nextSelectedIds = buildFilterSelectionIds(fieldId, event.ctrlKey || event.metaKey);
+    filterConfig.setSelectedIds(nextSelectedIds);
+    filterConfig.onActivate(fieldId);
+    onSetBuilderSelectionContextMenu({
+      kind: 'filter',
+      scope: filterConfig.scope,
+      x: event.clientX,
+      y: event.clientY,
+      ids: nextSelectedIds,
+    });
+  };
+  const filterRuntimeRules = options?.filterRuntimeRules ?? buildDocumentFilterRuntimeRules(filterFields, activeResize);
+  const getFilterNameClass = (isSelected: boolean, isRequired: boolean) => cn(
+    'shrink-0 overflow-hidden text-ellipsis whitespace-nowrap text-left text-[11px] font-medium text-muted-foreground',
+    isRequired && 'text-primary',
+    isSelected && 'text-foreground',
+  );
+
+  const getFilterPreviewShellClass = (isSelected: boolean) => cn(
+    'shrink-0 pr-0.5',
+    isSelected && '[&>div]:border-border/60 [&>div]:bg-background [&>div]:shadow-none',
+  );
+
+  return (
+    <div className="shrink-0">
+      {!hideFilterBar && (
+        <div className="px-1 py-1">
+          {filterRuntimeRules ? <style>{filterRuntimeRules}</style> : null}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="gap-1.5 rounded-xl border-border/60 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-foreground">
+                <Filter className="size-3.5" />
+                查询条件
+              </Badge>
+              <span className="text-[11px] font-medium text-muted-foreground">{filterFields.length} 项</span>
+            </div>
+            {options?.filterAccessory ? (
+              <div className="flex shrink-0 items-center gap-2">{options.filterAccessory}</div>
+            ) : null}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            {filterFields.map((field, index) => {
+              const normalizedWidth = Math.min(
+                CONDITION_PANEL_RESIZE_MAX_WIDTH,
+                Math.max(
+                  CONDITION_PANEL_RESIZE_MIN_WIDTH,
+                  Number.isFinite(Number(field?.width)) ? Number(field.width) : CONDITION_PANEL_CONTROL_WIDTH,
+                ),
+              );
+              const normalizedField = {
+                required: false,
+                ...field,
+                width: normalizedWidth,
+              };
+              const isActive = filterConfig?.selectedId === field.id;
+              const isMarkedForDelete = filterConfig?.selectedIds.includes(field.id) ?? false;
+              const isSelected = isActive || isMarkedForDelete;
+              const widthClassName = createRuntimeClassName('document-filter-width', normalizedField.id);
+              const labelClassName = createRuntimeClassName('document-filter-label', normalizedField.id);
+              const previewClassName = createRuntimeClassName('document-filter-preview', normalizedField.id);
+
+              return (
+                <div
+                  key={field.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isSelected}
+                  onClick={(event) => handleFilterSelect(field.id, event)}
+                  onContextMenu={(event) => handleFilterContextMenu(event, field.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handleFilterSelect(field.id, event);
+                    }
+                  }}
+                  className={cn(
+                    widthClassName,
+                    'group relative flex h-11 shrink-0 cursor-grab select-none flex-row items-center gap-1 rounded-lg border pl-2 pr-3.5 py-1.5 transition-colors active:cursor-grabbing',
+                    isSelected
+                      ? 'border-primary/20 bg-background/90'
+                      : 'border-transparent bg-transparent hover:border-border/40 hover:bg-background/70',
+                  )}
+                >
+                  <div
+                    className={cn(labelClassName, getFilterNameClass(isSelected, Boolean(normalizedField.required)))}
+                    title={normalizedField.name}
+                  >
+                    <span className="block truncate">
+                      {normalizedField.name}
+                      {normalizedField.required ? <span className="ml-1 text-primary">*</span> : null}
+                    </span>
+                  </div>
+                  <div className={cn(previewClassName, getFilterPreviewShellClass(isSelected))}>
+                    {renderFieldPreview(normalizedField, index, 'condition')}
+                  </div>
+                  <div
+                    className="absolute inset-y-2 right-0.5 flex w-1.5 cursor-col-resize items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    onMouseDown={(event) => filterConfig && startResize(event, field.id, filterFields, filterConfig.setFields, 160, 620, 'filter')}
+                    onDoubleClick={(event) => filterConfig && autoFitColumnWidth(event, field.id, filterFields, filterConfig.setFields, 160, 620, 'filter')}
+                    title="拖动调整条件宽度，双击可自动适配"
+                  >
+                    <span className="h-3.5 w-px rounded-full bg-border transition-colors group-hover:bg-primary" />
+                  </div>
+                </div>
+              );
+            })}
+            {filterConfig && !hideFilterQuickActions ? (
+              <Button size="sm" className="h-8 gap-1.5 rounded-xl px-3" onClick={filterConfig.onAdd}>
+                <Plus className="size-4" />
+                条件
+              </Button>
+            ) : null}
+            {filterConfig && !hideFilterQuickActions ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3"
+                onClick={filterConfig.onDelete}
+                disabled={filterSelectionCount === 0}
+              >
+                <Trash2 className="size-4" />
+                删除条件{filterSelectionCount > 1 ? ` (${filterSelectionCount})` : ''}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      )}
+      {!hideActionBar && (
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-3 px-1 py-1">
+          <Button
+            variant={tableConfigAction?.active ? 'secondary' : 'ghost'}
+            size="sm"
+            className="gap-1.5 rounded-xl"
+            onClick={tableConfigAction?.onSelect}
+          >
+            <Table2 className="size-4" />
+            {title}
+          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {extraActions}
+            <Button size="sm" className="h-8 gap-1.5 rounded-xl px-3" onClick={onAdd}>
+              <Plus className="size-4" />
+              新增
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3" onClick={onDelete} disabled={selectedCount === 0}>
+              <Trash2 className="size-4" />
+              删除
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3">
+              <Save className="size-4" />
+              保存
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}, (prevProps, nextProps) => (
+  prevProps.columns === nextProps.columns
+  && prevProps.title === nextProps.title
+  && prevProps.selectedCount === nextProps.selectedCount
+  && prevProps.extraActions === nextProps.extraActions
+  && prevProps.activeResize === nextProps.activeResize
+  && prevProps.filterConfig?.fields === nextProps.filterConfig?.fields
+  && prevProps.filterConfig?.selectedId === nextProps.filterConfig?.selectedId
+  && prevProps.filterConfig?.selectedIds === nextProps.filterConfig?.selectedIds
+  && prevProps.filterConfig?.scope === nextProps.filterConfig?.scope
+  && prevProps.tableConfigAction?.active === nextProps.tableConfigAction?.active
+  && prevProps.options?.hideActionBar === nextProps.options?.hideActionBar
+  && prevProps.options?.hideFilterBar === nextProps.options?.hideFilterBar
+  && prevProps.options?.hideFilterQuickActions === nextProps.options?.hideFilterQuickActions
+  && prevProps.options?.filterAccessory === nextProps.options?.filterAccessory
+  && prevProps.options?.filterRuntimeRules === nextProps.options?.filterRuntimeRules
+));
+
+type BuilderSelectionContextMenuState = {
+  kind: 'column' | 'filter';
+  scope: 'left' | 'main' | 'detail';
+  x: number;
+  y: number;
+  ids: string[];
+} | null;
+
+const normalizeConditionWorkbenchField = (field: any) => ({
+  required: false,
+  visible: true,
+  searchable: true,
+  readonly: false,
+  align: '左对齐',
+  placeholder: '',
+  defaultValue: '',
+  dictCode: '',
+  formula: '',
+  relationSql: '',
+  dynamicSql: '',
+  helpText: '',
+  ...field,
+  width: Math.min(
+    CONDITION_PANEL_RESIZE_MAX_WIDTH,
+    Math.max(
+      CONDITION_PANEL_RESIZE_MIN_WIDTH,
+      Number.isFinite(Number(field?.width)) ? Number(field.width) : CONDITION_PANEL_CONTROL_WIDTH,
+    ),
+  ),
+  panelRow: Math.min(
+    CONDITION_PANEL_MAX_ROWS,
+    Math.max(
+      CONDITION_PANEL_MIN_ROWS,
+      Number.isFinite(Number(field?.panelRow)) ? Number(field.panelRow) : CONDITION_PANEL_MIN_ROWS,
+    ),
+  ),
+});
+
+const getPreviewFieldOptionValues = (rawField: any) => {
+  const field = normalizeColumn(rawField);
+  const source = field.dictCode || field.helpText || '';
+
+  if (/[,\n，;；|]/.test(source)) {
+    const items = source
+      .split(/[\n,，;；|]/)
+      .map((item: string) => item.trim())
+      .filter(Boolean);
+
+    if (items.length > 0) {
+      return items;
+    }
+  }
+
+  if (field.type === '下拉框') {
+    return ['正常', '停用', '草稿'];
+  }
+
+  if (field.type === '单选框') {
+    return ['是', '否'];
+  }
+
+  if (field.type === '多选框') {
+    return ['标签A', '标签B', '标签C'];
+  }
+
+  return [];
+};
+
+const getPreviewFieldValue = (rawColumn: any, rowIndex: number) => {
+  const column = normalizeColumn(rawColumn);
+  const fieldName = column.name || '字段';
+  const optionValues = getPreviewFieldOptionValues(column);
+
+  if (column.defaultValue) {
+    return column.defaultValue;
+  }
+
+  if (column.type === '数字' || /金额|单价|数量|价格|余额/.test(fieldName)) {
+    return `${(rowIndex + 1) * 125}`;
+  }
+
+  if (column.type === '日期框' || /日期|时间/.test(fieldName)) {
+    return `2026-03-${String(rowIndex + 18).padStart(2, '0')}`;
+  }
+
+  if (column.type === '下拉框' || column.type === '单选框') {
+    return optionValues[rowIndex % optionValues.length] || '未选择';
+  }
+
+  if (column.type === '多选框') {
+    return optionValues.slice(0, 2).join('、') || '标签A、标签B';
+  }
+
+  if (/编码|编号/.test(fieldName)) {
+    return `NO-${String(rowIndex + 1).padStart(3, '0')}`;
+  }
+
+  if (/名称/.test(fieldName)) {
+    return `示例${rowIndex + 1}`;
+  }
+
+  if (/单位/.test(fieldName)) {
+    return ['个', '件', '套'][rowIndex % 3];
+  }
+
+  if (column.type === '搜索框') {
+    return `${fieldName}检索词`;
+  }
+
+  return `${fieldName}${rowIndex + 1}`;
+};
+
+function renderPreviewFieldControl(
+  rawField: any,
+  rowIndex: number,
+  mode: 'table' | 'filter' | 'condition' = 'table',
+) {
+  const field = normalizeColumn(rawField);
+  const previewValue = getPreviewFieldValue(field, rowIndex);
+  const optionValues = getPreviewFieldOptionValues(field);
+  const isFilterMode = mode !== 'table';
+  const isConditionMode = mode === 'condition';
+  const inputClass = isFilterMode
+    ? 'h-10 w-full rounded-xl border border-slate-200/90 bg-white/96 px-3 text-[12px] text-slate-700 outline-none transition shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] focus:border-[color:var(--workspace-accent-border-strong)] focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/88 dark:text-slate-200'
+    : 'h-10 w-full rounded-xl border border-slate-200/80 bg-white/94 px-3 text-[12px] text-slate-700 outline-none transition shadow-[0_10px_20px_-18px_rgba(15,23,42,0.22),inset_0_1px_0_rgba(255,255,255,0.72)] focus:border-[color:var(--workspace-accent-border-strong)] focus:ring-4 focus:ring-[color:var(--workspace-accent-soft)] dark:border-slate-700 dark:bg-slate-900/88 dark:text-slate-100';
+  const compactInputClass = `${inputClass} px-2.5`;
+  const previewKey = `${field.id}-${field.type}-${field.dictCode}-${field.defaultValue}-${field.placeholder}`;
+
+  const stopPreviewEvent = (event: React.SyntheticEvent) => {
+    event.stopPropagation();
+  };
+
+  if (isFilterMode) {
+    const shellClass = `flex h-9 w-full items-center justify-between gap-2 rounded-[10px] border border-slate-200/90 bg-white text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 ${isConditionMode ? 'pointer-events-none px-2.5' : 'px-3'}`;
+    const staticValue = field.placeholder || previewValue || `${field.name}示例值`;
+    const trailingIcon = field.type === '日期框'
+      ? 'calendar'
+      : field.type === '下拉框' || field.type === '多选框'
+        ? 'expand'
+        : field.type === '搜索框'
+          ? 'search'
+          : '';
+
+    if (isConditionMode) {
+      if (field.type === '多选框') {
+        return (
+          <div className={shellClass}>
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="h-4.5 w-4.5 rounded-md border border-slate-200/80 bg-white/90 dark:border-slate-700 dark:bg-slate-900/70" />
+              <span className="h-4.5 w-4.5 rounded-md border border-slate-200/80 bg-white/90 dark:border-slate-700 dark:bg-slate-900/70" />
+            </div>
+            <ChevronDown className="size-4 text-slate-300 dark:text-slate-500" />
+          </div>
+        );
+      }
+
+      if (field.type === '单选框') {
+        return (
+          <div className={shellClass}>
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <span className="h-3.5 w-3.5 rounded-full border border-[color:var(--workspace-accent)] bg-[color:var(--workspace-accent)]/14" />
+              <span className="h-3.5 w-3.5 rounded-full border border-slate-300 dark:border-slate-600" />
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className={shellClass}>
+          {field.type === '搜索框' ? (
+            <Search className="size-4 text-slate-300 dark:text-slate-500" />
+          ) : null}
+          <div className="min-w-0 flex-1" />
+          {trailingIcon && field.type !== '搜索框' ? (
+            trailingIcon === 'calendar' ? (
+              <CalendarDays className="size-4 text-slate-300 dark:text-slate-500" />
+            ) : (
+              <ChevronDown className="size-4 text-slate-300 dark:text-slate-500" />
+            )
+          ) : null}
+        </div>
+      );
+    }
+
+    if (field.type === '多选框') {
+      const tags = (optionValues.length > 0 ? optionValues : ['标签A', '标签B']).slice(0, 2);
+      return (
+        <div className={shellClass}>
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <div className="flex min-w-0 flex-wrap gap-1">
+              {tags.map((tag) => (
+                <span key={tag} className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+          <span className="material-symbols-outlined text-[16px] text-slate-300 dark:text-slate-500">expand_more</span>
+        </div>
+      );
+    }
+
+    if (field.type === '单选框') {
+      const value = optionValues[0] || previewValue || '是';
+      return (
+        <div className={shellClass}>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-[color:var(--workspace-accent)]" />
+            <span className="truncate">{value}</span>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={shellClass}>
+        <div className="min-w-0 flex-1">
+          <span className={`truncate ${field.type === '数字' ? 'font-semibold tabular-nums' : ''}`}>{staticValue}</span>
+        </div>
+        {trailingIcon ? (
+          <span className="material-symbols-outlined text-[16px] text-slate-300 dark:text-slate-500">
+            {trailingIcon}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (field.type === '日期框') {
+    return (
+      <input
+        key={previewKey}
+        data-preview-control="true"
+        type="date"
+        defaultValue={previewValue}
+        className={compactInputClass}
+        onClick={stopPreviewEvent}
+        onDoubleClick={stopPreviewEvent}
+      />
+    );
+  }
+
+  if (field.type === '下拉框') {
+    return (
+      <select
+        key={previewKey}
+        data-preview-control="true"
+        defaultValue={optionValues.includes(previewValue) ? previewValue : optionValues[0] || ''}
+        className={compactInputClass}
+        onClick={stopPreviewEvent}
+        onDoubleClick={stopPreviewEvent}
+      >
+        {optionValues.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (field.type === '搜索框') {
+    return (
+      <div
+        data-preview-control="true"
+        className="relative"
+        onClick={stopPreviewEvent}
+        onDoubleClick={stopPreviewEvent}
+      >
+        <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[16px] text-slate-400 ${isFilterMode ? '' : 'z-[1]'}`}>
+          search
+        </span>
+        <input
+          key={previewKey}
+          defaultValue={previewValue || ''}
+          placeholder={field.placeholder || `请输入${field.name}`}
+          className={`${compactInputClass} pl-8 pr-3 min-w-0`}
+        />
+      </div>
+    );
+  }
+
+  if (field.type === '单选框') {
+    return (
+      <div
+        data-preview-control="true"
+        className="flex flex-wrap items-center gap-3"
+        onClick={stopPreviewEvent}
+        onDoubleClick={stopPreviewEvent}
+      >
+        {(optionValues.length > 0 ? optionValues : ['是', '否']).map((option) => (
+          <label key={option} className="inline-flex items-center gap-1.5 text-[12px] text-slate-600 dark:text-slate-300">
+            <input
+              type="radio"
+              name={`${field.id}-${mode}`}
+              defaultChecked={option === previewValue}
+              className="h-3.5 w-3.5 accent-[color:var(--workspace-accent)]"
+            />
+            <span>{option}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+
+  if (field.type === '多选框') {
+    const tags = optionValues.slice(0, 2);
+    return (
+      <div
+        data-preview-control="true"
+        className="flex flex-wrap gap-2"
+        onClick={stopPreviewEvent}
+        onDoubleClick={stopPreviewEvent}
+      >
+        {(optionValues.length > 0 ? optionValues : ['标签A', '标签B', '标签C']).map((tag, index) => (
+          <label key={tag} className="inline-flex items-center gap-1.5 text-[12px] text-slate-600 dark:text-slate-300">
+            <input
+              type="checkbox"
+              defaultChecked={index < (tags.length > 0 ? tags.length : 2)}
+              className="h-3.5 w-3.5 rounded accent-[#1686e3]"
+            />
+            <span>{tag}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+
+  if (field.type === '数字') {
+    return (
+      <input
+        key={previewKey}
+        data-preview-control="true"
+        type="number"
+        defaultValue={previewValue}
+        className={`${compactInputClass} text-right font-semibold tabular-nums`}
+        onClick={stopPreviewEvent}
+        onDoubleClick={stopPreviewEvent}
+      />
+    );
+  }
+
+  return (
+    <input
+      key={previewKey}
+      data-preview-control="true"
+      type="text"
+      defaultValue={previewValue || ''}
+      placeholder={field.placeholder || `${field.name}示例值`}
+      className={compactInputClass}
+      onClick={stopPreviewEvent}
+      onDoubleClick={stopPreviewEvent}
+    />
+  );
+}
+
+function buildConditionWorkbenchRuntimeRules(
+  fields: any[],
+  rowCount: number,
+  scope: ConditionWorkbenchScope,
+  activeResizeState: ActiveWorkbenchResize | null,
+) {
+  const conditionWorkbenchHeight = rowCount * CONDITION_PANEL_ROW_HEIGHT
+    + Math.max(0, rowCount - 1) * CONDITION_PANEL_ROW_GAP;
+  const conditionWorkbenchHeightClass = createRuntimeClassName('condition-workbench-height', scope);
+
+  return joinRuntimeDeclarationBlocks([
+    createRuntimeDeclarationBlock(conditionWorkbenchHeightClass, { 'min-height': conditionWorkbenchHeight }),
+    ...fields.flatMap((field) => {
+      const rawConditionWidth = resolveWorkbenchPreviewWidth(
+        field.width,
+        CONDITION_PANEL_CONTROL_WIDTH,
+        CONDITION_PANEL_RESIZE_MIN_WIDTH,
+        activeResizeState,
+        field.id,
+        'filter',
+      );
+      const labelWidth = Math.max(60, Math.min(132, field.name.length * 14 + 10));
+      const sharedPreviewWidthFloor = 120;
+      const compactPreviewWidthFloor = 104;
+      const basePreviewWidth = field.type === '数字'
+        ? compactPreviewWidthFloor
+        : sharedPreviewWidthFloor;
+      const conditionChromeWidth = 18;
+      const minimumConditionWidth = labelWidth + basePreviewWidth + conditionChromeWidth;
+      const conditionWidth = Math.max(
+        minimumConditionWidth,
+        Math.min(CONDITION_PANEL_RESIZE_MAX_WIDTH, Math.max(minimumConditionWidth, rawConditionWidth)),
+      );
+      const previewWidth = Math.max(basePreviewWidth, conditionWidth - labelWidth - conditionChromeWidth);
+      const widthClassName = createRuntimeClassName('condition-item-width', field.id);
+      const labelClassName = createRuntimeClassName('condition-item-label', field.id);
+      const previewClassName = createRuntimeClassName('condition-item-preview', field.id);
+
+      return [
+        createRuntimeDeclarationBlock(widthClassName, { width: conditionWidth, 'min-width': conditionWidth }),
+        createRuntimeDeclarationBlock(labelClassName, { width: labelWidth, 'min-width': labelWidth }),
+        createRuntimeDeclarationBlock(previewClassName, { width: previewWidth, 'min-width': previewWidth }),
+      ];
+    }),
+  ]);
+}
+
+type DocumentConditionWorkbenchConfig = {
+  fields: any[];
+  selectedId: string | null;
+  selectedIds: string[];
+  setSelectedIds: React.Dispatch<React.SetStateAction<string[]>>;
+  setFields: React.Dispatch<React.SetStateAction<any[]>>;
+  scope: ConditionWorkbenchScope;
+  rowCount: number;
+  onActivate: (id: string) => void;
+  onAdd: () => void;
+  onDelete: () => void;
+};
+
+type DocumentConditionWorkbenchProps = {
+  activeScope: ConditionWorkbenchScope;
+  canSwitchScope: boolean;
+  mainConfig: DocumentConditionWorkbenchConfig;
+  leftConfig?: DocumentConditionWorkbenchConfig | null;
+  activeResize: ActiveWorkbenchResize | null;
+  conditionWorkbenchSensors: any;
+  onScopeSwitch: (scope: ConditionWorkbenchScope) => void;
+  onActivatePanel: (scope: ConditionWorkbenchScope) => void;
+  onClearBuilderSelectionContextMenu: () => void;
+  setActiveResize: React.Dispatch<React.SetStateAction<ActiveWorkbenchResize | null>>;
+  scheduleResizePreview: (nextResize: ActiveWorkbenchResize) => void;
+  clearResizePreview: (target?: { id: string; mode: WorkbenchResizeMode }) => void;
+  autoFitColumnWidth: (
+    event: React.MouseEvent,
+    colId: string,
+    cols: any[],
+    setCols: React.Dispatch<React.SetStateAction<any[]>>,
+    minWidth?: number,
+    maxWidth?: number,
+    mode?: WorkbenchResizeMode,
+  ) => void;
+};
+
+const MemoDocumentConditionWorkbench = React.memo(function DocumentConditionWorkbench({
+  activeScope,
+  canSwitchScope,
+  mainConfig,
+  leftConfig,
+  activeResize,
+  conditionWorkbenchSensors,
+  onScopeSwitch,
+  onActivatePanel,
+  onClearBuilderSelectionContextMenu,
+  setActiveResize,
+  scheduleResizePreview,
+  clearResizePreview,
+  autoFitColumnWidth,
+}: DocumentConditionWorkbenchProps) {
+  const currentConfig = activeScope === 'left' && leftConfig ? leftConfig : mainConfig;
+  const currentScope = currentConfig.scope;
+  const currentScopeLabel = currentScope === 'left' ? '左条件' : '主条件';
+  const [conditionWorkbenchDrag, setConditionWorkbenchDrag] = useState<{
+    scope: ConditionWorkbenchScope;
+    fieldId: string;
+  } | null>(null);
+  const [conditionWorkbenchDropTarget, setConditionWorkbenchDropTarget] = useState<{
+    row: number;
+    beforeId: string | null;
+  } | null>(null);
+  const conditionWorkbenchDropTargetRef = useRef<{ row: number; beforeId: string | null } | null>(null);
+  const conditionWorkbenchDropTargetFrameRef = useRef<number | null>(null);
+
+  const currentConditionFields = useMemo(
+    () => currentConfig.fields.map(normalizeConditionWorkbenchField),
+    [currentConfig.fields],
+  );
+  const selectedConditionIds = useMemo(
+    () => new Set(currentConfig.selectedIds),
+    [currentConfig.selectedIds],
+  );
+  const conditionFieldIndexMap = useMemo(
+    () => new Map(currentConditionFields.map((field, index) => [field.id, index])),
+    [currentConditionFields],
+  );
+  const conditionRowNumbers = useMemo(
+    () => Array.from({ length: currentConfig.rowCount }, (_, index) => index + 1),
+    [currentConfig.rowCount],
+  );
+  const conditionFieldsByRow = useMemo(() => {
+    const grouped = new Map<number, typeof currentConditionFields>();
+
+    currentConditionFields.forEach((field) => {
+      const rowNumber = clampValue(
+        Number.isFinite(Number(field?.panelRow)) ? Number(field.panelRow) : CONDITION_PANEL_MIN_ROWS,
+        CONDITION_PANEL_MIN_ROWS,
+        currentConfig.rowCount,
+      );
+      const rowFields = grouped.get(rowNumber) ?? [];
+      rowFields.push(field);
+      grouped.set(rowNumber, rowFields);
+    });
+
+    return grouped;
+  }, [currentConditionFields, currentConfig.rowCount]);
+  const conditionWorkbenchHeightClass = createRuntimeClassName('condition-workbench-height', currentScope);
+  const conditionRuntimeRules = useMemo(
+    () => buildConditionWorkbenchRuntimeRules(
+      currentConditionFields,
+      currentConfig.rowCount,
+      currentScope,
+      activeResize,
+    ),
+    [activeResize, currentConditionFields, currentConfig.rowCount, currentScope],
+  );
+
+  const clearConditionWorkbenchDragState = useCallback(() => {
+    if (conditionWorkbenchDropTargetFrameRef.current !== null) {
+      window.cancelAnimationFrame(conditionWorkbenchDropTargetFrameRef.current);
+      conditionWorkbenchDropTargetFrameRef.current = null;
+    }
+    conditionWorkbenchDropTargetRef.current = null;
+    setConditionWorkbenchDrag(null);
+    setConditionWorkbenchDropTarget(null);
+  }, []);
+
+  useEffect(() => {
+    conditionWorkbenchDropTargetRef.current = conditionWorkbenchDropTarget;
+  }, [conditionWorkbenchDropTarget]);
+
+  useEffect(() => () => {
+    if (conditionWorkbenchDropTargetFrameRef.current !== null) {
+      window.cancelAnimationFrame(conditionWorkbenchDropTargetFrameRef.current);
+      conditionWorkbenchDropTargetFrameRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    clearConditionWorkbenchDragState();
+  }, [clearConditionWorkbenchDragState, currentScope]);
+
+  const updateConditionWorkbenchDropTarget = useCallback((nextTarget: { row: number; beforeId: string | null } | null) => {
+    const currentTarget = conditionWorkbenchDropTargetRef.current;
+    if (
+      currentTarget?.row === nextTarget?.row
+      && currentTarget?.beforeId === nextTarget?.beforeId
+    ) {
+      return;
+    }
+
+    conditionWorkbenchDropTargetRef.current = nextTarget;
+    if (conditionWorkbenchDropTargetFrameRef.current !== null) {
+      return;
+    }
+
+    conditionWorkbenchDropTargetFrameRef.current = window.requestAnimationFrame(() => {
+      conditionWorkbenchDropTargetFrameRef.current = null;
+      setConditionWorkbenchDropTarget((prev) => {
+        const latestTarget = conditionWorkbenchDropTargetRef.current;
+        if (
+          prev?.row === latestTarget?.row
+          && prev?.beforeId === latestTarget?.beforeId
+        ) {
+          return prev;
+        }
+        return latestTarget;
+      });
+    });
+  }, []);
+
+  const getConditionResizeCandidates = useCallback((fieldId: string) => buildResizeSnapCandidates(
+    currentConditionFields
+      .filter((field) => field.id !== fieldId)
+      .map((field) => Number(field.width) || CONDITION_PANEL_CONTROL_WIDTH),
+    {
+      minWidth: CONDITION_PANEL_RESIZE_MIN_WIDTH,
+      maxWidth: CONDITION_PANEL_RESIZE_MAX_WIDTH,
+      baseWidth: CONDITION_PANEL_CONTROL_WIDTH,
+    },
+  ), [currentConditionFields]);
+
+  const handleConditionCardSelect = useCallback((fieldId: string, event?: React.MouseEvent | React.KeyboardEvent) => {
+    const allowMulti = Boolean(event && ('ctrlKey' in event) && (event.ctrlKey || event.metaKey));
+
+    onClearBuilderSelectionContextMenu();
+    if (allowMulti) {
+      currentConfig.setSelectedIds((prev) => (
+        prev.includes(fieldId) ? prev.filter((item) => item !== fieldId) : [...prev, fieldId]
+      ));
+    } else {
+      currentConfig.setSelectedIds([fieldId]);
+    }
+
+    currentConfig.onActivate(fieldId);
+  }, [currentConfig, onClearBuilderSelectionContextMenu]);
+
+  const handlePanelKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    onActivatePanel(currentScope);
+  }, [currentScope, onActivatePanel]);
+
+  const startConditionResize = useCallback((event: React.MouseEvent<HTMLDivElement>, fieldId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const targetIndex = currentConfig.fields.findIndex((item: any) => item.id === fieldId);
+    if (targetIndex === -1) return;
+
+    const targetField = normalizeConditionWorkbenchField(currentConfig.fields[targetIndex]);
+    const startX = event.pageX;
+    const startWidth = targetField.width || CONDITION_PANEL_CONTROL_WIDTH;
+    const resizeLabel = targetField.name || '未命名字段';
+    const snapCandidates = getConditionResizeCandidates(fieldId);
+    let latestWidth = startWidth;
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    setActiveResize({ id: fieldId, label: resizeLabel, width: startWidth, mode: 'filter' });
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const { width } = resolveResizeWidthWithSnap(startWidth + (moveEvent.pageX - startX), {
+        minWidth: CONDITION_PANEL_RESIZE_MIN_WIDTH,
+        maxWidth: CONDITION_PANEL_RESIZE_MAX_WIDTH,
+        snapCandidates,
+      });
+      latestWidth = width;
+      scheduleResizePreview({ id: fieldId, label: resizeLabel, width: latestWidth, mode: 'filter' });
+    };
+
+    const handleMouseUp = () => {
+      clearResizePreview({ id: fieldId, mode: 'filter' });
+      currentConfig.setFields((prev: any[]) => updateItemWidthById(prev, fieldId, latestWidth));
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [
+    clearResizePreview,
+    currentConfig,
+    getConditionResizeCandidates,
+    scheduleResizePreview,
+    setActiveResize,
+  ]);
+
+  const moveConditionField = useCallback((fieldId: string, rowNumber: number, beforeId: string | null = null) => {
+    currentConfig.setFields((prev: any[]) => {
+      const sourceIndex = prev.findIndex((item) => item.id === fieldId);
+      if (sourceIndex === -1) return prev;
+      if (beforeId && beforeId === fieldId) return prev;
+      const nextRow = clampValue(rowNumber, CONDITION_PANEL_MIN_ROWS, currentConfig.rowCount);
+      const currentField = {
+        ...normalizeConditionWorkbenchField(prev[sourceIndex]),
+        panelRow: nextRow,
+      };
+      const remaining = prev.filter((_, index) => index !== sourceIndex);
+
+      let insertIndex = beforeId ? remaining.findIndex((item) => item.id === beforeId) : -1;
+      if (insertIndex === -1) {
+        insertIndex = remaining.findIndex((item) => (
+          clampValue(
+            Number.isFinite(Number(item?.panelRow)) ? Number(item.panelRow) : CONDITION_PANEL_MIN_ROWS,
+            CONDITION_PANEL_MIN_ROWS,
+            currentConfig.rowCount,
+          ) > nextRow
+        ));
+        if (insertIndex === -1) {
+          insertIndex = remaining.length;
+        }
+      }
+
+      return [
+        ...remaining.slice(0, insertIndex),
+        currentField,
+        ...remaining.slice(insertIndex),
+      ];
+    });
+  }, [currentConfig]);
+
+  const handleConditionWorkbenchDragStart = useCallback((event: DragStartEvent) => {
+    const activeData = event.active.data.current;
+    if (!isConditionWorkbenchDragData(activeData) || activeData.type !== 'condition-item' || activeData.scope !== currentScope) {
+      return;
+    }
+
+    setConditionWorkbenchDrag({ scope: activeData.scope, fieldId: activeData.fieldId });
+    conditionWorkbenchDropTargetRef.current = null;
+    if (conditionWorkbenchDropTargetFrameRef.current !== null) {
+      window.cancelAnimationFrame(conditionWorkbenchDropTargetFrameRef.current);
+      conditionWorkbenchDropTargetFrameRef.current = null;
+    }
+    setConditionWorkbenchDropTarget(null);
+  }, [currentScope]);
+
+  const handleConditionWorkbenchDragOver = useCallback((event: DragOverEvent) => {
+    const activeData = event.active.data.current;
+    const overData = event.over?.data.current;
+    if (!isConditionWorkbenchDragData(activeData) || activeData.type !== 'condition-item' || activeData.scope !== currentScope) {
+      return;
+    }
+
+    if (!isConditionWorkbenchDragData(overData) || overData.scope !== currentScope) {
+      updateConditionWorkbenchDropTarget(null);
+      return;
+    }
+
+    if (overData.type === 'condition-item') {
+      if (!('fieldId' in overData) || overData.fieldId === activeData.fieldId) {
+        updateConditionWorkbenchDropTarget(null);
+        return;
+      }
+
+      updateConditionWorkbenchDropTarget({ row: overData.row, beforeId: overData.fieldId });
+      return;
+    }
+
+    updateConditionWorkbenchDropTarget({ row: overData.row, beforeId: null });
+  }, [currentScope, updateConditionWorkbenchDropTarget]);
+
+  const handleConditionWorkbenchDragEnd = useCallback((event: DragEndEvent) => {
+    const activeData = event.active.data.current;
+    const overData = event.over?.data.current;
+    if (!isConditionWorkbenchDragData(activeData) || activeData.type !== 'condition-item' || activeData.scope !== currentScope) {
+      clearConditionWorkbenchDragState();
+      return;
+    }
+
+    if (!isConditionWorkbenchDragData(overData) || overData.scope !== currentScope) {
+      clearConditionWorkbenchDragState();
+      return;
+    }
+
+    if (overData.type === 'condition-item') {
+      if ('fieldId' in overData && overData.fieldId !== activeData.fieldId) {
+        moveConditionField(activeData.fieldId, overData.row, overData.fieldId);
+      }
+      clearConditionWorkbenchDragState();
+      return;
+    }
+
+    moveConditionField(activeData.fieldId, overData.row);
+    clearConditionWorkbenchDragState();
+  }, [clearConditionWorkbenchDragState, currentScope, moveConditionField]);
+
+  const getConditionItemRuntimeClasses = useCallback((fieldId: string) => ({
+    widthClassName: createRuntimeClassName('condition-item-width', fieldId),
+    labelClassName: createRuntimeClassName('condition-item-label', fieldId),
+    previewClassName: createRuntimeClassName('condition-item-preview', fieldId),
+  }), []);
+
+  const getConditionItemClassName = useCallback((
+    fieldId: string,
+    options: {
+      dragging?: boolean;
+      insertTarget?: boolean;
+      overlay?: boolean;
+      selected?: boolean;
+    } = {},
+  ) => {
+    const { widthClassName } = getConditionItemRuntimeClasses(fieldId);
+
+    return cn(
+      widthClassName,
+      'h-[44px] gap-1 pr-3.5',
+      getCompactWorkbenchItemClass(options),
+      options.overlay && 'cursor-grabbing',
+    );
+  }, [getConditionItemRuntimeClasses]);
+
+  const renderConditionItemContent = useCallback((
+    field: any,
+    fieldIndex: number,
+    options: {
+      insertTarget?: boolean;
+      selected?: boolean;
+      showResizeHandle?: boolean;
+    } = {},
+  ) => {
+    const { labelClassName, previewClassName } = getConditionItemRuntimeClasses(field.id);
+    const isSelected = options.selected || options.insertTarget;
+
+    return (
+      <>
+        {options.insertTarget ? (
+          <span className="pointer-events-none absolute inset-y-1 left-0 w-[3px] rounded-full bg-primary" />
+        ) : null}
+        <div
+          className={cn(
+            labelClassName,
+            'pointer-events-none shrink-0 text-left text-[11px] font-medium text-foreground',
+          )}
+          title={field.name}
+        >
+          <span className="block truncate">{field.name}</span>
+        </div>
+        <div
+          className={cn(
+            previewClassName,
+            'pointer-events-none min-w-0 shrink-0',
+            isSelected && '[&>div]:border-border/60 [&>div]:bg-background [&>div]:shadow-none',
+          )}
+        >
+          {renderPreviewFieldControl(field, fieldIndex, 'condition')}
+        </div>
+        {options.showResizeHandle !== false ? (
+          <div
+            data-condition-resize-handle="true"
+            className="absolute inset-y-0 right-0 flex w-2 cursor-col-resize items-stretch justify-end"
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => {
+              event.stopPropagation();
+              startConditionResize(event, field.id);
+            }}
+            onDoubleClick={(event) => autoFitColumnWidth(
+              event,
+              field.id,
+              currentConfig.fields,
+              currentConfig.setFields,
+              CONDITION_PANEL_CONTROL_WIDTH,
+              CONDITION_PANEL_RESIZE_MAX_WIDTH,
+              'filter',
+            )}
+            title="拖动调整条件宽度，双击可自动适配"
+          >
+            <span className="h-full w-px bg-border/80 transition-colors group-hover:bg-primary" />
+          </div>
+        ) : null}
+      </>
+    );
+  }, [
+    autoFitColumnWidth,
+    currentConfig.fields,
+    currentConfig.setFields,
+    getConditionItemRuntimeClasses,
+    startConditionResize,
+  ]);
+
+  return (
+    <div className="shrink-0 px-1 pb-2">
+      <div className="px-1 py-1">
+        {conditionRuntimeRules ? <style>{conditionRuntimeRules}</style> : null}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => onActivatePanel(currentScope)}
+          onKeyDown={handlePanelKeyDown}
+          className="space-y-2 outline-none"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="gap-1.5 rounded-xl border-border/60 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-foreground">
+                <Filter className="size-3.5 text-primary" />
+                顶部条件
+              </Badge>
+              <span className="text-[11px] font-medium text-muted-foreground">
+                {currentScopeLabel} · {currentConditionFields.length} 项
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5" onClick={(event) => event.stopPropagation()}>
+              {canSwitchScope ? (
+                <div className="flex items-center gap-1 rounded-xl border border-border/60 bg-background/75 p-1">
+                  {(['main', 'left'] as const).map((scope) => {
+                    const isActiveScope = activeScope === scope;
+                    return (
+                      <Button
+                        key={`condition-scope-${scope}`}
+                        size="sm"
+                        variant={isActiveScope ? 'secondary' : 'ghost'}
+                        className={cn(
+                          'h-7 rounded-lg px-2.5 text-[11px] font-medium',
+                          isActiveScope
+                            ? 'bg-primary text-white hover:bg-primary/90 hover:text-white'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                        onClick={() => onScopeSwitch(scope)}
+                      >
+                        {scope === 'left' ? '左条件' : '主条件'}
+                      </Button>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <Button
+                size="sm"
+                className="h-8 gap-1.5 rounded-xl bg-primary px-3 text-white shadow-none hover:bg-primary/90 hover:text-white"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  currentConfig.onAdd();
+                }}
+              >
+                <Plus className="size-4" />
+                条件
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  currentConfig.onDelete();
+                }}
+                disabled={currentConfig.selectedIds.length === 0}
+              >
+                <Trash2 className="size-4" />
+                删除
+              </Button>
+            </div>
+          </div>
+
+          <div className="overflow-auto">
+            <DndContext
+              sensors={conditionWorkbenchSensors}
+              onDragStart={handleConditionWorkbenchDragStart}
+              onDragOver={handleConditionWorkbenchDragOver}
+              onDragEnd={handleConditionWorkbenchDragEnd}
+              onDragCancel={clearConditionWorkbenchDragState}
+            >
+              <div className={cn(conditionWorkbenchHeightClass, 'flex flex-col gap-1')}>
+                {conditionRowNumbers.map((rowNumber) => {
+                  const rowFields = conditionFieldsByRow.get(rowNumber) ?? [];
+                  const isDropTarget = conditionWorkbenchDrag?.scope === currentScope
+                    && conditionWorkbenchDropTarget?.row === rowNumber
+                    && conditionWorkbenchDropTarget.beforeId === null;
+
+                  return (
+                    <ConditionWorkbenchDropLane
+                      key={`condition-row-${rowNumber}`}
+                      scope={currentScope}
+                      row={rowNumber}
+                      className={cn(
+                        'scrollbar-none flex min-h-[48px] items-center overflow-visible rounded-lg border border-transparent bg-transparent px-0.5 py-1 transition-colors',
+                        isDropTarget && 'border-primary/20 bg-primary/5',
+                        rowFields.length === 0 && 'border-dashed border-border/30 bg-transparent text-muted-foreground',
+                      )}
+                    >
+                      <div className="flex min-w-full items-center">
+                        <div className="flex min-w-0 flex-1 items-center gap-1">
+                          {rowFields.length > 0 ? rowFields.map((field, index) => {
+                            const isActive = currentConfig.selectedId === field.id;
+                            const isMarked = selectedConditionIds.has(field.id);
+                            const fieldIndex = conditionFieldIndexMap.get(field.id) ?? index;
+                            const isDragging = conditionWorkbenchDrag?.scope === currentScope
+                              && conditionWorkbenchDrag.fieldId === field.id;
+                            const isInsertTarget = conditionWorkbenchDrag?.scope === currentScope
+                              && conditionWorkbenchDrag.fieldId !== field.id
+                              && conditionWorkbenchDropTarget?.row === rowNumber
+                              && conditionWorkbenchDropTarget.beforeId === field.id;
+                            const isSelected = isActive || isMarked || isInsertTarget;
+
+                            return (
+                              <ConditionWorkbenchDraggableItem
+                                key={field.id}
+                                scope={currentScope}
+                                row={rowNumber}
+                                fieldId={field.id}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleConditionCardSelect(field.id, event);
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleConditionCardSelect(field.id, event);
+                                  }
+                                }}
+                                className={getConditionItemClassName(field.id, {
+                                  dragging: isDragging,
+                                  insertTarget: isInsertTarget,
+                                  selected: isSelected,
+                                })}
+                              >
+                                {renderConditionItemContent(field, fieldIndex, {
+                                  insertTarget: isInsertTarget,
+                                  selected: isSelected,
+                                })}
+                              </ConditionWorkbenchDraggableItem>
+                            );
+                          }) : (
+                            <div className="text-[11px] font-medium text-muted-foreground">
+                              拖入本行
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </ConditionWorkbenchDropLane>
+                  );
+                })}
+              </div>
+            </DndContext>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+type TableBuilderOptions = {
+  showDetailAction?: boolean;
+  contextMenuScope?: 'main' | 'detail';
+  contextMenuConfig?: {
+    enabled: boolean;
+    items: any[];
+  };
+  backgroundSelectable?: boolean;
+  tableSelected?: boolean;
+  onSelectTable?: () => void;
+  canvasLabel?: string;
+  detailBoardConfig?: any;
+  normalizedDetailBoardConfig?: any;
+  renderableColumns?: any[];
+  onCanvasDoubleClick?: () => void;
+  density?: 'default' | 'compact';
+};
+
+type TableBuilderProps = {
+  scope: 'left' | 'main' | 'detail';
+  cols: any[];
+  setCols: React.Dispatch<React.SetStateAction<any[]>>;
+  selectedId: string | null;
+  selectedForDelete: string[];
+  setSelectedForDelete: React.Dispatch<React.SetStateAction<string[]>>;
+  options?: TableBuilderOptions;
+  activeResize: ActiveWorkbenchResize | null;
+  workspaceTheme: string;
+  workspaceThemeVars: React.CSSProperties;
+  isCompactModuleSetting: boolean;
+  businessType: BusinessType;
+  activateColumnSelection: (scope: 'left' | 'main' | 'detail', columnId: string | null) => void;
+  setBuilderSelectionContextMenu: React.Dispatch<React.SetStateAction<BuilderSelectionContextMenuState>>;
+  startResize: (
+    e: React.MouseEvent,
+    colId: string,
+    cols: any[],
+    setCols: React.Dispatch<React.SetStateAction<any[]>>,
+    minWidth?: number,
+    maxWidth?: number,
+    mode?: WorkbenchResizeMode,
+  ) => void;
+  autoFitColumnWidth: (
+    event: React.MouseEvent,
+    colId: string,
+    cols: any[],
+    setCols: React.Dispatch<React.SetStateAction<any[]>>,
+    minWidth?: number,
+    maxWidth?: number,
+    mode?: WorkbenchResizeMode,
+  ) => void;
+};
+
+const MemoTableBuilder = React.memo(function TableBuilder({
+  scope,
+  cols,
+  setCols,
+  selectedId,
+  selectedForDelete,
+  setSelectedForDelete,
+  options,
+  activeResize,
+  workspaceTheme,
+  workspaceThemeVars,
+  isCompactModuleSetting,
+  businessType,
+  activateColumnSelection,
+  setBuilderSelectionContextMenu,
+  startResize,
+  autoFitColumnWidth,
+}: TableBuilderProps) {
+  const contextMenuScope = options?.contextMenuScope;
+  const contextMenuConfig = options?.contextMenuConfig;
+  const backgroundSelectable = options?.backgroundSelectable ?? false;
+  const tableSelected = options?.tableSelected ?? false;
+  const onSelectTable = options?.onSelectTable;
+  const canvasLabel = options?.canvasLabel ?? '点击空白区域配置表格';
+  const detailBoardConfig = options?.normalizedDetailBoardConfig ?? normalizeDetailBoardConfig(options?.detailBoardConfig, cols);
+  const renderableCols = options?.renderableColumns ?? cols.filter((column) => isRenderableMainColumn(column));
+  const density = options?.density ?? 'default';
+  const isCompactCanvas = density === 'compact';
+  const detailBoardTheme = getDetailBoardTheme(workspaceTheme);
+  const hasDetailBoardFeature = detailBoardConfig.enabled && detailBoardConfig.groups.some((group: any) => group.columnIds.length > 0);
+  const detailBoardFeatureLabel = hasDetailBoardFeature ? '双击详情预览' : null;
+  const buildScopedSelectionIds = (currentIds: string[], id: string, append: boolean) => {
+    if (currentIds.includes(id)) {
+      return currentIds;
+    }
+    return append ? Array.from(new Set([...currentIds, id])) : [id];
+  };
+  const getColumnRenderWidth = (rawColumn: any) => {
+    const normalizedColumn = normalizeColumn(rawColumn);
+    return resolveWorkbenchPreviewWidth(
+      normalizedColumn.width,
+      TABLE_COLUMN_MIN_WIDTH,
+      TABLE_COLUMN_COLLAPSED_RENDER_WIDTH,
+      activeResize,
+      normalizedColumn.id,
+      'column',
+    );
+  };
+  const handleColumnHeaderClick = (event: React.MouseEvent<HTMLButtonElement>, id: string) => {
+    setBuilderSelectionContextMenu(null);
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      setSelectedForDelete((prev) => (
+        prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+      ));
+      return;
+    }
+
+    if (selectedId === id && selectedForDelete.length === 1 && selectedForDelete[0] === id) {
+      return;
+    }
+    setSelectedForDelete([id]);
+    activateColumnSelection(scope, id);
+  };
+  const handleColumnHeaderContextMenu = (event: React.MouseEvent<HTMLButtonElement>, id: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const nextSelectedIds = buildScopedSelectionIds(selectedForDelete, id, event.ctrlKey || event.metaKey);
+
+    setSelectedForDelete(nextSelectedIds);
+    activateColumnSelection(scope, id);
+    setBuilderSelectionContextMenu({
+      kind: 'column',
+      scope,
+      x: event.clientX,
+      y: event.clientY,
+      ids: nextSelectedIds,
+    });
+  };
+
+  const addColumnWidth = isCompactModuleSetting ? 58 : 74;
+  const tableSurfaceClass = tableSelected
+    ? 'cloudy-glass-panel border-[2px] border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] shadow-none'
+    : 'cloudy-glass-panel border-slate-200/80';
+  const headerDividerClass = tableSelected ? 'border-[color:var(--workspace-accent-border)]' : 'border-slate-200/70 dark:border-slate-700/80';
+  const getHeaderButtonClass = (isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => (
+    isActive
+      ? 'bg-[linear-gradient(180deg,rgba(255,252,253,0.98),rgba(255,247,250,1))] shadow-[inset_0_0_0_1px_var(--workspace-accent-border-strong)] dark:bg-[linear-gradient(180deg,rgba(80,7,36,0.26),rgba(59,7,30,0.18))]'
+      : isMarkedForDelete
+        ? 'bg-[linear-gradient(180deg,rgba(255,248,250,0.98),rgba(255,251,252,1))] shadow-[inset_0_0_0_1px_rgba(191,90,112,0.18)]'
+        : isTreeRelation
+          ? 'bg-[linear-gradient(180deg,rgba(237,247,255,0.98),rgba(245,250,255,1))] shadow-[inset_0_0_0_1px_rgba(125,176,255,0.46)]'
+          : tableSelected
+            ? 'bg-slate-50 hover:bg-white dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
+            : 'bg-white hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
+  );
+  const getHeaderLabelClass = (isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => {
+    if (isActive) {
+      return 'rounded-md bg-[color:var(--workspace-accent-soft)] px-1.5 py-[3px] text-[color:var(--workspace-accent-strong)] shadow-[inset_0_0_0_1px_var(--workspace-accent-border)]';
+    }
+    if (isMarkedForDelete) {
+      return 'rounded-md bg-[#fff1f4] px-1.5 py-[3px] text-[#bf5a70] shadow-[inset_0_0_0_1px_rgba(191,90,112,0.12)] dark:bg-rose-500/12 dark:text-rose-200';
+    }
+    if (isTreeRelation) {
+      return 'rounded-md bg-[#eaf4ff] px-1.5 py-[3px] text-[#2563eb] shadow-[0_12px_20px_-18px_rgba(59,130,246,0.7)] dark:bg-sky-500/16 dark:text-sky-200';
+    }
+    return tableSelected
+      ? 'px-0 py-0 text-[#ba566d] dark:text-[#f4b5c1]'
+      : 'bg-transparent px-0 py-0 text-slate-700 dark:text-slate-100';
+  };
+  const getHeaderRequiredMarkClass = (isActive: boolean, isMarkedForDelete: boolean, isRequired: boolean, isTreeRelation: boolean) => {
+    if (!isRequired) return 'hidden';
+    if (isActive) return 'text-white/88';
+    if (isTreeRelation) return 'text-[#2563eb] dark:text-sky-200';
+    if (isMarkedForDelete || tableSelected) return 'text-[#d15b75]';
+    return 'text-[color:var(--workspace-accent-strong)]';
+  };
+  const getHeaderResizeRailClass = (isActive: boolean) => (
+    isActive
+      ? 'bg-[color:var(--workspace-accent-soft)]'
+      : tableSelected
+        ? 'bg-transparent group-hover:bg-white/30 dark:group-hover:bg-white/6'
+        : ''
+  );
+  const tableCanvasClass = tableSelected
+    ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] text-[color:var(--workspace-accent-strong)]'
+    : 'border-slate-200/80 bg-white text-slate-400 hover:border-slate-200/90 hover:bg-white dark:text-slate-500';
+  const tableCanvasIconClass = tableSelected
+    ? 'cloudy-glass-orb border-[color:var(--workspace-accent-border)] bg-white/96 text-[color:var(--workspace-accent-strong)]'
+    : 'cloudy-glass-orb text-[color:var(--workspace-accent)]';
+  const tableCanvasTitleClass = tableSelected
+    ? 'text-[color:var(--workspace-accent-strong)]'
+    : 'text-slate-500 dark:text-slate-300';
+  const themedTableSurfaceClass = tableSurfaceClass;
+  const themedTableCanvasClass = tableCanvasClass;
+  const tableCanvasPanelShellClass = tableSelected
+    ? 'border-[color:var(--workspace-accent-border)] bg-white/96 shadow-[0_24px_56px_-36px_rgba(192,107,125,0.5)] dark:bg-slate-950/86'
+    : 'border-white/85 bg-white/94 shadow-[0_24px_48px_-36px_rgba(15,23,42,0.24)] dark:border-slate-800/90 dark:bg-slate-950/84';
+  const getHeaderCornerClass = (index: number) => (index === 0 ? 'rounded-tl-[16px]' : '');
+  const addColumnHeaderShellClass = tableSelected
+    ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] dark:bg-white/6'
+    : 'border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(246,249,252,0.6))]';
+  const addColumnButtonClass = tableSelected
+    ? 'cloudy-glass-orb border-[color:var(--workspace-accent-border)] text-[color:var(--workspace-accent-strong)]'
+    : 'cloudy-glass-orb text-[color:var(--workspace-accent)]';
+  const totalTableWidth = renderableCols.reduce((sum, col) => sum + getColumnRenderWidth(col), addColumnWidth);
+  const tableBuilderContentStyle: React.CSSProperties = {
+    width: totalTableWidth,
+    minWidth: totalTableWidth,
+  };
+  const visibleResizeTag = activeResize && renderableCols.some((col) => col.id === activeResize.id) ? activeResize : null;
+  const renderCenteredCanvasPanel = () => {
+    if (isCompactCanvas) {
+      return (
+        <div className="pointer-events-none relative z-10 flex w-full max-w-[340px] items-center gap-2 rounded-xl border border-slate-200/80 bg-white/92 px-3 py-2 text-left text-[11px] text-slate-500 shadow-[0_18px_36px_-34px_rgba(15,23,42,0.22)] backdrop-blur-sm dark:border-slate-700 dark:bg-slate-950/84 dark:text-slate-300">
+          <span className="material-symbols-outlined text-[15px] text-[color:var(--workspace-accent)]">table_view</span>
+          <span className="min-w-0 flex-1 truncate font-medium text-slate-600 dark:text-slate-100">
+            {canvasLabel}
+          </span>
+          <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
+            {hasDetailBoardFeature ? '可预览分组' : '点击配置'}
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className={`pointer-events-none relative z-10 flex w-full flex-col items-center gap-2 rounded-[18px] border text-center backdrop-blur-sm ${tableCanvasPanelShellClass} ${isCompactCanvas ? 'max-w-[320px] px-4 py-3' : 'max-w-[420px] px-5 py-4'}`}
+      >
+        <div className={`flex items-center justify-center rounded-md border ${isCompactModuleSetting ? 'size-10' : 'size-12'} ${tableCanvasIconClass}`}>
+          <span className={`material-symbols-outlined ${isCompactModuleSetting ? 'text-[16px]' : 'text-[20px]'} ${tableSelected ? 'text-[#c06b7d]' : 'text-slate-300 dark:text-slate-500'}`}>table_view</span>
+        </div>
+        {detailBoardFeatureLabel && (
+          <div className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${detailBoardTheme.badge}`}>
+            {detailBoardFeatureLabel}
+          </div>
+        )}
+        <div className={`font-semibold ${isCompactCanvas ? 'text-[12px]' : 'text-[13px]'} ${tableCanvasTitleClass}`}>
+          {canvasLabel}
+        </div>
+        <div className="text-[11px] text-slate-400">
+          {hasDetailBoardFeature ? '双击画布可预览详情分组布局' : '点击画布即可切换到整表配置'}
+        </div>
+      </div>
+    );
+  };
+
+  if (cols.length === 0) {
+    return (
+      <div className={`flex items-center justify-center px-6 text-center text-slate-400 ${isCompactCanvas ? 'min-h-[164px] py-6' : 'h-full min-h-[240px]'}`}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="cloudy-glass-orb flex size-14 items-center justify-center rounded-3xl">
+            <span className="material-symbols-outlined text-[24px] text-slate-300 dark:text-slate-500">data_object</span>
+          </div>
+          <div>
+            <p className="text-[14px] font-bold text-slate-500 dark:text-slate-300">当前区域还没有字段</p>
+            <p className="mt-1 text-[12px] text-slate-400">点击新增字段，或直接粘贴列名批量生成。</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const renderTableHead = (compactCanvasVariant: boolean) => (
+    <>
+      {renderableCols.map((col, index) => {
+        const normalizedCol = normalizeColumn(col);
+        const isActive = selectedId === col.id;
+        const isMarkedForDelete = selectedForDelete.includes(col.id);
+        const isTreeRelation = scope === 'main' && businessType !== 'table' && isTreeRelationFieldColumn(normalizedCol);
+        const isResizing = activeResize?.id === col.id;
+        const headerWidth = getColumnRenderWidth(normalizedCol);
+        const isCollapsedHeader = headerWidth <= 18;
+
+        return (
+          <th
+            key={col.id}
+            style={{ width: headerWidth, minWidth: headerWidth }}
+            className={`group relative border-b border-r p-0 align-top ${headerDividerClass}`}
+          >
+            <button
+              type="button"
+              onClick={(event) => handleColumnHeaderClick(event, col.id)}
+              onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
+              className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? (compactCanvasVariant ? 'min-h-[34px] px-0 pr-1.5 py-0' : 'min-h-[36px] px-0 pr-1.5 py-0') : isCompactModuleSetting ? `${compactCanvasVariant ? 'min-h-[32px]' : 'min-h-[34px]'} px-1.5 pr-3 py-0` : `${compactCanvasVariant ? 'min-h-[38px]' : 'min-h-[42px]'} px-2 pr-3.5 py-0`} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+            >
+              <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
+                <div
+                  className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+                  title={normalizedCol.name}
+                >
+                  <span className="truncate">{normalizedCol.name}</span>
+                  {isTreeRelation && !isCollapsedHeader && (
+                    <span className="ml-1.5 inline-flex items-center rounded-full bg-white/75 px-1.5 py-0.5 text-[9px] font-black leading-none text-[#2563eb] shadow-[0_10px_18px_-16px_rgba(37,99,235,0.7)] dark:bg-sky-500/16 dark:text-sky-100">
+                      树
+                    </span>
+                  )}
+                  <span className={`ml-0.5 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
+                </div>
+              </div>
+            </button>
+            <div
+              className={`absolute right-0 top-0 bottom-0 z-20 flex ${isCompactModuleSetting ? 'w-2.5' : 'w-3'} cursor-col-resize items-center justify-center ${getHeaderResizeRailClass(isActive)}`}
+              onMouseDown={(event) => startResize(event, col.id, cols, setCols, TABLE_COLUMN_RESIZE_MIN_WIDTH, TABLE_COLUMN_RESIZE_MAX_WIDTH, 'column')}
+              onDoubleClick={(event) => autoFitColumnWidth(event, col.id, cols, setCols, TABLE_COLUMN_MIN_WIDTH, TABLE_COLUMN_RESIZE_MAX_WIDTH, 'column')}
+              title="拖动调整列宽，双击可自动适配"
+            >
+              <span className={`h-5 ${compactCanvasVariant ? 'w-px' : 'w-px'} rounded-full transition-all ${isResizing ? 'bg-[#2563eb] shadow-[0_0_0_2px_rgba(37,99,235,0.12)]' : 'bg-transparent group-hover:bg-slate-300 dark:group-hover:bg-slate-500'}`} />
+            </div>
+          </th>
+        );
+      })}
+      <th
+        style={{ width: addColumnWidth, minWidth: addColumnWidth }}
+        className={`border-b p-0 align-top ${addColumnHeaderShellClass}`}
+      >
+        <button
+          type="button"
+          onClick={() => setCols((prev) => [...prev, buildColumn(scope === 'detail' ? 'd_col' : `${scope}_col`, prev.length + 1)])}
+          className={`flex h-full w-full items-center justify-center rounded-tr-md transition-all ${isCompactModuleSetting ? (compactCanvasVariant ? 'min-h-[34px]' : 'min-h-[38px]') : (compactCanvasVariant ? 'min-h-[40px]' : 'min-h-[46px]')} hover:bg-white/55 dark:hover:bg-white/8`}
+          title="新增字段"
+        >
+          <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
+            <span className="material-symbols-outlined text-[17px]">add</span>
+          </div>
+        </button>
+      </th>
+    </>
+  );
+
+  if (backgroundSelectable) {
+    return (
+      <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full flex-col overflow-x-auto overflow-y-hidden rounded-[26px] border ${themedTableSurfaceClass} ${isCompactCanvas ? 'flex h-full min-h-[184px]' : 'flex h-full min-h-[260px]'} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
+        {visibleResizeTag && (
+          <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-md border border-[#0b6bcb]/15 bg-white/96 px-2.5 py-1 text-[11px] font-bold text-[#0b6bcb] dark:border-[#0b6bcb]/20 dark:bg-slate-900/92">
+            <span className="material-symbols-outlined text-[14px]">straighten</span>
+            <span className="max-w-[150px] truncate">{visibleResizeTag.label}</span>
+            <span className="rounded-full bg-[#0b6bcb]/8 px-2 py-0.5">{Math.round(visibleResizeTag.width)}px</span>
+          </div>
+        )}
+        <div className="min-w-0 shrink-0">
+          <table
+            style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
+            className="table-fixed border-separate border-spacing-0 text-left text-[12px]"
+          >
+            <colgroup>
+              {renderableCols.map((col) => {
+                const headerWidth = getColumnRenderWidth(col);
+                return <col key={`col-${col.id}`} style={{ width: headerWidth, minWidth: headerWidth }} />;
+              })}
+              <col style={{ width: addColumnWidth, minWidth: addColumnWidth }} />
+            </colgroup>
+            <thead className={`sticky top-0 z-20 select-none bg-transparent ${tableSelected ? 'shadow-[inset_0_-1px_0_rgba(239,199,207,0.55)]' : ''}`}>
+              <tr>{renderTableHead(true)}</tr>
+            </thead>
+          </table>
+        </div>
+        <button
+          type="button"
+          onClick={onSelectTable}
+          onDoubleClick={(event) => {
+            event.stopPropagation();
+            options?.onCanvasDoubleClick?.();
+          }}
+          className={`relative mt-1 flex w-full items-center justify-center overflow-hidden rounded-[20px] border px-4 text-center transition-all dark:border-slate-700 ${themedTableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] flex-1 py-3' : 'min-h-[188px] flex-1 py-6'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+        >
+          <div className={`pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.28),transparent_62%)] ${tableSelected ? 'opacity-80' : 'opacity-100'}`} />
+          <div className="relative z-10 flex h-full w-full items-center justify-center">
+            {renderCenteredCanvasPanel()}
+          </div>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden rounded-[26px] border ${themedTableSurfaceClass} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
+      {visibleResizeTag && (
+        <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-md border border-[#1686e3]/15 bg-white/96 px-2.5 py-1 text-[11px] font-bold text-[#1686e3] dark:border-[#1686e3]/20 dark:bg-slate-900/92">
+          <span className="material-symbols-outlined text-[14px]">straighten</span>
+          <span className="max-w-[150px] truncate">{visibleResizeTag.label}</span>
+          <span className="rounded-full bg-[#1686e3]/8 px-2 py-0.5">{Math.round(visibleResizeTag.width)}px</span>
+        </div>
+      )}
+      <table
+        style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
+        className="table-fixed overflow-hidden rounded-[18px] border-separate border-spacing-0 text-left text-[12px]"
+      >
+        <colgroup>
+          {renderableCols.map((col) => {
+            const headerWidth = getColumnRenderWidth(col);
+            return <col key={`col-${col.id}`} style={{ width: headerWidth, minWidth: headerWidth }} />;
+          })}
+          <col style={{ width: addColumnWidth, minWidth: addColumnWidth }} />
+        </colgroup>
+        <thead className={`sticky top-0 z-20 select-none bg-transparent ${tableSelected ? 'shadow-[inset_0_-1px_0_rgba(239,199,207,0.55)]' : ''}`}>
+          <tr>{renderTableHead(false)}</tr>
+        </thead>
+        <tbody className="text-slate-600 dark:text-slate-300">
+          <tr>
+            <td colSpan={renderableCols.length + 1} className="p-0">
+              <button
+                type="button"
+                onClick={onSelectTable}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  options?.onCanvasDoubleClick?.();
+                }}
+                className={`flex w-full items-center justify-center px-4 ${isCompactModuleSetting ? 'min-h-[190px] py-4' : 'min-h-[230px] py-6'} rounded-b-md border-t text-center transition-all ${tableSelected ? 'border-[#efd6db]/85 bg-[#fff7f9] hover:bg-[#fff3f6] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+              >
+                {renderCenteredCanvasPanel()}
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+});
+
 export default function Dashboard({ currentUserName, onLogout }: DashboardProps) {
   const debugParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const currentUserAvatarText = currentUserName.trim().slice(0, 1) || '人';
@@ -2947,6 +4845,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     { id: 'm_col4', name: '单位', type: '下拉框', width: BILL_FORM_DEFAULT_WIDTH, sourceField: 'material_unit', ...getBillFieldLayout(3, BILL_FORM_DEFAULT_WIDTH) },
     { id: 'm_col5', name: '单价', type: '数字', width: BILL_FORM_DEFAULT_WIDTH, sourceField: 'material_price', ...getBillFieldLayout(4, BILL_FORM_DEFAULT_WIDTH) },
   ]);
+  const [isMainHiddenColumnsModalOpen, setIsMainHiddenColumnsModalOpen] = useState(false);
+  const [selectedMainHiddenColumnIds, setSelectedMainHiddenColumnIds] = useState<string[]>([]);
   const [detailTabs, setDetailTabs] = useState([{ id: 'tab1', name: '关联附件' }, { id: 'tab2', name: '操作日志' }]);
   const [activeTab, setActiveTab] = useState('tab1');
   const [tabFillTypes, setTabFillTypes] = useState<Record<string, string>>({ tab1: '表格', tab2: '表格' });
@@ -2968,6 +4868,10 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       }),
     }),
   );
+  const isRenderableMainColumn = (column: any) => {
+    const normalizedColumn = normalizeColumn(column);
+    return normalizedColumn.visible !== false && Number(normalizedColumn.width) > 0;
+  };
   const [detailTableConfigs, setDetailTableConfigs] = useState<Record<string, any>>({
     tab1: buildGridConfig('SELECT * FROM customer_attachment', 'archive_id = ${id}', {
       sourceCondition: 'archive_id = ${id}',
@@ -3448,6 +5352,38 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     scheduleResizePreview,
     setActiveResize,
   } = useWorkbenchResizeState();
+  const normalizedMainDetailBoardConfig = useMemo(
+    () => normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns),
+    [mainTableConfig.detailBoard, mainTableColumns],
+  );
+  const mainDetailBoardGroups = normalizedMainDetailBoardConfig.groups;
+  const mainDetailBoardEnabled = normalizedMainDetailBoardConfig.enabled;
+  const {
+    renderableColumns: mainRenderableColumns,
+    hiddenColumns: mainTableHiddenColumns,
+  } = useMemo(() => {
+    const renderableColumns: any[] = [];
+    const hiddenColumns: any[] = [];
+
+    mainTableColumns.forEach((column) => {
+      const normalizedColumn = normalizeColumn(column);
+      if (normalizedColumn.visible !== false && Number(normalizedColumn.width) > 0) {
+        renderableColumns.push(column);
+        return;
+      }
+
+      hiddenColumns.push(column);
+    });
+
+    return {
+      renderableColumns,
+      hiddenColumns,
+    };
+  }, [mainTableColumns]);
+  const mainDocumentFilterRuntimeRules = useMemo(
+    () => buildDocumentFilterRuntimeRules(mainFilterFields, activeResize),
+    [activeResize, mainFilterFields],
+  );
   const conditionWorkbenchSensors = useSensors(
     useSensor(ConditionWorkbenchPointerSensor, {
       activationConstraint: {
@@ -3520,14 +5456,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     scope: BillCanvasFieldScope;
   } | null>(null);
   const [billHeaderWorkbenchDropTarget, setBillHeaderWorkbenchDropTarget] = useState<{
-    row: number;
-    beforeId: string | null;
-  } | null>(null);
-  const [conditionWorkbenchDrag, setConditionWorkbenchDrag] = useState<{
-    scope: ConditionWorkbenchScope;
-    fieldId: string;
-  } | null>(null);
-  const [conditionWorkbenchDropTarget, setConditionWorkbenchDropTarget] = useState<{
     row: number;
     beforeId: string | null;
   } | null>(null);
@@ -3617,6 +5545,31 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     : inspectorTarget.kind === 'main-filter-panel'
       ? 'main'
       : null;
+  const isModuleSettingStep = isConfigOpen && (configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP);
+  const isConfigFullscreenActive = isModuleSettingStep && isFullscreenConfig;
+  const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
+  const workspaceThemeVars = useMemo(
+    () => getWorkspaceThemeVars(workspaceTheme),
+    [workspaceTheme],
+  );
+  const workspaceThemeStyles = useMemo(
+    () => getDetailBoardTheme(workspaceTheme),
+    [workspaceTheme],
+  );
+  const inspectorPaneWidth = isConfigFullscreenActive ? 448 : Math.max(432, documentDetailPaneWidth);
+  const moduleSettingStageHeightClass = isConfigFullscreenActive ? 'flex-1 min-h-[640px]' : 'flex-1 min-h-0';
+  const moduleSettingStageStyle = useMemo(
+    () => (isConfigFullscreenActive
+      ? workspaceThemeVars
+      : {
+          ...workspaceThemeVars,
+          minHeight: 'clamp(620px, calc(100dvh - 220px), 704px)',
+        }),
+    [isConfigFullscreenActive, workspaceThemeVars],
+  );
+  const effectiveDocumentTopPaneHeight = !isConfigFullscreenActive && businessType === 'document'
+    ? Math.max(documentTopPaneHeight, 504)
+    : documentTopPaneHeight;
   const syncScopedDeleteSelection = (activeScope?: 'left' | 'main' | 'detail') => {
     setSelectedLeftForDelete((prev) => (activeScope === 'left' || prev.length === 0 ? prev : []));
     setSelectedMainForDelete((prev) => (activeScope === 'main' || prev.length === 0 ? prev : []));
@@ -3627,7 +5580,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setSelectedMainFiltersForDelete((prev) => (activeScope === 'main' || prev.length === 0 ? prev : []));
     setSelectedDetailFiltersForDelete((prev) => (activeScope === 'detail' || prev.length === 0 ? prev : []));
   };
-  const clampValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
   const buildBillFieldBounds = (column: any): BillFieldBounds => {
     const normalizedColumn = normalizeColumn(column);
     const width = Math.max(BILL_FORM_MIN_WIDTH, normalizedColumn.width || BILL_FORM_DEFAULT_WIDTH);
@@ -4927,16 +6879,16 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     return matchedColumns.map((column) => column.id);
   };
 
-  const activateColumnSelection = (scope: 'left' | 'main' | 'detail', columnId: string | null) => {
+  const activateColumnSelection = useCallback((scope: 'left' | 'main' | 'detail', columnId: string | null) => {
     setBuilderSelectionContextMenu(null);
     const nextKind = scope === 'left' ? 'left-col' : scope === 'main' ? 'main-col' : 'detail-col';
     setInspectorTarget((prev) => (prev.kind === nextKind && prev.id === columnId ? prev : {
       kind: nextKind,
       id: columnId,
     }));
-  };
+  }, []);
 
-  const activateConditionSelection = (scope: 'left' | 'main' | 'detail', conditionId: string | null) => {
+  const activateConditionSelection = useCallback((scope: 'left' | 'main' | 'detail', conditionId: string | null) => {
     setBuilderSelectionContextMenu(null);
     if (!conditionId) {
       setInspectorTarget((prev) => (prev.kind === 'none' ? prev : { kind: 'none' }));
@@ -4947,20 +6899,20 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       kind: nextKind,
       id: conditionId,
     }));
-  };
+  }, []);
 
-  const activateConditionPanelSelection = (scope: 'left' | 'main') => {
+  const activateConditionPanelSelection = useCallback((scope: 'left' | 'main') => {
     setBuilderSelectionContextMenu(null);
     setSelectedArchiveNodeId(scope === 'left' ? 'archive-left-filter' : 'archive-filter');
     const nextKind = scope === 'left' ? 'left-filter-panel' : 'main-filter-panel';
     setInspectorTarget((prev) => (prev.kind === nextKind ? prev : { kind: nextKind }));
-  };
+  }, []);
 
   const activateDetailConditionSelection = (conditionId: string | null) => {
     activateConditionSelection('detail', conditionId);
   };
 
-  const activateTableConfigSelection = (
+  const activateTableConfigSelection = useCallback((
     scope: 'left' | 'main' | 'detail',
     targetId?: string | null,
   ) => {
@@ -4974,7 +6926,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               : (
                   DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === prev.id)
                     ? prev.id
-                    : getDetailFillTypeByTabId(activeTab)
+                    : normalizeDetailFillTypeValue(detailTabConfigs[activeTab]?.detailType)
                 )
           )
         : undefined;
@@ -4985,7 +6937,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             ...(resolvedDetailId ? { id: resolvedDetailId } : {}),
           };
     });
-  };
+  }, [activeTab, detailTabConfigs]);
 
   const activateContextMenuSelection = (scope: 'main' | 'detail') => {
     setBuilderSelectionContextMenu(null);
@@ -4993,11 +6945,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setInspectorTarget((prev) => (prev.kind === nextKind ? prev : { kind: nextKind }));
   };
 
-  const openDetailBoardPreview = (rowId: number, preferredSortColumnId?: string | null) => {
+  const openDetailBoardPreview = useCallback((rowId: number, preferredSortColumnId?: string | null) => {
     setDetailBoardSortColumnId(preferredSortColumnId ?? selectedMainColId ?? mainTableColumns[0]?.id ?? null);
     setDetailBoardOpenedRowId(rowId);
     setIsDetailBoardOpen(true);
-  };
+  }, [mainTableColumns, selectedMainColId]);
 
   const updateMainDetailBoard = (patch: Record<string, any> | ((current: any) => any)) => {
     setMainTableConfig((prev) => {
@@ -5015,7 +6967,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   };
 
   const openArchiveLayoutEditor = () => {
-    const current = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const current = normalizedMainDetailBoardConfig;
     if (!current.enabled) {
       updateMainDetailBoard({
         ...current,
@@ -5027,7 +6979,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   };
 
   const addArchiveLayoutGroup = () => {
-    const current = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const current = normalizedMainDetailBoardConfig;
     const nextGroup = buildDetailBoardGroup(current.groups.length + 1);
     updateMainDetailBoard({
       ...current,
@@ -5052,7 +7004,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   };
 
   const removeArchiveLayoutGroup = (groupId: string) => {
-    const current = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const current = normalizedMainDetailBoardConfig;
     const nextGroups = current.groups.filter((group: any) => group.id !== groupId);
     updateMainDetailBoard({
       ...current,
@@ -5063,7 +7015,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   };
 
   const clearArchiveLayoutGroups = () => {
-    const current = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const current = normalizedMainDetailBoardConfig;
     updateMainDetailBoard({
       ...current,
       groups: [],
@@ -5181,7 +7133,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const startWidth = previewItem?.getBoundingClientRect().width ?? DETAIL_BOARD_FIELD_DEFAULT_WIDTH;
     const minWidth = Math.max(DETAIL_BOARD_FIELD_MIN_WIDTH, Number(minWidthOverride) || DETAIL_BOARD_FIELD_MIN_WIDTH);
     const maxWidth = DETAIL_BOARD_FIELD_MAX_WIDTH;
-    const currentDetailBoardConfig = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const currentDetailBoardConfig = normalizedMainDetailBoardConfig;
     const currentGroup = currentDetailBoardConfig.groups.find((group: any) => group.id === groupId);
     const siblingWidths = (currentGroup?.columnIds ?? [])
       .filter((id: string) => id !== columnId)
@@ -5432,7 +7384,51 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     });
   };
 
-  const deleteSelectedConditions = (scope: 'left' | 'main' | 'detail', ids: string[]) => {
+  const openMainHiddenColumnsModal = () => {
+    if (mainTableHiddenColumns.length === 0) return;
+    setSelectedMainHiddenColumnIds(mainTableHiddenColumns.map((column) => column.id));
+    setIsMainHiddenColumnsModalOpen(true);
+  };
+
+  const closeMainHiddenColumnsModal = () => {
+    setIsMainHiddenColumnsModalOpen(false);
+  };
+
+  const toggleMainHiddenColumnSelection = (columnId: string) => {
+    setSelectedMainHiddenColumnIds((prev) => (
+      prev.includes(columnId)
+        ? prev.filter((item) => item !== columnId)
+        : [...prev, columnId]
+    ));
+  };
+
+  const restoreMainHiddenColumns = (columnIds?: string[]) => {
+    const targetIds = new Set(
+      (columnIds?.length ? columnIds : selectedMainHiddenColumnIds).filter(Boolean),
+    );
+    if (targetIds.size === 0) {
+      setIsMainHiddenColumnsModalOpen(false);
+      return;
+    }
+
+    setMainTableColumns((prev) => prev.map((column) => {
+      if (!targetIds.has(column.id)) return column;
+      const normalizedColumn = normalizeColumn(column);
+      const restoredWidth = Number(normalizedColumn.width) > 0
+        ? Number(normalizedColumn.width)
+        : BILL_FORM_DEFAULT_WIDTH;
+
+      return {
+        ...normalizedColumn,
+        visible: true,
+        width: restoredWidth,
+      };
+    }));
+    setSelectedMainHiddenColumnIds([]);
+    setIsMainHiddenColumnsModalOpen(false);
+  };
+
+  const deleteSelectedConditions = useCallback((scope: 'left' | 'main' | 'detail', ids: string[]) => {
     const targetIds = Array.from(new Set(ids.filter(Boolean)));
     if (targetIds.length === 0) return;
 
@@ -5467,7 +7463,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       }
       return prev;
     });
-  };
+  }, [activeTab]);
 
   const addTab = () => {
     const newId = `tab_${Date.now()}`;
@@ -5579,7 +7575,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     return Math.max(minWidth, Math.min(maxWidth, baseWidth + contentLength * 15));
   };
 
-  const autoFitColumnWidth = (
+  const autoFitColumnWidth = useCallback((
     event: React.MouseEvent,
     colId: string,
     cols: any[],
@@ -5597,9 +7593,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setActiveResize({ id: colId, label: targetCol.name || '未命名字段', width: nextWidth, mode });
     setCols((prev) => updateItemWidthById(prev, colId, nextWidth));
     window.setTimeout(() => setActiveResize((prev) => prev?.id === colId ? null : prev), 720);
-  };
+  }, [setActiveResize]);
 
-  const startResize = (
+  const startResize = useCallback((
     e: React.MouseEvent,
     colId: string,
     cols: any[],
@@ -5636,7 +7632,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  };
+  }, [clearResizePreview, scheduleResizePreview, setActiveResize]);
 
   const getFieldOptionValues = (rawField: any) => {
     const field = normalizeColumn(rawField);
@@ -6519,20 +8515,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           onPaste={(event) => handlePasteColumns(event, setBillDetailColumns)}
         >
           <div className="pt-3">
-            {renderTableBuilder(
-              'detail',
-              detailCols,
-              setBillDetailColumns,
-              selectedDetailColId,
-              selectedDetailForDelete,
-              setSelectedDetailForDelete,
-              {
-                backgroundSelectable: true,
-                tableSelected: selectedTableConfigScope === 'detail',
-                onSelectTable: () => activateTableConfigSelection('detail'),
-                canvasLabel: '点击配置单据明细表',
-              },
-            )}
+            {billDetailTableBuilderNode}
           </div>
         </div>
       </div>
@@ -7016,20 +8999,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                     </div>
                   </CardHeader>
                   <CardContent className="min-h-0 flex-1 p-3">
-                    {renderTableBuilder(
-                      'detail',
-                      detailCols,
-                      setBillDetailColumns,
-                      selectedDetailColId,
-                      selectedDetailForDelete,
-                      setSelectedDetailForDelete,
-                      {
-                        backgroundSelectable: true,
-                        tableSelected: selectedTableConfigScope === 'detail',
-                        onSelectTable: () => activateTableConfigSelection('detail'),
-                        canvasLabel: '点击配置单据明细表',
-                      },
-                    )}
+                    {billDetailTableBuilderNode}
                   </CardContent>
                 </Card>
               </div>
@@ -7062,434 +9032,256 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     );
   };
 
-  const renderTableBuilder = (
+  const renderTableBuilder = useCallback((
     scope: 'left' | 'main' | 'detail',
     cols: any[],
     setCols: React.Dispatch<React.SetStateAction<any[]>>,
     selectedId: string | null,
     selectedForDelete: string[],
     setSelectedForDelete: React.Dispatch<React.SetStateAction<string[]>>,
-    options?: {
-      showDetailAction?: boolean;
-      contextMenuScope?: 'main' | 'detail';
-      contextMenuConfig?: {
-        enabled: boolean;
-        items: any[];
-      };
-      backgroundSelectable?: boolean;
-      tableSelected?: boolean;
-      onSelectTable?: () => void;
-      canvasLabel?: string;
-      detailBoardConfig?: any;
-      onCanvasDoubleClick?: () => void;
-      density?: 'default' | 'compact';
-    }
+    options?: TableBuilderOptions,
   ) => {
-    const showDetailAction = options?.showDetailAction ?? false;
-    const contextMenuScope = options?.contextMenuScope;
-    const contextMenuConfig = options?.contextMenuConfig;
-    const backgroundSelectable = options?.backgroundSelectable ?? false;
-    const tableSelected = options?.tableSelected ?? false;
-    const onSelectTable = options?.onSelectTable;
-    const canvasLabel = options?.canvasLabel ?? '点击空白区域配置表格';
-    const detailBoardConfig = normalizeDetailBoardConfig(options?.detailBoardConfig, cols);
-    const density = options?.density ?? 'default';
-    const isCompactCanvas = density === 'compact';
-    const detailBoardTheme = getDetailBoardTheme(workspaceTheme);
-    const hasDetailBoardFeature = detailBoardConfig.enabled && detailBoardConfig.groups.some((group) => group.columnIds.length > 0);
-    const detailBoardFeatureLabel = hasDetailBoardFeature ? '双击详情预览' : null;
-    const buildScopedSelectionIds = (currentIds: string[], id: string, append: boolean) => {
-      if (currentIds.includes(id)) {
-        return currentIds;
-      }
-      return append ? Array.from(new Set([...currentIds, id])) : [id];
-    };
-    const getColumnRenderWidth = (rawColumn: any) => {
-      const normalizedColumn = normalizeColumn(rawColumn);
-      return resolveWorkbenchPreviewWidth(
-        normalizedColumn.width,
-        TABLE_COLUMN_MIN_WIDTH,
-        TABLE_COLUMN_COLLAPSED_RENDER_WIDTH,
-        activeResize,
-        normalizedColumn.id,
-        'column',
-      );
-    };
-
-    const handleColumnHeaderClick = (event: React.MouseEvent<HTMLButtonElement>, id: string) => {
-      setBuilderSelectionContextMenu(null);
-      if (event.ctrlKey || event.metaKey) {
-        event.preventDefault();
-        setSelectedForDelete((prev) => (
-          prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-        ));
-        return;
-      }
-
-      if (selectedId === id && selectedForDelete.length === 1 && selectedForDelete[0] === id) {
-        return;
-      }
-      setSelectedForDelete([id]);
-      activateColumnSelection(scope, id);
-    };
-    const handleColumnHeaderContextMenu = (event: React.MouseEvent<HTMLButtonElement>, id: string) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const nextSelectedIds = buildScopedSelectionIds(selectedForDelete, id, event.ctrlKey || event.metaKey);
-
-      setSelectedForDelete(nextSelectedIds);
-      activateColumnSelection(scope, id);
-      setBuilderSelectionContextMenu({
-        kind: 'column',
-        scope,
-        x: event.clientX,
-        y: event.clientY,
-        ids: nextSelectedIds,
-      });
-    };
-
-    const addColumnWidth = isCompactModuleSetting ? 58 : 74;
-    const totalTableWidth = cols.reduce((sum, col) => sum + getColumnRenderWidth(col), addColumnWidth);
-    const visibleResizeTag = activeResize && cols.some((col) => col.id === activeResize.id) ? activeResize : null;
-    const getTextAlign = (align?: string): React.CSSProperties['textAlign'] => (
-      align === '居中' ? 'center' : align === '右对齐' ? 'right' : 'left'
-    );
-    const addColumn = () => setCols((prev) => [...prev, buildColumn(scope === 'detail' ? 'd_col' : `${scope}_col`, prev.length + 1)]);
-    const tableSurfaceClass = tableSelected
-      ? 'cloudy-glass-panel border-[2px] border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] shadow-none'
-      : 'cloudy-glass-panel border-slate-200/80';
-    const headerDividerClass = tableSelected ? 'border-[color:var(--workspace-accent-border)]' : 'border-slate-200/70 dark:border-slate-700/80';
-    const getHeaderButtonClass = (isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => (
-      isActive
-        ? 'bg-[linear-gradient(180deg,rgba(255,252,253,0.98),rgba(255,247,250,1))] shadow-[inset_0_0_0_1px_var(--workspace-accent-border-strong)] dark:bg-[linear-gradient(180deg,rgba(80,7,36,0.26),rgba(59,7,30,0.18))]'
-        : isMarkedForDelete
-          ? 'bg-[linear-gradient(180deg,rgba(255,248,250,0.98),rgba(255,251,252,1))] shadow-[inset_0_0_0_1px_rgba(191,90,112,0.18)]'
-          : isTreeRelation
-            ? 'bg-[linear-gradient(180deg,rgba(237,247,255,0.98),rgba(245,250,255,1))] shadow-[inset_0_0_0_1px_rgba(125,176,255,0.46)]'
-          : tableSelected
-            ? 'bg-slate-50 hover:bg-white dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
-            : 'bg-white hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
-    );
-    const getHeaderLabelClass = (isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => {
-      if (isActive) {
-        return 'rounded-md bg-[color:var(--workspace-accent-soft)] px-1.5 py-[3px] text-[color:var(--workspace-accent-strong)] shadow-[inset_0_0_0_1px_var(--workspace-accent-border)]';
-      }
-      if (isMarkedForDelete) {
-        return 'rounded-md bg-[#fff1f4] px-1.5 py-[3px] text-[#bf5a70] shadow-[inset_0_0_0_1px_rgba(191,90,112,0.12)] dark:bg-rose-500/12 dark:text-rose-200';
-      }
-      if (isTreeRelation) {
-        return 'rounded-md bg-[#eaf4ff] px-1.5 py-[3px] text-[#2563eb] shadow-[0_12px_20px_-18px_rgba(59,130,246,0.7)] dark:bg-sky-500/16 dark:text-sky-200';
-      }
-      return tableSelected
-        ? 'px-0 py-0 text-[#ba566d] dark:text-[#f4b5c1]'
-        : 'bg-transparent px-0 py-0 text-slate-700 dark:text-slate-100';
-    };
-    const getHeaderRequiredMarkClass = (isActive: boolean, isMarkedForDelete: boolean, isRequired: boolean, isTreeRelation: boolean) => {
-      if (!isRequired) return 'hidden';
-      if (isActive) return 'text-white/88';
-      if (isTreeRelation) return 'text-[#2563eb] dark:text-sky-200';
-      if (isMarkedForDelete || tableSelected) return 'text-[#d15b75]';
-      return 'text-[color:var(--workspace-accent-strong)]';
-    };
-    const getHeaderResizeRailClass = (isActive: boolean) => (
-      isActive
-        ? 'bg-[color:var(--workspace-accent-soft)]'
-        : tableSelected
-          ? 'bg-transparent group-hover:bg-white/30 dark:group-hover:bg-white/6'
-          : ''
-    );
-    const tableCanvasClass = tableSelected
-      ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] text-[color:var(--workspace-accent-strong)]'
-      : 'border-slate-200/80 bg-white text-slate-400 hover:border-slate-200/90 hover:bg-white dark:text-slate-500';
-    const tableCanvasIconClass = tableSelected
-      ? 'cloudy-glass-orb border-[color:var(--workspace-accent-border)] bg-white/96 text-[color:var(--workspace-accent-strong)]'
-      : 'cloudy-glass-orb text-[color:var(--workspace-accent)]';
-    const tableCanvasTitleClass = tableSelected
-      ? 'text-[color:var(--workspace-accent-strong)]'
-      : 'text-slate-500 dark:text-slate-300';
-    const themedTableSurfaceClass = tableSurfaceClass;
-    const themedTableCanvasClass = tableCanvasClass;
-    const tableCanvasPanelShellClass = tableSelected
-      ? 'border-[color:var(--workspace-accent-border)] bg-white/96 shadow-[0_24px_56px_-36px_rgba(192,107,125,0.5)] dark:bg-slate-950/86'
-      : 'border-white/85 bg-white/94 shadow-[0_24px_48px_-36px_rgba(15,23,42,0.24)] dark:border-slate-800/90 dark:bg-slate-950/84';
-    const getHeaderCornerClass = (index: number) => (index === 0 ? 'rounded-tl-[16px]' : '');
-    const addColumnHeaderShellClass = tableSelected
-      ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] dark:bg-white/6'
-      : 'border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(246,249,252,0.6))]';
-    const addColumnButtonClass = tableSelected
-      ? 'cloudy-glass-orb border-[color:var(--workspace-accent-border)] text-[color:var(--workspace-accent-strong)]'
-      : 'cloudy-glass-orb text-[color:var(--workspace-accent)]';
-    const tableBuilderContentStyle: React.CSSProperties = {
-      width: totalTableWidth,
-      minWidth: totalTableWidth,
-    };
-    const renderCenteredCanvasPanel = () => {
-      if (isCompactCanvas) {
-        return (
-          <div className="pointer-events-none relative z-10 flex w-full max-w-[340px] items-center gap-2 rounded-xl border border-slate-200/80 bg-white/92 px-3 py-2 text-left text-[11px] text-slate-500 shadow-[0_18px_36px_-34px_rgba(15,23,42,0.22)] backdrop-blur-sm dark:border-slate-700 dark:bg-slate-950/84 dark:text-slate-300">
-            <span className="material-symbols-outlined text-[15px] text-[color:var(--workspace-accent)]">table_view</span>
-            <span className="min-w-0 flex-1 truncate font-medium text-slate-600 dark:text-slate-100">
-              {canvasLabel}
-            </span>
-            <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
-              {hasDetailBoardFeature ? '可预览分组' : '点击配置'}
-            </span>
-          </div>
-        );
-      }
-
-      return (
-        <div
-          className={`pointer-events-none relative z-10 flex w-full flex-col items-center gap-2 rounded-[18px] border text-center backdrop-blur-sm ${tableCanvasPanelShellClass} ${isCompactCanvas ? 'max-w-[320px] px-4 py-3' : 'max-w-[420px] px-5 py-4'}`}
-        >
-          <div className={`flex items-center justify-center rounded-md border ${isCompactModuleSetting ? 'size-10' : 'size-12'} ${tableCanvasIconClass}`}>
-            <span className={`material-symbols-outlined ${isCompactModuleSetting ? 'text-[16px]' : 'text-[20px]'} ${tableSelected ? 'text-[#c06b7d]' : 'text-slate-300 dark:text-slate-500'}`}>table_view</span>
-          </div>
-          {detailBoardFeatureLabel && (
-            <div className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${detailBoardTheme.badge}`}>
-              {detailBoardFeatureLabel}
-            </div>
-          )}
-          <div className={`font-semibold ${isCompactCanvas ? 'text-[12px]' : 'text-[13px]'} ${tableCanvasTitleClass}`}>
-            {canvasLabel}
-          </div>
-          <div className="text-[11px] text-slate-400">
-            {hasDetailBoardFeature ? '双击画布可预览详情分组布局' : '点击画布即可切换到整表配置'}
-          </div>
-        </div>
-      );
-    };
-    if (cols.length === 0) {
-      return (
-        <div className={`flex items-center justify-center px-6 text-center text-slate-400 ${isCompactCanvas ? 'min-h-[164px] py-6' : 'h-full min-h-[240px]'}`}>
-          <div className="flex flex-col items-center gap-3">
-            <div className="cloudy-glass-orb flex size-14 items-center justify-center rounded-3xl">
-              <span className="material-symbols-outlined text-[24px] text-slate-300 dark:text-slate-500">data_object</span>
-            </div>
-            <div>
-              <p className="text-[14px] font-bold text-slate-500 dark:text-slate-300">当前区域还没有字段</p>
-              <p className="mt-1 text-[12px] text-slate-400">点击新增字段，或直接粘贴列名批量生成。</p>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (backgroundSelectable) {
-      return (
-        <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full flex-col overflow-x-auto overflow-y-hidden rounded-[26px] border ${themedTableSurfaceClass} ${isCompactCanvas ? 'flex h-full min-h-[184px]' : 'flex h-full min-h-[260px]'} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
-          {visibleResizeTag && (
-            <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-md border border-[#0b6bcb]/15 bg-white/96 px-2.5 py-1 text-[11px] font-bold text-[#0b6bcb] dark:border-[#0b6bcb]/20 dark:bg-slate-900/92">
-              <span className="material-symbols-outlined text-[14px]">straighten</span>
-              <span className="max-w-[150px] truncate">{visibleResizeTag.label}</span>
-              <span className="rounded-full bg-[#0b6bcb]/8 px-2 py-0.5">{Math.round(visibleResizeTag.width)}px</span>
-            </div>
-          )}
-          <div className="min-w-0 shrink-0">
-            <table
-              style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
-              className="table-fixed border-separate border-spacing-0 text-left text-[12px]"
-            >
-              <colgroup>
-                {cols.map((col) => {
-                  const headerWidth = getColumnRenderWidth(col);
-                  return <col key={`col-${col.id}`} style={{ width: headerWidth, minWidth: headerWidth }} />;
-                })}
-                <col style={{ width: addColumnWidth, minWidth: addColumnWidth }} />
-              </colgroup>
-              <thead className={`sticky top-0 z-20 select-none bg-transparent ${tableSelected ? 'shadow-[inset_0_-1px_0_rgba(239,199,207,0.55)]' : ''}`}>
-                <tr>
-                  {cols.map((col, index) => {
-                    const normalizedCol = normalizeColumn(col);
-                    const isActive = selectedId === col.id;
-                    const isMarkedForDelete = selectedForDelete.includes(col.id);
-                    const isTreeRelation = scope === 'main' && businessType !== 'table' && isTreeRelationFieldColumn(normalizedCol);
-                    const isResizing = activeResize?.id === col.id;
-                    const headerWidth = getColumnRenderWidth(normalizedCol);
-                    const isCollapsedHeader = headerWidth <= 18;
-
-                    return (
-                      <th
-                        key={col.id}
-                        style={{ width: headerWidth, minWidth: headerWidth }}
-                        className={`group relative border-b border-r p-0 align-top ${headerDividerClass}`}
-                      >
-                      <button
-                        type="button"
-                        onClick={(event) => handleColumnHeaderClick(event, col.id)}
-                        onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
-                        className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-1.5 py-0' : isCompactModuleSetting ? 'min-h-[32px] px-1.5 pr-3 py-0' : 'min-h-[38px] px-2 pr-3.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`}
-                      >
-                          <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
-                            <div
-                              className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
-                              title={normalizedCol.name}
-                            >
-                              <span className="truncate">{normalizedCol.name}</span>
-                              {isTreeRelation && !isCollapsedHeader && (
-                                <span className="ml-1.5 inline-flex items-center rounded-full bg-white/75 px-1.5 py-0.5 text-[9px] font-black leading-none text-[#2563eb] shadow-[0_10px_18px_-16px_rgba(37,99,235,0.7)] dark:bg-sky-500/16 dark:text-sky-100">
-                                  树
-                                </span>
-                              )}
-                              <span className={`ml-0.5 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
-                            </div>
-                          </div>
-                        </button>
-                        <div
-                          className={`absolute right-0 top-0 bottom-0 z-20 flex ${isCompactModuleSetting ? 'w-2.5' : 'w-3'} cursor-col-resize items-center justify-center ${getHeaderResizeRailClass(isActive)}`}
-                          onMouseDown={(e) => startResize(e, col.id, cols, setCols, TABLE_COLUMN_RESIZE_MIN_WIDTH, TABLE_COLUMN_RESIZE_MAX_WIDTH, 'column')}
-                          onDoubleClick={(e) => autoFitColumnWidth(e, col.id, cols, setCols, TABLE_COLUMN_MIN_WIDTH, TABLE_COLUMN_RESIZE_MAX_WIDTH, 'column')}
-                          title="拖动调整列宽，双击可自动适配"
-                        >
-                          <span className={`h-5 w-px rounded-full transition-all ${isResizing ? 'bg-[#2563eb] shadow-[0_0_0_2px_rgba(37,99,235,0.12)]' : 'bg-transparent group-hover:bg-slate-300 dark:group-hover:bg-slate-500'}`} />
-                        </div>
-                      </th>
-                    );
-                  })}
-                  <th
-                    style={{ width: addColumnWidth, minWidth: addColumnWidth }}
-                    className={`border-b p-0 align-top ${addColumnHeaderShellClass}`}
-                  >
-                    <button
-                      type="button"
-                      onClick={addColumn}
-                      className={`flex h-full w-full items-center justify-center rounded-tr-md transition-all ${isCompactModuleSetting ? 'min-h-[34px]' : 'min-h-[40px]'} hover:bg-white/55 dark:hover:bg-white/8`}
-                      title="新增字段"
-                    >
-                        <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
-                        <span className="material-symbols-outlined text-[17px]">add</span>
-                      </div>
-                    </button>
-                  </th>
-                </tr>
-              </thead>
-            </table>
-          </div>
-          <button
-            type="button"
-            onClick={onSelectTable}
-            onDoubleClick={(event) => {
-              event.stopPropagation();
-              options?.onCanvasDoubleClick?.();
-            }}
-            className={`relative mt-1 flex w-full items-center justify-center overflow-hidden rounded-[20px] border px-4 text-center transition-all dark:border-slate-700 ${themedTableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] flex-1 py-3' : 'min-h-[188px] flex-1 py-6'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
-          >
-            <div className={`pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.28),transparent_62%)] ${tableSelected ? 'opacity-80' : 'opacity-100'}`} />
-            <div className="relative z-10 flex h-full w-full items-center justify-center">
-              {renderCenteredCanvasPanel()}
-            </div>
-          </button>
-        </div>
-      );
-    }
-
     return (
-      <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden rounded-[26px] border ${themedTableSurfaceClass} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
-        {visibleResizeTag && (
-          <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-md border border-[#1686e3]/15 bg-white/96 px-2.5 py-1 text-[11px] font-bold text-[#1686e3] dark:border-[#1686e3]/20 dark:bg-slate-900/92">
-            <span className="material-symbols-outlined text-[14px]">straighten</span>
-            <span className="max-w-[150px] truncate">{visibleResizeTag.label}</span>
-            <span className="rounded-full bg-[#1686e3]/8 px-2 py-0.5">{Math.round(visibleResizeTag.width)}px</span>
-          </div>
-        )}
-        <table
-          style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
-          className="table-fixed overflow-hidden rounded-[18px] border-separate border-spacing-0 text-left text-[12px]"
-        >
-          <colgroup>
-            {cols.map((col) => {
-              const headerWidth = getColumnRenderWidth(col);
-              return <col key={`col-${col.id}`} style={{ width: headerWidth, minWidth: headerWidth }} />;
-            })}
-            <col style={{ width: addColumnWidth, minWidth: addColumnWidth }} />
-          </colgroup>
-            <thead className={`sticky top-0 z-20 select-none bg-transparent ${tableSelected ? 'shadow-[inset_0_-1px_0_rgba(239,199,207,0.55)]' : ''}`}>
-            <tr>
-              {cols.map((col, index) => {
-                const normalizedCol = normalizeColumn(col);
-                const isActive = selectedId === col.id;
-                const isMarkedForDelete = selectedForDelete.includes(col.id);
-                const isTreeRelation = scope === 'main' && businessType !== 'table' && isTreeRelationFieldColumn(normalizedCol);
-                const isResizing = activeResize?.id === col.id;
-                const headerWidth = getColumnRenderWidth(normalizedCol);
-                const isCollapsedHeader = headerWidth <= 18;
-
-                return (
-                  <th
-                    key={col.id}
-                    style={{ width: headerWidth, minWidth: headerWidth }}
-                    className={`group relative border-b border-r p-0 align-top ${headerDividerClass}`}
-                  >
-                    <button
-                      type="button"
-                      onClick={(event) => handleColumnHeaderClick(event, col.id)}
-                      onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
-                        className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[36px] px-0 pr-1.5 py-0' : isCompactModuleSetting ? 'min-h-[34px] px-1.5 pr-3 py-0' : 'min-h-[42px] px-2 pr-3.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`}
-                    >
-                      <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
-                        <div
-                          className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
-                          title={normalizedCol.name}
-                        >
-                          <span className="truncate">{normalizedCol.name}</span>
-                          {isTreeRelation && !isCollapsedHeader && (
-                            <span className="ml-1.5 inline-flex items-center rounded-full bg-white/75 px-1.5 py-0.5 text-[9px] font-black leading-none text-[#2563eb] shadow-[0_10px_18px_-16px_rgba(37,99,235,0.7)] dark:bg-sky-500/16 dark:text-sky-100">
-                              树
-                            </span>
-                          )}
-                          <span className={`ml-0.5 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
-                        </div>
-                      </div>
-                    </button>
-                    <div
-                      className={`absolute right-0 top-0 bottom-0 z-20 flex ${isCompactModuleSetting ? 'w-2.5' : 'w-3'} cursor-col-resize items-center justify-center ${getHeaderResizeRailClass(isActive)}`}
-                      onMouseDown={(e) => startResize(e, col.id, cols, setCols, TABLE_COLUMN_RESIZE_MIN_WIDTH, TABLE_COLUMN_RESIZE_MAX_WIDTH, 'column')}
-                      onDoubleClick={(e) => autoFitColumnWidth(e, col.id, cols, setCols, TABLE_COLUMN_MIN_WIDTH, TABLE_COLUMN_RESIZE_MAX_WIDTH, 'column')}
-                      title="拖动调整列宽，双击可自动适配"
-                    >
-                      <span className={`h-5 rounded-full transition-all ${isCompactModuleSetting ? 'w-px' : 'w-px'} ${isResizing ? 'bg-[#2563eb] shadow-[0_0_0_2px_rgba(37,99,235,0.12)]' : 'bg-transparent group-hover:bg-slate-300 dark:group-hover:bg-slate-500'}`} />
-                    </div>
-                  </th>
-                );
-              })}
-              <th
-                style={{ width: addColumnWidth, minWidth: addColumnWidth }}
-                className={`border-b p-0 align-top ${addColumnHeaderShellClass}`}
-              >
-                <button
-                  type="button"
-                  onClick={addColumn}
-                  className={`flex h-full w-full items-center justify-center rounded-tr-md transition-all ${isCompactModuleSetting ? 'min-h-[38px]' : 'min-h-[46px]'} hover:bg-white/55 dark:hover:bg-white/8`}
-                  title="新增字段"
-                >
-                  <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
-                    <span className="material-symbols-outlined text-[17px]">add</span>
-                  </div>
-                </button>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="text-slate-600 dark:text-slate-300">
-            <tr>
-              <td colSpan={cols.length + 1} className="p-0">
-                <button
-                  type="button"
-                  onClick={onSelectTable}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    options?.onCanvasDoubleClick?.();
-                  }}
-                  className={`flex w-full items-center justify-center px-4 ${isCompactModuleSetting ? 'min-h-[190px] py-4' : 'min-h-[230px] py-6'} rounded-b-md border-t text-center transition-all ${tableSelected ? 'border-[#efd6db]/85 bg-[#fff7f9] hover:bg-[#fff3f6] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
-                >
-                  {renderCenteredCanvasPanel()}
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <MemoTableBuilder
+        scope={scope}
+        cols={cols}
+        setCols={setCols}
+        selectedId={selectedId}
+        selectedForDelete={selectedForDelete}
+        setSelectedForDelete={setSelectedForDelete}
+        options={options}
+        activeResize={activeResize}
+        workspaceTheme={workspaceTheme}
+        workspaceThemeVars={workspaceThemeVars}
+        isCompactModuleSetting={isCompactModuleSetting}
+        businessType={businessType}
+        activateColumnSelection={activateColumnSelection}
+        setBuilderSelectionContextMenu={setBuilderSelectionContextMenu}
+        startResize={startResize}
+        autoFitColumnWidth={autoFitColumnWidth}
+      />
     );
-  };
+  }, [
+    activeResize,
+    activateColumnSelection,
+    autoFitColumnWidth,
+    businessType,
+    isCompactModuleSetting,
+    setBuilderSelectionContextMenu,
+    startResize,
+    workspaceTheme,
+    workspaceThemeVars,
+  ]);
+
+  const activeDetailTableColumns = detailTableColumns[activeTab] || [];
+  const activeDetailTableConfig = detailTableConfigs[activeTab];
+  const isDetailGridTableSelected = selectedTableConfigScope === 'detail' && inspectorTarget.id === '表格';
+  const setActiveDetailTableColumns = useCallback((newCols: React.SetStateAction<any[]>) => {
+    setDetailTableColumns((prev) => ({
+      ...prev,
+      [activeTab]: typeof newCols === 'function' ? newCols(prev[activeTab] || []) : newCols,
+    }));
+  }, [activeTab]);
+  const handleArchiveMainTableSelect = useCallback(() => {
+    setSelectedArchiveNodeId('archive-main');
+    activateTableConfigSelection('main');
+  }, [activateTableConfigSelection]);
+  const handleArchiveMainTablePreview = useCallback(() => {
+    if (mainDetailBoardGroups.length === 0) return;
+    openDetailBoardPreview(1);
+  }, [mainDetailBoardGroups.length, openDetailBoardPreview]);
+  const handleArchiveLeftTableSelect = useCallback(() => {
+    setSelectedArchiveNodeId('archive-left-grid');
+    activateTableConfigSelection('left');
+  }, [activateTableConfigSelection]);
+  const handleBuilderMainTableSelect = useCallback(() => {
+    activateTableConfigSelection('main');
+  }, [activateTableConfigSelection]);
+  const handleBuilderMainTablePreview = useCallback(() => {
+    if (!mainDetailBoardEnabled) return;
+    openDetailBoardPreview(1);
+  }, [mainDetailBoardEnabled, openDetailBoardPreview]);
+  const handleActiveDetailTableSelect = useCallback(() => {
+    setSelectedArchiveNodeId(`detail-${activeTab}`);
+    activateTableConfigSelection('detail', '表格');
+  }, [activeTab, activateTableConfigSelection]);
+  const handleBillDetailTableSelect = useCallback(() => {
+    activateTableConfigSelection('detail');
+  }, [activateTableConfigSelection]);
+  const archiveMainTableBuilderOptions = useMemo(() => ({
+    contextMenuScope: 'main' as const,
+    contextMenuConfig: {
+      enabled: (mainTableConfig.contextMenuItems ?? []).length > 0,
+      items: mainTableConfig.contextMenuItems ?? [],
+    },
+    backgroundSelectable: true,
+    tableSelected: selectedTableConfigScope === 'main',
+    onSelectTable: handleArchiveMainTableSelect,
+    detailBoardConfig: mainTableConfig.detailBoard,
+    normalizedDetailBoardConfig: normalizedMainDetailBoardConfig,
+    renderableColumns: mainRenderableColumns,
+    onCanvasDoubleClick: handleArchiveMainTablePreview,
+    canvasLabel: '点击配置基础档案主表',
+  }), [
+    handleArchiveMainTablePreview,
+    handleArchiveMainTableSelect,
+    mainRenderableColumns,
+    mainTableConfig.contextMenuItems,
+    mainTableConfig.detailBoard,
+    normalizedMainDetailBoardConfig,
+    selectedTableConfigScope,
+  ]);
+  const documentTreeTableBuilderOptions = useMemo(() => ({
+    backgroundSelectable: true,
+    tableSelected: selectedTableConfigScope === 'left',
+    onSelectTable: handleArchiveLeftTableSelect,
+    canvasLabel: '点击配置左侧树表',
+  }), [handleArchiveLeftTableSelect, selectedTableConfigScope]);
+  const builderMainTableBuilderOptions = useMemo(() => ({
+    backgroundSelectable: true,
+    tableSelected: selectedTableConfigScope === 'main',
+    onSelectTable: handleBuilderMainTableSelect,
+    detailBoardConfig: mainTableConfig.detailBoard,
+    normalizedDetailBoardConfig: normalizedMainDetailBoardConfig,
+    renderableColumns: mainRenderableColumns,
+    onCanvasDoubleClick: handleBuilderMainTablePreview,
+    canvasLabel: '点击配置主表属性',
+  }), [
+    handleBuilderMainTablePreview,
+    handleBuilderMainTableSelect,
+    mainRenderableColumns,
+    mainTableConfig.detailBoard,
+    normalizedMainDetailBoardConfig,
+    selectedTableConfigScope,
+  ]);
+  const documentDetailTableBuilderOptions = useMemo(() => ({
+    contextMenuScope: 'detail' as const,
+    contextMenuConfig: {
+      enabled: Boolean(activeDetailTableConfig?.contextMenuEnabled),
+      items: activeDetailTableConfig?.contextMenuItems ?? [],
+    },
+    backgroundSelectable: true,
+    tableSelected: isDetailGridTableSelected,
+    onSelectTable: handleActiveDetailTableSelect,
+    detailBoardConfig: activeDetailTableConfig?.detailBoard,
+    canvasLabel: '点击配置明细表属性',
+    density: 'compact' as const,
+  }), [
+    activeDetailTableConfig?.contextMenuEnabled,
+    activeDetailTableConfig?.contextMenuItems,
+    activeDetailTableConfig?.detailBoard,
+    handleActiveDetailTableSelect,
+    isDetailGridTableSelected,
+  ]);
+  const billDetailTableBuilderOptions = useMemo(() => ({
+    backgroundSelectable: true,
+    tableSelected: selectedTableConfigScope === 'detail',
+    onSelectTable: handleBillDetailTableSelect,
+    canvasLabel: '点击配置单据明细表',
+  }), [handleBillDetailTableSelect, selectedTableConfigScope]);
+  const archiveMainTableBuilderNode = useMemo(() => renderTableBuilder(
+    'main',
+    mainTableColumns,
+    setMainTableColumns,
+    selectedMainColId,
+    selectedMainForDelete,
+    setSelectedMainForDelete,
+    archiveMainTableBuilderOptions,
+  ), [
+    archiveMainTableBuilderOptions,
+    mainTableColumns,
+    renderTableBuilder,
+    selectedMainColId,
+    selectedMainForDelete,
+  ]);
+  const documentTreeTableBuilderNode = useMemo(() => renderTableBuilder(
+    'left',
+    leftTableColumns,
+    setLeftTableColumns,
+    selectedLeftColId,
+    selectedLeftForDelete,
+    setSelectedLeftForDelete,
+    documentTreeTableBuilderOptions,
+  ), [
+    documentTreeTableBuilderOptions,
+    leftTableColumns,
+    renderTableBuilder,
+    selectedLeftColId,
+    selectedLeftForDelete,
+  ]);
+  const builderLeftTableBuilderNode = useMemo(() => renderTableBuilder(
+    'left',
+    leftTableColumns,
+    setLeftTableColumns,
+    selectedLeftColId,
+    selectedLeftForDelete,
+    setSelectedLeftForDelete,
+  ), [
+    leftTableColumns,
+    renderTableBuilder,
+    selectedLeftColId,
+    selectedLeftForDelete,
+  ]);
+  const builderMainTableBuilderNode = useMemo(() => renderTableBuilder(
+    'main',
+    mainTableColumns,
+    setMainTableColumns,
+    selectedMainColId,
+    selectedMainForDelete,
+    setSelectedMainForDelete,
+    builderMainTableBuilderOptions,
+  ), [
+    builderMainTableBuilderOptions,
+    mainTableColumns,
+    renderTableBuilder,
+    selectedMainColId,
+    selectedMainForDelete,
+  ]);
+  const documentDetailTableBuilderNode = useMemo(() => renderTableBuilder(
+    'detail',
+    activeDetailTableColumns,
+    setActiveDetailTableColumns,
+    selectedDetailColId,
+    selectedDetailForDelete,
+    setSelectedDetailForDelete,
+    documentDetailTableBuilderOptions,
+  ), [
+    activeDetailTableColumns,
+    documentDetailTableBuilderOptions,
+    renderTableBuilder,
+    selectedDetailColId,
+    selectedDetailForDelete,
+    setActiveDetailTableColumns,
+  ]);
+  const builderDetailTableBuilderNode = useMemo(() => renderTableBuilder(
+    'detail',
+    activeDetailTableColumns,
+    setActiveDetailTableColumns,
+    selectedDetailColId,
+    selectedDetailForDelete,
+    setSelectedDetailForDelete,
+  ), [
+    activeDetailTableColumns,
+    renderTableBuilder,
+    selectedDetailColId,
+    selectedDetailForDelete,
+    setActiveDetailTableColumns,
+  ]);
+  const billDetailTableBuilderNode = useMemo(() => renderTableBuilder(
+    'detail',
+    billDetailColumns,
+    setBillDetailColumns,
+    selectedDetailColId,
+    selectedDetailForDelete,
+    setSelectedDetailForDelete,
+    billDetailTableBuilderOptions,
+  ), [
+    billDetailColumns,
+    billDetailTableBuilderOptions,
+    renderTableBuilder,
+    selectedDetailColId,
+    selectedDetailForDelete,
+  ]);
 
   const configSteps = [
     { id: 1, title: '类型选择', desc: '先确定本次创建的是单表还是单据' },
@@ -7644,22 +9436,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       badgeDotClass: 'bg-emerald-500',
     },
   ] as const;
-  const isModuleSettingStep = isConfigOpen && (configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP);
-  const isConfigFullscreenActive = isModuleSettingStep && isFullscreenConfig;
-  const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
-  const workspaceThemeVars = getWorkspaceThemeVars(workspaceTheme);
-  const workspaceThemeStyles = getDetailBoardTheme(workspaceTheme);
-  const inspectorPaneWidth = isConfigFullscreenActive ? 448 : Math.max(432, documentDetailPaneWidth);
-  const moduleSettingStageHeightClass = isConfigFullscreenActive ? 'flex-1 min-h-[640px]' : 'flex-1 min-h-0';
-  const moduleSettingStageStyle = isConfigFullscreenActive
-    ? workspaceThemeVars
-    : {
-        ...workspaceThemeVars,
-        minHeight: 'clamp(620px, calc(100dvh - 220px), 704px)',
-      };
-  const effectiveDocumentTopPaneHeight = !isConfigFullscreenActive && businessType === 'document'
-    ? Math.max(documentTopPaneHeight, 504)
-    : documentTopPaneHeight;
   const normalizeDetailFillTypeValue = (value: string | undefined | null) => (
     DETAIL_FILL_TYPE_OPTIONS.some((option) => option.value === value)
       ? value!
@@ -8219,18 +9995,16 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   }, [mainTableConfig.colorRules, selectedMainColorRuleId]);
 
   useEffect(() => {
-    const groups = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns).groups;
-    if (!groups.some((group: any) => group.id === selectedDetailBoardGroupId)) {
-      setSelectedDetailBoardGroupId(groups[0]?.id ?? null);
+    if (!mainDetailBoardGroups.some((group: any) => group.id === selectedDetailBoardGroupId)) {
+      setSelectedDetailBoardGroupId(mainDetailBoardGroups[0]?.id ?? null);
     }
-  }, [mainTableConfig.detailBoard, mainTableColumns, selectedDetailBoardGroupId]);
+  }, [mainDetailBoardGroups, selectedDetailBoardGroupId]);
 
   useEffect(() => {
-    const groups = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns).groups;
-    if (!groups.some((group: any) => group.id === selectedArchiveLayoutGroupId)) {
-      setSelectedArchiveLayoutGroupId(groups[0]?.id ?? null);
+    if (!mainDetailBoardGroups.some((group: any) => group.id === selectedArchiveLayoutGroupId)) {
+      setSelectedArchiveLayoutGroupId(mainDetailBoardGroups[0]?.id ?? null);
     }
-  }, [mainTableConfig.detailBoard, mainTableColumns, selectedArchiveLayoutGroupId]);
+  }, [mainDetailBoardGroups, selectedArchiveLayoutGroupId]);
 
   useEffect(() => {
     const handlePointerMove = (event: MouseEvent) => {
@@ -8647,17 +10421,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                   }
                 }}
               >
-                {renderTableBuilder(
-                  'detail',
-                  detailTableColumns[activeTab] || [],
-                  (newCols) => setDetailTableColumns((prev) => ({
-                    ...prev,
-                    [activeTab]: typeof newCols === 'function' ? newCols(prev[activeTab] || []) : newCols,
-                  })),
-                  selectedDetailColId,
-                  selectedDetailForDelete,
-                  setSelectedDetailForDelete,
-                )}
+                {builderDetailTableBuilderNode}
               </div>
             </div>
           ) : (
@@ -13416,62 +15180,100 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   const columnOperationPanel = renderColumnOperationPanel();
   const activeDocumentConditionScope = isTreePaneVisible ? documentConditionScope : 'main';
-  const getConditionWorkbenchRowCount = (scope: 'left' | 'main') => (
+  const getConditionWorkbenchRowCount = useCallback((scope: 'left' | 'main') => (
     scope === 'left' ? leftConditionWorkbenchConfig.rows : mainConditionWorkbenchConfig.rows
-  );
-  const getNextConditionWorkbenchRow = (scope: 'left' | 'main', currentLength: number) => (
+  ), [leftConditionWorkbenchConfig.rows, mainConditionWorkbenchConfig.rows]);
+  const getNextConditionWorkbenchRow = useCallback((scope: 'left' | 'main', currentLength: number) => (
     ((currentLength % Math.max(CONDITION_PANEL_MIN_ROWS, getConditionWorkbenchRowCount(scope))) + 1)
-  );
-  const mainDocumentConditionConfig = {
+  ), [getConditionWorkbenchRowCount]);
+  const mainDocumentConditionActivate = useCallback((id: string) => {
+    setSelectedArchiveNodeId('archive-filter');
+    activateConditionSelection('main', id);
+  }, [activateConditionSelection]);
+  const mainDocumentConditionAdd = useCallback(() => {
+    const currentLength = mainFilterFields.length;
+    const next = buildConditionField(currentLength + 1, {
+      panelRow: getNextConditionWorkbenchRow('main', currentLength),
+    });
+    setMainFilterFields((prev) => [...prev, next]);
+    setSelectedMainFiltersForDelete([next.id]);
+    setSelectedArchiveNodeId('archive-filter');
+    activateConditionSelection('main', next.id);
+  }, [activateConditionSelection, getNextConditionWorkbenchRow, mainFilterFields.length]);
+  const mainDocumentConditionDelete = useCallback(() => {
+    deleteSelectedConditions('main', selectedMainFiltersForDelete);
+  }, [deleteSelectedConditions, selectedMainFiltersForDelete]);
+  const mainDocumentConditionConfig = useMemo(() => ({
     fields: mainFilterFields,
     selectedId: selectedMainFilterId,
     selectedIds: selectedMainFiltersForDelete,
     setSelectedIds: setSelectedMainFiltersForDelete,
     setFields: setMainFilterFields,
     scope: 'main' as const,
-    onActivate: (id: string) => {
-      setSelectedArchiveNodeId('archive-filter');
-      activateConditionSelection('main', id);
-    },
-    onAdd: () => {
-      const next = buildConditionField(mainFilterFields.length + 1, {
-        panelRow: getNextConditionWorkbenchRow('main', mainFilterFields.length),
-      });
-      setMainFilterFields((prev) => [...prev, next]);
-      setSelectedMainFiltersForDelete([next.id]);
-      setSelectedArchiveNodeId('archive-filter');
-      activateConditionSelection('main', next.id);
-    },
-    onDelete: () => deleteSelectedConditions('main', selectedMainFiltersForDelete),
-  };
-  const leftDocumentConditionConfig = treeRelationColumn ? {
-    fields: leftFilterFields,
-    selectedId: selectedLeftFilterId,
-    selectedIds: selectedLeftFiltersForDelete,
-    setSelectedIds: setSelectedLeftFiltersForDelete,
-    setFields: setLeftFilterFields,
-    scope: 'left' as const,
-    onActivate: (id: string) => {
-      setSelectedArchiveNodeId('archive-left-filter');
-      activateConditionSelection('left', id);
-    },
-    onAdd: () => {
-      const next = buildConditionField(leftFilterFields.length + 1, {
-        name: `左侧条件 ${leftFilterFields.length + 1}`,
-        panelRow: getNextConditionWorkbenchRow('left', leftFilterFields.length),
-        sourceid: documentConditionOwnerSourceId,
-        formKey: documentConditionOwnerFieldKey,
-      });
-      setLeftFilterFields((prev) => [...prev, next]);
-      setSelectedLeftFiltersForDelete([next.id]);
-      setSelectedArchiveNodeId('archive-left-filter');
-      activateConditionSelection('left', next.id);
-    },
-    onDelete: () => deleteSelectedConditions('left', selectedLeftFiltersForDelete),
-  } : null;
-  const activeDocumentConditionConfig = activeDocumentConditionScope === 'left' && leftDocumentConditionConfig
-    ? leftDocumentConditionConfig
-    : mainDocumentConditionConfig;
+    rowCount: mainConditionWorkbenchConfig.rows,
+    onActivate: mainDocumentConditionActivate,
+    onAdd: mainDocumentConditionAdd,
+    onDelete: mainDocumentConditionDelete,
+  }), [
+    mainConditionWorkbenchConfig.rows,
+    mainDocumentConditionActivate,
+    mainDocumentConditionAdd,
+    mainDocumentConditionDelete,
+    mainFilterFields,
+    selectedMainFilterId,
+    selectedMainFiltersForDelete,
+  ]);
+  const leftDocumentConditionActivate = useCallback((id: string) => {
+    setSelectedArchiveNodeId('archive-left-filter');
+    activateConditionSelection('left', id);
+  }, [activateConditionSelection]);
+  const leftDocumentConditionAdd = useCallback(() => {
+    const currentLength = leftFilterFields.length;
+    const next = buildConditionField(currentLength + 1, {
+      name: `左侧条件 ${currentLength + 1}`,
+      panelRow: getNextConditionWorkbenchRow('left', currentLength),
+      sourceid: documentConditionOwnerSourceId,
+      formKey: documentConditionOwnerFieldKey,
+    });
+    setLeftFilterFields((prev) => [...prev, next]);
+    setSelectedLeftFiltersForDelete([next.id]);
+    setSelectedArchiveNodeId('archive-left-filter');
+    activateConditionSelection('left', next.id);
+  }, [
+    activateConditionSelection,
+    documentConditionOwnerFieldKey,
+    documentConditionOwnerSourceId,
+    getNextConditionWorkbenchRow,
+    leftFilterFields.length,
+  ]);
+  const leftDocumentConditionDelete = useCallback(() => {
+    deleteSelectedConditions('left', selectedLeftFiltersForDelete);
+  }, [deleteSelectedConditions, selectedLeftFiltersForDelete]);
+  const leftDocumentConditionConfig = useMemo(() => {
+    if (!treeRelationColumn) return null;
+
+    return {
+      fields: leftFilterFields,
+      selectedId: selectedLeftFilterId,
+      selectedIds: selectedLeftFiltersForDelete,
+      setSelectedIds: setSelectedLeftFiltersForDelete,
+      setFields: setLeftFilterFields,
+      scope: 'left' as const,
+      rowCount: leftConditionWorkbenchConfig.rows,
+      onActivate: leftDocumentConditionActivate,
+      onAdd: leftDocumentConditionAdd,
+      onDelete: leftDocumentConditionDelete,
+    };
+  }, [
+    leftConditionWorkbenchConfig.rows,
+    leftDocumentConditionActivate,
+    leftDocumentConditionAdd,
+    leftDocumentConditionDelete,
+    leftFilterFields,
+    selectedLeftFilterId,
+    selectedLeftFiltersForDelete,
+    treeRelationColumn,
+  ]);
   const getConditionWorkbenchConfig = (scope: 'left' | 'main') => (
     scope === 'left' ? leftConditionWorkbenchConfig : mainConditionWorkbenchConfig
   );
@@ -13553,12 +15355,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     activateConditionPanelSelection(scope);
     showToast(replace ? `已重建 ${nextFields.length} 个条件` : `已新增 ${nextFields.length} 个条件`);
   };
-  const handleDocumentConditionScopeSwitch = (nextScope: 'left' | 'main') => {
+  const handleDocumentConditionScopeSwitch = useCallback((nextScope: 'left' | 'main') => {
     setDocumentConditionScope(nextScope);
     if (selectedConditionPanelScope) {
       activateConditionPanelSelection(nextScope);
     }
-  };
+  }, [activateConditionPanelSelection, selectedConditionPanelScope]);
 
   const renderDocumentTreePanel = () => {
     if (!treeRelationColumn) return null;
@@ -13571,15 +15373,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             tabIndex={0}
             onPaste={(event) => handlePasteColumns(event, setLeftTableColumns)}
           >
-            {renderTableBuilder('left', leftTableColumns, setLeftTableColumns, selectedLeftColId, selectedLeftForDelete, setSelectedLeftForDelete, {
-              backgroundSelectable: true,
-              tableSelected: selectedTableConfigScope === 'left',
-              onSelectTable: () => {
-                setSelectedArchiveNodeId('archive-left-grid');
-                activateTableConfigSelection('left');
-              },
-              canvasLabel: '点击配置左侧树表',
-            })}
+            {documentTreeTableBuilderNode}
           </div>
         </div>
       </div>
@@ -13613,699 +15407,47 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       hideFilterBar?: boolean;
       hideFilterQuickActions?: boolean;
       filterAccessory?: React.ReactNode;
+      filterRuntimeRules?: string;
     },
-  ) => {
-    const filterFields = filterConfig?.fields ?? columns.slice(0, 3);
-    const hideFilterBar = options?.hideFilterBar ?? false;
-    const hideFilterQuickActions = options?.hideFilterQuickActions ?? false;
-    const hideActionBar = options?.hideActionBar ?? false;
-    const filterSelectionCount = filterConfig?.selectedIds.length ?? 0;
-    const buildFilterSelectionIds = (fieldId: string, append: boolean) => {
-      if (!filterConfig) return [];
-      if (filterConfig.selectedIds.includes(fieldId)) {
-        return filterConfig.selectedIds;
-      }
-      return append ? Array.from(new Set([...filterConfig.selectedIds, fieldId])) : [fieldId];
-    };
-    const handleFilterSelect = (fieldId: string, event?: React.MouseEvent | React.KeyboardEvent) => {
-      if (!filterConfig) return;
-      const allowMulti = Boolean(event && ('ctrlKey' in event) && (event.ctrlKey || event.metaKey));
+  ) => (
+    <MemoDocumentGridToolbar
+      columns={columns}
+      title={title}
+      selectedCount={selectedCount}
+      onDelete={onDelete}
+      onAdd={onAdd}
+      extraActions={extraActions}
+      filterConfig={filterConfig}
+      tableConfigAction={tableConfigAction}
+      options={options}
+      activeResize={activeResize}
+      onSetBuilderSelectionContextMenu={setBuilderSelectionContextMenu}
+      renderFieldPreview={renderFieldPreview}
+      startResize={startResize}
+      autoFitColumnWidth={autoFitColumnWidth}
+    />
+  );
 
-      setBuilderSelectionContextMenu(null);
-      if (allowMulti) {
-        filterConfig.setSelectedIds((prev) => (
-          prev.includes(fieldId) ? prev.filter((item) => item !== fieldId) : [...prev, fieldId]
-        ));
-        filterConfig.onActivate(fieldId);
-        return;
-      }
-
-      filterConfig.setSelectedIds([fieldId]);
-      filterConfig.onActivate(fieldId);
-    };
-    const handleFilterContextMenu = (event: React.MouseEvent<HTMLDivElement>, fieldId: string) => {
-      if (!filterConfig) return;
-      event.preventDefault();
-      event.stopPropagation();
-
-      const nextSelectedIds = buildFilterSelectionIds(fieldId, event.ctrlKey || event.metaKey);
-      filterConfig.setSelectedIds(nextSelectedIds);
-      filterConfig.onActivate(fieldId);
-      setBuilderSelectionContextMenu({
-        kind: 'filter',
-        scope: filterConfig.scope,
-        x: event.clientX,
-        y: event.clientY,
-        ids: nextSelectedIds,
-      });
-    };
-    const filterRuntimeRules = joinRuntimeDeclarationBlocks(
-      filterFields.flatMap((field) => {
-        const normalizedField = normalizeConditionField(field);
-        const filterControlWidth = resolveWorkbenchPreviewWidth(
-          normalizedField.width,
-          168,
-          148,
-          activeResize,
-          normalizedField.id,
-          'filter',
-        );
-        const labelWidth = Math.max(60, Math.min(132, normalizedField.name.length * 14 + 12));
-        const previewWidth = normalizedField.type === '日期框'
-          ? 58
-          : normalizedField.type === '数字'
-            ? 48
-            : normalizedField.type === '搜索框'
-              ? 64
-              : 52;
-        const minimumFilterWidth = labelWidth + previewWidth + 18;
-        const filterWidth = Math.max(
-          minimumFilterWidth,
-          Math.min(188, Math.max(minimumFilterWidth, filterControlWidth - 60)),
-        );
-        const widthClassName = createRuntimeClassName('document-filter-width', normalizedField.id);
-        const labelClassName = createRuntimeClassName('document-filter-label', normalizedField.id);
-        const previewClassName = createRuntimeClassName('document-filter-preview', normalizedField.id);
-
-        return [
-          createRuntimeDeclarationBlock(widthClassName, { width: filterWidth, 'min-width': filterWidth }),
-          createRuntimeDeclarationBlock(labelClassName, { width: labelWidth, 'min-width': labelWidth }),
-          createRuntimeDeclarationBlock(previewClassName, { width: previewWidth, 'min-width': previewWidth }),
-        ];
-      }),
-    );
-
-    const getFilterNameClass = (isSelected: boolean, isRequired: boolean) => cn(
-      'shrink-0 overflow-hidden text-ellipsis whitespace-nowrap text-left text-[11px] font-medium text-muted-foreground',
-      isRequired && 'text-primary',
-      isSelected && 'text-foreground',
-    );
-
-    const getFilterPreviewShellClass = (isSelected: boolean) => cn(
-      'shrink-0 pr-0.5',
-      isSelected && '[&>div]:border-border/60 [&>div]:bg-background [&>div]:shadow-none',
-    );
-
-    return (
-      <div className="shrink-0">
-        {!hideFilterBar && (
-          <div className="px-1 py-1">
-              {filterRuntimeRules ? <style>{filterRuntimeRules}</style> : null}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="gap-1.5 rounded-xl border-border/60 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-foreground">
-                      <Filter className="size-3.5" />
-                      查询条件
-                    </Badge>
-                    <span className="text-[11px] font-medium text-muted-foreground">{filterFields.length} 项</span>
-                </div>
-                {options?.filterAccessory ? (
-                  <div className="flex shrink-0 items-center gap-2">{options.filterAccessory}</div>
-                ) : null}
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-1">
-                {filterFields.map((field, index) => {
-                  const normalizedField = normalizeConditionField(field);
-                  const isActive = filterConfig?.selectedId === field.id;
-                  const isMarkedForDelete = filterConfig?.selectedIds.includes(field.id) ?? false;
-                  const isSelected = isActive || isMarkedForDelete;
-                  const widthClassName = createRuntimeClassName('document-filter-width', normalizedField.id);
-                  const labelClassName = createRuntimeClassName('document-filter-label', normalizedField.id);
-                  const previewClassName = createRuntimeClassName('document-filter-preview', normalizedField.id);
-
-                  return (
-                    <div
-                      key={field.id}
-                      role="button"
-                      tabIndex={0}
-                      aria-pressed={isSelected}
-                      onClick={(event) => handleFilterSelect(field.id, event)}
-                      onContextMenu={(event) => handleFilterContextMenu(event, field.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          handleFilterSelect(field.id, event);
-                        }
-                      }}
-                      className={cn(
-                        widthClassName,
-                        'group relative flex h-11 shrink-0 cursor-grab select-none flex-row items-center gap-1 rounded-lg border pl-2 pr-3.5 py-1.5 transition-colors active:cursor-grabbing',
-                        isSelected
-                          ? 'border-primary/20 bg-background/90'
-                          : 'border-transparent bg-transparent hover:border-border/40 hover:bg-background/70',
-                      )}
-                    >
-                      <div
-                        className={cn(labelClassName, getFilterNameClass(isSelected, normalizedField.required))}
-                        title={normalizedField.name}
-                      >
-                        <span className="block truncate">
-                          {normalizedField.name}
-                          {normalizedField.required ? <span className="ml-1 text-primary">*</span> : null}
-                        </span>
-                      </div>
-                      <div className={cn(previewClassName, getFilterPreviewShellClass(isSelected))}>
-                        {renderFieldPreview(normalizedField, index, 'condition')}
-                      </div>
-                      <div
-                        className="absolute inset-y-2 right-0.5 flex w-1.5 cursor-col-resize items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                        onMouseDown={(event) => startResize(event, field.id, filterFields, filterConfig.setFields, 160, 620, 'filter')}
-                        onDoubleClick={(event) => autoFitColumnWidth(event, field.id, filterFields, filterConfig.setFields, 160, 620, 'filter')}
-                        title="拖动调整条件宽度，双击可自动适配"
-                      >
-                        <span className="h-3.5 w-px rounded-full bg-border transition-colors group-hover:bg-primary" />
-                      </div>
-                    </div>
-                  );
-                })}
-                {filterConfig && !hideFilterQuickActions ? (
-                  <Button size="sm" className="h-8 gap-1.5 rounded-xl px-3" onClick={filterConfig.onAdd}>
-                    <Plus className="size-4" />
-                    条件
-                  </Button>
-                ) : null}
-                {filterConfig && !hideFilterQuickActions ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3"
-                    onClick={filterConfig.onDelete}
-                    disabled={filterSelectionCount === 0}
-                  >
-                    <Trash2 className="size-4" />
-                    删除条件{filterSelectionCount > 1 ? ` (${filterSelectionCount})` : ''}
-                  </Button>
-                ) : null}
-              </div>
-          </div>
-        )}
-        {!hideActionBar && (
-          <div className="mt-1 flex flex-wrap items-center justify-between gap-3 px-1 py-1">
-              <Button
-                variant={tableConfigAction?.active ? 'secondary' : 'ghost'}
-                size="sm"
-                className="gap-1.5 rounded-xl"
-                onClick={tableConfigAction?.onSelect}
-              >
-                <Table2 className="size-4" />
-                {title}
-              </Button>
-              <div className="flex flex-wrap items-center gap-2">
-                {extraActions}
-                <Button size="sm" className="h-8 gap-1.5 rounded-xl px-3" onClick={onAdd}>
-                  <Plus className="size-4" />
-                  新增
-                </Button>
-                <Button size="sm" variant="outline" className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3" onClick={onDelete} disabled={selectedCount === 0}>
-                  <Trash2 className="size-4" />
-                  删除
-                </Button>
-                <Button size="sm" variant="outline" className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3">
-                  <Save className="size-4" />
-                  保存
-                </Button>
-              </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderDocumentConditionToolbar = () => {
-    const canSwitchConditionScope = Boolean(leftDocumentConditionConfig);
-    const currentScope = activeDocumentConditionScope as ConditionWorkbenchScope;
-    const currentScopeLabel = currentScope === 'left' ? '左条件' : '主条件';
-    const currentConditionWorkbenchConfig = getConditionWorkbenchConfig(activeDocumentConditionScope);
-    const currentConditionFields = activeDocumentConditionConfig.fields.map(normalizeConditionField);
-    const selectedConditionIds = new Set(activeDocumentConditionConfig.selectedIds);
-    const conditionFieldIndexMap = new Map(currentConditionFields.map((field, index) => [field.id, index]));
-    const getConditionResizeCandidates = (fieldId: string) => buildResizeSnapCandidates(
-      currentConditionFields
-        .filter((field) => field.id !== fieldId)
-        .map((field) => Number(field.width) || CONDITION_PANEL_CONTROL_WIDTH),
-      {
-        minWidth: CONDITION_PANEL_RESIZE_MIN_WIDTH,
-        maxWidth: CONDITION_PANEL_RESIZE_MAX_WIDTH,
-        baseWidth: CONDITION_PANEL_CONTROL_WIDTH,
-      },
-    );
-    const workbenchHeight = currentConditionWorkbenchConfig.rows * CONDITION_PANEL_ROW_HEIGHT
-      + Math.max(0, currentConditionWorkbenchConfig.rows - 1) * CONDITION_PANEL_ROW_GAP;
-    const workbenchHeightClass = createRuntimeClassName('condition-workbench-height', activeDocumentConditionScope);
-    const conditionRowNumbers = Array.from({ length: currentConditionWorkbenchConfig.rows }, (_, index) => index + 1);
-    const conditionRuntimeRules = joinRuntimeDeclarationBlocks([
-      createRuntimeDeclarationBlock(workbenchHeightClass, { 'min-height': workbenchHeight }),
-      ...currentConditionFields.flatMap((field) => {
-        const rawConditionWidth = resolveWorkbenchPreviewWidth(
-          field.width,
-          CONDITION_PANEL_CONTROL_WIDTH,
-          CONDITION_PANEL_RESIZE_MIN_WIDTH,
-          activeResize,
-          field.id,
-          'filter',
-        );
-        const labelWidth = Math.max(60, Math.min(132, field.name.length * 14 + 10));
-        const sharedPreviewWidthFloor = 120;
-        const compactPreviewWidthFloor = 104;
-        const basePreviewWidth = field.type === '数字'
-          ? compactPreviewWidthFloor
-          : sharedPreviewWidthFloor;
-        const conditionChromeWidth = 18;
-        const minimumConditionWidth = labelWidth + basePreviewWidth + conditionChromeWidth;
-        const conditionWidth = Math.max(
-          minimumConditionWidth,
-          Math.min(CONDITION_PANEL_RESIZE_MAX_WIDTH, Math.max(minimumConditionWidth, rawConditionWidth)),
-        );
-        const previewWidth = Math.max(basePreviewWidth, conditionWidth - labelWidth - conditionChromeWidth);
-        const widthClassName = createRuntimeClassName('condition-item-width', field.id);
-        const labelClassName = createRuntimeClassName('condition-item-label', field.id);
-        const previewClassName = createRuntimeClassName('condition-item-preview', field.id);
-
-        return [
-          createRuntimeDeclarationBlock(widthClassName, { width: conditionWidth, 'min-width': conditionWidth }),
-          createRuntimeDeclarationBlock(labelClassName, { width: labelWidth, 'min-width': labelWidth }),
-          createRuntimeDeclarationBlock(previewClassName, { width: previewWidth, 'min-width': previewWidth }),
-        ];
-      }),
-    ]);
-    const getConditionDisplayRow = (field: any) => clampValue(
-      Number.isFinite(Number(field?.panelRow)) ? Number(field.panelRow) : CONDITION_PANEL_MIN_ROWS,
-      CONDITION_PANEL_MIN_ROWS,
-      currentConditionWorkbenchConfig.rows,
-    );
-    const handleConditionCardSelect = (fieldId: string, event?: React.MouseEvent | React.KeyboardEvent) => {
-      const allowMulti = Boolean(event && ('ctrlKey' in event) && (event.ctrlKey || event.metaKey));
-      const setSelectedIds = activeDocumentConditionConfig.setSelectedIds;
-
-      setBuilderSelectionContextMenu(null);
-      if (allowMulti) {
-        setSelectedIds((prev) => (
-          prev.includes(fieldId) ? prev.filter((item) => item !== fieldId) : [...prev, fieldId]
-        ));
-      } else {
-        setSelectedIds([fieldId]);
-      }
-
-      if (activeDocumentConditionScope === 'left') {
-        setSelectedArchiveNodeId('archive-left-filter');
-      } else {
-        setSelectedArchiveNodeId('archive-filter');
-      }
-      activeDocumentConditionConfig.onActivate(fieldId);
-    };
-    const handlePanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
-      activateConditionPanelSelection(activeDocumentConditionScope);
-    };
-    const startConditionResize = (event: React.MouseEvent<HTMLDivElement>, fieldId: string) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const targetIndex = activeDocumentConditionConfig.fields.findIndex((item: any) => item.id === fieldId);
-      if (targetIndex === -1) return;
-
-      const targetField = normalizeConditionField(activeDocumentConditionConfig.fields[targetIndex]);
-      const startX = event.pageX;
-      const startWidth = targetField.width || CONDITION_PANEL_CONTROL_WIDTH;
-      const resizeLabel = targetField.name || '未命名字段';
-      const snapCandidates = getConditionResizeCandidates(fieldId);
-      let latestWidth = startWidth;
-
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-      setActiveResize({ id: fieldId, label: resizeLabel, width: startWidth, mode: 'filter' });
-
-      const handleMouseMove = (moveEvent: MouseEvent) => {
-        const { width } = resolveResizeWidthWithSnap(startWidth + (moveEvent.pageX - startX), {
-          minWidth: CONDITION_PANEL_RESIZE_MIN_WIDTH,
-          maxWidth: CONDITION_PANEL_RESIZE_MAX_WIDTH,
-          snapCandidates,
-        });
-        latestWidth = width;
-        scheduleResizePreview({ id: fieldId, label: resizeLabel, width: latestWidth, mode: 'filter' });
-      };
-
-      const handleMouseUp = () => {
-        clearResizePreview({ id: fieldId, mode: 'filter' });
-        activeDocumentConditionConfig.setFields((prev: any[]) => updateItemWidthById(prev, fieldId, latestWidth));
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-      };
-
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    };
-    const moveConditionField = (fieldId: string, rowNumber: number, beforeId: string | null = null) => {
-      activeDocumentConditionConfig.setFields((prev: any[]) => {
-        const sourceIndex = prev.findIndex((item) => item.id === fieldId);
-        if (sourceIndex === -1) return prev;
-        if (beforeId && beforeId === fieldId) return prev;
-        const nextRow = clampValue(rowNumber, CONDITION_PANEL_MIN_ROWS, currentConditionWorkbenchConfig.rows);
-        const currentField = {
-          ...normalizeConditionField(prev[sourceIndex]),
-          panelRow: nextRow,
-        };
-        const remaining = prev.filter((_, index) => index !== sourceIndex);
-
-        let insertIndex = beforeId ? remaining.findIndex((item) => item.id === beforeId) : -1;
-        if (insertIndex === -1) {
-          insertIndex = remaining.findIndex((item) => (
-            clampValue(
-              Number.isFinite(Number(item?.panelRow)) ? Number(item.panelRow) : CONDITION_PANEL_MIN_ROWS,
-              CONDITION_PANEL_MIN_ROWS,
-              currentConditionWorkbenchConfig.rows,
-            ) > nextRow
-          ));
-          if (insertIndex === -1) {
-            insertIndex = remaining.length;
-          }
-        }
-
-        return [
-          ...remaining.slice(0, insertIndex),
-          currentField,
-          ...remaining.slice(insertIndex),
-        ];
-      });
-    };
-    const updateConditionWorkbenchDropTarget = (nextTarget: { row: number; beforeId: string | null } | null) => {
-      if (
-        conditionWorkbenchDropTarget?.row === nextTarget?.row
-        && conditionWorkbenchDropTarget?.beforeId === nextTarget?.beforeId
-      ) {
-        return;
-      }
-
-      setConditionWorkbenchDropTarget(nextTarget);
-    };
-    const clearConditionWorkbenchDragState = () => {
-      setConditionWorkbenchDrag(null);
-      setConditionWorkbenchDropTarget(null);
-    };
-    const handleConditionWorkbenchDragStart = (event: DragStartEvent) => {
-      const activeData = event.active.data.current;
-      if (!isConditionWorkbenchDragData(activeData) || activeData.type !== 'condition-item' || activeData.scope !== currentScope) {
-        return;
-      }
-
-      setConditionWorkbenchDrag({ scope: activeData.scope, fieldId: activeData.fieldId });
-      setConditionWorkbenchDropTarget(null);
-    };
-    const handleConditionWorkbenchDragOver = (event: DragOverEvent) => {
-      const activeData = event.active.data.current;
-      const overData = event.over?.data.current;
-      if (!isConditionWorkbenchDragData(activeData) || activeData.type !== 'condition-item' || activeData.scope !== currentScope) {
-        return;
-      }
-
-      if (!isConditionWorkbenchDragData(overData) || overData.scope !== currentScope) {
-        updateConditionWorkbenchDropTarget(null);
-        return;
-      }
-
-      if (overData.type === 'condition-item') {
-        if (!('fieldId' in overData) || overData.fieldId === activeData.fieldId) {
-          updateConditionWorkbenchDropTarget(null);
-          return;
-        }
-
-        updateConditionWorkbenchDropTarget({ row: overData.row, beforeId: overData.fieldId });
-        return;
-      }
-
-      updateConditionWorkbenchDropTarget({ row: overData.row, beforeId: null });
-    };
-    const handleConditionWorkbenchDragEnd = (event: DragEndEvent) => {
-      const activeData = event.active.data.current;
-      const overData = event.over?.data.current;
-      if (!isConditionWorkbenchDragData(activeData) || activeData.type !== 'condition-item' || activeData.scope !== currentScope) {
-        clearConditionWorkbenchDragState();
-        return;
-      }
-
-      if (!isConditionWorkbenchDragData(overData) || overData.scope !== currentScope) {
-        clearConditionWorkbenchDragState();
-        return;
-      }
-
-      if (overData.type === 'condition-item') {
-        if ('fieldId' in overData && overData.fieldId !== activeData.fieldId) {
-          moveConditionField(activeData.fieldId, overData.row, overData.fieldId);
-        }
-        clearConditionWorkbenchDragState();
-        return;
-      }
-
-      moveConditionField(activeData.fieldId, overData.row);
-      clearConditionWorkbenchDragState();
-    };
-    const getConditionItemRuntimeClasses = (fieldId: string) => ({
-      widthClassName: createRuntimeClassName('condition-item-width', fieldId),
-      labelClassName: createRuntimeClassName('condition-item-label', fieldId),
-      previewClassName: createRuntimeClassName('condition-item-preview', fieldId),
-    });
-    const getConditionItemClassName = (
-      fieldId: string,
-      options: {
-        dragging?: boolean;
-        insertTarget?: boolean;
-        overlay?: boolean;
-        selected?: boolean;
-      } = {},
-    ) => {
-      const { widthClassName } = getConditionItemRuntimeClasses(fieldId);
-
-      return cn(
-        widthClassName,
-        'h-[44px] gap-1 pr-3.5',
-        getCompactWorkbenchItemClass(options),
-        options.overlay && 'cursor-grabbing',
-      );
-    };
-    const renderConditionItemContent = (
-      field: any,
-      fieldIndex: number,
-      options: {
-        insertTarget?: boolean;
-        selected?: boolean;
-        showResizeHandle?: boolean;
-      } = {},
-    ) => {
-      const { labelClassName, previewClassName } = getConditionItemRuntimeClasses(field.id);
-      const isSelected = options.selected || options.insertTarget;
-
-      return (
-        <>
-          {options.insertTarget ? (
-            <span className="pointer-events-none absolute inset-y-1 left-0 w-[3px] rounded-full bg-primary" />
-          ) : null}
-          <div
-            className={cn(
-              labelClassName,
-              'pointer-events-none shrink-0 text-left text-[11px] font-medium text-foreground',
-            )}
-            title={field.name}
-          >
-            <span className="block truncate">{field.name}</span>
-          </div>
-          <div
-            className={cn(
-              previewClassName,
-              'pointer-events-none min-w-0 shrink-0',
-              isSelected && '[&>div]:border-border/60 [&>div]:bg-background [&>div]:shadow-none',
-            )}
-          >
-            {renderFieldPreview(field, fieldIndex, 'condition')}
-          </div>
-          {options.showResizeHandle !== false ? (
-            <div
-              data-condition-resize-handle="true"
-              className="absolute inset-y-0 right-0 flex w-2 cursor-col-resize items-stretch justify-end"
-              onPointerDown={(event) => event.stopPropagation()}
-              onMouseDown={(event) => {
-                event.stopPropagation();
-                startConditionResize(event, field.id);
-              }}
-              onDoubleClick={(event) => autoFitColumnWidth(
-                event,
-                field.id,
-                activeDocumentConditionConfig.fields,
-                activeDocumentConditionConfig.setFields,
-                CONDITION_PANEL_CONTROL_WIDTH,
-                CONDITION_PANEL_RESIZE_MAX_WIDTH,
-                'filter',
-              )}
-              title="拖动调整条件宽度，双击可自动适配"
-            >
-              <span className="h-full w-px bg-border/80 transition-colors group-hover:bg-primary" />
-            </div>
-          ) : null}
-        </>
-      );
-    };
-
-    return (
-      <div className="shrink-0 px-1 pb-2">
-        <div className="px-1 py-1">
-          {conditionRuntimeRules ? <style>{conditionRuntimeRules}</style> : null}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => activateConditionPanelSelection(activeDocumentConditionScope)}
-            onKeyDown={handlePanelKeyDown}
-            className="space-y-2 outline-none"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className="gap-1.5 rounded-xl border-border/60 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-foreground">
-                  <Filter className="size-3.5 text-primary" />
-                  顶部条件
-                </Badge>
-                <span className="text-[11px] font-medium text-muted-foreground">
-                  {currentScopeLabel} · {currentConditionFields.length} 项
-                </span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5" onClick={(event) => event.stopPropagation()}>
-                  {canSwitchConditionScope ? (
-                    <div className="flex items-center gap-1 rounded-xl border border-border/60 bg-background/75 p-1">
-                      {(['main', 'left'] as const).map((scope) => {
-                        const isActiveScope = activeDocumentConditionScope === scope;
-                        return (
-                          <Button
-                            key={`condition-scope-${scope}`}
-                            size="sm"
-                            variant={isActiveScope ? 'secondary' : 'ghost'}
-                            className={cn(
-                              'h-7 rounded-lg px-2.5 text-[11px] font-medium',
-                              isActiveScope
-                                ? 'bg-primary text-white hover:bg-primary/90 hover:text-white'
-                                : 'text-muted-foreground hover:text-foreground',
-                            )}
-                            onClick={() => handleDocumentConditionScopeSwitch(scope)}
-                          >
-                            {scope === 'left' ? '左条件' : '主条件'}
-                          </Button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                  <Button
-                    size="sm"
-                    className="h-8 gap-1.5 rounded-xl bg-primary px-3 text-white shadow-none hover:bg-primary/90 hover:text-white"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      activeDocumentConditionConfig.onAdd();
-                    }}
-                  >
-                    <Plus className="size-4" />
-                    条件
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      activeDocumentConditionConfig.onDelete();
-                    }}
-                    disabled={activeDocumentConditionConfig.selectedIds.length === 0}
-                  >
-                    <Trash2 className="size-4" />
-                    删除
-                  </Button>
-                </div>
-              </div>
-
-            <div className="overflow-auto">
-              <DndContext
-                sensors={conditionWorkbenchSensors}
-                onDragStart={handleConditionWorkbenchDragStart}
-                onDragOver={handleConditionWorkbenchDragOver}
-                onDragEnd={handleConditionWorkbenchDragEnd}
-                onDragCancel={clearConditionWorkbenchDragState}
-              >
-                <div className={cn(workbenchHeightClass, 'flex flex-col gap-1')}>
-                  {conditionRowNumbers.map((rowNumber) => {
-                    const rowFields = currentConditionFields.filter((field) => getConditionDisplayRow(field) === rowNumber);
-                    const isDropTarget = conditionWorkbenchDrag?.scope === currentScope
-                      && conditionWorkbenchDropTarget?.row === rowNumber
-                      && conditionWorkbenchDropTarget.beforeId === null;
-
-                    return (
-                      <ConditionWorkbenchDropLane
-                        key={`condition-row-${rowNumber}`}
-                        scope={currentScope}
-                        row={rowNumber}
-                        className={cn(
-                          'scrollbar-none flex min-h-[48px] items-center overflow-visible rounded-lg border border-transparent bg-transparent px-0.5 py-1 transition-colors',
-                          isDropTarget && 'border-primary/20 bg-primary/5',
-                          rowFields.length === 0 && 'border-dashed border-border/30 bg-transparent text-muted-foreground',
-                        )}
-                      >
-                        <div className="flex min-w-full items-center">
-                          <div className="flex min-w-0 flex-1 items-center gap-1">
-                            {rowFields.length > 0 ? rowFields.map((field, index) => {
-                              const isActive = activeDocumentConditionConfig.selectedId === field.id;
-                              const isMarked = selectedConditionIds.has(field.id);
-                              const fieldIndex = conditionFieldIndexMap.get(field.id) ?? index;
-                              const isDragging = conditionWorkbenchDrag?.scope === currentScope
-                                && conditionWorkbenchDrag.fieldId === field.id;
-                              const isInsertTarget = conditionWorkbenchDrag?.scope === currentScope
-                                && conditionWorkbenchDrag.fieldId !== field.id
-                                && conditionWorkbenchDropTarget?.row === rowNumber
-                                && conditionWorkbenchDropTarget.beforeId === field.id;
-                              const isSelected = isActive || isMarked || isInsertTarget;
-
-                              return (
-                                <ConditionWorkbenchDraggableItem
-                                  key={field.id}
-                                  scope={currentScope}
-                                  row={rowNumber}
-                                  fieldId={field.id}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleConditionCardSelect(field.id, event);
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (event.key === 'Enter' || event.key === ' ') {
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      handleConditionCardSelect(field.id, event);
-                                    }
-                                  }}
-                                  className={getConditionItemClassName(field.id, {
-                                    dragging: isDragging,
-                                    insertTarget: isInsertTarget,
-                                    selected: isSelected,
-                                  })}
-                                >
-                                  {renderConditionItemContent(field, fieldIndex, {
-                                    insertTarget: isInsertTarget,
-                                    selected: isSelected,
-                                  })}
-                                </ConditionWorkbenchDraggableItem>
-                              );
-                            }) : (
-                              <div className="text-[11px] font-medium text-muted-foreground">
-                                拖入本行
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </ConditionWorkbenchDropLane>
-                    );
-                  })}
-                </div>
-              </DndContext>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const clearBuilderSelectionContextMenu = useCallback(() => {
+    setBuilderSelectionContextMenu(null);
+  }, []);
+  const documentConditionToolbarNode = (
+    <MemoDocumentConditionWorkbench
+      activeScope={activeDocumentConditionScope as ConditionWorkbenchScope}
+      canSwitchScope={Boolean(leftDocumentConditionConfig)}
+      mainConfig={mainDocumentConditionConfig}
+      leftConfig={leftDocumentConditionConfig}
+      activeResize={activeResize}
+      conditionWorkbenchSensors={conditionWorkbenchSensors}
+      onScopeSwitch={handleDocumentConditionScopeSwitch}
+      onActivatePanel={activateConditionPanelSelection}
+      onClearBuilderSelectionContextMenu={clearBuilderSelectionContextMenu}
+      setActiveResize={setActiveResize}
+      scheduleResizePreview={scheduleResizePreview}
+      clearResizePreview={clearResizePreview}
+      autoFitColumnWidth={autoFitColumnWidth}
+    />
+  );
 
   const renderDocumentDetailWorkbench = () => {
     const detailCols = detailTableColumns[activeTab] || [];
@@ -14334,33 +15476,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
               }
             }}
           >
-            {renderTableBuilder(
-              'detail',
-              detailCols,
-              (newCols) => setDetailTableColumns((prev) => ({
-                ...prev,
-                [activeTab]: typeof newCols === 'function' ? newCols(prev[activeTab] || []) : newCols,
-              })),
-              selectedDetailColId,
-              selectedDetailForDelete,
-              setSelectedDetailForDelete,
-              {
-                contextMenuScope: 'detail',
-                contextMenuConfig: {
-                  enabled: Boolean(detailTableConfigs[activeTab]?.contextMenuEnabled),
-                  items: detailTableConfigs[activeTab]?.contextMenuItems ?? [],
-                  },
-                  backgroundSelectable: true,
-                  tableSelected: selectedTableConfigScope === 'detail' && inspectorTarget.id === '表格',
-                  onSelectTable: () => {
-                    setSelectedArchiveNodeId(`detail-${activeTab}`);
-                    activateTableConfigSelection('detail', '表格');
-                  },
-                detailBoardConfig: detailTableConfigs[activeTab]?.detailBoard,
-                canvasLabel: '点击配置明细表属性',
-                density: 'compact',
-              },
-            )}
+            {documentDetailTableBuilderNode}
           </div>
         ) : (
           <div className="min-h-0 flex-1 bg-transparent px-3 pb-3 pt-1">
@@ -14616,7 +15732,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const renderArchiveLayoutEditorModalLegacy = () => {
     if (!isArchiveLayoutEditorOpen) return null;
 
-    const archiveLayoutConfig = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const archiveLayoutConfig = normalizedMainDetailBoardConfig;
     const selectedGroup = archiveLayoutConfig.groups.find((group: any) => group.id === selectedArchiveLayoutGroupId)
       ?? archiveLayoutConfig.groups[0]
       ?? null;
@@ -15055,7 +16171,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const renderArchiveLayoutCanvasModal = () => {
     if (!isArchiveLayoutEditorOpen) return null;
 
-    const archiveLayoutConfig = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const archiveLayoutConfig = normalizedMainDetailBoardConfig;
     const highlightedGroupId = selectedArchiveLayoutGroupId ?? archiveLayoutConfig.groups[0]?.id ?? null;
     const highlightedGroup = archiveLayoutConfig.groups.find((group: any) => group.id === highlightedGroupId) ?? null;
     const assignmentMap = new Map<string, string>();
@@ -15565,7 +16681,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const renderDetailBoardModal = () => {
     if (!isDetailBoardOpen) return null;
 
-    const detailBoardConfig = normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns);
+    const detailBoardConfig = normalizedMainDetailBoardConfig;
     const detailBoardTheme = getDetailBoardTheme(workspaceTheme);
     const sortColumnId = detailBoardSortColumnId || detailBoardConfig.sortColumnId || mainTableColumns[0]?.id || null;
     const detailGroups = detailBoardConfig.groups
@@ -15717,6 +16833,158 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                     </section>
                   );
                 })}
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
+    );
+  };
+
+  const renderMainHiddenColumnsModal = () => {
+    if (!isMainHiddenColumnsModalOpen) return null;
+
+    const hiddenColumns = mainTableHiddenColumns;
+    const selectedCount = selectedMainHiddenColumnIds.length;
+
+    return (
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/35 p-6 backdrop-blur-sm"
+          onClick={closeMainHiddenColumnsModal}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 24, scale: 0.98 }}
+            transition={{ duration: 0.22 }}
+            onClick={(event) => event.stopPropagation()}
+            style={workspaceThemeVars}
+            className="flex h-[78vh] w-full max-w-[860px] flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.995),rgba(245,248,252,0.985))] shadow-[0_60px_140px_-52px_rgba(15,23,42,0.68)] dark:border-slate-700 dark:bg-slate-900"
+          >
+            <div className="border-b border-slate-200 px-6 py-4 dark:border-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-10 items-center justify-center rounded-2xl border border-white/70 bg-white/82 text-[color:var(--workspace-accent)] shadow-[0_16px_28px_-24px_rgba(15,23,42,0.24)] dark:border-white/10 dark:bg-slate-900/58">
+                      <span className="material-symbols-outlined text-[18px]">view_column</span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[17px] font-bold tracking-[-0.02em] text-slate-900 dark:text-white">详细列</div>
+                      <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
+                        隐藏列和宽度为 0 的列会集中显示在这里，勾选后可恢复到主表。
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={closeMainHiddenColumnsModal}
+                  className="inline-flex size-11 items-center justify-center rounded-[18px] border border-white/75 bg-white/80 text-slate-500 transition-colors hover:bg-white dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="scrollbar-none min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,rgba(250,252,255,0.98),rgba(244,247,251,0.96))] px-5 py-4 dark:bg-slate-900">
+              {hiddenColumns.length === 0 ? (
+                <div className="flex h-full min-h-[240px] items-center justify-center rounded-[20px] border border-dashed border-slate-200 bg-white/70 text-center text-slate-400 dark:border-slate-700 dark:bg-slate-950/70">
+                  当前没有可恢复的隐藏列。
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {hiddenColumns.map((column) => {
+                    const normalizedColumn = normalizeColumn(column);
+                    const isSelected = selectedMainHiddenColumnIds.includes(column.id);
+                    const isHidden = normalizedColumn.visible === false;
+                    const isZeroWidth = Number(normalizedColumn.width) <= 0;
+                    const statusTags = [
+                      isHidden ? '隐藏' : null,
+                      isZeroWidth ? '宽度 0' : null,
+                    ].filter(Boolean) as string[];
+
+                    return (
+                      <label
+                        key={column.id}
+                        className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition-colors ${
+                          isSelected
+                            ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)]/70'
+                            : 'border-slate-200 bg-white/86 hover:bg-white dark:border-slate-700 dark:bg-slate-950/70 dark:hover:bg-slate-900'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleMainHiddenColumnSelection(column.id)}
+                          className="mt-1 size-4 rounded border-slate-300 text-[color:var(--workspace-accent)] focus:ring-[color:var(--workspace-accent-soft)]"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="truncate text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+                              {normalizedColumn.name}
+                            </div>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                              {normalizedColumn.type || '文本'}
+                            </span>
+                            {statusTags.map((tag) => (
+                              <span
+                                key={`${column.id}-${tag}`}
+                                className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:bg-amber-500/10 dark:text-amber-200"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+                            <span>宽度 {Math.max(0, Number(normalizedColumn.width) || 0)}px</span>
+                            <span>{normalizedColumn.sourceField || column.id}</span>
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-6 py-4 dark:border-slate-700">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                已选 {selectedCount} / {hiddenColumns.length}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  className="h-9 rounded-xl border-slate-200/80 bg-white/80 px-4 text-[12px] font-semibold text-slate-600"
+                  onClick={closeMainHiddenColumnsModal}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-9 rounded-xl border-slate-200/80 bg-white/80 px-4 text-[12px] font-semibold text-slate-600"
+                  onClick={() => setSelectedMainHiddenColumnIds(hiddenColumns.map((column) => column.id))}
+                  disabled={hiddenColumns.length === 0}
+                >
+                  全选
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-9 rounded-xl px-4 text-[12px] font-semibold"
+                  onClick={() => restoreMainHiddenColumns()}
+                  disabled={selectedCount === 0}
+                >
+                  恢复选中
+                </Button>
+                <Button
+                  className="h-9 rounded-xl px-4 text-[12px] font-semibold"
+                  onClick={() => restoreMainHiddenColumns(hiddenColumns.map((column) => column.id))}
+                  disabled={hiddenColumns.length === 0}
+                >
+                  全部恢复
+                </Button>
               </div>
             </div>
           </motion.div>
@@ -16990,6 +18258,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             {renderLongTextEditorModal()}
             {renderArchiveLayoutCanvasModal()}
             {renderDetailBoardModal()}
+            {renderMainHiddenColumnsModal()}
             {renderBuilderSelectionContextMenu()}
             {renderPreviewContextMenu()}
 
@@ -17579,7 +18848,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
                   {configStep === MODULE_SETTING_STEP && (
                     <motion.div
-                      key={`layout-${businessType}`}
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ duration: 0.4 }}
@@ -17589,7 +18857,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                         {businessType === 'document' ? (
                         <div style={moduleSettingStageStyle} className={`cloudy-glass-stage cloudy-cloud-grid studio-grid-bg flex min-h-0 overflow-hidden rounded-[36px] p-3 ${workspaceThemeStyles.tableSurface} ${moduleSettingStageHeightClass}`}>
                           <div className="min-h-0 min-w-0 flex flex-1 flex-col">
-                            {renderDocumentConditionToolbar()}
+                      {documentConditionToolbarNode}
                             <div className="min-h-0 min-w-0 flex flex-1 overflow-hidden">
                               {isTreePaneVisible && (
                                 <>
@@ -17609,31 +18877,33 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                               <div className="min-h-0 min-w-0 flex-1 px-1">
                                 <div className="grid h-full min-h-0 grid-rows-2 gap-3 overflow-hidden">
                                   <div className="cloudy-glass-panel flex min-h-0 flex-col overflow-hidden rounded-[32px] border border-white/75">
+                                    <div className="flex items-center justify-between border-b border-white/70 px-4 py-3">
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex size-8 items-center justify-center rounded-xl bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]">
+                                          <span className="material-symbols-outlined text-[16px]">table_view</span>
+                                        </div>
+                                        <div>
+                                          <h4 className="text-[12px] font-semibold text-slate-800 dark:text-slate-200">主表字段配置</h4>
+                                          <p className="mt-0.5 text-[11px] text-slate-400">隐藏列与 0 宽列会集中收纳在详细列里</p>
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={openMainHiddenColumnsModal}
+                                        disabled={mainTableHiddenColumns.length === 0}
+                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800"
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">view_column</span>
+                                        详细列 {mainTableHiddenColumns.length > 0 ? `(${mainTableHiddenColumns.length})` : ''}
+                                      </button>
+                                    </div>
                                     <div className="flex h-full min-h-0 flex-col overflow-hidden">
                                       <div
                                         className="scrollbar-none min-h-0 flex-1 overflow-auto bg-white/70 px-3 py-3 outline-none dark:bg-slate-900/90"
                                         tabIndex={0}
                                         onPaste={(e) => handlePasteColumns(e, setMainTableColumns)}
                                       >
-                                      {renderTableBuilder('main', mainTableColumns, setMainTableColumns, selectedMainColId, selectedMainForDelete, setSelectedMainForDelete, {
-                                        contextMenuScope: 'main',
-                                        contextMenuConfig: {
-                                          enabled: (mainTableConfig.contextMenuItems ?? []).length > 0,
-                                          items: mainTableConfig.contextMenuItems ?? [],
-                                        },
-                                        backgroundSelectable: true,
-                                        tableSelected: selectedTableConfigScope === 'main',
-                                        onSelectTable: () => {
-                                          setSelectedArchiveNodeId('archive-main');
-                                          activateTableConfigSelection('main');
-                                        },
-                                        detailBoardConfig: mainTableConfig.detailBoard,
-                                        onCanvasDoubleClick: () => {
-                                          if (normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns).groups.length === 0) return;
-                                          openDetailBoardPreview(1);
-                                        },
-                                        canvasLabel: '点击配置基础档案主表',
-                                      })}
+                                      {archiveMainTableBuilderNode}
                                       </div>
                                     </div>
                                   </div>
@@ -17705,7 +18975,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                                 onPaste={(e) => handlePasteColumns(e, setLeftTableColumns)}
                               >
                                 <div className="px-3 pb-3 pt-2">
-                                  {renderTableBuilder('left', leftTableColumns, setLeftTableColumns, selectedLeftColId, selectedLeftForDelete, setSelectedLeftForDelete)}
+                                  {builderLeftTableBuilderNode}
                                 </div>
                               </div>
                             </div>
@@ -17729,6 +18999,15 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={openMainHiddenColumnsModal}
+                                      disabled={mainTableHiddenColumns.length === 0}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800"
+                                    >
+                                      <span className="material-symbols-outlined text-[14px]">view_column</span>
+                                      详细列 {mainTableHiddenColumns.length > 0 ? `(${mainTableHiddenColumns.length})` : ''}
+                                    </button>
                                     {selectedMainForDelete.length > 0 && (
                                       <button
                                         onClick={() => deleteSelectedColumns('main', selectedMainForDelete)}
@@ -17775,24 +19054,17 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
                                     onDelete: () => deleteSelectedConditions('main', selectedMainFiltersForDelete),
                                   },
                                   undefined,
-                                  { hideActionBar: true },
+                                  {
+                                    hideActionBar: true,
+                                    filterRuntimeRules: mainDocumentFilterRuntimeRules,
+                                  },
                                 )}
                                 <div
                                   className="scrollbar-none min-h-0 flex-1 overflow-auto px-3 pb-3 outline-none"
                                   tabIndex={0}
                                   onPaste={(e) => handlePasteColumns(e, setMainTableColumns)}
                                 >
-                                  {renderTableBuilder('main', mainTableColumns, setMainTableColumns, selectedMainColId, selectedMainForDelete, setSelectedMainForDelete, {
-                                    backgroundSelectable: true,
-                                    tableSelected: selectedTableConfigScope === 'main',
-                                    onSelectTable: () => activateTableConfigSelection('main'),
-                                    detailBoardConfig: mainTableConfig.detailBoard,
-                                    onCanvasDoubleClick: () => {
-                                      if (!normalizeDetailBoardConfig(mainTableConfig.detailBoard, mainTableColumns).enabled) return;
-                                      openDetailBoardPreview(1);
-                                    },
-                                    canvasLabel: '点击配置主表属性',
-                                  })}
+                                  {builderMainTableBuilderNode}
                                 </div>
                               </div>
 

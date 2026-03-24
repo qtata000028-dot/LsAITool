@@ -1920,3 +1920,339 @@
 - 基础档案条件项把标签区和预览区都改成了不拦截指针事件，拖拽命中区回到整个控件主体，只有最右侧细窄热区负责宽度拖动。
 - 单据主单工作台不再维护一套单独的控件语法，而是直接复用条件控件的预览壳、密度、插入语义和 resize 手柄表现，交互已经和基础档案条件对齐。
 - 基础档案详情配置去掉了右侧浮夸的摘要块、数量徽标和多余说明卡，改成更克制的标题、摘要行和表单骨架，阅读负担明显降低。
+## 2026-03-24 系统打不开与框架未运行排查修复
+
+### Requirement Spec
+- 目标：定位“系统无法打开、框架没有运行”的根因，完成修复并将项目成功启动。
+- 影响范围：本地依赖、启动脚本、开发端口占用、前后端运行状态，以及必要时的项目配置文件。
+- 关键约束：
+  - 必须先复现问题并拿到真实报错，不能凭猜测修改。
+  - 若存在端口占用、依赖缺失或脚本问题，优先做最小且可验证的修复。
+  - 完成后需要实际验证前端可打开、后端可响应，而不是只看到进程存在。
+- 不做什么：
+  - 不做无关功能开发。
+  - 不推送远端。
+  - 不在未验证前宣称已恢复。
+- 成功标准：
+  - 项目启动命令可正常运行。
+  - 浏览器可打开系统首页。
+  - 必要的后端健康接口可响应，或能明确说明仍存在哪个阻塞点。
+
+### Checklist
+- [ ] 检查当前工作区状态、启动入口和依赖前置条件。
+- [ ] 复现“打不开/框架未运行”的问题并记录报错。
+- [ ] 修复根因并重新启动项目。
+- [ ] 验证前端可访问、后端可响应。
+- [ ] 回写验证记录与结果复盘。
+
+### Risks / Assumptions
+- 假设用户描述的“框架没有运行”指前端 Vite、后端 Node 服务或它们的依赖/端口条件未满足。
+- 若当前系统已有旧进程占用默认端口，需先清理后再判断是不是代码问题。
+- 当前分支工作区应尽量保持最小改动；若只需运行而无需改代码，应避免无意义编辑。
+
+### Verification
+- Pending.
+
+### Result Notes
+- Pending.
+# 2026-03-24 主表隐藏列恢复与条件拖动优化
+
+### Requirement Spec
+- 目标：主表/单据列宽为 `0` 或已隐藏的字段不再参与表格渲染，避免干扰拖动与排版；在右侧主表配置区域增加“详细列”入口，把隐藏列与零宽列集中到弹窗里，支持勾选后重新加入。
+- 目标：条件 workbench 拖动时减少网页卡顿，优先从状态更新频率和重渲染范围入手，而不是只调小阈值。
+- 影响范围：`src/components/Dashboard.tsx` 的表格列渲染、主表工具栏、条件 workbench 拖拽链路与派生数据。
+- 关键约束：
+  - 不能破坏现有列编辑、删除、双击调宽和详情配置逻辑。
+  - 恢复隐藏/零宽列后需要给出可见宽度，避免再次“恢复即看不见”。
+  - 条件拖动优化必须保留现有拖拽语义和选中语义。
+- 不做什么：
+  - 不改后端接口。
+  - 不重构整个工作台布局。
+  - 不新增第二套列管理体系。
+
+### 执行清单
+- [x] 梳理主表列的“可见/隐藏/零宽”判定，确认只在渲染层过滤可见列。
+- [x] 在主表配置工具栏加“详细列”按钮，并实现隐藏列/零宽列弹窗。
+- [x] 实现勾选恢复逻辑，恢复时补充可见宽度并重新写回主表列状态。
+- [x] 优化条件 workbench 的派生数据和拖动状态更新频率，减少拖动时的整页重渲染。
+- [x] 运行 `npm run lint`。
+- [x] 用浏览器验证：零宽列不再显示、弹窗可恢复、条件拖动链路已改为节流更新。
+
+### 进度标记
+- [x] 需求规格已确认
+- [x] 代码实现中
+- [x] 已验证
+- [x] 可交付
+
+### 验证记录
+- `npm run lint` 通过。
+- 浏览器验证：进入 `模块设置` 后，主表区域显示“详细列”按钮，弹窗列出了隐藏列与 0 宽列，点击“恢复选中”后弹窗关闭，按钮计数归零，主表字段数回到 17。
+- 浏览器验证：控制台仅剩 `favicon.ico 404`，无新增应用错误。
+- 条件 workbench 拖动优化已改为 `requestAnimationFrame` 节流更新，减少 `dragover` 状态抖动；本次未做量化性能基准。
+
+### 结果复盘
+- 这次的关键点不是再堆一个配置入口，而是把“不可见列”从表格渲染主链路里剥离出去，避免 0 宽列继续干扰拖动和布局。
+- 条件拖动卡顿的处理也没有靠阈值拍脑袋降频，而是把高频 `dragover` 更新收敛到每帧一次，并把条件工作台的派生数据前置缓存，降低重渲染成本。
+- 目前功能已验证可用，但拖动性能只做了链路级优化和交互验证，后续如果还觉得卡，可以再加一轮定量 profiling。
+
+## 2026-03-24 配置界面卡顿根因分析
+
+### Requirement Spec
+- 目标：先定位当前“列切换、表格切换、条件拖动都发卡”的根因，不急着改实现。
+- 影响范围：`src/components/Dashboard.tsx` 中的主表、详情、条件 workbench、文档模式工具栏与渲染入口。
+- 关键约束：
+  - 先分析，不做功能改动。
+  - 结论要能解释为什么本机性能不差但仍然卡顿。
+  - 必须基于代码结构和运行态证据，不靠猜测。
+- 不做什么：
+  - 不拆分组件。
+  - 不改状态模型。
+  - 不新增交互。
+- 成功标准：
+  - 明确指出主要瓶颈来自哪里。
+  - 给出后续优化优先级，而不是只说“代码太大”。
+
+### Checklist
+- [x] 回顾 `tasks/lessons.md`，避免重复踩之前已经确认过的性能/结构问题。
+- [x] 统计 `Dashboard.tsx` 的文件规模、状态数量和重复派生调用次数。
+- [x] 检查主渲染树是否仍由单个大组件承载。
+- [x] 读取文档模式工具栏和条件 workbench 的高频计算路径。
+- [ ] 如需进一步定量 profiling，再补浏览器采样或性能计数。
+
+### 进度标记
+- [x] 需求规格已确认
+- [x] 初步根因已定位
+- [ ] 后续优化方案待执行
+- [ ] 量化 profiling 待补
+
+### 验证记录
+- `src/components/Dashboard.tsx` 约 `17550` 行。
+- 文件内 `useState` 约 `36` 处，`useMemo` 约 `20` 处，`useCallback` 为 `0`。
+- `normalizeDetailBoardConfig(` 出现 `17` 次，`renderTableBuilder(` 出现 `8` 次。
+- `renderDocumentGridToolbar` 会在每次渲染时重建 `filterRuntimeRules`，条件和列宽相关的派生逻辑都在同一层执行。
+- `renderDocumentConditionToolbar` 里仍包含拖拽状态、命中区更新、样式派生和 runtime CSS 生成，说明高频交互路径没有完全拆出去。
+
+### 结果复盘
+- 当前卡顿更像是“单个巨型组件把所有状态和派生都绑在一起”带来的连锁重渲染，而不是某一个拖拽函数单独慢。
+- 列/表格切换之所以体感明显，是因为它们触发的状态更新会让整页渲染树重新执行，而不是局部面板刷新。
+- 后续真正有效的优化方向应是先拆高频面板，再把重复派生统一缓存，最后再考虑虚拟化或更细粒度的 memo 化。
+
+## 2026-03-24 Dashboard Phase 1 性能重构
+
+### Requirement Spec
+- 目标：按分阶段方案先完成 Phase 1，只处理硬重挂载与核心派生缓存，不改业务逻辑和数据结构。
+- 影响范围：`src/components/Dashboard.tsx` 中 `MODULE_SETTING_STEP` 的容器切换、主表详情布局派生、主表可渲染列派生、文档工具栏 `filterRuntimeRules`。
+- 关键约束：
+  - 不能改变现有交互语义、状态字段和配置数据结构。
+  - 这阶段不拆组件，不引入 `React.memo` 子组件。
+  - 这阶段只交付最小性能补丁和可核对 diff。
+- 不做什么：
+  - 不进入 Phase 2 的组件拆分。
+  - 不改拖拽状态模型。
+  - 不调整 UI 样式和动画策略。
+- 成功标准：
+  - `businessType` 切换时不再因为 `key` 触发整块容器硬重挂载。
+  - 主表详情布局派生和可渲染列过滤从重复即时计算改为缓存复用。
+  - 文档工具栏的 `filterRuntimeRules` 改为 memo 化派生。
+
+### Checklist
+- [x] 调整 `motion.div`，移除基于 `businessType` 的硬重挂载 key。
+- [x] 提取主表详情布局 `useMemo` 派生。
+- [x] 提取主表可渲染列与隐藏列 `useMemo` 派生。
+- [x] 提取文档工具栏 `filterRuntimeRules` 的 memo 化派生并接入调用点。
+- [x] 运行 `npm run lint` 验证 Phase 1 没有破坏类型和语法。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `MODULE_SETTING_STEP` 的 `motion.div` 已移除基于 `businessType` 的 `key`，避免业务类型切换时强制整块容器重挂载。
+- 主表详情布局已收敛为单一 `normalizedMainDetailBoardConfig` memo，并接入主表配置工作台、详情预览弹窗、主表分组布局弹窗和相关选中同步逻辑。
+- 主表列可见/隐藏分流已改为单次 memo 派生，`renderTableBuilder` 支持直接消费缓存后的 `renderableColumns`。
+- 文档模式主表工具栏的 `filterRuntimeRules` 已改为 `mainDocumentFilterRuntimeRules` memo，并通过参数传给 `renderDocumentGridToolbar`。
+
+### Result Notes
+- Phase 1 仍然保持单体组件结构，没有提前进入组件拆分，所以业务风险低，适合先验证重渲染是否下降。
+- 这轮重点不是“彻底解决所有卡顿”，而是先把最明显的重复派生和硬重挂载点拿掉，为 Phase 2 的组件隔离创造前提。
+
+## 2026-03-24 Dashboard Phase 2 首轮隔离与运行恢复
+
+### Requirement Spec
+- 目标：在 Phase 1 基础上继续做低风险隔离，先把文档工具栏从大组件里抽成 memo 子组件，并稳定高频选择/拉宽回调；同时恢复被 Phase 1 初始化顺序问题破坏的运行态。
+- 影响范围：`src/components/Dashboard.tsx` 的文档工具栏、主表/条件/表格选择回调、运行时公共 helper。
+- 关键约束：
+  - 不改业务逻辑和数据结构。
+  - 优先保证项目重新可运行，再继续做组件隔离。
+  - 本轮不硬拆 `renderDocumentConditionToolbar`。
+- 成功标准：
+  - 前端首页可正常打开，不再出现 `clampValue` 初始化报错。
+  - 文档工具栏改成 `React.memo` 子组件，父树无关重渲染时可被短路。
+  - 主表/条件/表格选择与列宽回调具备稳定引用，便于后续继续拆分。
+
+### Checklist
+- [x] 抽离文档工具栏为 `React.memo` 子组件。
+- [x] 用 `useCallback` 稳定核心选择与 resize 回调。
+- [x] 修复 `clampValue` 初始化顺序导致的运行时崩溃。
+- [x] 重新验证 `lint`、`build`、前端首页和后端健康接口。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+- `http://127.0.0.1:3000`：返回 `200`，浏览器页面标题为 `Ls AI 开发平台`。
+- `http://127.0.0.1:3001/api/ai/health`：返回 `{"configured":true,"model":"MiniMax-M2.7"}`。
+- Playwright 复验：首页已能正常渲染，`clampValue` 运行时错误已消失。
+
+### Result Notes
+- 这轮先挑了最容易隔离、又确实高频的 `renderDocumentGridToolbar`，通过 `React.memo` 和自定义比较器先把工具栏从父级无关渲染里摘出来。
+- Phase 1 引入的 `clampValue` TDZ 问题已经通过模块级函数声明修复，现在项目重新回到可运行状态。
+- 后续再继续拆 `renderTableBuilder` 和条件 workbench 时，已经有稳定回调和浏览器验证基线，不需要再在坏状态上推进。
+
+## 2026-03-24 Dashboard Phase 2 第二轮表格构建链路优化
+
+### Requirement Spec
+- 目标：继续压缩 `renderTableBuilder` 带来的大块 JSX 重建成本，但仍然避免一次性硬拆过多子组件。
+- 影响范围：`src/components/Dashboard.tsx` 中 document/tree/table 分支下对 `renderTableBuilder` 的主要调用点，以及这些调用点依赖的选择回调。
+- 关键约束：
+  - 不改表格业务逻辑、拖拽语义和右侧检查器链路。
+  - 优先做 memo 化节点和稳定回调，不在本轮硬拆完整的 `MemoTableBuilder` 外部组件。
+  - 维持当前可运行状态，防止再次引入初始化顺序问题。
+- 成功标准：
+  - 主表/左表/明细表的主要 `renderTableBuilder` 节点不再因为无关状态而每次重新组装。
+  - 对应选择回调不再在 JSX 内反复创建。
+
+### Checklist
+- [x] 梳理 `renderTableBuilder` 的高价值调用点和依赖。
+- [x] 提取关键表格节点的 `useMemo` 缓存。
+- [x] 提取对应的 `useCallback` 选择/预览回调。
+- [x] 重新验证 `lint`、`build` 和页面运行。
+
+### Risks / Assumptions
+- 假设当前最重的体感卡顿仍然来自 document/tree 分支里重复重组的表格构建节点，而不是某一个孤立的副作用。
+- 本轮只做“稳定引用 + 节点 memo”，不贸然外提完整表格组件，避免在 1.7 万行单体组件里再次引入初始化顺序问题。
+- 如果某些表格节点依赖过多临时变量，优先收敛最常用的主表/左表/详情节点，其余热点留到下一轮继续拆。
+
+### Execution Notes
+- 先锁定 `MODULE_SETTING_STEP` 里 document/tree 的主表、左表和主明细表调用点。
+- 把 JSX 内联的 `onSelectTable` / `onCanvasDoubleClick` 之类回调改成 `useCallback`。
+- 再用 `useMemo` 缓存主要 `renderTableBuilder(...)` 返回节点，减少无关状态触发的重复组装。
+
+### Progress
+- [x] 规格与本轮边界已确认
+- [x] 调用点梳理中
+- [x] 代码改造中
+- [x] 验证中
+- [x] 结果回写
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+- `http://127.0.0.1:3000`：返回 `200`。
+- `http://127.0.0.1:3001/api/ai/health`：返回 `{"configured":true,"model":"MiniMax-M2.7"}`。
+- Playwright 复验：
+  - 打开 `http://127.0.0.1:3000` 后首页正常渲染，标题为 `Ls AI 开发平台`。
+  - 打开 `http://127.0.0.1:3000/?config=1&step=5&mode=document` 后，模块设置 document 分支里的主表、条件和明细工作台正常渲染。
+  - `browser_console_messages(level="error")` 返回 `0`，本轮未引入新的运行时错误。
+
+### Result Notes
+- 这轮没有硬拆整块 `renderTableBuilder`，而是先把它收成稳定的 `useCallback`，再把 document/tree/bill 分支里最重的主表、左表、明细表节点改成 `useMemo`，让它们只在自身依赖变化时重组。
+- 同时把几个原来写在 JSX 里的 `onSelectTable` / `onCanvasDoubleClick` 回调改成了稳定的 `useCallback`，避免 memo 节点被内联函数持续打穿。
+- 当前最值得继续拆的热点已经更集中到条件 workbench 本身和 `renderTableBuilder` 内部的大段表头/画布 JSX；下一轮可以顺着这两个点继续做真正的 `React.memo` 子组件化。
+
+## 2026-03-24 Dashboard Phase 2 第三轮表格构建器组件隔离
+
+### Requirement Spec
+- 目标：把 `renderTableBuilder` 从 `Dashboard` 父组件里提成真正的 memo 子组件，进一步降低 document/tree/bill 多个表格工作台对父级无关状态的重渲染。
+- 影响范围：`src/components/Dashboard.tsx` 里的表格构建器实现、主表/左表/明细表调用点，以及相关 props 传递。
+- 关键约束：
+  - 不改表格业务逻辑、交互语义和现有数据结构。
+  - 不顺手改条件 workbench，继续把范围收在 table builder。
+  - 抽离后仍要保留 TypeScript 类型完整性，并通过真实浏览器验证。
+- 成功标准：
+  - `renderTableBuilder` 的大段 JSX 不再跟着父组件一起重算，而是由 `React.memo` 子组件按 props 粒度控制刷新。
+  - document/tree/bill 分支调用点全部切到新组件，运行态与现有行为保持一致。
+
+### Checklist
+- [x] 梳理 `renderTableBuilder` 需要外传的 props 和 helper 边界。
+- [x] 提取 `React.memo` 的 `TableBuilder` 子组件并补齐类型。
+- [x] 切换现有调用点，删除父组件内旧的 `renderTableBuilder` 闭包实现。
+- [x] 运行 `lint`、`build` 并做浏览器 document 模式回归验证。
+
+### Risks / Assumptions
+- 假设当前 `renderTableBuilder` 足够自洽，主要成本来自 JSX 本体而不是某个必须留在父层的副作用。
+- 子组件比较器不能过度复杂，否则会用比较成本换回渲染成本；优先依赖 React 的浅比较和稳定 props。
+- 若抽离过程中暴露出新的 TDZ 或 helper 依赖顺序问题，本轮优先回到“模块级 helper + 显式 props”的稳态，而不是继续把闭包逻辑塞回父组件。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+- Playwright 复验：打开 `http://127.0.0.1:3000/?config=1&step=5&mode=document` 后，document 模式主表、条件条和明细工作台均正常渲染。
+- `browser_console_messages(level="error")`：返回 `0`，未引入新的运行时错误。
+
+### Result Notes
+- 这轮把表格构建器提成了真正的 `MemoTableBuilder` 子组件，主表、左表、明细表不再跟着父级状态一起重算大段 JSX。
+- 为了让模块级子组件能独立运行，相关的纯 helper 边界已经显式化，后续继续拆别的热点时不需要再依赖父组件闭包。
+
+## 2026-03-24 Dashboard Phase 3 条件 Workbench 高频状态隔离
+
+### Requirement Spec
+- 目标：继续优化 `src/components/Dashboard.tsx` 中 document 条件 workbench，把拖拽和落点这类高频状态从父组件下放到独立子组件，减少整页跟随重渲染。
+- 影响范围：条件 workbench 的拖拽渲染链路、条件 scope 配置对象、相关选择与 resize 回调。
+- 关键约束：
+  - 不改条件业务逻辑、数据结构和现有交互语义。
+  - 优先做组件隔离和稳定 props，不顺手改其他面板。
+  - 必须保留 TypeScript 类型完整性，并做真实浏览器回归。
+- 不做什么：
+  - 不改右侧检查器表单。
+  - 不重写条件拖拽库或交互模型。
+  - 不继续扩大到详情工作台和别的编辑器弹窗。
+- 成功标准：
+  - 条件 workbench 拖拽不再通过父组件 state 驱动整页重渲染。
+  - 条件 workbench 可由 `React.memo` 子组件独立刷新。
+  - `lint`、`build` 和 document 模式浏览器验证全部通过。
+
+### Checklist
+- [x] 梳理条件 workbench 依赖的配置对象、回调和高频局部状态。
+- [x] 抽离条件 workbench 为独立 `React.memo` 子组件。
+- [x] 把拖拽/落点状态和相关 cleanup 移到子组件内部。
+- [x] 稳定主条件/左条件配置对象与必要回调。
+- [x] 运行 `lint`、`build` 和浏览器 document 模式回归验证。
+
+### Risks / Assumptions
+- 假设当前 document 条件条的主要卡顿，仍然来自父组件承担拖拽期 state 更新，而不是 `dnd-kit` 本身的算法瓶颈。
+- 子组件隔离后，如果 props 仍然频繁变化，收益会被打穿；因此必须同时处理配置对象和函数引用稳定性。
+- 本轮如果出现运行态回归，优先保住 document 主/左条件正常渲染和拖拽，再考虑进一步细拆。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+- Playwright 复验：打开 `http://127.0.0.1:3000/?config=1&step=5&mode=document` 后，顶部条件、主表、明细工作台和右侧检查器均正常显示。
+- `browser_console_messages(level="error")`：返回 `0`。
+
+### Result Notes
+- document 条件 workbench 已提成独立的 `MemoDocumentConditionWorkbench`，拖拽/落点状态和 `requestAnimationFrame` 落点同步都下放到了子组件内部。
+- 主条件/左条件配置对象改成了稳定的 `useMemo`，相关 `onAdd` / `onDelete` / `onActivate` 改成了稳定回调，避免 `React.memo` 因 props 抖动失效。
+- 当前最值得继续优化的热点已经收敛到更细的画布内部，例如表格 header/canvas 进一步拆片，以及 detail workbench 的局部状态隔离。
+
+## 2026-03-24 性能优化阶段性提交与继续推进
+
+### Requirement Spec
+- 目标：先把当前已经验证通过的 Dashboard 性能优化结果整理成一次阶段性提交并推送到当前分支，然后继续下一轮热点优化。
+- 影响范围：本轮只提交已验证通过的性能重构文件，不混入用户本地的后端/Vite 环境改动；推送后继续在 `Dashboard.tsx` 上推进下一块热点。
+- 关键约束：
+  - 提交必须保持干净，只包含本次性能优化相关文件。
+  - 推送前不得跳过 `lint` / `build` / 浏览器验证结果。
+  - 继续优化时仍然不能改业务逻辑和数据结构。
+- 不做什么：
+  - 不把 `server/index.ts`、`vite.config.ts`、`server/local-dev-backend.ts` 这类本地环境改动混入本次 checkpoint。
+  - 不暂停在“已提交”状态。
+- 成功标准：
+  - 当前性能优化成果已成功提交并推送到当前远端分支。
+  - 推送后新的优化轮次已经开始，而不是停留在 checkpoint。
+
+### Checklist
+- [ ] 确认可提交文件范围，只纳入性能优化相关变更。
+- [ ] 提交当前 Dashboard 性能优化 checkpoint。
+- [ ] 推送到当前远端分支。
+- [ ] 继续下一轮热点优化并完成至少一轮验证。
+
+### Risks / Assumptions
+- 假设当前工作区里 `server/index.ts`、`vite.config.ts`、`server/local-dev-backend.ts` 不是本轮性能优化的一部分，应保持在本地不入提交。
+- 若推送失败，优先保住本地 commit，再单独处理远端同步。
