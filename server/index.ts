@@ -8,6 +8,20 @@ const app = express();
 const port = Number(process.env.PORT || 3001);
 const baseUrl = process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1';
 const model = process.env.MINIMAX_MODEL || 'MiniMax-M2.1';
+const businessApiBaseUrl = (process.env.BUSINESS_API_BASE_URL || process.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
+
+const hopByHopHeaders = new Set([
+  'connection',
+  'content-length',
+  'host',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);
 
 type SurveyPlan = {
   summary: string;
@@ -176,6 +190,74 @@ function guessIdentifierFromName(name: string, index: number) {
   }
 
   return sanitizeIdentifier(tokens.join('_'), `field_${index + 1}`);
+}
+
+function buildBusinessProxyUrl(req: express.Request) {
+  return `${businessApiBaseUrl}${req.originalUrl}`;
+}
+
+function buildBusinessProxyHeaders(req: express.Request) {
+  const headers = new Headers();
+
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (!value || hopByHopHeaders.has(key.toLowerCase())) {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        headers.append(key, item);
+      }
+      continue;
+    }
+
+    headers.set(key, value);
+  }
+
+  return headers;
+}
+
+async function forwardBusinessApi(req: express.Request, res: express.Response) {
+  const method = req.method.toUpperCase();
+  const headers = buildBusinessProxyHeaders(req);
+  let body: string | undefined;
+
+  if (method !== 'GET' && method !== 'HEAD' && req.body !== undefined) {
+    if (typeof req.body === 'string') {
+      body = req.body;
+    } else if (Buffer.isBuffer(req.body)) {
+      body = req.body.toString('utf8');
+    } else {
+      body = JSON.stringify(req.body);
+      if (!headers.has('content-type')) {
+        headers.set('content-type', 'application/json');
+      }
+    }
+  }
+
+  try {
+    const upstream = await fetch(buildBusinessProxyUrl(req), {
+      method,
+      headers,
+      body,
+    });
+
+    res.status(upstream.status);
+
+    upstream.headers.forEach((value, key) => {
+      if (!hopByHopHeaders.has(key.toLowerCase())) {
+        res.setHeader(key, value);
+      }
+    });
+
+    const payload = Buffer.from(await upstream.arrayBuffer());
+    res.send(payload);
+  } catch (error) {
+    res.status(502).json({
+      message: error instanceof Error ? error.message : 'Business API proxy request failed.',
+      target: businessApiBaseUrl,
+    });
+  }
 }
 
 async function requestMiniMaxJson(prompt: string) {
@@ -469,6 +551,11 @@ app.post('/api/ai/translate-identifiers', async (req, res) => {
   }
 });
 
+app.use('/api', async (req, res) => {
+  return forwardBusinessApi(req, res);
+});
+
 app.listen(port, () => {
   console.log(`MiniMax API server listening on http://127.0.0.1:${port}`);
+  console.log(`Business API proxy target: ${businessApiBaseUrl}`);
 });

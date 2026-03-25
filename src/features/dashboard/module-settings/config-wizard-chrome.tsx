@@ -1,0 +1,194 @@
+import React from 'react';
+import { motion } from 'framer-motion';
+
+export type ConfigWizardStepItem = {
+  desc: string;
+  id: number;
+  title: string;
+};
+
+type ConfigWizardSidebarProps = {
+  completedSteps: number[];
+  configStep: number;
+  isFullscreenConfigActive: boolean;
+  isTypeStepLocked: boolean;
+  onClose: () => void;
+  onLockedTypeStepSelect: () => void;
+  onStepSelect: (stepId: number) => void;
+  steps: ConfigWizardStepItem[];
+};
+
+export function ConfigWizardSidebar({
+  completedSteps,
+  configStep,
+  isFullscreenConfigActive,
+  isTypeStepLocked,
+  onClose,
+  onLockedTypeStepSelect,
+  onStepSelect,
+  steps,
+}: ConfigWizardSidebarProps) {
+  return (
+    <div className={`shrink-0 overflow-hidden border-r border-slate-200 bg-white shadow-[4px_0_18px_rgba(15,23,42,0.04)] transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${
+      isFullscreenConfigActive ? 'w-0 border-r-0 p-0 opacity-0' : 'w-72 p-5 opacity-100'
+    }`}>
+      <div className="mb-6 flex items-center gap-3">
+        <button
+          onClick={onClose}
+          className="flex size-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:text-slate-900 dark:bg-slate-800 dark:hover:text-white"
+        >
+          <span className="material-symbols-outlined text-xl">close</span>
+        </button>
+        <span className="text-[18px] font-bold tracking-tight text-slate-900 dark:text-white">配置向导</span>
+      </div>
+
+      <div className="relative flex flex-1 flex-col gap-6">
+        <div className="absolute left-[15px] top-4 bottom-6 w-px rounded-full bg-slate-200 dark:bg-slate-800" />
+
+        {steps.map((step) => {
+          const isActive = configStep === step.id;
+          const isCompleted = completedSteps.includes(step.id);
+          const isLocked = isTypeStepLocked && step.id === 1;
+
+          return (
+            <div
+              key={step.id}
+              onClick={() => {
+                if (isLocked) {
+                  onLockedTypeStepSelect();
+                  return;
+                }
+                onStepSelect(step.id);
+              }}
+              className={`relative z-10 flex items-start gap-3 group ${isLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+            >
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all duration-500 ${
+                isLocked
+                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                  : isCompleted
+                    ? isActive
+                      ? 'bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.14)]'
+                      : 'bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.1)]'
+                    : isActive
+                      ? 'bg-primary shadow-[0_0_0_6px_rgba(14,116,144,0.12)] dark:shadow-[0_0_0_6px_rgba(14,116,144,0.24)]'
+                      : 'bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 group-hover:border-primary/50'
+              }`}>
+                {isLocked ? (
+                  <span className="material-symbols-outlined text-[18px]">lock</span>
+                ) : isCompleted ? (
+                  <span className="material-symbols-outlined text-white text-[20px] font-bold">check</span>
+                ) : isActive ? (
+                  <motion.div layoutId="activeNode" className="h-3 w-3 rounded-full bg-white" />
+                ) : (
+                  <span className="text-[12px] font-bold text-slate-400">{step.id}</span>
+                )}
+              </div>
+
+              <div className="mt-0 flex flex-col">
+                <span className={`text-[14px] font-semibold transition-colors duration-300 ${
+                  isActive ? 'text-primary' : isCompleted ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
+                }`}>
+                  {step.title}
+                </span>
+                <span className="mt-1 text-[11px] leading-5 text-slate-500">{step.desc}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+type ConfigWizardFooterProps = {
+  canGoBack: boolean;
+  isConfigFullscreenActive: boolean;
+  nextDisabled: boolean;
+  nextLabel: string;
+  onNext: () => void;
+  onPrevious: () => void;
+  onSave: () => void;
+  onToggleFullscreen: () => void;
+  saveDisabled: boolean;
+  saveLabel: string;
+  showFullscreenToggle: boolean;
+};
+
+export function ConfigWizardFooter({
+  canGoBack,
+  isConfigFullscreenActive,
+  nextDisabled,
+  nextLabel,
+  onNext,
+  onPrevious,
+  onSave,
+  onToggleFullscreen,
+  saveDisabled,
+  saveLabel,
+  showFullscreenToggle,
+}: ConfigWizardFooterProps) {
+  return (
+    <div className="shrink-0 border-t border-slate-200 bg-white/92 px-6 shadow-[0_-8px_24px_rgba(15,23,42,0.04)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/88 lg:px-8">
+      <div className="flex h-20 items-center justify-between gap-4">
+        <button
+          onClick={onPrevious}
+          className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[12px] font-semibold transition-all ${
+            !canGoBack
+              ? 'cursor-not-allowed border-slate-200/80 bg-slate-100/70 text-slate-300 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-600'
+              : 'border-slate-200/80 bg-white/80 text-slate-600 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200'
+          }`}
+          disabled={!canGoBack}
+        >
+          <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+          上一步
+        </button>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            disabled={saveDisabled}
+            onClick={onSave}
+            className={`inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-4 py-2 text-[12px] font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition-all dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200 ${
+              saveDisabled
+                ? 'cursor-not-allowed opacity-60'
+                : 'hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[20px]">save</span>
+            {saveLabel}
+          </button>
+
+          {showFullscreenToggle ? (
+            <button
+              onClick={onToggleFullscreen}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[12px] font-semibold transition-all ${
+                isConfigFullscreenActive
+                  ? 'border-primary/30 bg-primary/10 text-primary shadow-[0_16px_36px_rgba(49,98,255,0.18)]'
+                  : 'border-slate-200/80 bg-white/80 text-slate-600 shadow-[0_12px_32px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[20px]">
+                {isConfigFullscreenActive ? 'fullscreen_exit' : 'fullscreen'}
+              </span>
+              {isConfigFullscreenActive ? '退出全屏' : '全屏配置'}
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={nextDisabled}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-5 py-2 text-[12px] font-semibold text-white shadow-[0_12px_24px_rgba(49,98,255,0.2)] transition-all ${
+              nextDisabled
+                ? 'cursor-not-allowed bg-primary/60'
+                : 'bg-primary hover:-translate-y-0.5 hover:bg-erp-blue'
+            }`}
+          >
+            {nextLabel}
+            {nextLabel !== '完成配置' ? <span className="material-symbols-outlined text-[20px]">arrow_forward</span> : null}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

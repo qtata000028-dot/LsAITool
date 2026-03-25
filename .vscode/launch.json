@@ -2,17 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run App in Edge",
-      "type": "pwa-msedge",
-      "request": "launch",
-      "url": "http://127.0.0.1:3000",
-      "webRoot": "${workspaceFolder}",
-      "preLaunchTask": "ensure-dev-server"
-    },
-    {
-      "name": "Run App in Chrome",
+      "name": "Run App in Installed Chrome",
       "type": "pwa-chrome",
       "request": "launch",
+      "runtimeExecutable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
       "url": "http://127.0.0.1:3000",
       "webRoot": "${workspaceFolder}",
       "preLaunchTask": "ensure-dev-server"
@@ -21,7 +14,7 @@
       "name": "Start Vite Dev Server Only",
       "type": "node-terminal",
       "request": "launch",
-      "command": "npm run dev"
+      "command": "/bin/zsh -lc 'source ~/.zshrc >/dev/null 2>&1 && npm run dev'"
     }
   ]
 }

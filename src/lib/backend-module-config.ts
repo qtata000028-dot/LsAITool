@@ -16,6 +16,7 @@ export type SingleTableModuleFieldDto = Record<string, unknown>;
 export type SingleTableConditionDto = Record<string, unknown>;
 export type SingleTableDetailDto = Record<string, unknown>;
 export type SingleTableGridFieldDto = Record<string, unknown>;
+export type SingleTableDetailChartDto = Record<string, unknown>;
 export type SingleTableColorRuleDto = Record<string, unknown>;
 export type SingleTableContextMenuDto = Record<string, unknown>;
 
@@ -74,6 +75,34 @@ export async function fetchSingleTableFieldGridFields(dllCoId: string, fieldId: 
 
 export async function fetchSingleTableModuleDetails(dllCoId: string) {
   return apiRequest<SingleTableDetailDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/details`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableDetailGridFields(dllCoId: string, detailId: number) {
+  return apiRequest<SingleTableGridFieldDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/details/${detailId}/grid-fields`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableDetailCharts(dllCoId: string, detailId: number) {
+  return apiRequest<SingleTableDetailChartDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/details/${detailId}/charts`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableDetailColors(dllCoId: string, detailId: number) {
+  return apiRequest<SingleTableColorRuleDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/details/${detailId}/colors`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableDetailMenus(dllCoId: string, detailId: number) {
+  return apiRequest<SingleTableContextMenuDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/details/${detailId}/menus`, {
     auth: true,
     method: 'GET',
   });

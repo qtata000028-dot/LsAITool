@@ -23,6 +23,24 @@ export const designerWorkbenchRowEmptyClass =
 export const designerWorkbenchRowActiveClass =
   'border-primary/40 bg-primary/5';
 
+export function getCompactWorkbenchItemClass(options?: {
+  dragging?: boolean;
+  insertTarget?: boolean;
+  selected?: boolean;
+}) {
+  const isSelected = options?.selected || options?.insertTarget;
+
+  return cn(
+    'group relative flex shrink-0 select-none flex-row items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors',
+    options?.dragging ? 'z-20 cursor-grabbing border-primary/35 bg-background/95 shadow-lg shadow-primary/10' : 'cursor-grab active:cursor-grabbing',
+    options?.dragging
+      ? 'border-primary/35 bg-background/95 shadow-lg shadow-primary/10'
+      : isSelected
+        ? 'border-primary/30 bg-background/95 shadow-[inset_0_0_0_1px_rgba(37,99,235,0.08)]'
+        : 'border-transparent bg-transparent hover:border-border/40 hover:bg-background/70',
+  );
+}
+
 export function getDesignerControlItemClass(options?: {
   selected?: boolean;
   placeholder?: boolean;

@@ -88,3 +88,9 @@
   - 如何验证。
   - 是否还有风险或待办。
 
+## 10. Dashboard 专项规则
+
+- 只要改动 `src/components/Dashboard.tsx` 或 `src/features/dashboard/**`，默认必须同时遵守：
+  - [docs/dashboard-architecture-rules.md](/Users/apple/Desktop/未命名文件夹/LsSmartTool/LsAITool/docs/dashboard-architecture-rules.md)
+- 对人和 AI 都一样适用，不允许例外地把新功能继续堆回 `Dashboard.tsx`。
+- 如果确实必须突破该文档约束，提交前必须先在任务文档中明确写清原因、影响范围和回滚方式。

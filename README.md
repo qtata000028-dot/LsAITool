@@ -12,6 +12,8 @@ View your app in AI Studio: https://ai.studio/apps/a3c25e12-bfc6-41a0-ba01-00a09
 
 Team workflow and branch rules are documented in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
+Dashboard architecture evolution rules are documented in [docs/dashboard-architecture-rules.md](./docs/dashboard-architecture-rules.md).
+
 GitHub collaboration files are available in:
 
 - `.github/CODEOWNERS`

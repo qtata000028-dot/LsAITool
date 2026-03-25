@@ -5,7 +5,8 @@ function trimTrailingSlash(value: string) {
 }
 
 const configuredApiBaseUrl = trimTrailingSlash(import.meta.env.VITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL);
+const useSameOriginApi = import.meta.env.VITE_API_SAME_ORIGIN === 'true';
 
 // In local Vite development we route /api through the dev proxy to avoid browser CORS failures.
-export const API_BASE_URL = import.meta.env.DEV ? '' : configuredApiBaseUrl;
+export const API_BASE_URL = import.meta.env.DEV || useSameOriginApi ? '' : configuredApiBaseUrl;
 export const CONFIGURED_API_BASE_URL = configuredApiBaseUrl;

@@ -4,9 +4,10 @@
     {
       "label": "ensure-dev-server",
       "type": "shell",
-      "command": "node",
+      "command": "/bin/zsh",
       "args": [
-        "scripts/ensure-dev-server.mjs"
+        "-lc",
+        "source ~/.zshrc >/dev/null 2>&1 && node scripts/ensure-dev-server.mjs"
       ],
       "problemMatcher": []
     },

@@ -1,0 +1,74 @@
+import type { BuildDashboardConfigBridgeNodesInput } from './dashboard-config-bridge-nodes';
+
+type BuildDashboardConfigBridgeWorkspaceInput = {
+  archiveLayoutState: {
+    activeDetailBoardResize: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['activeDetailBoardResize'];
+    currentDetailBoard: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['currentDetailBoard'];
+    isOpen: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['isOpen'];
+    mainTableColumns: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['mainTableColumns'];
+  };
+  archiveLayoutActions: {
+    onClose: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onClose'];
+    onResetDetailBoardFieldHeight: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onResetDetailBoardFieldHeight'];
+    onResetDetailBoardFieldWidth: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onResetDetailBoardFieldWidth'];
+    onStartDetailBoardFieldHeightResize: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onStartDetailBoardFieldHeightResize'];
+    onStartDetailBoardFieldResize: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onStartDetailBoardFieldResize'];
+    onUpdateDetailBoard: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onUpdateDetailBoard'];
+  };
+  archiveLayoutHelpers: {
+    getDetailBoardFieldLiveHeight: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['getDetailBoardFieldLiveHeight'];
+    getDetailBoardFieldLiveWidth: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['getDetailBoardFieldLiveWidth'];
+    getLayoutFieldWorkbenchMeta: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['getLayoutFieldWorkbenchMeta'];
+    renderFieldPreview: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['renderFieldPreview'];
+  };
+  conditionWorkbenchState: {
+    activeScope: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['activeScope'];
+    canSwitchScope: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['canSwitchScope'];
+    mainConfig: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['mainConfig'];
+    leftConfig: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['leftConfig'];
+  };
+  conditionWorkbenchActions: {
+    onScopeSwitch: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['onScopeSwitch'];
+    onActivatePanel: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['onActivatePanel'];
+  };
+  conditionWorkbenchRuntime: {
+    renderFieldPreview: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['renderFieldPreview'];
+    resize: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['resize'];
+    helpers: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['helpers'];
+    metrics: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['metrics'];
+  };
+  contextMenuState: {
+    builderSelectionContextMenu: BuildDashboardConfigBridgeNodesInput['workspace']['contextMenus']['builderSelectionContextMenu'];
+    previewContextMenu: BuildDashboardConfigBridgeNodesInput['workspace']['contextMenus']['previewContextMenu'];
+  };
+  contextMenuActions: {
+    deleteSelectedColumns: BuildDashboardConfigBridgeNodesInput['workspace']['contextMenus']['deleteSelectedColumns'];
+    deleteSelectedConditions: BuildDashboardConfigBridgeNodesInput['workspace']['contextMenus']['deleteSelectedConditions'];
+    setBuilderSelectionContextMenu: BuildDashboardConfigBridgeNodesInput['workspace']['contextMenus']['setBuilderSelectionContextMenu'];
+    setPreviewContextMenu: BuildDashboardConfigBridgeNodesInput['workspace']['contextMenus']['setPreviewContextMenu'];
+    showToast: BuildDashboardConfigBridgeNodesInput['workspace']['contextMenus']['showToast'];
+  };
+  longTextEditor: BuildDashboardConfigBridgeNodesInput['workspace']['longTextEditor'];
+};
+
+export function buildDashboardConfigBridgeWorkspaceInput(
+  input: BuildDashboardConfigBridgeWorkspaceInput,
+): BuildDashboardConfigBridgeNodesInput['workspace'] {
+  return {
+    archiveLayout: {
+      ...input.archiveLayoutState,
+      ...input.archiveLayoutActions,
+      ...input.archiveLayoutHelpers,
+    },
+    conditionWorkbench: {
+      ...input.conditionWorkbenchState,
+      ...input.conditionWorkbenchActions,
+      ...input.conditionWorkbenchRuntime,
+    },
+    contextMenus: {
+      ...input.contextMenuState,
+      ...input.contextMenuActions,
+    },
+    longTextEditor: input.longTextEditor,
+  };
+}
