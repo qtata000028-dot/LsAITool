@@ -12,6 +12,8 @@
 - 合并前至少自行检查一遍受影响页面和基础构建。
 - 如果改动涉及 `src/components/Dashboard.tsx` 或 `src/features/dashboard/**`，提交前必须先阅读并遵守：
   - [docs/dashboard-architecture-rules.md](/Users/apple/Desktop/未命名文件夹/LsSmartTool/LsAITool/docs/dashboard-architecture-rules.md)
+- 如果改动涉及应用入口、平台边界、登录流或未来平台扩展，提交前必须先阅读：
+  - [docs/frontend-platform-architecture.md](./docs/frontend-platform-architecture.md)
 
 ## 标准流程
 
