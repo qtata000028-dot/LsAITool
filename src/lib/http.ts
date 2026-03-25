@@ -3,6 +3,16 @@ import { getAccessToken } from './auth-session';
 
 type QueryValue = string | number | boolean | null | undefined;
 type ApiBody = BodyInit | object | null | undefined;
+type ApiEnvelope<T> = {
+  code: number | string;
+  data?: T;
+  detail?: unknown;
+  error?: unknown;
+  message?: unknown;
+  msg?: unknown;
+  timestamp?: unknown;
+  traceId?: unknown;
+};
 
 export class ApiError extends Error {
   status: number;
@@ -73,6 +83,35 @@ async function parseResponse(response: Response) {
   return text ? text : null;
 }
 
+function isApiEnvelope<T>(data: unknown): data is ApiEnvelope<T> {
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  const record = data as Record<string, unknown>;
+  return (
+    'code' in record &&
+    ('data' in record || 'message' in record || 'msg' in record || 'traceId' in record || 'timestamp' in record)
+  );
+}
+
+function unwrapApiEnvelope<T>(data: unknown) {
+  if (!isApiEnvelope<T>(data)) {
+    return data as T;
+  }
+
+  const successCode = Number(data.code);
+  if (!Number.isNaN(successCode) && successCode !== 0) {
+    throw new ApiError(
+      extractErrorMessage(data) ?? `请求失败，业务状态码 ${String(data.code)}`,
+      200,
+      data,
+    );
+  }
+
+  return ('data' in data ? data.data : undefined) as T;
+}
+
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const { auth = false, body, headers, query, ...requestInit } = options;
   const requestHeaders = new Headers(headers);
@@ -127,5 +166,5 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     );
   }
 
-  return responseData as T;
+  return unwrapApiEnvelope<T>(responseData);
 }
