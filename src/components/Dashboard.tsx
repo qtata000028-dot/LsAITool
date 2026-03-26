@@ -1,6 +1,7 @@
 ﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMemo } from 'react';
+import { type DesignRouteContext } from '../app/contracts/platform-routing';
 import {
   PointerSensor,
   useDraggable,
@@ -102,6 +103,7 @@ import { useBillFieldResize } from '../features/dashboard/module-settings/use-bi
 import { useBillHeaderWorkbench } from '../features/dashboard/module-settings/use-bill-header-workbench';
 import { ConfigWizardModalShell } from '../features/dashboard/module-settings/config-wizard-modal-shell';
 import { buildDashboardConfigWizardStepNodes } from '../features/dashboard/module-settings/dashboard-config-wizard-step-nodes';
+import { ProcessDesignPanel } from '../features/dashboard/module-settings/process-design-panel';
 import {
   DETAIL_BOARD_FIELD_DEFAULT_HEIGHT,
   DETAIL_BOARD_FIELD_DEFAULT_WIDTH,
@@ -125,13 +127,22 @@ import {
   type RestrictionProcessDesignItem,
   type RestrictionTopStructureItem,
 } from '../features/dashboard/module-settings/restriction-workbench';
+import { createLinearProcessDesignerDocument } from '../features/dashboard/module-settings/process-designer-types';
 import { useDashboardTableBuilderRuntime } from '../features/dashboard/table-builder/use-dashboard-table-builder-runtime';
 import { cn } from '../lib/utils';
+import {
+  buildDesignWorkspacePath,
+  navigateToDesignPath,
+  resolveDesignMenuSelection,
+  resolveDesignModuleSelection,
+  updateCurrentDesignSearch,
+} from '../platforms/design/navigation/design-navigation';
 import { Badge } from './ui/badge';
 
 interface DashboardProps {
   currentUserName: string;
   onLogout: () => void;
+  routeContext?: DesignRouteContext;
 }
 
 type BusinessType = 'document' | 'table' | 'tree';
@@ -903,7 +914,8 @@ const BILL_SOURCE_CONFIG_TYPE_OPTIONS = ['普通来源', '弹窗来源', '明细
 const BILL_SOURCE_TYPE_OPTIONS = ['SQL', '视图', '接口'];
 const MODULE_SETTING_STEP = 5;
 const RESTRICTION_STEP = 6;
-const MODULE_PREVIEW_STEP = 7;
+const PROCESS_DESIGN_STEP = 7;
+const MODULE_PREVIEW_STEP = 8;
 const MAX_CONFIG_STEP = MODULE_PREVIEW_STEP;
 const TABLE_COLUMN_MIN_WIDTH = 48;
 const TABLE_COLUMN_COLLAPSED_RENDER_WIDTH = 1;
@@ -1199,13 +1211,14 @@ type BuilderSelectionContextMenuState = {
   ids: string[];
 } | null;
 
-export default function Dashboard({ currentUserName, onLogout }: DashboardProps) {
+export default function Dashboard({ currentUserName, onLogout, routeContext = {} }: DashboardProps) {
   const debugParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const currentUserAvatarText = currentUserName.trim().slice(0, 1) || '人';
   const debugStepParam = Number(debugParams?.get('step') || 1);
   const initialConfigStep = Number.isFinite(debugStepParam) ? Math.min(MAX_CONFIG_STEP, Math.max(1, debugStepParam)) : 1;
   const initialConfigOpen = debugParams?.get('config') === '1' || debugParams?.has('step') || false;
   const initialDetailPreview = debugParams?.get('detailPreview') === '1';
+  const initialRouteModuleCode = normalizeMenuCode(debugParams?.get('module') || '');
   const initialBusinessType = BUSINESS_TYPE_OPTIONS.some((option) => option.value === debugParams?.get('mode'))
     ? (String(debugParams?.get('mode')) as BusinessType)
     : 'document';
@@ -1340,6 +1353,15 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
+
+  const closeConfigWizard = useCallback(() => {
+    setIsConfigOpen(false);
+    updateCurrentDesignSearch({
+      config: null,
+      module: null,
+      step: null,
+    }, { replace: true });
+  }, []);
 
   const {
     isFullscreenEditor,
@@ -2183,6 +2205,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     permissionScope: '',
     businessType: businessType === 'table' ? '单据' : businessType === 'tree' ? '树形单表' : '单表',
     actionDescription: '',
+    designerDocument: createLinearProcessDesignerDocument(currentModuleName),
     ...overrides,
   });
   const buildRestrictionTopStructure = (index: number, overrides: Partial<RestrictionTopStructureItem> = {}): RestrictionTopStructureItem => ({
@@ -2209,6 +2232,26 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const [restrictionSelection, setRestrictionSelection] = useState<Record<RestrictionConfigTabId, string | null>>(
     () => buildEmptyRestrictionSelection(),
   );
+  const selectedRestrictionProcessDesign = useMemo(
+    () => restrictionProcessDesigns.find((item) => item.id === restrictionSelection.process) ?? restrictionProcessDesigns[0] ?? null,
+    [restrictionProcessDesigns, restrictionSelection.process],
+  );
+  const updateSelectedRestrictionProcessDesign = useCallback((patch: Partial<RestrictionProcessDesignItem>) => {
+    if (!selectedRestrictionProcessDesign) {
+      return;
+    }
+    setRestrictionProcessDesigns((prev) => prev.map((item) => (
+      item.id === selectedRestrictionProcessDesign.id
+        ? { ...item, ...patch }
+        : item
+    )));
+  }, [selectedRestrictionProcessDesign]);
+  const createRestrictionProcessDesignEntry = useCallback(() => {
+    const next = buildRestrictionProcessDesign(restrictionProcessDesigns.length + 1);
+    setRestrictionProcessDesigns((prev) => [...prev, next]);
+    setRestrictionSelection((prev) => ({ ...prev, process: next.id }));
+    showToast('已创建流程设计方案');
+  }, [buildRestrictionProcessDesign, restrictionProcessDesigns.length, showToast]);
   const [documentConditionScope, setDocumentConditionScope] = useState<ConditionWorkbenchScope>('main');
   const [billHeaderWorkbenchConfig, setBillHeaderWorkbenchConfig] = useState<BillHeaderWorkbenchConfig>(
     buildBillHeaderWorkbenchConfig(),
@@ -2411,7 +2454,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     : inspectorTarget.kind === 'main-filter-panel'
       ? 'main'
       : null;
-  const isModuleSettingStep = isConfigOpen && (configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP);
+  const isModuleSettingStep = isConfigOpen && (
+    configStep === MODULE_SETTING_STEP
+    || configStep === RESTRICTION_STEP
+    || configStep === PROCESS_DESIGN_STEP
+  );
   const isConfigFullscreenActive = isModuleSettingStep && isFullscreenConfig;
   const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
   const {
@@ -2659,6 +2706,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     }));
     resetModuleDesignerState();
     setMenuInfoTab('common');
+    if (isConfigOpen) {
+      updateCurrentDesignSearch({
+        mode: nextType,
+      }, { replace: true });
+    }
   };
 
   const updateCurrentMenuDraft = (fieldKey: string, value: ModuleMenuValue) => {
@@ -2688,6 +2740,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     options?: {
       completedSteps?: number[];
       initialStep?: number;
+      moduleCode?: string | null;
     },
   ) => {
     const nextStep = options?.initialStep ?? 1;
@@ -2702,6 +2755,13 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setSurveyPlan(null);
     setSurveyPlanModel('');
     setSurveyError(null);
+
+    updateCurrentDesignSearch({
+      config: true,
+      mode: nextType,
+      module: options?.moduleCode,
+      step: nextStep,
+    }, { replace: true });
   };
 
   const openNewModuleGuide = () => {
@@ -2715,7 +2775,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       subsystemId: toDraftText(selectedSubsystem?.subsysId),
       useFlag: 'true',
     });
-    openModuleGuide('document');
+    openModuleGuide('document', {
+      moduleCode: null,
+    });
   };
 
   const buildCreateModuleRelationPayload = (
@@ -2818,6 +2880,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     openModuleGuide(nextType, {
       completedSteps: [1],
       initialStep: 2,
+      moduleCode: normalizeMenuCode(menu.purviewId) || normalizeMenuCode(menu.code) || menu.id,
     });
     void loadMenuInfoForMenu(menu);
   };
@@ -2884,6 +2947,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
       setMenuConfigDraft(mapSubsystemMenuConfigToDraft(saved));
       setActiveConfigMenu(nextMenuNode);
+      updateCurrentDesignSearch({
+        config: true,
+        module: normalizeMenuCode(nextMenuNode.purviewId) || normalizeMenuCode(nextMenuNode.code) || nextMenuNode.id,
+        step: 2,
+      }, { replace: true });
       setSecondLevelMenus((prev) => {
         const existingIndex = prev.findIndex((item) => item.menuId === nextMenuNode.menuId || item.id === nextMenuNode.id);
         if (existingIndex === -1) {
@@ -2937,7 +3005,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       if (activeConfigMenu?.id === menu.id) {
         setActiveConfigMenu(null);
         setMenuInfoError(null);
-        setIsConfigOpen(false);
+        closeConfigWizard();
       }
 
       setPendingDeleteMenu((prev) => (prev?.id === menu.id ? null : prev));
@@ -2990,6 +3058,20 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       moduleIntroRefs,
       moduleIntroSelectedImageWidth,
     },
+    processDesign: {
+      processDesignNode: (
+        <ProcessDesignPanel
+          currentModuleName={currentModuleName}
+          currentUserName={currentUserName}
+          emptyHint="先创建流程方案，再在这里完成审批流画布和节点属性配置。"
+          mode="wizard"
+          onCreate={createRestrictionProcessDesignEntry}
+          onToast={showToast}
+          onUpdate={updateSelectedRestrictionProcessDesign}
+          processDesign={selectedRestrictionProcessDesign}
+        />
+      ),
+    },
     preview: {
       previewTitle: '模块预览',
     },
@@ -3021,6 +3103,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   const handleConfigStepSelect = (stepId: number) => {
     setConfigStep(stepId);
+    updateCurrentDesignSearch({
+      step: stepId,
+    }, { replace: true });
   };
 
   const handleLockedTypeStepSelect = () => {
@@ -3031,7 +3116,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     if (activeConfigMenu !== null && configStep === 2) {
       return;
     }
-    setConfigStep(Math.max(1, configStep - 1));
+    const nextStep = Math.max(1, configStep - 1);
+    setConfigStep(nextStep);
+    updateCurrentDesignSearch({
+      step: nextStep,
+    }, { replace: true });
   };
 
   const handleConfigNext = () => {
@@ -3049,8 +3138,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const nextStep = configStep + 1;
     if (configStep < MAX_CONFIG_STEP) {
       setConfigStep(nextStep);
+      updateCurrentDesignSearch({
+        step: nextStep,
+      }, { replace: true });
     } else {
-      setIsConfigOpen(false);
+      closeConfigWizard();
     }
   };
 
@@ -3851,6 +3943,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     { id: 4, title: '调研过程', desc: 'AI 深度业务需求分析' },
     { id: MODULE_SETTING_STEP, title: '模块设置', desc: '字段、表单与流程编排' },
     { id: RESTRICTION_STEP, title: '限制措施', desc: '规则、流程与限制配置' },
+    { id: PROCESS_DESIGN_STEP, title: '流程设计', desc: '独立流程设计器与审批向导配置' },
     { id: MODULE_PREVIEW_STEP, title: '模块预览', desc: '实时交互效果演示' }
   ];
   const selectedSubsystem = useMemo(
@@ -3872,14 +3965,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
     try {
       const data = getEnabledMenuNodes(await fetchSubsystemMenuTree());
+      const nextSelection = resolveDesignMenuSelection(data, routeContext);
+
       setSubsystemMenus(data);
-
-      const nextSubsystem = data.find((item) => getEnabledMenuNodes(item.children).length > 0) ?? data[0] ?? null;
-      const nextFirstLevelMenu = getEnabledMenuNodes(nextSubsystem?.children)[0] ?? null;
-
-      setExpandedSubsystemId(nextSubsystem?.id ?? null);
-      setActiveSubsystem(nextSubsystem?.id ?? '');
-      setActiveFirstLevelMenuId(nextFirstLevelMenu?.id ?? '');
+      setExpandedSubsystemId(nextSelection.expandedSubsystemId);
+      setActiveSubsystem(nextSelection.selectedSubsystem?.id ?? '');
+      setActiveFirstLevelMenuId(nextSelection.selectedMenu?.id ?? '');
       setSecondLevelMenus([]);
     } catch (error) {
       setMenuLoadError(getDashboardErrorMessage(error));
@@ -3895,7 +3986,19 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   useEffect(() => {
     void loadSubsystemMenus();
-  }, []);
+  }, [routeContext]);
+
+  useEffect(() => {
+    if (subsystemMenus.length === 0) {
+      return;
+    }
+
+    const nextSelection = resolveDesignMenuSelection(subsystemMenus, routeContext);
+
+    setExpandedSubsystemId(nextSelection.expandedSubsystemId);
+    setActiveSubsystem(nextSelection.selectedSubsystem?.id ?? '');
+    setActiveFirstLevelMenuId(nextSelection.selectedMenu?.id ?? '');
+  }, [routeContext, subsystemMenus]);
 
   useEffect(() => {
     let isActive = true;
@@ -3943,16 +4046,57 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     };
   }, [activeFirstLevelMenu?.menuId, selectedSubsystem]);
 
+  useEffect(() => {
+    if (!initialConfigOpen || !initialRouteModuleCode || activeConfigMenu || secondLevelMenus.length === 0) {
+      return;
+    }
+
+    const nextMenu = resolveDesignModuleSelection(secondLevelMenus, initialRouteModuleCode);
+    if (!nextMenu?.menuId) {
+      return;
+    }
+
+    const moduleTypeProfile = getMenuModuleTypeProfile(nextMenu.moduleType);
+    const nextType = moduleTypeProfile?.businessType ?? initialBusinessType;
+
+    setActiveConfigMenu(nextMenu);
+    setMenuInfoError(null);
+    setIsMenuInfoSaving(false);
+    setMenuConfigDraft(MENU_CONFIG_DEFAULTS);
+    openModuleGuide(nextType, {
+      completedSteps: [1],
+      initialStep: Math.max(2, initialConfigStep),
+      moduleCode: normalizeMenuCode(nextMenu.purviewId) || normalizeMenuCode(nextMenu.code) || nextMenu.id,
+    });
+    void loadMenuInfoForMenu(nextMenu);
+  }, [
+    activeConfigMenu,
+    initialBusinessType,
+    initialConfigOpen,
+    initialConfigStep,
+    initialRouteModuleCode,
+    secondLevelMenus,
+  ]);
+
   const toggleSubsystemExpansion = (subsystemId: string) => {
     setExpandedSubsystemId((prev) => (prev === subsystemId ? null : subsystemId));
   };
 
   const handleFirstLevelMenuClick = (subsystemId: string, menu: BackendMenuNode) => {
+    const clickedSubsystem = subsystemMenus.find((item) => item.id === subsystemId) ?? null;
+
+    setActiveConfigMenu(null);
     setActiveSubsystem(subsystemId);
     setActiveFirstLevelMenuId(menu.id);
+    setIsConfigOpen(false);
+    setMenuInfoError(null);
     setSecondLevelMenus([]);
     setMenuLoadError(null);
     setExpandedSubsystemId(subsystemId);
+    navigateToDesignPath(buildDesignWorkspacePath({
+      menuCode: menu.code,
+      subsystemCode: clickedSubsystem?.subsysCode ?? clickedSubsystem?.code,
+    }));
   };
 
   const activeMenu = activeFirstLevelMenu?.id ?? selectedSubsystem?.id ?? 'workspace';
@@ -4391,7 +4535,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       return;
     }
 
-    if ((configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP) && !moduleSettingFullscreenInitRef.current) {
+    if ((configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP) && !moduleSettingFullscreenInitRef.current) {
       moduleSettingFullscreenInitRef.current = true;
     }
   }, [configStep, isConfigOpen]);
@@ -5631,20 +5775,21 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           isMenuInfoSaving,
           isModuleSettingStep,
           modulePreviewStep: MODULE_PREVIEW_STEP,
+          processDesignStep: PROCESS_DESIGN_STEP,
           moduleSettingStep: MODULE_SETTING_STEP,
           nextDisabled: configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving || activeConfigMenu === null),
           nextLabel: configStep === MODULE_PREVIEW_STEP ? '完成配置' : '下一步',
           restrictionStep: RESTRICTION_STEP,
           saveDisabled: configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving),
           saveLabel: configStep === 2 && isMenuInfoSaving ? (activeConfigMenu ? '保存中...' : '创建中...') : '保存本页',
-          showFullscreenToggle: configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP,
+          showFullscreenToggle: configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP,
         },
         actions: {
           handleConfigNext,
           handleConfigPrevious,
           handleConfigStepSelect,
           handleLockedTypeStepSelect,
-          onClose: () => setIsConfigOpen(false),
+          onClose: closeConfigWizard,
           onSave: () => {
             void handleMenuInfoSave();
           },
@@ -5655,6 +5800,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           menuInfoNode: configWizardStepNodes.menuInfoNode,
           moduleIntroEditorNode: configWizardStepNodes.moduleIntroEditorNode,
           modulePreviewNode: configWizardStepNodes.modulePreviewNode,
+          processDesignNode: configWizardStepNodes.processDesignNode,
           moduleTypeSelectionNode: configWizardStepNodes.moduleTypeSelectionNode,
           surveyPlanningNode: configWizardStepNodes.surveyPlanningNode,
         },
@@ -5924,7 +6070,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         open={isConfigOpen}
         isFullscreenConfigActive={isConfigFullscreenActive}
         isModuleSettingStep={isModuleSettingStep}
-        onClose={() => setIsConfigOpen(false)}
+        onClose={closeConfigWizard}
         toastMessage={toastMessage}
         overlayNodes={dashboardConfigBridgeNodes.configWizardModalNodes.overlayNodes}
         sidebarNode={dashboardConfigBridgeNodes.configWizardModalNodes.sidebarNode}

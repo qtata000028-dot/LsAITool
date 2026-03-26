@@ -43,6 +43,7 @@ type DashboardConfigWizardStepNodesInput = {
     | 'moduleIntroRefs'
     | 'moduleIntroSelectedImageWidth'
   >;
+  processDesign: Pick<BuildConfigWizardStepNodesInput, 'processDesignNode'>;
   preview: Pick<BuildConfigWizardStepNodesInput, 'previewTitle'>;
   survey: Pick<
     BuildConfigWizardStepNodesInput,
@@ -77,6 +78,7 @@ export function buildDashboardConfigWizardStepNodes(
   return buildConfigWizardStepNodes({
     ...input.menuInfo,
     ...input.moduleIntro,
+    ...input.processDesign,
     ...input.preview,
     ...input.survey,
     businessType: input.typeSelection.businessType,
