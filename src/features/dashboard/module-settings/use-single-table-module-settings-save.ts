@@ -236,6 +236,198 @@ function uniquePersistedIds(items: any[]) {
   return Array.from(new Set(items.map((item) => getPersistedId(item)).filter((id): id is number => id != null)));
 }
 
+function normalizeComparableValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeComparableValue(item));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, entryValue]) => entryValue !== undefined)
+        .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+        .map(([key, entryValue]) => [key, normalizeComparableValue(entryValue)]),
+    );
+  }
+
+  return value;
+}
+
+function areBodiesEqual(left: Record<string, unknown>, right: Record<string, unknown>) {
+  return JSON.stringify(normalizeComparableValue(left)) === JSON.stringify(normalizeComparableValue(right));
+}
+
+function getMainFieldIdentityKey(record: any) {
+  const persistedId = getPersistedId(record);
+  if (persistedId != null) {
+    return `id:${persistedId}`;
+  }
+
+  const fieldKey = normalizeLookupKey(stripBraces(toText(record?.backendFieldKey || record?.fieldKey || record?.formKey)));
+  if (fieldKey) {
+    return `fieldKey:${fieldKey}`;
+  }
+
+  const fieldName = normalizeLookupKey(toText(record?.sourceField || record?.fieldname || record?.fieldName));
+  if (fieldName) {
+    return `fieldName:${fieldName}`;
+  }
+
+  return '';
+}
+
+function getConditionIdentityKey(record: any) {
+  const persistedId = getPersistedId(record);
+  if (persistedId != null) {
+    return `id:${persistedId}`;
+  }
+
+  const controlName = normalizeLookupKey(toText(record?.controlname || record?.controlName || record?.sourceField));
+  const formKey = normalizeLookupKey(stripBraces(toText(record?.formkey || record?.formKey)));
+  const sourceId = normalizeLookupKey(toText(record?.sourceid || record?.sourceId));
+  if (controlName || formKey || sourceId) {
+    return `condition:${controlName}:${formKey}:${sourceId}`;
+  }
+
+  return '';
+}
+
+function getGridFieldIdentityKey(record: any) {
+  const persistedId = getPersistedId(record);
+  if (persistedId != null) {
+    return `id:${persistedId}`;
+  }
+
+  const fieldKey = normalizeLookupKey(stripBraces(toText(record?.fieldKey || record?.fieldkey || record?.backendFieldKey)));
+  if (fieldKey) {
+    return `fieldKey:${fieldKey}`;
+  }
+
+  const fieldName = normalizeLookupKey(toText(record?.fieldName || record?.fieldname || record?.sourceField));
+  if (fieldName) {
+    return `fieldName:${fieldName}`;
+  }
+
+  return '';
+}
+
+function getColorIdentityKey(record: any) {
+  const persistedId = getPersistedId(record);
+  if (persistedId != null) {
+    return `id:${persistedId}`;
+  }
+
+  const tab = normalizeLookupKey(toText(record?.tab));
+  const condition = normalizeLookupKey(toText(record?.condition || record?.conditionSql || record?.label));
+  if (tab || condition) {
+    return `color:${tab}:${condition}`;
+  }
+
+  return '';
+}
+
+function getMenuIdentityKey(record: any) {
+  const persistedId = getPersistedId(record);
+  if (persistedId != null) {
+    return `id:${persistedId}`;
+  }
+
+  const menuName = normalizeLookupKey(toText(record?.menuname || record?.menuName || record?.label));
+  const dllName = normalizeLookupKey(toText(record?.dllname || record?.dllName || record?.actionKey));
+  const tab = normalizeLookupKey(toText(record?.tab));
+  if (menuName || dllName || tab) {
+    return `menu:${tab}:${menuName}:${dllName}`;
+  }
+
+  return '';
+}
+
+function getDetailIdentityKey(record: any) {
+  const persistedId = getPersistedId(record);
+  if (persistedId != null) {
+    return `id:${persistedId}`;
+  }
+
+  const tabKey = normalizeLookupKey(stripBraces(toText(record?.tabkey || record?.tabKey || record?.formKey)));
+  if (tabKey) {
+    return `tabKey:${tabKey}`;
+  }
+
+  const detailName = normalizeLookupKey(toText(record?.detailname || record?.detailName || record?.name));
+  if (detailName) {
+    return `detail:${detailName}`;
+  }
+
+  return '';
+}
+
+function getChartIdentityKey(record: any) {
+  const persistedId = getPersistedId(record);
+  if (persistedId != null) {
+    return `id:${persistedId}`;
+  }
+
+  const chartType = normalizeLookupKey(toText(record?.charttype || record?.chartType));
+  const chartTitle = normalizeLookupKey(toText(record?.charttitle || record?.chartTitle));
+  if (chartType || chartTitle) {
+    return `chart:${chartType}:${chartTitle}`;
+  }
+
+  return '';
+}
+
+function findBaselineRecord<T>(baselineRows: T[], currentRow: any, getIdentityKey: (record: any) => string) {
+  const currentKey = getIdentityKey(currentRow);
+  if (!currentKey) {
+    return null;
+  }
+
+  return baselineRows.find((item) => getIdentityKey(item) === currentKey) ?? null;
+}
+
+type SaveDiffedCollectionOptions = {
+  baselineRows: any[];
+  buildBody: (record: any, index: number) => Record<string, unknown>;
+  currentRows: any[];
+  getIdentityKey: (record: any) => string;
+  mapSavedRow: (savedRow: any, index: number, currentRow: any) => any;
+  saveRow: (body: Record<string, unknown>, record: any, index: number) => Promise<any>;
+};
+
+async function saveDiffedCollection({
+  baselineRows,
+  buildBody,
+  currentRows,
+  getIdentityKey,
+  mapSavedRow,
+  saveRow,
+}: SaveDiffedCollectionOptions) {
+  const rows: any[] = [];
+  const pairs: Array<{ current: any; saved: any }> = [];
+
+  for (const [index, record] of currentRows.entries()) {
+    const currentBody = buildBody(record, index);
+    const baselineRecord = findBaselineRecord(baselineRows, record, getIdentityKey);
+
+    if (baselineRecord) {
+      const baselineBody = buildBody(baselineRecord, index);
+      if (areBodiesEqual(currentBody, baselineBody)) {
+        const preservedRow = cloneValue(baselineRecord);
+        rows.push(preservedRow);
+        pairs.push({ current: record, saved: preservedRow });
+        continue;
+      }
+    }
+
+    const savedRow = await saveRow(currentBody, record, index);
+    const mappedRow = mapSavedRow(savedRow, index, record);
+    rows.push(mappedRow);
+    pairs.push({ current: record, saved: mappedRow });
+  }
+
+  return { pairs, rows };
+}
+
 function buildMainFieldBody(record: any, dllCoId: string, index: number) {
   return ensureOptionalId(stripUndefinedEntries({
     ...cloneValue(record),
@@ -566,22 +758,17 @@ export function useSingleTableModuleSettingsSave({
     setIsSaving(true);
 
     try {
-      await saveSingleTableModuleConfig(moduleCode, {
-        dllcoid: moduleCode,
-        toolsname: currentModuleName.trim() || moduleCode,
+      const {
+        rows: savedMainFields,
+        pairs: mainFieldPairs,
+      } = await saveDiffedCollection({
+        baselineRows: baselineRef.current.mainFields,
+        buildBody: (field, index) => buildMainFieldBody(field, moduleCode, index),
+        currentRows: sortByOrderId(mainTableColumns),
+        getIdentityKey: getMainFieldIdentityKey,
+        mapSavedRow: (savedRow, index) => mapMainFieldRecordToColumn(savedRow, index),
+        saveRow: (body) => saveSingleTableModuleField(moduleCode, body),
       });
-
-      const savedMainFieldRows: Record<string, unknown>[] = [];
-      const savedMainFields = [] as any[];
-      const mainFieldPairs = [] as Array<{ current: any; saved: any }>;
-
-      for (const [index, field] of sortByOrderId(mainTableColumns).entries()) {
-        const savedRow = await saveSingleTableModuleField(moduleCode, buildMainFieldBody(field, moduleCode, index));
-        const mappedField = mapMainFieldRecordToColumn(savedRow, index);
-        savedMainFieldRows.push(savedRow);
-        savedMainFields.push(mappedField);
-        mainFieldPairs.push({ current: field, saved: mappedField });
-      }
 
       const ownerKey = normalizeLookupKey(stripBraces(documentConditionOwnerFieldKey));
       const ownerSourceId = normalizeLookupKey(documentConditionOwnerSourceId);
@@ -601,67 +788,67 @@ export function useSingleTableModuleSettingsSave({
       const currentOwnerFieldId = getPersistedId(ownerFieldPair?.saved);
       const currentOwnerFormKey = toText(ownerFieldPair?.saved?.backendFieldKey || ownerFieldPair?.saved?.fieldKey || ownerFieldPair?.saved?.formKey);
 
-      const savedMainConditionRows: Record<string, unknown>[] = [];
-      const savedMainConditions = [] as any[];
-      for (const [index, condition] of sortByOrderId(mainFilterFields).entries()) {
-        const savedRow = await saveSingleTableModuleCondition(moduleCode, buildConditionBody(condition, index));
-        savedMainConditionRows.push(savedRow);
-        savedMainConditions.push(mapConditionRecordToField(savedRow, index));
-      }
+      const { rows: savedMainConditions } = await saveDiffedCollection({
+        baselineRows: baselineRef.current.mainConditions,
+        buildBody: (condition, index) => buildConditionBody(condition, index),
+        currentRows: sortByOrderId(mainFilterFields),
+        getIdentityKey: getConditionIdentityKey,
+        mapSavedRow: (savedRow, index) => mapConditionRecordToField(savedRow, index),
+        saveRow: (body) => saveSingleTableModuleCondition(moduleCode, body),
+      });
 
-      const savedMainColorRows: Record<string, unknown>[] = [];
-      const savedMainColors = [] as any[];
-      for (const [index, colorRule] of sortByOrderId(mainTableConfig?.colorRules ?? []).entries()) {
-        const savedRow = await saveSingleTableModuleColor(moduleCode, buildColorBody(colorRule, moduleCode));
-        savedMainColorRows.push(savedRow);
-        savedMainColors.push(mapColorRule(savedRow, index));
-      }
+      const { rows: savedMainColors } = await saveDiffedCollection({
+        baselineRows: baselineRef.current.mainColors,
+        buildBody: (colorRule) => buildColorBody(colorRule, moduleCode),
+        currentRows: sortByOrderId(mainTableConfig?.colorRules ?? []),
+        getIdentityKey: getColorIdentityKey,
+        mapSavedRow: (savedRow, index) => mapColorRule(savedRow, index),
+        saveRow: (body) => saveSingleTableModuleColor(moduleCode, body),
+      });
 
-      const savedMainMenuRows: Record<string, unknown>[] = [];
-      const savedMainMenus = [] as any[];
-      for (const [index, menu] of sortByOrderId(mainTableConfig?.contextMenuItems ?? []).entries()) {
-        const savedRow = await saveSingleTableModuleMenu(moduleCode, buildMenuBody(menu, moduleCode, index));
-        savedMainMenuRows.push(savedRow);
-        savedMainMenus.push(mapContextMenuItem(savedRow, index));
-      }
+      const { rows: savedMainMenus } = await saveDiffedCollection({
+        baselineRows: baselineRef.current.mainMenus,
+        buildBody: (menu, index) => buildMenuBody(menu, moduleCode, index),
+        currentRows: sortByOrderId(mainTableConfig?.contextMenuItems ?? []),
+        getIdentityKey: getMenuIdentityKey,
+        mapSavedRow: (savedRow, index) => mapContextMenuItem(savedRow, index),
+        saveRow: (body) => saveSingleTableModuleMenu(moduleCode, body),
+      });
 
       let savedLeftConditions = cloneValue(leftFilterFields);
       let savedLeftColumns = cloneValue(leftTableColumns);
       let savedLeftColors = cloneValue(leftTableConfig?.colorRules ?? []);
 
       if (currentOwnerFieldId != null && currentOwnerFieldId > 0) {
-        const nextLeftConditions: any[] = [];
-        for (const [index, condition] of sortByOrderId(leftFilterFields).entries()) {
-          const savedRow = await saveSingleTableFieldCondition(
-            moduleCode,
-            currentOwnerFieldId,
-            buildConditionBody(condition, index, currentOwnerFieldId, currentOwnerFormKey),
-          );
-          nextLeftConditions.push(mapConditionRecordToField(savedRow, index, {
+        const { rows: nextLeftConditions } = await saveDiffedCollection({
+          baselineRows: baselineRef.current.fieldConditionsByFieldId[currentOwnerFieldId] ?? [],
+          buildBody: (condition, index) => buildConditionBody(condition, index, currentOwnerFieldId, currentOwnerFormKey),
+          currentRows: sortByOrderId(leftFilterFields),
+          getIdentityKey: getConditionIdentityKey,
+          mapSavedRow: (savedRow, index) => mapConditionRecordToField(savedRow, index, {
             sourceid: currentOwnerFieldId,
             formKey: currentOwnerFormKey,
-          }));
-        }
+          }),
+          saveRow: (body) => saveSingleTableFieldCondition(moduleCode, currentOwnerFieldId, body),
+        });
 
-        const nextLeftColumns: any[] = [];
-        for (const [index, column] of sortByOrderId(leftTableColumns).entries()) {
-          const savedRow = await saveSingleTableFieldGridField(
-            moduleCode,
-            currentOwnerFieldId,
-            buildGridFieldBody(column, currentOwnerFieldId),
-          );
-          nextLeftColumns.push(mapFieldGridFieldToColumn(savedRow, index, column));
-        }
+        const { rows: nextLeftColumns } = await saveDiffedCollection({
+          baselineRows: baselineRef.current.fieldGridFieldsByFieldId[currentOwnerFieldId] ?? [],
+          buildBody: (column) => buildGridFieldBody(column, currentOwnerFieldId),
+          currentRows: sortByOrderId(leftTableColumns),
+          getIdentityKey: getGridFieldIdentityKey,
+          mapSavedRow: (savedRow, index, column) => mapFieldGridFieldToColumn(savedRow, index, column),
+          saveRow: (body) => saveSingleTableFieldGridField(moduleCode, currentOwnerFieldId, body),
+        });
 
-        const nextLeftColors: any[] = [];
-        for (const [index, colorRule] of sortByOrderId(leftTableConfig?.colorRules ?? []).entries()) {
-          const savedRow = await saveSingleTableFieldColor(
-            moduleCode,
-            currentOwnerFieldId,
-            buildColorBody(colorRule, currentOwnerFormKey || moduleCode),
-          );
-          nextLeftColors.push(mapColorRule(savedRow, index));
-        }
+        const { rows: nextLeftColors } = await saveDiffedCollection({
+          baselineRows: baselineRef.current.fieldColorsByFieldId[currentOwnerFieldId] ?? [],
+          buildBody: (colorRule) => buildColorBody(colorRule, currentOwnerFormKey || moduleCode),
+          currentRows: sortByOrderId(leftTableConfig?.colorRules ?? []),
+          getIdentityKey: getColorIdentityKey,
+          mapSavedRow: (savedRow, index) => mapColorRule(savedRow, index),
+          saveRow: (body) => saveSingleTableFieldColor(moduleCode, currentOwnerFieldId, body),
+        });
 
         for (const fieldId of Object.keys(baselineRef.current.fieldConditionsByFieldId).map(Number).filter((value) => value !== currentOwnerFieldId)) {
           for (const persistedId of uniquePersistedIds(baselineRef.current.fieldConditionsByFieldId[fieldId] ?? [])) {
@@ -712,11 +899,31 @@ export function useSingleTableModuleSettingsSave({
 
       for (const [index, detailEntry] of detailEntries.entries()) {
         const fillType = toText(detailEntry.tabConfig?.detailType || '表格');
-        const savedRow = await saveSingleTableModuleDetail(
-          moduleCode,
-          buildDetailBody(detailEntry.tabConfig, detailEntry.tableConfig, moduleCode, fillType, index),
-        );
-        const mapped = mapDetailRecord(savedRow, index);
+        const baselineTabConfig = baselineRef.current.details.tabConfigs[detailEntry.oldTabId] ?? {};
+        const baselineTableConfig = baselineRef.current.details.tableConfigs[detailEntry.oldTabId] ?? {};
+        const currentDetailBody = buildDetailBody(detailEntry.tabConfig, detailEntry.tableConfig, moduleCode, fillType, index);
+        const baselineDetailBody = Object.keys(baselineTabConfig).length > 0
+          ? buildDetailBody(baselineTabConfig, baselineTableConfig, moduleCode, fillType, index)
+          : null;
+        const detailIdentityKey = getDetailIdentityKey(detailEntry.tabConfig);
+        const baselineIdentityKey = getDetailIdentityKey(baselineTabConfig);
+        const shouldReuseBaseline = baselineDetailBody
+          && detailIdentityKey
+          && detailIdentityKey === baselineIdentityKey
+          && areBodiesEqual(currentDetailBody, baselineDetailBody);
+        const mapped = shouldReuseBaseline
+          ? {
+            config: cloneValue(baselineTabConfig),
+            gridConfig: cloneValue(baselineTableConfig),
+            tab: { id: detailEntry.oldTabId, name: detailEntry.tabName },
+          }
+          : mapDetailRecord(
+            await saveSingleTableModuleDetail(
+              moduleCode,
+              currentDetailBody,
+            ),
+            index,
+          );
         savedDetailEntries.push({
           ...detailEntry,
           detailId: getPersistedId(mapped.config),
@@ -790,23 +997,32 @@ export function useSingleTableModuleSettingsSave({
             }
           }
         } else if (isGridLike && Number.isFinite(nextDetailId)) {
-          const nextColumns: any[] = [];
-          for (const [index, column] of sortByOrderId(detailEntry.columns).entries()) {
-            const savedRow = await saveSingleTableDetailGridField(moduleCode, nextDetailId as number, buildGridFieldBody(column));
-            nextColumns.push(mapDetailGridFieldToColumn(savedRow, index));
-          }
+          const { rows: nextColumns } = await saveDiffedCollection({
+            baselineRows: baselineColumns,
+            buildBody: (column) => buildGridFieldBody(column),
+            currentRows: sortByOrderId(detailEntry.columns),
+            getIdentityKey: getGridFieldIdentityKey,
+            mapSavedRow: (savedRow, index) => mapDetailGridFieldToColumn(savedRow, index),
+            saveRow: (body) => saveSingleTableDetailGridField(moduleCode, nextDetailId as number, body),
+          });
 
-          const nextColors: any[] = [];
-          for (const [index, colorRule] of sortByOrderId(detailEntry.tableConfig?.colorRules ?? []).entries()) {
-            const savedRow = await saveSingleTableDetailColor(moduleCode, nextDetailId as number, buildColorBody(colorRule, moduleCode));
-            nextColors.push(mapColorRule(savedRow, index));
-          }
+          const { rows: nextColors } = await saveDiffedCollection({
+            baselineRows: baselineTableConfig?.colorRules ?? [],
+            buildBody: (colorRule) => buildColorBody(colorRule, moduleCode),
+            currentRows: sortByOrderId(detailEntry.tableConfig?.colorRules ?? []),
+            getIdentityKey: getColorIdentityKey,
+            mapSavedRow: (savedRow, index) => mapColorRule(savedRow, index),
+            saveRow: (body) => saveSingleTableDetailColor(moduleCode, nextDetailId as number, body),
+          });
 
-          const nextMenus: any[] = [];
-          for (const [index, menu] of sortByOrderId(detailEntry.tableConfig?.contextMenuItems ?? []).entries()) {
-            const savedRow = await saveSingleTableDetailMenu(moduleCode, nextDetailId as number, buildMenuBody(menu, moduleCode, index));
-            nextMenus.push(mapContextMenuItem(savedRow, index));
-          }
+          const { rows: nextMenus } = await saveDiffedCollection({
+            baselineRows: baselineTableConfig?.contextMenuItems ?? [],
+            buildBody: (menu, index) => buildMenuBody(menu, moduleCode, index),
+            currentRows: sortByOrderId(detailEntry.tableConfig?.contextMenuItems ?? []),
+            getIdentityKey: getMenuIdentityKey,
+            mapSavedRow: (savedRow, index) => mapContextMenuItem(savedRow, index),
+            saveRow: (body) => saveSingleTableDetailMenu(moduleCode, nextDetailId as number, body),
+          });
 
           nextDetailTableColumns[nextTabId] = nextColumns;
           nextDetailTableConfigs[nextTabId] = {
@@ -840,12 +1056,19 @@ export function useSingleTableModuleSettingsSave({
         }
 
         if (detailEntry.fillType === '图表' && Number.isFinite(nextDetailId)) {
-          const savedChartRow = await saveSingleTableDetailChart(
-            moduleCode,
-            nextDetailId as number,
-            buildDetailChartBody(detailEntry.tableConfig?.chartConfig ?? {}, 0),
-          );
-          const nextChartConfig = mapDetailChartConfig(savedChartRow);
+          const currentChartConfig = detailEntry.tableConfig?.chartConfig ?? {};
+          const baselineChartConfig = baselineTableConfig?.chartConfig ?? {};
+          const currentChartBody = buildDetailChartBody(currentChartConfig, 0);
+          const hasBaselineChart = Boolean(getChartIdentityKey(baselineChartConfig));
+          const shouldReuseBaselineChart = hasBaselineChart
+            && areBodiesEqual(currentChartBody, buildDetailChartBody(baselineChartConfig, 0));
+          const nextChartConfig = shouldReuseBaselineChart
+            ? cloneValue(baselineChartConfig)
+            : mapDetailChartConfig(await saveSingleTableDetailChart(
+              moduleCode,
+              nextDetailId as number,
+              currentChartBody,
+            ));
           nextDetailTableConfigs[nextTabId] = {
             ...nextDetailTableConfigs[nextTabId],
             chartConfig: nextChartConfig,
@@ -860,23 +1083,32 @@ export function useSingleTableModuleSettingsSave({
       }
 
       for (const sharedEntry of sharedModuleResources.values()) {
-        const nextColumns: any[] = [];
-        for (const [index, column] of sortByOrderId(sharedEntry.columns).entries()) {
-          const savedRow = await saveSingleTableModuleField(sharedEntry.moduleCode, buildMainFieldBody(column, sharedEntry.moduleCode, index));
-          nextColumns.push(mapMainFieldRecordToColumn(savedRow, index));
-        }
+        const { rows: nextColumns } = await saveDiffedCollection({
+          baselineRows: sharedEntry.baselineColumns,
+          buildBody: (column, index) => buildMainFieldBody(column, sharedEntry.moduleCode, index),
+          currentRows: sortByOrderId(sharedEntry.columns),
+          getIdentityKey: getMainFieldIdentityKey,
+          mapSavedRow: (savedRow, index) => mapMainFieldRecordToColumn(savedRow, index),
+          saveRow: (body) => saveSingleTableModuleField(sharedEntry.moduleCode, body),
+        });
 
-        const nextColors: any[] = [];
-        for (const [index, colorRule] of sortByOrderId(sharedEntry.colors).entries()) {
-          const savedRow = await saveSingleTableModuleColor(sharedEntry.moduleCode, buildColorBody(colorRule, sharedEntry.moduleCode));
-          nextColors.push(mapColorRule(savedRow, index));
-        }
+        const { rows: nextColors } = await saveDiffedCollection({
+          baselineRows: sharedEntry.baselineColors,
+          buildBody: (colorRule) => buildColorBody(colorRule, sharedEntry.moduleCode),
+          currentRows: sortByOrderId(sharedEntry.colors),
+          getIdentityKey: getColorIdentityKey,
+          mapSavedRow: (savedRow, index) => mapColorRule(savedRow, index),
+          saveRow: (body) => saveSingleTableModuleColor(sharedEntry.moduleCode, body),
+        });
 
-        const nextMenus: any[] = [];
-        for (const [index, menu] of sortByOrderId(sharedEntry.menus).entries()) {
-          const savedRow = await saveSingleTableModuleMenu(sharedEntry.moduleCode, buildMenuBody(menu, sharedEntry.moduleCode, index));
-          nextMenus.push(mapContextMenuItem(savedRow, index));
-        }
+        const { rows: nextMenus } = await saveDiffedCollection({
+          baselineRows: sharedEntry.baselineMenus,
+          buildBody: (menu, index) => buildMenuBody(menu, sharedEntry.moduleCode, index),
+          currentRows: sortByOrderId(sharedEntry.menus),
+          getIdentityKey: getMenuIdentityKey,
+          mapSavedRow: (savedRow, index) => mapContextMenuItem(savedRow, index),
+          saveRow: (body) => saveSingleTableModuleMenu(sharedEntry.moduleCode, body),
+        });
 
         const nextColumnIds = new Set(uniquePersistedIds(nextColumns));
         for (const persistedId of uniquePersistedIds(sharedEntry.baselineColumns)) {

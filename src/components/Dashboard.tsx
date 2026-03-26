@@ -148,6 +148,8 @@ interface DashboardProps {
   routeContext?: DesignRouteContext;
 }
 
+const DEFAULT_DESIGN_ROUTE_CONTEXT: DesignRouteContext = {};
+
 type BusinessType = 'document' | 'table' | 'tree';
 type BillSourceEntry = {
   id: string;
@@ -1214,7 +1216,7 @@ type BuilderSelectionContextMenuState = {
   ids: string[];
 } | null;
 
-export default function Dashboard({ currentUserName, onLogout, routeContext = {} }: DashboardProps) {
+export default function Dashboard({ currentUserName, onLogout, routeContext = DEFAULT_DESIGN_ROUTE_CONTEXT }: DashboardProps) {
   const debugParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const currentUserAvatarText = currentUserName.trim().slice(0, 1) || '人';
   const debugStepParam = Number(debugParams?.get('step') || 1);
@@ -1482,13 +1484,21 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     id: `color_${Date.now()}_${index}`,
     label: `颜色规则 ${index}`,
     disabled: false,
-    field: '',
-    operator: '等于',
-    value: '',
     tab: '',
+    condition: '',
+    forcecolor: '#9f1239',
+    backcolor: '#ffe4e6',
+    orderid: index,
+    useflag: 1,
+    dfcolor: '#9f1239',
+    dbcolor: '#ffe4e6',
+    ifBold: 0,
+    ifItalic: 0,
+    ifStrickOut: 0,
+    ifUnderLine: 0,
+    fontsize: 12,
     textColor: '#9f1239',
     backgroundColor: '#ffe4e6',
-    note: '',
     ...overrides,
   });
   const mapSingleTableContextMenuItem = (item: SingleTableContextMenuDto, index: number) => normalizeContextMenuItem({
@@ -1519,9 +1529,13 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
       orderId,
       tab: toRecordText(getRecordFieldValue(rule, 'tab')),
       label,
+      condition: conditionSql,
       disabled: !useFlag,
-      note: conditionSql,
-      conditionSql,
+      useflag: useFlag ? 1 : 0,
+      forcecolor: foregroundColor || foregroundToken || '#9f1239',
+      backcolor: backgroundColor || backgroundToken || '#ffe4e6',
+      dfcolor: foregroundToken || foregroundColor || '#9f1239',
+      dbcolor: backgroundToken || backgroundColor || '#ffe4e6',
       useFlag,
       foregroundToken,
       backgroundToken,
@@ -1532,6 +1546,11 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
       isItalic: toRecordBoolean(getRecordFieldValue(rule, 'ifitalic', 'ifItalic', 'isitalic', 'isItalic'), false),
       isStrikeOut: toRecordBoolean(getRecordFieldValue(rule, 'ifstrickout', 'ifStrickOut', 'isstrikeout', 'isStrikeOut'), false),
       isUnderline: toRecordBoolean(getRecordFieldValue(rule, 'ifunderline', 'ifUnderLine', 'isunderline', 'isUnderline'), false),
+      ifBold: toRecordBoolean(getRecordFieldValue(rule, 'ifbold', 'ifBold', 'isbold', 'isBold'), false) ? 1 : 0,
+      ifItalic: toRecordBoolean(getRecordFieldValue(rule, 'ifitalic', 'ifItalic', 'isitalic', 'isItalic'), false) ? 1 : 0,
+      ifStrickOut: toRecordBoolean(getRecordFieldValue(rule, 'ifstrickout', 'ifStrickOut', 'isstrikeout', 'isStrikeOut'), false) ? 1 : 0,
+      ifUnderLine: toRecordBoolean(getRecordFieldValue(rule, 'ifunderline', 'ifUnderLine', 'isunderline', 'isUnderline'), false) ? 1 : 0,
+      fontsize: toRecordNumber(getRecordFieldValue(rule, 'fontsize', 'fontSize'), 12),
     });
   };
 
@@ -4367,6 +4386,11 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     setMainTableColumns,
     setMainTableConfig,
   });
+  const detailTableColumnsRef = useRef(detailTableColumns);
+
+  useEffect(() => {
+    detailTableColumnsRef.current = detailTableColumns;
+  }, [detailTableColumns]);
 
   useEffect(() => {
     setSelectedDetailForDelete([]);
@@ -4633,6 +4657,11 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     mainTableColumns,
     mainTableConfig,
   ]);
+  const resolveDetailModuleSnapshotByCodeRef = useRef(resolveDetailModuleSnapshotByCode);
+
+  useEffect(() => {
+    resolveDetailModuleSnapshotByCodeRef.current = resolveDetailModuleSnapshotByCode;
+  }, [resolveDetailModuleSnapshotByCode]);
 
   useEffect(() => {
     if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
@@ -4926,7 +4955,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
             try {
               if (detailFillType === '表格' || detailFillType === '树表格') {
                 if (detailModuleCode) {
-                  const moduleSnapshot = await resolveDetailModuleSnapshotByCode(detailModuleCode);
+                  const moduleSnapshot = await resolveDetailModuleSnapshotByCodeRef.current(detailModuleCode);
                   if (!isActive) {
                     return null;
                   }
@@ -5053,7 +5082,6 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     captureDetails,
     configStep,
     isConfigOpen,
-    resolveDetailModuleSnapshotByCode,
   ]);
 
   useEffect(() => {
@@ -5260,20 +5288,23 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
         )
         .map((item, index) => mapSingleTableColorRule(item, index));
 
-      const nextTableConfig = {
-        ...(detailTableConfigs[activeTab] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
-        contextMenuEnabled: mappedMenus.length > 0,
-        contextMenuItems: mappedMenus,
-        colorRulesEnabled: mappedRules.length > 0,
-        colorRules: mappedRules,
-      };
+      let nextTableConfig: Record<string, any> = {};
+      setDetailTableConfigs((prev) => {
+        nextTableConfig = {
+          ...(prev[activeTab] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
+          contextMenuEnabled: mappedMenus.length > 0,
+          contextMenuItems: mappedMenus,
+          colorRulesEnabled: mappedRules.length > 0,
+          colorRules: mappedRules,
+        };
 
-      setDetailTableConfigs((prev) => ({
-        ...prev,
-        [activeTab]: nextTableConfig,
-      }));
+        return {
+          ...prev,
+          [activeTab]: nextTableConfig,
+        };
+      });
       captureDetailResources(activeTab, {
-        columns: detailTableColumns[activeTab] ?? [],
+        columns: detailTableColumnsRef.current[activeTab] ?? [],
         tableConfig: nextTableConfig,
       });
     };
@@ -5334,8 +5365,6 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     captureDetailResources,
     configStep,
     currentDetailFillType,
-    detailTableColumns,
-    detailTableConfigs,
     isConfigOpen,
   ]);
 

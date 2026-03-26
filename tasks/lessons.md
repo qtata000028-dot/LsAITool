@@ -362,3 +362,33 @@
 - For branches the user re-explains with concrete endpoint lists, trust the explicit endpoint mapping over the earlier natural-language summary. Restating a rule loosely can easily drift from the real API contract.
 - Chart config is a separate branch from detail columns/colors/menus. Even when a detail has `UnionModule`, chart save still belongs to the current detail unless the user explicitly redefines that rule.
 - When the user says “先不管布局编辑器里的保存”, remove designer-layout from the current save scope instead of leaving it half-included in the plan. Partial inclusion is worse than explicit exclusion for a multi-resource save workflow.
+## 2026-03-26 Merge Platform Entry Must Not Replace The Existing App Shell By Default
+- If the active branch is still a single-entry login/workbench product, do not let a merge silently replace `src/App.tsx` with a multi-platform router. Preserve the current product entry unless the user explicitly asks to migrate routes.
+- When a user reports the main page suddenly looks broken right after a merge, inspect the app entry and current browser path before touching component styles. A redirect from `/` to `/design` can look like a layout failure while the real issue is simply the wrong shell.
+- Before treating post-merge `/api` 404s as a backend regression, clear duplicate local `vite` and `tsx watch` processes. Stale dev servers can keep serving old route behavior and make proxied API paths fall back to `index.html`, which masquerades as a code bug.
+
+## 2026-03-26 Default Object Props Can Trigger Infinite Dashboard Effects
+- In `Dashboard`, do not use an object literal like `routeContext = {}` as a function-parameter default when downstream effects depend on that value. A new object is created on every render, so any effect keyed by `[routeContext]` will rerun forever.
+- If a page-level prop is optional but used as an effect dependency, default it to a module-level stable constant or normalize it with memoization before wiring effects to it.
+- When the browser network panel shows the same menu endpoints looping with no user interaction, inspect top-level optional object props first. An unstable default prop can look like a state-flow bug even when the effect bodies themselves are correct.
+
+## 2026-03-26 Module-Settings Effects Must Not Reload From Their Own Hydration State
+- In the module-settings step, avoid wiring resource-loading effects to collection objects that the same effect hydrates, such as `detailTableConfigs` or `detailTableColumns`. If an effect fetches menus/colors and then immediately writes those collections back, using them as dependencies will create a fetch loop.
+- When a loader only needs the latest helper callback or latest column snapshot during merge/capture, keep that value in a ref and read `ref.current` inside the effect. Do not let callback identity churn or large mutable collections decide whether the network request should run again.
+- For related-module detail hydration, separate "when should we refetch" from "what helper logic do we use during this fetch". A callback like `resolveDetailModuleSnapshotByCode` can legitimately depend on many states, but those dependency changes should not automatically retrigger the parent detail-loading effect unless the fetch inputs themselves changed.
+
+## 2026-03-26 UI Editors Must Follow The Backend Table Shape When The User Gives It Explicitly
+- If the user provides the exact table structure for an editor page, stop preserving older front-end abstractions like `field/operator/value` just because they still "sort of work". The form should be realigned to the backend field model, not wrapped in a second invented rules vocabulary.
+- For color rules, the authoritative editing model is the single-table color table fields (`condition`, `forcecolor`, `backcolor`, `useflag`, `dfcolor`, `dbcolor`, style flags, `fontsize`). Any extra UI-only fields such as `label`, `disabled`, `textColor`, or `backgroundColor` should be treated as compatibility/preview helpers, not the primary schema.
+- When fixing schema drift in an editor, update all three layers together: default object builder, API-to-state mapper, and the editor component itself. Fixing only the form labels leaves newly created rows and loaded rows speaking different field dialects.
+
+## 2026-03-26 React Vendor Chunk Matching Must Be Exact
+- In `vite.config.ts`, never classify the React runtime chunk with a broad rule like `id.includes('react')`. That will accidentally catch packages such as `react-rnd` or `lucide-react`, and Rollup can split them into a `react-vendor` chunk that later depends back on `vendor`.
+- When a production bundle throws `Cannot read properties of undefined (reading 'memo')` from a vendor chunk, inspect the built chunk import graph before touching app code. A `vendor <-> react-vendor` cycle can leave React exports uninitialized even though `vite build` succeeds.
+- For manual chunking, match only the real runtime packages (`react`, `react-dom`, `scheduler`) using normalized `node_modules` paths. Everything else in the React ecosystem should stay in its own explicit bucket or fall back to `vendor`.
+
+## 2026-03-26 Save Orchestrators Should Not Upsert Baseline-Identical Rows
+- A save orchestrator that blindly `POST`s every current row is only half-finished, even if the backend supports upsert. Users will immediately notice unchanged resources still hitting write endpoints, and that noise makes later save debugging much harder.
+- For resources that already keep an entry baseline, compare the normalized POST body against the baseline body before writing. If they are identical, reuse the baseline row locally and skip the network request.
+- When building diff-by-body logic, define a stable identity key first (`id`, then durable business key like `fieldKey`). Without a stable match key, a harmless reorder or remap can look like a delete-and-recreate of every row.
+- Do not stop after fixing just one resource branch if the save orchestrator still uses the same unconditional-upsert pattern elsewhere. Once a user reports “nothing changed but save still posts”, audit the whole save path in the current page and convert the repeated resource loops together.

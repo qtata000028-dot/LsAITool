@@ -8,7 +8,13 @@ function buildManualChunks(id: string) {
     return undefined;
   }
 
-  if (id.includes('react') || id.includes('scheduler')) {
+  const normalizedId = id.replace(/\\/g, '/');
+  const isReactRuntimeModule =
+    /\/node_modules\/react\//.test(normalizedId) ||
+    /\/node_modules\/react-dom\//.test(normalizedId) ||
+    /\/node_modules\/scheduler\//.test(normalizedId);
+
+  if (isReactRuntimeModule) {
     return 'react-vendor';
   }
 
