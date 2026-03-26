@@ -2,23 +2,16 @@ import type { BuildDashboardConfigBridgeNodesInput } from './dashboard-config-br
 
 type BuildDashboardConfigBridgeWorkspaceInput = {
   archiveLayoutState: {
-    activeDetailBoardResize: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['activeDetailBoardResize'];
     currentDetailBoard: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['currentDetailBoard'];
     isOpen: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['isOpen'];
     mainTableColumns: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['mainTableColumns'];
   };
   archiveLayoutActions: {
     onClose: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onClose'];
-    onResetDetailBoardFieldHeight: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onResetDetailBoardFieldHeight'];
-    onResetDetailBoardFieldWidth: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onResetDetailBoardFieldWidth'];
-    onStartDetailBoardFieldHeightResize: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onStartDetailBoardFieldHeightResize'];
-    onStartDetailBoardFieldResize: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onStartDetailBoardFieldResize'];
     onUpdateDetailBoard: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onUpdateDetailBoard'];
   };
   archiveLayoutHelpers: {
-    getDetailBoardFieldLiveHeight: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['getDetailBoardFieldLiveHeight'];
-    getDetailBoardFieldLiveWidth: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['getDetailBoardFieldLiveWidth'];
-    getLayoutFieldWorkbenchMeta: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['getLayoutFieldWorkbenchMeta'];
+    normalizeColumn: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['normalizeColumn'];
     renderFieldPreview: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['renderFieldPreview'];
   };
   conditionWorkbenchState: {

@@ -142,6 +142,7 @@ export function createSuggestedDetailBoardGroups(columns: any[]) {
 export function buildDetailBoardConfig(columns: any[] = [], overrides: Record<string, any> = {}) {
   return {
     enabled: false,
+    designerLayout: null,
     theme: DETAIL_BOARD_DEFAULT_THEME,
     sortColumnId: columns[0]?.id ?? null,
     groups: createSuggestedDetailBoardGroups(columns),
@@ -199,6 +200,9 @@ export function normalizeDetailBoardConfig(config: any, columns: any[] = []) {
 
   return {
     enabled: Boolean(config?.enabled),
+    designerLayout: config?.designerLayout && typeof config.designerLayout === 'object'
+      ? config.designerLayout
+      : null,
     theme: DETAIL_BOARD_THEME_OPTIONS.some((option) => option.value === config?.theme) ? config.theme : DETAIL_BOARD_DEFAULT_THEME,
     sortColumnId: availableColumnIds.has(config?.sortColumnId) ? config.sortColumnId : columns[0]?.id ?? null,
     groups: hasCustomGroups ? normalizedGroups : suggestedGroups,

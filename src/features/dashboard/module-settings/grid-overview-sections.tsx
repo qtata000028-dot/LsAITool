@@ -29,14 +29,22 @@ type GridIdentifierTranslationSectionProps = {
 
 type GridSqlConfigSectionProps = {
   conditionValue: string;
+  conditionLabel?: string;
+  hideSqlPrompt?: boolean;
   isDetailConfig: boolean;
   isGeneratingSqlDraft: boolean;
   mainSql: string;
+  mainSqlLabel?: string;
+  onBlurMainSql?: (value: string) => void;
   onGenerateSqlDraft: () => void;
   onUpdateConditionValue: (value: string) => void;
   onUpdateMainSql: (value: string) => void;
   onUpdateSqlPrompt: (value: string) => void;
+  readOnlyMainSql?: boolean;
+  sectionDescription?: string;
   sqlPrompt: string;
+  title?: string;
+  showGenerateButton?: boolean;
 };
 
 type DetailSourceSectionProps = {
@@ -62,6 +70,22 @@ type DetailSourceSectionProps = {
   onUpdateSqlPrompt: (value: string) => void;
 };
 
+type DetailTabRelationSectionProps = {
+  availableGridColumnCount: number;
+  detailSourceModuleCandidates: DetailSourceModuleCandidate[];
+  detailSourceModuleCode: string;
+  detailSourceMode: 'module' | 'sql';
+  matchedDetailModuleCandidate: DetailSourceModuleCandidate | null;
+  relatedCondition: string;
+  relatedModuleField: string;
+  relatedValue: string;
+  onSyncDetailColumnsFromConfiguredModule: () => void;
+  onUpdateDetailSourceModuleCode: (value: string) => void;
+  onUpdateRelatedCondition: (value: string) => void;
+  onUpdateRelatedModuleField: (value: string) => void;
+  onUpdateRelatedValue: (value: string) => void;
+};
+
 type DocumentTableMappingSectionProps = {
   colorRuleCount: number;
   contextMenuCount: number;
@@ -80,6 +104,13 @@ type LeftGridMappingSectionProps = {
   onOpenContextMenus: () => void;
   treeOwnerFieldKey: string;
   treeOwnerFieldName: string;
+};
+
+type DocumentMainTableSetupSectionProps = {
+  isGeneratingSqlDraft: boolean;
+  mainTableName: string;
+  onGenerateSqlDraft: () => void;
+  onUpdateMainTableName: (value: string) => void;
 };
 
 type GridConfigSummarySectionProps = {
@@ -105,61 +136,86 @@ const quietDocumentInspectorPrimaryActionClass = 'inline-flex h-8 items-center g
 
 export const GridSqlConfigSection = React.memo(function GridSqlConfigSection({
   conditionValue,
+  conditionLabel,
+  hideSqlPrompt = false,
   isDetailConfig,
   isGeneratingSqlDraft,
   mainSql,
+  mainSqlLabel,
+  onBlurMainSql,
   onGenerateSqlDraft,
   onUpdateConditionValue,
   onUpdateMainSql,
   onUpdateSqlPrompt,
+  readOnlyMainSql = false,
+  sectionDescription,
   sqlPrompt,
+  title,
+  showGenerateButton = true,
 }: GridSqlConfigSectionProps) {
+  const resolvedTitle = title || (isDetailConfig ? '明细 SQL 配置' : '主 SQL 配置');
+  const resolvedConditionLabel = conditionLabel || (isDetailConfig ? '关联条件' : '默认查询');
+  const resolvedMainSqlLabel = mainSqlLabel || '主 SQL';
+
   return (
     <section className={shadcnSectionCardClass}>
       <div className={shadcnSectionTitleClass}>
         <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">frame_source</span>
-        <h4>{isDetailConfig ? '明细 SQL 配置' : '主 SQL 配置'}</h4>
+        <div className="min-w-0">
+          <h4>{resolvedTitle}</h4>
+          {sectionDescription ? (
+            <p className="mt-1 text-[11px] font-normal text-slate-500 dark:text-slate-300">
+              {sectionDescription}
+            </p>
+          ) : null}
+        </div>
       </div>
       <div className="grid gap-4">
-        <div>
-          <label className={shadcnMutedLabelClass}>生成描述</label>
-          <textarea
-            rows={3}
-            value={sqlPrompt}
-            onChange={(event) => onUpdateSqlPrompt(event.target.value)}
-            placeholder="描述需要的字段、筛选条件和排序方式"
-            className={shadcnTextareaClass}
-          />
-        </div>
+        {!hideSqlPrompt ? (
+          <div>
+            <label className={shadcnMutedLabelClass}>生成描述</label>
+            <textarea
+              rows={3}
+              value={sqlPrompt}
+              onChange={(event) => onUpdateSqlPrompt(event.target.value)}
+              placeholder="描述需要的字段、筛选条件和排序方式"
+              className={shadcnTextareaClass}
+            />
+          </div>
+        ) : null}
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-3">
-            <label className={`${shadcnMutedLabelClass} mb-0`}>主 SQL</label>
-            <button
-              type="button"
-              onClick={onGenerateSqlDraft}
-              disabled={isGeneratingSqlDraft}
-              className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[12px] px-3 text-[11px] font-bold transition-colors ${
-                isGeneratingSqlDraft
-                  ? 'cursor-wait bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
-                  : 'bg-[color:var(--workspace-accent)] text-white shadow-[0_16px_28px_-24px_var(--workspace-accent-shadow)] hover:bg-[color:var(--workspace-accent-strong)]'
-              }`}
-            >
-              <span className={`material-symbols-outlined text-[14px] ${isGeneratingSqlDraft ? 'animate-spin' : ''}`}>
-                {isGeneratingSqlDraft ? 'progress_activity' : 'auto_awesome'}
-              </span>
-              AI 生成
-            </button>
+            <label className={`${shadcnMutedLabelClass} mb-0`}>{resolvedMainSqlLabel}</label>
+            {showGenerateButton && !readOnlyMainSql ? (
+              <button
+                type="button"
+                onClick={onGenerateSqlDraft}
+                disabled={isGeneratingSqlDraft}
+                className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[12px] px-3 text-[11px] font-bold transition-colors ${
+                  isGeneratingSqlDraft
+                    ? 'cursor-wait bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
+                    : 'bg-[color:var(--workspace-accent)] text-white shadow-[0_16px_28px_-24px_var(--workspace-accent-shadow)] hover:bg-[color:var(--workspace-accent-strong)]'
+                }`}
+              >
+                <span className={`material-symbols-outlined text-[14px] ${isGeneratingSqlDraft ? 'animate-spin' : ''}`}>
+                  {isGeneratingSqlDraft ? 'progress_activity' : 'auto_awesome'}
+                </span>
+                AI 生成
+              </button>
+            ) : null}
           </div>
           <textarea
             rows={6}
             value={mainSql}
+            readOnly={readOnlyMainSql}
             onChange={(event) => onUpdateMainSql(event.target.value)}
+            onBlur={(event) => onBlurMainSql?.(event.target.value)}
             placeholder="SELECT ... FROM ..."
-            className={shadcnTextareaClass}
+            className={`${shadcnTextareaClass} ${readOnlyMainSql ? 'cursor-default bg-slate-50/90 text-slate-500 dark:bg-slate-900/70 dark:text-slate-300' : ''}`}
           />
         </div>
         <div>
-          <label className={shadcnMutedLabelClass}>{isDetailConfig ? '关联条件' : '默认查询'}</label>
+          <label className={shadcnMutedLabelClass}>{resolvedConditionLabel}</label>
           <input
             type="text"
             value={conditionValue}
@@ -168,6 +224,54 @@ export const GridSqlConfigSection = React.memo(function GridSqlConfigSection({
             className={shadcnFieldClass}
           />
         </div>
+      </div>
+    </section>
+  );
+});
+
+export const DocumentMainTableSetupSection = React.memo(function DocumentMainTableSetupSection({
+  isGeneratingSqlDraft,
+  mainTableName,
+  onGenerateSqlDraft,
+  onUpdateMainTableName,
+}: DocumentMainTableSetupSectionProps) {
+  return (
+    <section className={`${quietDocumentInspectorCardClass} space-y-3`}>
+      <div className={shadcnSectionTitleClass}>
+        <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">dataset</span>
+        <div className="min-w-0">
+          <h4>主表定义</h4>
+          <p className="mt-1 text-[11px] font-normal text-slate-500 dark:text-slate-300">
+            翻译未转英文的字段标识，生成建表 SQL，并同步主表 SQL。
+          </p>
+        </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+        <div>
+          <label className={shadcnMutedLabelClass}>主表名</label>
+          <input
+            type="text"
+            value={mainTableName}
+            onChange={(event) => onUpdateMainTableName(event.target.value)}
+            placeholder="例如：tb_customer_archive"
+            className={shadcnFieldClass}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onGenerateSqlDraft}
+          disabled={isGeneratingSqlDraft}
+          className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-[14px] px-4 text-[12px] font-semibold transition-colors ${
+            isGeneratingSqlDraft
+              ? 'cursor-wait bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'
+              : 'bg-[color:var(--workspace-accent)] text-white shadow-[0_16px_28px_-24px_var(--workspace-accent-shadow)] hover:bg-[color:var(--workspace-accent-strong)]'
+          }`}
+        >
+          <span className={`material-symbols-outlined text-[14px] ${isGeneratingSqlDraft ? 'animate-spin' : ''}`}>
+            {isGeneratingSqlDraft ? 'progress_activity' : 'auto_awesome'}
+          </span>
+          AI一键建表
+        </button>
       </div>
     </section>
   );
@@ -261,6 +365,7 @@ export const DetailSourceSection = React.memo(function DetailSourceSection({
           <label className={shadcnMutedLabelClass}>模块编号</label>
           <input
             type="text"
+            list={detailSourceModuleCandidates.length > 0 ? 'detail-module-code-candidates' : undefined}
             value={detailSourceModuleCode}
             onChange={(event) => onUpdateDetailSourceModuleCode(event.target.value)}
             onBlur={(event) => onUpdateDetailSourceModuleCode(event.target.value)}
@@ -380,6 +485,118 @@ export const DetailSourceSection = React.memo(function DetailSourceSection({
             );
           })}
         </div>
+      ) : null}
+    </section>
+  );
+});
+
+export const DetailTabRelationSection = React.memo(function DetailTabRelationSection({
+  availableGridColumnCount,
+  detailSourceModuleCandidates,
+  detailSourceModuleCode,
+  detailSourceMode,
+  matchedDetailModuleCandidate,
+  relatedCondition,
+  relatedModuleField,
+  relatedValue,
+  onSyncDetailColumnsFromConfiguredModule,
+  onUpdateDetailSourceModuleCode,
+  onUpdateRelatedCondition,
+  onUpdateRelatedModuleField,
+  onUpdateRelatedValue,
+}: DetailTabRelationSectionProps) {
+  const isModuleMode = detailSourceMode === 'module';
+  const detailSourceLabel = isModuleMode ? '模块继承' : '明细 SQL';
+  const detailSourceSummary = isModuleMode
+    ? `当前继承 ${detailSourceModuleCode || '目标模块'} 的主表配置`
+    : '当前未关联模块，表格按明细 SQL 单独配置';
+
+  return (
+    <section className={`${quietDocumentInspectorCardClass} space-y-3`}>
+      <div className={shadcnSectionTitleClass}>
+        <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">dataset_linked</span>
+        <div className="min-w-0">
+          <h4>明细关联</h4>
+          <p className="mt-1 text-[11px] font-normal text-slate-500 dark:text-slate-300">
+            配置当前明细与主模块的关联关系。
+          </p>
+        </div>
+      </div>
+      <div className={quietDocumentInspectorSummaryClass}>
+        <span className="font-semibold text-slate-700 dark:text-slate-100">{detailSourceLabel}</span>
+        {' · '}
+        {detailSourceSummary}
+        {' · '}
+        已构建字段 {availableGridColumnCount} 个。
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <label className={shadcnMutedLabelClass}>模块编号</label>
+          <input
+            type="text"
+            value={detailSourceModuleCode}
+            onChange={(event) => onUpdateDetailSourceModuleCode(event.target.value)}
+            onBlur={(event) => onUpdateDetailSourceModuleCode(event.target.value)}
+            placeholder="例如：FM-CO-001"
+            className={shadcnFieldClass}
+          />
+        </div>
+        <div>
+          <label className={shadcnMutedLabelClass}>关联模块字段</label>
+          <input
+            type="text"
+            value={relatedModuleField}
+            onChange={(event) => onUpdateRelatedModuleField(event.target.value)}
+            placeholder="例如：archive_id"
+            className={shadcnFieldClass}
+          />
+        </div>
+        <div>
+          <label className={shadcnMutedLabelClass}>关联值</label>
+          <input
+            type="text"
+            value={relatedValue}
+            onChange={(event) => onUpdateRelatedValue(event.target.value)}
+            placeholder="例如：${id}"
+            className={shadcnFieldClass}
+          />
+        </div>
+        <div>
+          <label className={shadcnMutedLabelClass}>关联条件</label>
+          <input
+            type="text"
+            value={relatedCondition}
+            onChange={(event) => onUpdateRelatedCondition(event.target.value)}
+            placeholder="输入关联条件"
+            className={shadcnFieldClass}
+          />
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-[11px] leading-5 text-slate-500 dark:text-slate-300">
+          {matchedDetailModuleCandidate?.moduleName || matchedDetailModuleCandidate?.moduleCode || detailSourceModuleCode || '未指定模块'}
+          {isModuleMode
+            ? ` · 主表 ${matchedDetailModuleCandidate?.tableName || '继承目标主表'}`
+            : ' · 使用当前明细 SQL'}
+        </div>
+        <button
+          type="button"
+          onClick={onSyncDetailColumnsFromConfiguredModule}
+          disabled={!detailSourceModuleCode}
+          className={detailSourceModuleCode ? quietDocumentInspectorPrimaryActionClass : 'inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-100 px-3 text-[11px] font-medium text-slate-400 dark:bg-slate-800 dark:text-slate-500'}
+        >
+          <span className="material-symbols-outlined text-[14px]">table_rows</span>
+          {isModuleMode ? '重新加载主表配置' : '按模块继承'}
+        </button>
+      </div>
+      {detailSourceModuleCandidates.length > 0 ? (
+        <datalist id="detail-module-code-candidates">
+          {detailSourceModuleCandidates.map((candidate) => (
+            <option key={candidate.moduleCode} value={candidate.moduleCode}>
+              {candidate.moduleName || candidate.moduleCode}
+            </option>
+          ))}
+        </datalist>
       ) : null}
     </section>
   );

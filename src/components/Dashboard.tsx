@@ -19,6 +19,7 @@ import {
   fetchSingleTableDetailColors,
   fetchSingleTableDetailGridFields,
   fetchSingleTableDetailMenus,
+  fetchSingleTableModuleConfig,
   fetchSingleTableModuleColors,
   fetchSingleTableFieldConditions,
   fetchSingleTableFieldGridFields,
@@ -1246,8 +1247,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const currentModuleGuide = MODULE_GUIDE_PROFILES[businessType] ?? MODULE_GUIDE_PROFILES.document;
   const currentModuleCode = String(menuConfigDraft.moduleCode || activeConfigMenu?.purviewId || '');
   const currentModuleName = String(menuConfigDraft.menuCaption || activeConfigMenu?.title || '');
-  const currentPrimaryTableName = '';
-  const currentDetailTableName = '';
   const toggleFunc = (id: string) => setCommonFuncs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const funcOptions = [
     { id: 'import', name: '数据导入', icon: 'upload_file' },
@@ -1547,6 +1546,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const buildGridConfig = (mainSql: string, defaultQuery: string, overrides: Record<string, any> = {}) => ({
     mainSql,
     defaultQuery,
+    createTableSql: '',
+    tableName: '',
     sqlPrompt: '',
     sourceMode: 'sql',
     sourceModuleCode: '',
@@ -1560,6 +1561,32 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     detailBoard: buildDetailBoardConfig(),
     webUrl: '',
     ...overrides,
+  });
+  const buildDefaultLeftTableConfig = () => buildGridConfig('', '', {
+    tableType: '树表格',
+    contextMenuItems: [],
+    colorRules: [],
+    detailBoard: buildDetailBoardConfig([], { enabled: false }),
+  });
+  const buildDefaultMainTableConfig = () => buildGridConfig('', '', {
+    contextMenuItems: [],
+    colorRules: [],
+    detailBoard: buildDetailBoardConfig([], {
+      enabled: false,
+      theme: 'aurora',
+    }),
+  });
+  const buildDefaultBillDetailConfig = () => buildGridConfig('', '', {
+    tableType: '普通表格',
+    contextMenuEnabled: false,
+    contextMenuItems: [],
+    detailBoard: buildDetailBoardConfig([], { enabled: false }),
+  });
+  const buildEmptyRestrictionSelection = (): Record<RestrictionConfigTabId, string | null> => ({
+    guard: null,
+    number: null,
+    structure: null,
+    process: null,
   });
 
   const buildDetailTabConfig = (overrides: Record<string, any> = {}) => ({
@@ -1926,14 +1953,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     });
   };
   const [leftTableColumns, setLeftTableColumns] = useState<any[]>([]);
-  const [leftTableConfig, setLeftTableConfig] = useState(
-    buildGridConfig('', '', {
-      tableType: '树表格',
-      contextMenuItems: [],
-      colorRules: [],
-      detailBoard: buildDetailBoardConfig([], { enabled: false }),
-    }),
-  );
+  const [leftTableConfig, setLeftTableConfig] = useState(() => buildDefaultLeftTableConfig());
   const [leftFilterFields, setLeftFilterFields] = useState<any[]>([]);
   const [mainTableColumns, setMainTableColumns] = useState<any[]>([]);
   const [isMainHiddenColumnsModalOpen, setIsMainHiddenColumnsModalOpen] = useState(false);
@@ -1942,16 +1962,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const [detailTabs, setDetailTabs] = useState<Array<{ id: string; name: string }>>([]);
   const [activeTab, setActiveTab] = useState('');
   const [tabFillTypes, setTabFillTypes] = useState<Record<string, string>>({});
-  const [mainTableConfig, setMainTableConfig] = useState(
-    buildGridConfig('', '', {
-      contextMenuItems: [],
-      colorRules: [],
-      detailBoard: buildDetailBoardConfig(mainTableColumns, {
-        enabled: false,
-        theme: 'aurora',
-      }),
-    }),
-  );
+  const [mainTableConfig, setMainTableConfig] = useState(() => buildDefaultMainTableConfig());
+  const currentPrimaryTableName = String(mainTableConfig.tableName || '').trim();
   const isRenderableMainColumn = (column: any) => {
     const normalizedColumn = normalizeColumn(column);
     return normalizedColumn.visible !== false && Number(normalizedColumn.width) > 0;
@@ -2129,14 +2141,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setBillSourceDraft((prev) => ({ ...prev, ...patch }));
   }, []);
   const [billDetailColumns, setBillDetailColumns] = useState<any[]>([]);
-  const [billDetailConfig, setBillDetailConfig] = useState(
-    buildGridConfig('', '', {
-      tableType: '普通表格',
-      contextMenuEnabled: false,
-      contextMenuItems: [],
-      detailBoard: buildDetailBoardConfig([], { enabled: false }),
-    }),
-  );
+  const [billDetailConfig, setBillDetailConfig] = useState(() => buildDefaultBillDetailConfig());
   const [billMetaFields, setBillMetaFields] = useState<any[]>([]);
   const todayIso = new Date().toISOString().slice(0, 10);
   const buildRestrictionMeasure = (index: number, overrides: Partial<RestrictionMeasureItem> = {}): RestrictionMeasureItem => ({
@@ -2201,12 +2206,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const [restrictionNumberRules, setRestrictionNumberRules] = useState<RestrictionNumberRuleItem[]>([]);
   const [restrictionProcessDesigns, setRestrictionProcessDesigns] = useState<RestrictionProcessDesignItem[]>([]);
   const [restrictionTopStructures, setRestrictionTopStructures] = useState<RestrictionTopStructureItem[]>([]);
-  const [restrictionSelection, setRestrictionSelection] = useState<Record<RestrictionConfigTabId, string | null>>({
-    guard: null,
-    number: null,
-    structure: null,
-    process: null,
-  });
+  const [restrictionSelection, setRestrictionSelection] = useState<Record<RestrictionConfigTabId, string | null>>(
+    () => buildEmptyRestrictionSelection(),
+  );
   const [documentConditionScope, setDocumentConditionScope] = useState<ConditionWorkbenchScope>('main');
   const [billHeaderWorkbenchConfig, setBillHeaderWorkbenchConfig] = useState<BillHeaderWorkbenchConfig>(
     buildBillHeaderWorkbenchConfig(),
@@ -2318,6 +2320,73 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     beforeId: string | null;
   } | null>(null);
   const [isArchiveLayoutEditorOpen, setIsArchiveLayoutEditorOpen] = useState(false);
+  const resetModuleDesignerState = () => {
+    setLeftTableColumns([]);
+    setLeftTableConfig(buildDefaultLeftTableConfig());
+    setLeftFilterFields([]);
+    setMainTableColumns([]);
+    setIsMainHiddenColumnsModalOpen(false);
+    setSelectedMainHiddenColumnIds([]);
+    setMainHiddenColumnsSearchText('');
+    setDetailTabs([]);
+    setActiveTab('');
+    setTabFillTypes({});
+    setMainTableConfig(buildDefaultMainTableConfig());
+    setDetailTableConfigs({});
+    setMainFilterFields([]);
+    setDetailFilterFields({});
+    setDetailTabConfigs({});
+    setSelectedLeftContextMenuId(null);
+    setSelectedMainContextMenuId(null);
+    setSelectedDetailContextMenuId(null);
+    setSelectedLeftColorRuleId(null);
+    setSelectedMainColorRuleId(null);
+    setSelectedDetailColorRuleId(null);
+    setSelectedPopupMenuParamKey('dllpar1');
+    selectedPopupMenuOwnerRef.current = null;
+    setSelectedLeftForDelete([]);
+    setSelectedMainForDelete([]);
+    setSelectedLeftFiltersForDelete([]);
+    setSelectedMainFiltersForDelete([]);
+    setDetailTableColumns({});
+    setSelectedDetailForDelete([]);
+    setSelectedDetailFiltersForDelete([]);
+    setSelectedArchiveNodeId('archive-main');
+    setBillSources([]);
+    setActiveBillSourceId('');
+    setBillSourceDraft(buildBillSourceEntry(1));
+    setBillSourceDraftMode('create');
+    setBillDetailColumns([]);
+    setBillDetailConfig(buildDefaultBillDetailConfig());
+    setBillMetaFields([]);
+    setRestrictionMeasures([]);
+    setRestrictionNumberRules([]);
+    setRestrictionProcessDesigns([]);
+    setRestrictionTopStructures([]);
+    setRestrictionSelection(buildEmptyRestrictionSelection());
+    setDocumentConditionScope('main');
+    setBillHeaderWorkbenchConfig(buildBillHeaderWorkbenchConfig());
+    setBillDocumentTone('blue');
+    clearResizePreview();
+    setActiveResize(null);
+    setIsDetailBoardOpen(initialDetailPreview);
+    setDetailBoardSortColumnId(null);
+    setDetailBoardOpenedRowId(initialDetailPreview ? 1 : null);
+    setSelectedDetailBoardGroupId(null);
+    setWorkspaceTheme(initialWorkspaceTheme);
+    setDetailBoardClipboardIds([]);
+    setActiveDetailBoardResize(null);
+    setActiveDetailBoardHeightResize(null);
+    setPreviewContextMenu(null);
+    setBuilderSelectionContextMenu(null);
+    setLongTextEditorState(null);
+    setBillHeaderWorkbenchDrag(null);
+    setBillHeaderWorkbenchDropTarget(null);
+    setIsArchiveLayoutEditorOpen(false);
+    setInspectorTarget({ kind: 'main-grid' });
+    setInspectorPanelTab('common');
+    moduleSettingFullscreenInitRef.current = false;
+  };
   const billDocumentViewportRef = useRef<HTMLDivElement | null>(null);
   const billDocumentPaperRef = useRef<HTMLDivElement | null>(null);
   const billHeaderCanvasRef = useRef<HTMLDivElement | null>(null);
@@ -2588,17 +2657,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       ...prev,
       modType: nextType === 'table' ? '2' : '1',
     }));
+    resetModuleDesignerState();
     setMenuInfoTab('common');
-    setBuilderSelectionContextMenu(null);
-    setSelectedLeftForDelete([]);
-    setSelectedLeftFiltersForDelete([]);
-    setSelectedMainForDelete([]);
-    setSelectedDetailForDelete([]);
-    setSelectedMainFiltersForDelete([]);
-    setSelectedDetailFiltersForDelete([]);
-    setSelectedArchiveNodeId('archive-main');
-    setInspectorTarget({ kind: 'main-grid' });
-    setInspectorPanelTab('common');
   };
 
   const updateCurrentMenuDraft = (fieldKey: string, value: ModuleMenuValue) => {
@@ -3462,24 +3522,40 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   }, [activeTab]);
 
   const addTab = () => {
-    const newId = `tab_${Date.now()}`;
-    setDetailTabs([...detailTabs, { id: newId, name: `明细 ${detailTabs.length + 1}` }]);
-    setActiveTab(newId);
+    const newId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? `tab_${crypto.randomUUID()}`
+      : `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const nextTabName = `明细 ${detailTabs.length + 1}`;
+
+    setDetailTabs((prev) => [...prev, { id: newId, name: nextTabName }]);
     setDetailFilterFields((prev) => ({
       ...prev,
-      [newId]: [],
+      [newId]: prev[newId] ?? [],
     }));
     setDetailTabConfigs((prev) => ({
       ...prev,
-      [newId]: buildDetailTabConfig({ tabKey: newId, detailName: `明细 ${detailTabs.length + 1}` }),
+      [newId]: prev[newId] ?? buildDetailTabConfig({ tabKey: newId, detailName: nextTabName }),
     }));
-    setDetailTableColumns({ ...detailTableColumns, [newId]: [] });
+    setDetailTableColumns((prev) => ({
+      ...prev,
+      [newId]: prev[newId] ?? [],
+    }));
     setDetailTableConfigs((prev) => ({
       ...prev,
-      [newId]: buildGridConfig('', '', {
+      [newId]: prev[newId] ?? buildGridConfig('', '', {
+        sourceCondition: 'parent_id = ${id}',
+        contextMenuEnabled: false,
         contextMenuItems: [],
+        colorRulesEnabled: false,
+        colorRules: [],
       }),
     }));
+    setSelectedDetailForDelete([]);
+    setSelectedDetailFiltersForDelete([]);
+    setActiveTab(newId);
+    setInspectorTarget({ kind: 'detail-tab', id: newId });
+    setInspectorPanelTab('common');
+    setSelectedArchiveNodeId(`detail-${newId}`);
   };
 
   const deleteTab = (id: string, e: React.MouseEvent) => {
@@ -3510,7 +3586,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       setActiveTab(newTabs.length > 0 ? newTabs[0].id : '');
     }
     if (selectedDetailTabId === id) {
-      setInspectorTarget({ kind: 'none' });
+      const fallbackTabId = newTabs[0]?.id ?? '';
+      setInspectorTarget(
+        fallbackTabId
+          ? { kind: 'detail-tab', id: fallbackTabId }
+          : { kind: 'main-grid' },
+      );
     }
   };
 
@@ -4050,7 +4131,16 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setSelectedDetailForDelete([]);
     setSelectedDetailFiltersForDelete([]);
     setInspectorTarget((prev) => {
-      if (prev.kind === 'detail-col' || prev.kind === 'detail-filter' || prev.kind === 'detail-tab' || prev.kind === 'detail-grid') {
+      if (prev.kind === 'detail-tab') {
+        if (!activeTab) {
+          return { kind: 'main-grid' };
+        }
+        return { kind: 'detail-tab', id: activeTab };
+      }
+      if (prev.kind === 'detail-col' || prev.kind === 'detail-filter' || prev.kind === 'detail-grid') {
+        if (!activeTab) {
+          return { kind: 'main-grid' };
+        }
         return { kind: 'detail-grid', id: currentDetailFillType };
       }
       return prev;
@@ -4083,8 +4173,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       setActiveTab(tabId);
     }
     setInspectorTarget({
-      kind: 'detail-grid',
-      id: getDetailFillTypeByTabId(tabId),
+      kind: 'detail-tab',
+      id: tabId,
     });
     setInspectorPanelTab('common');
     setSelectedArchiveNodeId(`detail-${tabId}`);
@@ -4197,6 +4287,102 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     isConfigOpen,
     parsedTreeSourceFields,
     treeRelationColumn,
+  ]);
+
+  const cloneColumnsForDetailPreview = useCallback((columns: any[] = []) => (
+    columns.map((column, index) => {
+      const normalizedColumn = JSON.parse(JSON.stringify(normalizeColumn(column)));
+      const { id: _ignoredId, ...rest } = normalizedColumn;
+      return buildColumn('d_col', index + 1, {
+        ...rest,
+        name: normalizedColumn.name || `字段 ${index + 1}`,
+        sourceField: normalizedColumn.sourceField || '',
+      });
+    })
+  ), [buildColumn, normalizeColumn]);
+
+  const resolveDetailModuleSnapshotByCode = useCallback(async (moduleCode: string) => {
+    const normalizedModuleCode = String(moduleCode || '').trim();
+    if (!normalizedModuleCode) {
+      return null;
+    }
+
+    const hasLocalMainTableSnapshot = normalizedModuleCode === currentModuleCode && (
+      mainTableColumns.length > 0
+      || String(mainTableConfig.mainSql || '').trim().length > 0
+      || String(mainTableConfig.tableName || '').trim().length > 0
+      || (mainTableConfig.contextMenuItems ?? []).length > 0
+      || (mainTableConfig.colorRules ?? []).length > 0
+    );
+
+    if (hasLocalMainTableSnapshot) {
+      return {
+        columns: cloneColumnsForDetailPreview(mainTableColumns),
+        gridConfigPatch: {
+          ...JSON.parse(JSON.stringify(mainTableConfig)),
+          mainSql: String(mainTableConfig.mainSql || '').trim()
+            || (currentPrimaryTableName ? `SELECT * FROM ${currentPrimaryTableName}` : ''),
+          tableName: String(mainTableConfig.tableName || '').trim() || currentPrimaryTableName,
+          sourceMode: 'module',
+          sourceModuleCode: normalizedModuleCode,
+        },
+      };
+    }
+
+    const [moduleConfig, moduleFields, menuRows, colorRows] = await Promise.all([
+      fetchSingleTableModuleConfig(normalizedModuleCode),
+      fetchSingleTableModuleFields(normalizedModuleCode),
+      fetchSingleTableModuleMenus(normalizedModuleCode),
+      fetchSingleTableModuleColors(normalizedModuleCode),
+    ]);
+
+    const normalizedModuleConfig = moduleConfig as Record<string, unknown>;
+    const mappedColumns = moduleFields.map((field, index) => mapSingleTableDetailGridFieldToColumn(field, index));
+    const mappedMenus = [...menuRows]
+      .sort(
+        (left, right) => toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId'), 0)
+          - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId'), 0),
+      )
+      .map((item, index) => mapSingleTableContextMenuItem(item, index));
+    const mappedRules = [...colorRows]
+      .sort(
+        (left, right) => toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId'), 0)
+          - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId'), 0),
+      )
+      .map((rule, index) => mapSingleTableColorRule(rule, index));
+    const resolvedMainSql = toRecordText(getRecordFieldValue(normalizedModuleConfig, 'querySql', 'querysql'))
+      || toRecordText(getRecordFieldValue(normalizedModuleConfig, 'mainSql', 'mainsql'));
+    const resolvedTableName = toRecordText(getRecordFieldValue(normalizedModuleConfig, 'mainTable', 'maintable'));
+
+    return {
+      columns: mappedColumns,
+      gridConfigPatch: buildGridConfig(
+        resolvedMainSql || (resolvedTableName ? `SELECT * FROM ${resolvedTableName}` : ''),
+        '',
+        {
+          tableName: resolvedTableName,
+          sourceMode: 'module',
+          sourceModuleCode: normalizedModuleCode,
+          tableType: '普通表格',
+          contextMenuEnabled: mappedMenus.length > 0,
+          contextMenuItems: mappedMenus,
+          colorRulesEnabled: mappedRules.length > 0,
+          colorRules: mappedRules,
+          detailBoard: buildDetailBoardConfig([], {
+            enabled: false,
+            theme: mainTableConfig.detailBoard?.theme || 'aurora',
+          }),
+        },
+      ),
+    };
+  }, [
+    buildColumn,
+    buildGridConfig,
+    cloneColumnsForDetailPreview,
+    currentModuleCode,
+    currentPrimaryTableName,
+    mainTableColumns,
+    mainTableConfig,
   ]);
 
   useEffect(() => {
@@ -4414,20 +4600,32 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             const detailId = toRecordNumber(detailConfig.backendId, Number.NaN);
             const detailModuleCode = String(detailConfig.relatedModule || '').trim();
             const detailSql = String(detailGridConfig.mainSql || '').trim();
+            const relationCondition = String(
+              detailConfig.relatedCondition
+              || detailGridConfig.sourceCondition
+              || detailGridConfig.defaultQuery
+              || '',
+            ).trim();
             const gridPatch: Record<string, any> = {};
             let columns: any[] = [];
 
             try {
               if (detailFillType === '表格' || detailFillType === '树表格') {
                 if (detailModuleCode) {
-                  const moduleFields = await fetchSingleTableModuleFields(detailModuleCode);
+                  const moduleSnapshot = await resolveDetailModuleSnapshotByCode(detailModuleCode);
                   if (!isActive) {
                     return null;
                   }
 
-                  columns = moduleFields.map((field, index) => mapSingleTableDetailGridFieldToColumn(field, index));
-                  gridPatch.sourceMode = 'module';
-                  gridPatch.sourceModuleCode = detailModuleCode;
+                  if (moduleSnapshot) {
+                    columns = moduleSnapshot.columns;
+                    Object.assign(gridPatch, moduleSnapshot.gridConfigPatch, {
+                      defaultQuery: relationCondition,
+                      sourceMode: 'module',
+                      sourceModuleCode: detailModuleCode,
+                      sourceCondition: relationCondition,
+                    });
+                  }
                 } else if (Number.isFinite(detailId) && detailSql) {
                   const detailGridFields = await fetchSingleTableDetailGridFields(activeConfigModuleKey, detailId);
                   if (!isActive) {
@@ -4528,7 +4726,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     return () => {
       isActive = false;
     };
-  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen]);
+  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen, resolveDetailModuleSnapshotByCode]);
 
   useEffect(() => {
     if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
@@ -4858,23 +5056,34 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const detailId = toRecordNumber(detailConfig.backendId, Number.NaN);
     const detailModuleCode = String(detailConfig.relatedModule || '').trim();
     const detailSql = String(detailGridConfig.mainSql || '').trim();
+    const relationCondition = String(
+      detailConfig.relatedCondition
+      || detailGridConfig.sourceCondition
+      || detailGridConfig.defaultQuery
+      || '',
+    ).trim();
 
     try {
       if (detailFillType === '表格' || detailFillType === '树表格') {
         if (detailModuleCode) {
-          const moduleFields = await fetchSingleTableModuleFields(detailModuleCode);
-          const columns = moduleFields.map((field, index) => mapSingleTableDetailGridFieldToColumn(field, index));
+          const moduleSnapshot = await resolveDetailModuleSnapshotByCode(detailModuleCode);
+          if (!moduleSnapshot) {
+            return;
+          }
 
           setDetailTableColumns((prev) => ({
             ...prev,
-            [tabId]: columns,
+            [tabId]: moduleSnapshot.columns,
           }));
           setDetailTableConfigs((prev) => ({
             ...prev,
             [tabId]: {
               ...(prev[tabId] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
+              ...moduleSnapshot.gridConfigPatch,
+              defaultQuery: relationCondition,
               sourceMode: 'module',
               sourceModuleCode: detailModuleCode,
+              sourceCondition: relationCondition,
             },
           }));
           return;
@@ -4952,6 +5161,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     configStep,
     detailTabConfigs,
     detailTableConfigs,
+    resolveDetailModuleSnapshotByCode,
     isConfigOpen,
   ]);
 
@@ -5013,6 +5223,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     normalizeColumn,
     normalizeDetailChartConfig,
     parseSqlFieldNames,
+    resolveDetailModuleSnapshotByCode,
     restrictionTopStructures,
     setDetailTabConfigs,
     setDetailTableColumns,
@@ -5094,6 +5305,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     createBillSourceDraft,
     currentMenuDraft,
     currentModuleCode,
+    currentModuleName,
     defaultFieldSqlTagOptions: DEFAULT_FIELD_SQL_TAG_OPTIONS,
     deleteSelectedColumns,
     deleteSelectedConditions,
@@ -5103,6 +5315,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     detailBoardThemeOptions: DETAIL_BOARD_THEME_OPTIONS,
     detailChartTypeOptions: DETAIL_CHART_TYPE_OPTIONS,
     detailFillTypeOptions: DETAIL_FILL_TYPE_OPTIONS,
+    detailTableColumns,
     detailSourceModuleCandidates,
     buildDetailTabConfig,
     detailTabs,
@@ -5154,6 +5367,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     selectBillSourceDraft,
     setBillDetailColumns,
     setBillMetaFields,
+    setDetailTableConfigs,
     setDetailTableColumns,
     setDetailTabConfigs,
     setDetailTabs,
@@ -5191,23 +5405,16 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const dashboardConfigBridgeNodes = buildDashboardConfigBridgeNodes({
     workspace: buildDashboardConfigBridgeWorkspaceInput({
       archiveLayoutState: {
-        activeDetailBoardResize,
         currentDetailBoard: normalizedMainDetailBoardConfig,
         isOpen: isArchiveLayoutEditorOpen,
         mainTableColumns,
       },
       archiveLayoutActions: {
         onClose: () => setIsArchiveLayoutEditorOpen(false),
-        onResetDetailBoardFieldHeight: resetDetailBoardFieldHeight,
-        onResetDetailBoardFieldWidth: resetDetailBoardFieldWidth,
-        onStartDetailBoardFieldHeightResize: startDetailBoardFieldHeightResize,
-        onStartDetailBoardFieldResize: startDetailBoardFieldResize,
         onUpdateDetailBoard: updateMainDetailBoard,
       },
       archiveLayoutHelpers: {
-        getDetailBoardFieldLiveHeight,
-        getDetailBoardFieldLiveWidth,
-        getLayoutFieldWorkbenchMeta,
+        normalizeColumn,
         renderFieldPreview,
       },
       conditionWorkbenchState: {

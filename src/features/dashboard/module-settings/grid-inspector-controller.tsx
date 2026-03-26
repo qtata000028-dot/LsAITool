@@ -1,6 +1,7 @@
 import React from 'react';
 
 import {
+  requestAiCreateMainTable,
   requestIdentifierTranslation,
   requestSqlDraft,
 } from '../../../lib/minimax';
@@ -17,10 +18,8 @@ import {
 } from './detail-board-config';
 import { DetailBoardLayoutManagerContainer } from './detail-board-layout-manager-container';
 import { DetailChartConfigSection } from './detail-chart-config-section';
-import { DetailTabWorkbenchSection } from './detail-tab-workbench-section';
 import {
-  DetailSourceSection,
-  DocumentTableMappingSection,
+  DocumentMainTableSetupSection,
   GridConfigSummarySection,
   GridIdentifierTranslationSection,
   GridSqlConfigSection,
@@ -47,7 +46,7 @@ type GridInspectorControllerProps = {
   activeTab: string;
   billHeaderWorkbenchMaxRows: number;
   billHeaderWorkbenchMinRows: number;
-  applyDetailModuleInheritanceById: (tabId: string, moduleCode: string) => void;
+  applyDetailModuleInheritanceById: (tabId: string, moduleCode: string) => Promise<boolean>;
   billSources: any[];
   buildGridColorRule: (index: number, overrides?: Record<string, any>) => any;
   businessType: string;
@@ -56,6 +55,7 @@ type GridInspectorControllerProps = {
   context: any;
   currentMenuDraft: Record<string, any>;
   currentModuleCode: string;
+  currentModuleName: string;
   designerWorkbenchSensors: any;
   detailBoardClipboardIds: string[];
   detailBoardFieldDefaultWidth: number;
@@ -152,6 +152,7 @@ export function GridInspectorController({
   context,
   currentMenuDraft,
   currentModuleCode,
+  currentModuleName,
   designerWorkbenchSensors,
   detailBoardClipboardIds,
   detailBoardFieldDefaultWidth,
@@ -253,8 +254,24 @@ export function GridInspectorController({
   const currentDetailTabConfig = isDocumentDetailGrid
     ? getDetailTabConfigById(activeTab)
     : null;
+  const currentDetailSourceModuleCode = String(currentDetailTabConfig?.relatedModule || '').trim();
   const currentDetailTabName = detailTabs.find((tab) => tab.id === activeTab)?.name || currentDetailTabConfig?.detailName || '当前明细';
   const currentDetailChartConfig = normalizeDetailChartConfig(currentGridConfig.chartConfig);
+  const isTableLikeDetailInspector = detailGridFillTypeMeta?.value === '表格' || detailGridFillTypeMeta?.value === '树表格';
+  const isDetailModuleInheritanceMode = isDocumentDetailGrid
+    && isTableLikeDetailInspector
+    && !isDetailChartInspector
+    && (
+      String(currentGridConfig.sourceMode || '').trim() === 'module'
+      || currentDetailSourceModuleCode.length > 0
+    );
+  const detailGridSummaryTitle = detailGridFillTypeMeta?.value === '图表'
+    ? '图表加载属性'
+    : detailGridFillTypeMeta?.value === '树表格'
+      ? '明细树表属性'
+      : detailGridFillTypeMeta?.value === '网页'
+        ? '网页视图属性'
+        : '明细表属性';
   const detailChartFieldOptions = Array.from(
     new Map(
       availableGridColumns
@@ -272,12 +289,6 @@ export function GridInspectorController({
         .filter(Boolean) as [string, { value: string; label: string }][]
     ).values(),
   );
-  const detailSourceModuleCode = isDocumentDetailGrid
-    ? String(currentGridConfig.sourceModuleCode || currentDetailTabConfig?.relatedModule || '').trim()
-    : '';
-  const matchedDetailModuleCandidate = isDocumentDetailGrid
-    ? detailSourceModuleCandidates.find((candidate: any) => String(candidate.moduleCode || '').trim() === detailSourceModuleCode) ?? null
-    : null;
   const contextMenuItems = (currentGridConfig.contextMenuItems ?? []).map((item: any, index: number) => normalizeContextMenuItem(item, index + 1));
   const enabledMenuCount = contextMenuItems.filter((item: any) => !item.disabled).length;
   const colorRules = currentGridConfig.colorRules ?? [];
@@ -327,49 +338,6 @@ export function GridInspectorController({
       ...(prev ?? getDetailTabConfigById(activeTab)),
       ...normalizedPatch,
     }));
-  };
-
-  const updateDetailTabWorkbenchConfig = (patch: Record<string, any>) => {
-    if (!isDocumentDetailGrid) return;
-    updateActiveDetailTabConfig(patch);
-    if (typeof patch.detailName === 'string') {
-      const nextName = patch.detailName.trim() || '未命名明细';
-      setDetailTabs((prev) => prev.map((tab) => (
-        tab.id === activeTab ? { ...tab, name: nextName } : tab
-      )));
-    }
-  };
-
-  const updateDetailWorkbenchType = (nextType: string) => {
-    if (!isDocumentDetailGrid) return;
-    const normalizedType = normalizeDetailFillTypeValue(nextType);
-    updateDetailTabWorkbenchConfig({ detailType: normalizedType });
-    setInspectorTarget((prev) => (
-      prev.kind === 'detail-grid' && prev.id === normalizedType
-        ? prev
-        : { kind: 'detail-grid', id: normalizedType }
-    ));
-    void loadSingleTableDetailResourcesById(activeTab, normalizedType);
-  };
-
-  const updateDetailSourceConfig = (patch: Record<string, any>) => {
-    if (!isDocumentDetailGrid) return;
-    if (Object.prototype.hasOwnProperty.call(patch, 'sourceModuleCode')) {
-      handleDetailModuleCodeChange(activeTab, patch.sourceModuleCode, { notify: true });
-      return;
-    }
-
-    const nextPatch: Record<string, any> = { ...patch };
-    if (Object.prototype.hasOwnProperty.call(nextPatch, 'sourceCondition')) {
-      nextPatch.defaultQuery = nextPatch.sourceCondition;
-    }
-    updateGridConfig(nextPatch);
-    const tabPatch: Record<string, any> = {};
-    if (Object.prototype.hasOwnProperty.call(nextPatch, 'sourceCondition')) {
-      tabPatch.relatedCondition = nextPatch.sourceCondition;
-    }
-    if (Object.keys(tabPatch).length === 0) return;
-    updateActiveDetailTabConfig(tabPatch);
   };
 
   const updateDetailChartConfig = (patch: Record<string, any>) => {
@@ -452,8 +420,11 @@ export function GridInspectorController({
     setIsGeneratingSqlDraft(true);
 
     try {
+      const gridDraftTitle = String(
+        (isDocumentArchiveGrid && isMainGridConfig ? currentGridConfig.tableName : '') || context.title || '当前表',
+      ).trim() || '当前表';
       const response = await requestSqlDraft({
-        title: context.title,
+        title: gridDraftTitle,
         description: currentGridConfig.sqlPrompt || '',
         tableType: currentGridConfig.tableType || '普通表格',
         columns: availableGridColumns.map((column: any) => {
@@ -474,6 +445,78 @@ export function GridInspectorController({
       showToast('已通过 MiniMax 生成主 SQL 草案');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'MiniMax 生成主 SQL 失败');
+    } finally {
+      setIsGeneratingSqlDraft(false);
+    }
+  };
+
+  const createMainTableWithAi = async () => {
+    if (!isDocumentArchiveGrid || !isMainGridConfig) {
+      void generateGridSqlDraft();
+      return;
+    }
+
+    const rawTableName = String(currentGridConfig.tableName || '').trim();
+    if (!rawTableName) {
+      showToast('请先填写主表名');
+      return;
+    }
+
+    if (availableGridColumns.length === 0) {
+      showToast('请先配置主表字段');
+      return;
+    }
+
+    setIsGeneratingSqlDraft(true);
+
+    try {
+      const response = await requestAiCreateMainTable({
+        columns: availableGridColumns.map((column: any) => {
+          const normalizedColumn = normalizeColumn(column);
+          return {
+            id: normalizedColumn.id,
+            identifier: normalizedColumn.sourceField || '',
+            name: normalizedColumn.name,
+            type: normalizedColumn.type,
+          };
+        }),
+        description: currentGridConfig.sqlPrompt || '',
+        moduleCode: currentModuleCode,
+        moduleName: currentModuleName,
+        persist: true,
+        tableName: rawTableName,
+        tableType: currentGridConfig.tableType || '普通表格',
+      });
+
+      updateGridConfig({
+        createTableSql: response.result.createTableSql,
+        defaultQuery: response.result.defaultQuery,
+        mainSql: response.result.mainSql,
+        tableName: response.result.tableName,
+      });
+      onUpdateGridColumns(context.scope, (prev) => prev.map((column: any) => {
+        const matched = response.result.translatedColumns.find((item) => item.id === column.id);
+        return matched
+          ? { ...column, sourceField: matched.identifier }
+          : column;
+      }));
+
+      if (import.meta.env.DEV) {
+        console.info('[AI一键建表]', response.result);
+      }
+
+      const persistenceMessage = response.result.persistence.message ? `，${response.result.persistence.message}` : '';
+      if (response.result.persistence.status === 'saved') {
+        showToast(`AI一键建表完成，主表 SQL 已更新并提交后端保存${persistenceMessage}`);
+      } else if (response.result.persistence.status === 'failed') {
+        showToast(`AI一键建表完成，但后端保存失败${persistenceMessage}`);
+      } else if (response.result.persistence.status === 'pending') {
+        showToast(`AI一键建表完成，界面已更新，后端保存口待接入${persistenceMessage}`);
+      } else {
+        showToast('AI一键建表完成，主表字段与 SQL 已更新');
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'AI一键建表失败');
     } finally {
       setIsGeneratingSqlDraft(false);
     }
@@ -511,19 +554,6 @@ export function GridInspectorController({
     } finally {
       setIsTranslatingIdentifiers(false);
     }
-  };
-
-  const syncDetailColumnsFromConfiguredModule = () => {
-    if (!isDocumentDetailGrid) return;
-    if (!detailSourceModuleCode) {
-      showToast('请先填写模块编号');
-      return;
-    }
-    if (!matchedDetailModuleCandidate) {
-      showToast('没有匹配到可继承的模块主表配置');
-      return;
-    }
-    applyDetailModuleInheritanceById(activeTab, detailSourceModuleCode);
   };
 
   const updateSelectedPopupMenuItem = (patch: Record<string, any>) => {
@@ -564,7 +594,7 @@ export function GridInspectorController({
             {useQuietDocumentInspector ? (
               <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
                 {isDocumentDetailGrid
-                  ? `${detailGridFillTypeMeta?.label || '表格'} · 右侧直接维护页签、来源和整表配置`
+                  ? `${detailGridFillTypeMeta?.label || '表格'} · 右侧只维护当前视图本身配置`
                   : '右侧只保留当前表格的直接配置，去掉低价值摘要和装饰信息'}
               </p>
             ) : null}
@@ -819,17 +849,6 @@ export function GridInspectorController({
             </div>
           ) : isDocumentDetailGrid ? (
             <div className="space-y-4">
-              {currentDetailTabConfig ? (
-                <DetailTabWorkbenchSection
-                  activeTab={activeTab}
-                  currentDetailTabConfig={currentDetailTabConfig}
-                  currentModuleCode={currentModuleCode}
-                  currentTabName={currentDetailTabName}
-                  detailFillTypeOptions={detailFillTypeOptions}
-                  onUpdateTabConfig={updateDetailTabWorkbenchConfig}
-                  onUpdateTabType={updateDetailWorkbenchType}
-                />
-              ) : null}
               {isDetailChartInspector ? (
                 <DetailChartConfigSection
                   chartTypeOptions={detailChartTypeOptions}
@@ -841,36 +860,8 @@ export function GridInspectorController({
                 />
               ) : (
                 <>
-                  <DetailSourceSection
-                    availableGridColumnCount={availableGridColumns.length}
-                    detailSourceModuleCode={detailSourceModuleCode}
-                    matchedDetailModuleCandidate={matchedDetailModuleCandidate}
-                    currentMainSql={currentGridConfig.mainSql || ''}
-                    relatedModuleField={currentDetailTabConfig?.relatedModuleField ?? ''}
-                    relatedValue={currentDetailTabConfig?.relatedValue ?? ''}
-                    relatedCondition={currentGridConfig.sourceCondition || currentGridConfig.defaultQuery || currentDetailTabConfig?.relatedCondition || ''}
-                    sqlPrompt={currentGridConfig.sqlPrompt || ''}
-                    isGeneratingSqlDraft={isGeneratingSqlDraft}
-                    onUpdateDetailSourceModuleCode={(value) => updateDetailSourceConfig({ sourceModuleCode: value })}
-                    onUpdateRelatedModuleField={(value) => updateActiveDetailTabConfig({ relatedModuleField: value })}
-                    onUpdateRelatedValue={(value) => updateActiveDetailTabConfig({ relatedValue: value })}
-                    onUpdateRelatedCondition={(value) => {
-                      updateGridConfig({
-                        defaultQuery: value,
-                        sourceCondition: value,
-                      });
-                      updateActiveDetailTabConfig({ relatedCondition: value });
-                    }}
-                    onUpdateSqlPrompt={(value) => updateGridConfig({ sqlPrompt: value })}
-                    onGenerateSqlDraft={generateGridSqlDraft}
-                    onSyncDetailColumnsFromConfiguredModule={syncDetailColumnsFromConfiguredModule}
-                    onSyncDetailColumnsFromSql={() => syncDetailColumnsFromSqlById(activeTab, currentGridConfig.mainSql || '')}
-                    onUpdateMainSql={(value) => updateGridConfig({ mainSql: value })}
-                    onBlurMainSql={(value) => syncDetailColumnsFromSqlById(activeTab, value, { notify: false })}
-                    detailSourceModuleCandidates={detailSourceModuleCandidates}
-                  />
                   <GridConfigSummarySection
-                    title="明细表属性"
+                    title={detailGridSummaryTitle}
                     activeTitle={currentDetailTabName}
                     currentTableType={currentGridConfig.tableType}
                     onUpdateTableType={(nextType) => updateGridConfig({ tableType: nextType })}
@@ -884,6 +875,54 @@ export function GridInspectorController({
                     xAxisField={currentDetailChartConfig.XLabelField || ''}
                     yAxisField={currentDetailChartConfig.YValueField || ''}
                   />
+                  <GridSqlConfigSection
+                    isDetailConfig={isDocumentDetailGrid}
+                    sqlPrompt={currentGridConfig.sqlPrompt || ''}
+                    mainSql={currentGridConfig.mainSql || ''}
+                    conditionValue={currentGridConfig.sourceCondition || currentGridConfig.defaultQuery || ''}
+                    conditionLabel="关联条件"
+                    hideSqlPrompt={isDetailModuleInheritanceMode}
+                    isGeneratingSqlDraft={isGeneratingSqlDraft}
+                    mainSqlLabel={isDetailModuleInheritanceMode ? '继承主表 SQL' : '明细 SQL'}
+                    onBlurMainSql={isDetailModuleInheritanceMode ? undefined : (value) => syncDetailColumnsFromSqlById(activeTab, value, { notify: false })}
+                    onGenerateSqlDraft={generateGridSqlDraft}
+                    onUpdateSqlPrompt={(value) => updateGridConfig({ sqlPrompt: value })}
+                    onUpdateMainSql={(value) => updateGridConfig({ mainSql: value })}
+                    onUpdateConditionValue={(value) => {
+                      updateGridConfig({
+                        defaultQuery: value,
+                        sourceCondition: value,
+                      });
+                      updateActiveDetailTabConfig({ relatedCondition: value });
+                    }}
+                    readOnlyMainSql={isDetailModuleInheritanceMode}
+                    sectionDescription={isDetailModuleInheritanceMode
+                      ? '当前明细已继承目标模块的主表配置。'
+                      : '当前明细使用独立 SQL 配置。'}
+                    showGenerateButton={!isDetailModuleInheritanceMode}
+                    title={isDetailModuleInheritanceMode ? '继承主表配置' : '明细 SQL'}
+                  />
+                  {!isDetailModuleInheritanceMode ? (
+                    <GridIdentifierTranslationSection
+                      availableGridColumnCount={availableGridColumns.length}
+                      translatableColumnCount={translatableColumns.length}
+                      isTranslatingIdentifiers={isTranslatingIdentifiers}
+                      onTranslate={translateGridIdentifiers}
+                    />
+                  ) : null}
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {isDocumentArchiveGrid ? (
+                <>
+                  <DocumentMainTableSetupSection
+                    isGeneratingSqlDraft={isGeneratingSqlDraft}
+                    mainTableName={String(currentGridConfig.tableName || '')}
+                    onGenerateSqlDraft={createMainTableWithAi}
+                    onUpdateMainTableName={(value) => updateGridConfig({ tableName: value })}
+                  />
                   <GridIdentifierTranslationSection
                     availableGridColumnCount={availableGridColumns.length}
                     translatableColumnCount={translatableColumns.length}
@@ -891,17 +930,6 @@ export function GridInspectorController({
                     onTranslate={translateGridIdentifiers}
                   />
                 </>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {isDocumentArchiveGrid ? (
-                <DocumentTableMappingSection
-                  contextMenuCount={contextMenuItems.length}
-                  colorRuleCount={colorRules.length}
-                  onOpenContextMenus={onOpenContextMenus}
-                  onOpenColorRules={onOpenColorRules}
-                />
               ) : null}
               <GridConfigSummarySection
                 title={detailGridFillTypeMeta?.value === '图表' ? '图表加载属性' : '主表属性'}
@@ -932,13 +960,16 @@ export function GridInspectorController({
                     ? { defaultQuery: value, sourceCondition: value }
                     : { defaultQuery: value },
                 )}
+                showGenerateButton={!isDocumentArchiveGrid}
               />
-              <GridIdentifierTranslationSection
-                availableGridColumnCount={availableGridColumns.length}
-                translatableColumnCount={translatableColumns.length}
-                isTranslatingIdentifiers={isTranslatingIdentifiers}
-                onTranslate={translateGridIdentifiers}
-              />
+              {!isDocumentArchiveGrid ? (
+                <GridIdentifierTranslationSection
+                  availableGridColumnCount={availableGridColumns.length}
+                  translatableColumnCount={translatableColumns.length}
+                  isTranslatingIdentifiers={isTranslatingIdentifiers}
+                  onTranslate={translateGridIdentifiers}
+                />
+              ) : null}
             </div>
           )
         ) : (

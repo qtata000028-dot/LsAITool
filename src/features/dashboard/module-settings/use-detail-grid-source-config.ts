@@ -1,7 +1,5 @@
 import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
 
-import { buildDetailBoardConfig } from './detail-board-config';
-
 type UseDetailGridSourceConfigOptions = {
   buildColumn: (prefix: string, index: number, overrides?: Record<string, any>) => any;
   buildDetailTabConfig: (overrides?: Record<string, any>) => Record<string, any>;
@@ -18,6 +16,10 @@ type UseDetailGridSourceConfigOptions = {
   normalizeColumn: (column: any) => any;
   normalizeDetailChartConfig: (config: any) => any;
   parseSqlFieldNames: (sql: string) => string[];
+  resolveDetailModuleSnapshotByCode: (moduleCode: string) => Promise<{
+    columns: any[];
+    gridConfigPatch: Record<string, any>;
+  } | null>;
   restrictionTopStructures: any[];
   setDetailTabConfigs: Dispatch<SetStateAction<Record<string, any>>>;
   setDetailTableColumns: Dispatch<SetStateAction<Record<string, any[]>>>;
@@ -41,6 +43,7 @@ export function useDetailGridSourceConfig({
   normalizeColumn,
   normalizeDetailChartConfig,
   parseSqlFieldNames,
+  resolveDetailModuleSnapshotByCode,
   restrictionTopStructures,
   setDetailTabConfigs,
   setDetailTableColumns,
@@ -103,18 +106,6 @@ export function useDetailGridSourceConfig({
       });
     });
   }, [buildColumn, normalizeColumn]);
-
-  const cloneColumnsForDetail = useCallback((columns: any[] = []) => (
-    columns.map((column, index) => {
-      const normalizedColumn = JSON.parse(JSON.stringify(normalizeColumn(column)));
-      const { id: _id, ...rest } = normalizedColumn;
-      return buildColumn('d_col', index + 1, {
-        ...rest,
-        name: normalizedColumn.name || `字段 ${index + 1}`,
-        sourceField: normalizedColumn.sourceField || '',
-      });
-    })
-  ), [buildColumn, normalizeColumn]);
 
   const detailSourceModuleCandidates = useMemo(() => {
     if (businessType === 'table') {
@@ -208,16 +199,32 @@ export function useDetailGridSourceConfig({
     return true;
   }, [buildDetailColumnsFromFieldNames, parseSqlFieldNames, setDetailTableColumns, showToast]);
 
-  const applyDetailModuleInheritanceById = useCallback((
+  const applyDetailModuleInheritanceById = useCallback(async (
     tabId: string,
     moduleCode: string,
     options: { notify?: boolean } = {},
   ) => {
     const notify = options.notify ?? true;
     const normalizedModuleCode = String(moduleCode || '').trim();
-    const matchedModule = findDetailSourceModuleCandidate(normalizedModuleCode);
 
-    if (!normalizedModuleCode || !matchedModule) {
+    if (!normalizedModuleCode) {
+      if (notify) {
+        showToast('请先填写模块编号');
+      }
+      return false;
+    }
+
+    let moduleSnapshot: Awaited<ReturnType<typeof resolveDetailModuleSnapshotByCode>> = null;
+    try {
+      moduleSnapshot = await resolveDetailModuleSnapshotByCode(normalizedModuleCode);
+    } catch (error) {
+      if (notify) {
+        showToast(error instanceof Error ? error.message : '加载模块主表配置失败');
+      }
+      return false;
+    }
+
+    if (!moduleSnapshot) {
       if (notify) {
         showToast('没有匹配到可继承的模块主表配置');
       }
@@ -226,25 +233,16 @@ export function useDetailGridSourceConfig({
 
     const currentGridConfig = getDetailGridConfigById(tabId);
     const currentTabConfig = getDetailTabConfigById(tabId);
+    const matchedModule = findDetailSourceModuleCandidate(normalizedModuleCode);
     const relationCondition = String(
       currentGridConfig.sourceCondition
       || currentGridConfig.defaultQuery
       || currentTabConfig.relatedCondition
       || '',
     ).trim();
-    const inheritedGridConfig = matchedModule.isCurrent
-      ? JSON.parse(JSON.stringify(mainTableConfig))
-      : {
-          ...JSON.parse(JSON.stringify(mainTableConfig)),
-          detailBoard: buildDetailBoardConfig([], {
-            enabled: false,
-            theme: mainTableConfig.detailBoard?.theme || 'aurora',
-          }),
-        };
 
     updateDetailGridConfigById(tabId, {
-      ...inheritedGridConfig,
-      mainSql: matchedModule.mainSql || inheritedGridConfig.mainSql || '',
+      ...moduleSnapshot.gridConfigPatch,
       defaultQuery: relationCondition,
       sourceMode: 'module',
       sourceModuleCode: normalizedModuleCode,
@@ -256,31 +254,23 @@ export function useDetailGridSourceConfig({
       relatedModule: normalizedModuleCode,
       relatedCondition: relationCondition,
     }));
-
-    if (matchedModule.isCurrent) {
-      setDetailTableColumns((prev) => ({
-        ...prev,
-        [tabId]: cloneColumnsForDetail(mainTableColumns),
-      }));
-    } else {
-      syncDetailColumnsFromSqlById(tabId, matchedModule.mainSql || '', { notify: false });
-    }
+    setDetailTableColumns((prev) => ({
+      ...prev,
+      [tabId]: moduleSnapshot.columns,
+    }));
 
     if (notify) {
-      showToast(`已继承 ${matchedModule.moduleCode} 的主表配置`);
+      showToast(`已继承 ${(matchedModule?.moduleCode || normalizedModuleCode)} 的主表配置`);
     }
     return true;
   }, [
-    cloneColumnsForDetail,
     findDetailSourceModuleCandidate,
     getDetailGridConfigById,
     getDetailTabConfigById,
-    mainTableColumns,
-    mainTableConfig,
     normalizeDetailChartConfig,
+    resolveDetailModuleSnapshotByCode,
     setDetailTableColumns,
     showToast,
-    syncDetailColumnsFromSqlById,
     updateDetailGridConfigById,
     updateDetailTabConfigById,
   ]);
@@ -305,13 +295,9 @@ export function useDetailGridSourceConfig({
     if (!normalizedModuleCode) {
       return;
     }
-
-    if (findDetailSourceModuleCandidate(normalizedModuleCode)) {
-      applyDetailModuleInheritanceById(tabId, normalizedModuleCode, options);
-    }
+    void applyDetailModuleInheritanceById(tabId, normalizedModuleCode, options);
   }, [
     applyDetailModuleInheritanceById,
-    findDetailSourceModuleCandidate,
     getDetailGridConfigById,
     updateDetailGridConfigById,
     updateDetailTabConfigById,

@@ -24,7 +24,7 @@ export type UseInspectorPanelPropsOptions = {
   activeBillSourceId: string | null;
   activeDetailBoardResize: any;
   activeTab: string;
-  applyDetailModuleInheritanceById: (tabId: string, moduleCode: string, options?: { notify?: boolean }) => boolean;
+  applyDetailModuleInheritanceById: (tabId: string, moduleCode: string, options?: { notify?: boolean }) => Promise<boolean>;
   billDetailColumns: any[];
   billFormDefaultFontSize: number;
   billFormDefaultLabelWidth: number;
@@ -47,6 +47,7 @@ export type UseInspectorPanelPropsOptions = {
   conditionPanelResizeMinWidth: number;
   currentMenuDraft: Record<string, any>;
   currentModuleCode: string;
+  currentModuleName: string;
   defaultFieldSqlTagOptions: any[];
   deleteSelectedColumns: (scope: 'left' | 'main' | 'detail', ids: string[]) => void;
   deleteSelectedConditions: (scope: 'left' | 'main' | 'detail', ids: string[]) => void;
@@ -56,6 +57,8 @@ export type UseInspectorPanelPropsOptions = {
   detailBoardThemeOptions: ReadonlyArray<any>;
   detailChartTypeOptions: any[];
   detailFillTypeOptions: any[];
+  detailTableColumns: Record<string, any[]>;
+  detailTabRelationSectionProps?: Record<string, any> | null;
   detailSourceModuleCandidates: any[];
   detailTabs: Array<{ id: string; name: string }>;
   documentConditionOwnerSourceId: string;
@@ -105,6 +108,7 @@ export type UseInspectorPanelPropsOptions = {
   setBillDetailColumns: Dispatch<SetStateAction<any[]>>;
   setBillMetaFields: Dispatch<SetStateAction<any[]>>;
   setDetailTableColumns: Dispatch<SetStateAction<Record<string, any[]>>>;
+  setDetailTableConfigs: Dispatch<SetStateAction<Record<string, any>>>;
   setDetailTabs: Dispatch<SetStateAction<Array<{ id: string; name: string }>>>;
   setInspectorPanelTab: (tabId: any) => void;
   setInspectorTarget: Dispatch<SetStateAction<any>>;
@@ -172,6 +176,7 @@ export function useInspectorPanelProps({
   conditionPanelResizeMinWidth,
   currentMenuDraft,
   currentModuleCode,
+  currentModuleName,
   defaultFieldSqlTagOptions,
   deleteSelectedColumns,
   deleteSelectedConditions,
@@ -181,6 +186,7 @@ export function useInspectorPanelProps({
   detailBoardThemeOptions,
   detailChartTypeOptions,
   detailFillTypeOptions,
+  detailTabRelationSectionProps,
   detailSourceModuleCandidates,
   detailTabs,
   documentConditionOwnerSourceId,
@@ -369,6 +375,7 @@ export function useInspectorPanelProps({
         currentTabName,
         detailFillTypeOptions,
         normalizedDetailType: normalizeDetailFillTypeValue(currentDetailTabConfig?.detailType),
+        relationSectionProps: detailTabRelationSectionProps,
         onUpdateTabConfig: updateActiveDetailTabConfig,
         onUpdateTabType: updateActiveDetailTabType,
       },
@@ -444,6 +451,7 @@ export function useInspectorPanelProps({
         context: selectedColumnContext,
         currentMenuDraft,
         currentModuleCode,
+        currentModuleName,
         designerWorkbenchSensors,
         detailBoardClipboardIds,
         detailBoardFieldDefaultWidth,
@@ -577,6 +585,7 @@ export function useInspectorPanelProps({
     conditionPanelResizeMinWidth,
     currentMenuDraft,
     currentModuleCode,
+    currentModuleName,
     defaultFieldSqlTagOptions,
     deleteSelectedColumns,
     deleteSelectedConditions,
@@ -586,6 +595,7 @@ export function useInspectorPanelProps({
     detailBoardThemeOptions,
     detailChartTypeOptions,
     detailFillTypeOptions,
+    detailTabRelationSectionProps,
     detailSourceModuleCandidates,
     detailTabs,
     documentConditionOwnerSourceId,

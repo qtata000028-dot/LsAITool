@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
 
 import { type InspectorPanelRouterProps } from './inspector-panel-router';
 import {
@@ -76,8 +76,87 @@ export function useDashboardInspectorPanelProps(
     updateActiveDetailTabConfig,
   ]);
 
+  const updateActiveDetailGridConfig = useCallback((patch: Record<string, any>) => {
+    const currentTabId = input.activeTab;
+    input.setDetailTableConfigs((prev) => ({
+      ...prev,
+      [currentTabId]: {
+        mainSql: '',
+        defaultQuery: '',
+        sourceCondition: '',
+        sqlPrompt: '',
+        tableType: '普通表格',
+        ...(prev[currentTabId] ?? {}),
+        ...patch,
+      },
+    }));
+  }, [
+    input.activeTab,
+    input.setDetailTableConfigs,
+  ]);
+
+  const detailTabRelationSectionProps = useMemo(() => {
+    const currentTabId = input.activeTab;
+    if (!currentTabId || input.businessType === 'table') {
+      return null;
+    }
+
+    const currentTabConfig = input.getDetailTabConfigById(currentTabId);
+    const detailSourceModuleCode = String(currentTabConfig.relatedModule || '').trim();
+    const detailSourceMode = detailSourceModuleCode ? 'module' : 'sql';
+    const matchedDetailModuleCandidate = input.detailSourceModuleCandidates.find(
+      (candidate) => String(candidate.moduleCode || '').trim() === detailSourceModuleCode,
+    ) ?? null;
+
+    return {
+      availableGridColumnCount: (input.detailTableColumns[currentTabId] ?? []).length,
+      detailSourceModuleCandidates: input.detailSourceModuleCandidates,
+      detailSourceModuleCode,
+      detailSourceMode,
+      matchedDetailModuleCandidate,
+      relatedCondition: String(currentTabConfig.relatedCondition || '').trim(),
+      relatedModuleField: String(currentTabConfig.relatedModuleField || '').trim(),
+      relatedValue: String(currentTabConfig.relatedValue || '').trim(),
+      onSyncDetailColumnsFromConfiguredModule: () => {
+        if (!detailSourceModuleCode) {
+          input.showToast('请先填写模块编号');
+          return;
+        }
+        void input.applyDetailModuleInheritanceById(currentTabId, detailSourceModuleCode);
+      },
+      onUpdateDetailSourceModuleCode: (value: string) => {
+        input.handleDetailModuleCodeChange(currentTabId, value, { notify: true });
+      },
+      onUpdateRelatedCondition: (value: string) => {
+        updateActiveDetailTabConfig({ relatedCondition: value });
+        updateActiveDetailGridConfig({
+          defaultQuery: value,
+          sourceCondition: value,
+        });
+      },
+      onUpdateRelatedModuleField: (value: string) => {
+        updateActiveDetailTabConfig({ relatedModuleField: value });
+      },
+      onUpdateRelatedValue: (value: string) => {
+        updateActiveDetailTabConfig({ relatedValue: value });
+      },
+    };
+  }, [
+    input.activeTab,
+    input.applyDetailModuleInheritanceById,
+    input.businessType,
+    input.detailSourceModuleCandidates,
+    input.detailTableColumns,
+    input.getDetailTabConfigById,
+    input.handleDetailModuleCodeChange,
+    input.showToast,
+    updateActiveDetailGridConfig,
+    updateActiveDetailTabConfig,
+  ]);
+
   return useInspectorPanelProps({
     ...input,
+    detailTabRelationSectionProps,
     updateActiveDetailTabConfig,
     updateActiveDetailTabType,
   });

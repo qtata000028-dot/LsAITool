@@ -55,19 +55,29 @@ export function DetailFillPlaceholder({
       type="button"
       onClick={onActivate}
       className={cn(
-        'flex min-h-[156px] w-full flex-col items-center justify-center gap-3 rounded-md border border-dashed px-6 py-7 text-center shadow-sm transition-all',
+        'relative flex h-full min-h-0 w-full flex-1 items-center justify-center overflow-hidden rounded-[24px] border px-6 py-7 text-center transition-all',
         isSelected
           ? 'border-primary bg-primary/5 text-foreground ring-2 ring-primary ring-offset-1'
-          : 'border-border bg-background text-muted-foreground hover:border-primary/40 hover:bg-accent/30',
+          : 'border-border/80 bg-background/92 text-muted-foreground hover:border-primary/40 hover:bg-accent/20',
       )}
     >
-      <div className="flex size-11 items-center justify-center rounded-md border border-border bg-muted text-primary">
-        <FillTypeIcon className="size-5" />
-      </div>
-      <div className="space-y-1.5">
-        <div className="text-[13px] font-semibold text-foreground">{fillTypeMeta.label} 视图预留区</div>
-        <div className="max-w-sm text-[11px] leading-5 text-muted-foreground">
-          {fillTypeMeta.value === '图表' ? '点击配置明细图表' : `点击配置明细${fillTypeMeta.label}`}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.34),transparent_60%)]" />
+      <div
+        className={cn(
+          'relative z-10 flex w-full max-w-[360px] flex-col items-center gap-3 rounded-[18px] border px-6 py-7 shadow-[0_26px_50px_-40px_rgba(15,23,42,0.3)]',
+          isSelected
+            ? 'border-primary/25 bg-white/94'
+            : 'border-white/80 bg-white/90 dark:border-slate-800/90 dark:bg-slate-950/84',
+        )}
+      >
+        <div className="flex size-11 items-center justify-center rounded-md border border-border bg-muted text-primary">
+          <FillTypeIcon className="size-5" />
+        </div>
+        <div className="space-y-1.5">
+          <div className="text-[13px] font-semibold text-foreground">{fillTypeMeta.label} 视图预留区</div>
+          <div className="max-w-sm text-[11px] leading-5 text-muted-foreground">
+            {fillTypeMeta.value === '图表' ? '点击配置明细图表' : `点击配置明细${fillTypeMeta.label}`}
+          </div>
         </div>
       </div>
     </button>
@@ -203,7 +213,7 @@ export function DetailTabsWorkspace({
             )}
           </div>
         ) : (
-          <div className="min-h-0 flex-1 p-4">
+          <div className="min-h-0 flex-1">
             <DetailFillPlaceholder
               currentDetailFillType={currentDetailFillType}
               isSelected={isDetailViewSelected}
