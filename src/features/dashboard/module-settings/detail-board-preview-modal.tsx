@@ -1,6 +1,7 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArchiveLayoutFieldShell } from './archive-layout-field-shell';
+import { DetailBoardLayoutDesignerPreview } from './detail-board-layout-designer-preview';
 import {
   getDetailBoardGroupColumnRow,
   getDetailBoardGroupRows,
@@ -58,6 +59,7 @@ export const DetailBoardPreviewModal = React.memo(function DetailBoardPreviewMod
   if (!isOpen) return null;
 
   const detailBoardTheme = getDetailBoardTheme(workspaceTheme);
+  const hasDesignerLayout = Boolean(detailBoardConfig?.designerLayout?.items?.length);
   const sortColumnId = detailBoardSortColumnId || detailBoardConfig.sortColumnId || mainTableColumns[0]?.id || null;
   const panelGroups = detailBoardConfig.groups
     .map((group: any) => ({
@@ -98,6 +100,9 @@ export const DetailBoardPreviewModal = React.memo(function DetailBoardPreviewMod
                     <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
                       拖动字段右侧分隔线可调宽度，拖动下边缘可放大备注框。
                     </div>
+                    <div className="mt-2 inline-flex items-center rounded-xl border border-white/70 bg-white/80 px-3 py-1.5 text-[11px] font-semibold text-[color:var(--workspace-accent-strong)] shadow-[0_12px_24px_-22px_rgba(15,23,42,0.24)] dark:border-white/10 dark:bg-slate-900/58">
+                      {hasDesignerLayout ? '当前预览来源：designerLayout 优先模式' : '当前预览来源：legacy groups 兼容模式'}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -112,7 +117,21 @@ export const DetailBoardPreviewModal = React.memo(function DetailBoardPreviewMod
 
           <div className="scrollbar-none min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,rgba(250,252,255,0.98),rgba(244,247,251,0.96))] dark:bg-slate-900">
             <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-3 px-5 py-4">
-              {panelGroups.length === 0 ? (
+              {hasDesignerLayout ? (
+                <DetailBoardLayoutDesignerPreview
+                  detailBoardConfig={detailBoardConfig}
+                  detailBoardTheme={detailBoardTheme}
+                  getDetailBoardFieldLiveHeight={getDetailBoardFieldLiveHeight}
+                  getDetailBoardFieldLiveWidth={getDetailBoardFieldLiveWidth}
+                  getLayoutFieldWorkbenchMeta={getLayoutFieldWorkbenchMeta}
+                  mainTableColumns={mainTableColumns}
+                  onResetDetailBoardFieldHeight={onResetDetailBoardFieldHeight}
+                  onResetDetailBoardFieldWidth={onResetDetailBoardFieldWidth}
+                  onStartDetailBoardFieldHeightResize={onStartDetailBoardFieldHeightResize}
+                  onStartDetailBoardFieldResize={onStartDetailBoardFieldResize}
+                  renderFieldPreview={renderFieldPreview}
+                />
+              ) : panelGroups.length === 0 ? (
                 <section className={`rounded-[18px] border border-dashed px-6 py-10 text-center ${detailBoardTheme.groupShell}`}>
                   <div className="mx-auto flex size-14 items-center justify-center rounded-3xl bg-white text-[color:var(--workspace-accent)] shadow-[0_18px_30px_-24px_rgba(15,23,42,0.16)]">
                     <span className="material-symbols-outlined text-[24px]">view_stream</span>

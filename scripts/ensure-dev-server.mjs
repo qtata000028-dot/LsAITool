@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { cleanupDevPorts } from './dev-stack-utils.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,7 +19,6 @@ const clientPidFile = path.join(pidDirectory, 'vite-dev.pid');
 const apiPidFile = path.join(pidDirectory, 'minimax-api.pid');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const normalizedProjectRoot = projectRoot.replace(/\\/g, '/').toLowerCase();
 
 async function isUrlReady(url) {
   const controller = new AbortController();
@@ -53,15 +53,6 @@ async function waitForServices(timeoutMs = 60000) {
   return false;
 }
 
-function readPidFile(pidFilePath) {
-  if (!existsSync(pidFilePath)) {
-    return null;
-  }
-
-  const value = Number.parseInt(readFileSync(pidFilePath, 'utf8').trim(), 10);
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
 function clearPidFile(pidFilePath) {
   if (!existsSync(pidFilePath)) {
     return;
@@ -72,105 +63,6 @@ function clearPidFile(pidFilePath) {
   } catch {
     // Ignore pid file cleanup failures.
   }
-}
-
-function getListeningPids(port) {
-  try {
-    const output = execFileSync(
-      process.platform === 'win32' ? 'cmd.exe' : 'sh',
-      process.platform === 'win32'
-        ? ['/d', '/c', `netstat -ano -p tcp | findstr LISTENING | findstr ":${port}"`]
-        : ['-lc', `lsof -ti tcp:${port}`],
-      {
-        cwd: projectRoot,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      },
-    );
-
-    const candidates = process.platform === 'win32'
-      ? output
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .map((line) => Number.parseInt(line.split(/\s+/).at(-1) || '', 10))
-      : output
-          .split(/\r?\n/)
-          .map((line) => Number.parseInt(line.trim(), 10));
-
-    return [...new Set(candidates.filter((pid) => Number.isFinite(pid) && pid > 0))];
-  } catch {
-    return [];
-  }
-}
-
-function getProcessCommandLine(pid) {
-  try {
-    if (process.platform === 'win32') {
-      return execFileSync(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-Command',
-          `(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" | Select-Object -ExpandProperty CommandLine)`,
-        ],
-        {
-          cwd: projectRoot,
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-        },
-      ).trim();
-    }
-
-    return execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
-      cwd: projectRoot,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  } catch {
-    return '';
-  }
-}
-
-function isManagedProcess(pid) {
-  const commandLine = getProcessCommandLine(pid).replace(/\\/g, '/').toLowerCase();
-  return commandLine.includes(normalizedProjectRoot);
-}
-
-function stopProcessTree(pid) {
-  try {
-    if (process.platform === 'win32') {
-      execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
-        cwd: projectRoot,
-        stdio: ['ignore', 'ignore', 'ignore'],
-      });
-      return;
-    }
-
-    process.kill(pid, 'SIGTERM');
-  } catch {
-    // Ignore already-exited processes.
-  }
-}
-
-function recycleUnhealthyManagedService(port, label, pidFilePath) {
-  const pids = new Set(getListeningPids(port));
-  const pidFromFile = readPidFile(pidFilePath);
-
-  if (pidFromFile) {
-    pids.add(pidFromFile);
-  }
-
-  const managedPids = [...pids].filter(isManagedProcess);
-
-  if (managedPids.length === 0) {
-    return false;
-  }
-
-  console.log(`Stopping stale ${label} process(es): ${managedPids.join(', ')}`);
-  managedPids.forEach(stopProcessTree);
-  clearPidFile(pidFilePath);
-  return true;
 }
 
 function startDetached(scriptCommand, stdoutPath, stderrPath, pidFilePath) {
@@ -189,6 +81,13 @@ function startDetached(scriptCommand, stdoutPath, stderrPath, pidFilePath) {
 }
 
 async function main() {
+  const stoppedProcesses = cleanupDevPorts(projectRoot, [3000, 3001]);
+  if (stoppedProcesses.length > 0) {
+    clearPidFile(clientPidFile);
+    clearPidFile(apiPidFile);
+    await sleep(1000);
+  }
+
   let [clientReady, apiReady] = await Promise.all([
     isUrlReady(clientUrl),
     isUrlReady(apiUrl),
@@ -197,22 +96,6 @@ async function main() {
   if (clientReady && apiReady) {
     console.log(`Dev stack is already running at ${clientUrl}`);
     return;
-  }
-
-  if (!clientReady) {
-    const recycled = recycleUnhealthyManagedService(3000, 'Vite dev server', clientPidFile);
-    if (recycled) {
-      await sleep(1000);
-      clientReady = await isUrlReady(clientUrl);
-    }
-  }
-
-  if (!apiReady) {
-    const recycled = recycleUnhealthyManagedService(3001, 'MiniMax API server', apiPidFile);
-    if (recycled) {
-      await sleep(1000);
-      apiReady = await isUrlReady(apiUrl);
-    }
   }
 
   if (!clientReady) {

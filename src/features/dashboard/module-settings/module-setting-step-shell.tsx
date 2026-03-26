@@ -106,6 +106,7 @@ export function ModuleSettingStepShell({
   tree,
 }: ModuleSettingStepShellProps) {
   const detailBoardTheme = getDetailBoardTheme(workspaceTheme);
+  const hasDocumentDetails = document.detailTabs.length > 0;
 
   if (businessType === 'document') {
     return (
@@ -134,7 +135,7 @@ export function ModuleSettingStepShell({
             ) : null}
 
             <div className="min-h-0 min-w-0 flex-1 px-1">
-              <div className="grid h-full min-h-0 grid-rows-2 gap-3 overflow-hidden">
+              <div className={`grid h-full min-h-0 gap-3 overflow-hidden ${hasDocumentDetails ? 'grid-rows-2' : 'grid-rows-[minmax(0,1fr)_auto]'}`}>
                 <div className="cloudy-glass-panel flex min-h-0 flex-col overflow-hidden rounded-[32px] border border-white/75">
                   <div className="flex items-center justify-between border-b border-white/70 px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -167,35 +168,56 @@ export function ModuleSettingStepShell({
                   </div>
                 </div>
 
-                <div className="cloudy-glass-panel min-h-0 overflow-hidden rounded-[32px] border border-white/75">
-                  <div className="flex h-full min-h-0 overflow-hidden px-3 py-3">
-                    <MemoDocumentDetailWorkbench
-                      tableSurfaceClass={detailBoardTheme.tableSurface}
-                      detailTabStripNode={(
-                        <MemoDetailTabStrip
-                          detailTabs={document.detailTabs}
-                          activeTab={document.activeTab}
-                          currentDetailFillType={document.currentDetailFillType}
-                          onActivateTab={document.onActivateDetailTab}
-                          onDeleteTab={document.onDeleteDetailTab}
-                          onAddTab={document.onAddDetailTab}
-                          addLabel="新页签"
-                          showModeBadge={false}
-                        />
-                      )}
-                      currentDetailFillType={document.currentDetailFillType}
-                      onPasteTableColumns={document.onPasteDetailTableColumns}
-                      tableBuilderNode={document.documentDetailTableBuilderNode}
-                      fillPlaceholderNode={(
-                        <DetailFillPlaceholder
-                          currentDetailFillType={document.currentDetailFillType}
-                          isSelected={document.isDetailFillSelected}
-                          onActivate={document.onActivateDetailFill}
-                        />
-                      )}
-                    />
+                {hasDocumentDetails ? (
+                  <div className="cloudy-glass-panel min-h-0 overflow-hidden rounded-[32px] border border-white/75">
+                    <div className="flex h-full min-h-0 overflow-hidden px-3 py-3">
+                      <MemoDocumentDetailWorkbench
+                        tableSurfaceClass={detailBoardTheme.tableSurface}
+                        detailTabStripNode={(
+                          <MemoDetailTabStrip
+                            detailTabs={document.detailTabs}
+                            activeTab={document.activeTab}
+                            currentDetailFillType={document.currentDetailFillType}
+                            onActivateTab={document.onActivateDetailTab}
+                            onDeleteTab={document.onDeleteDetailTab}
+                            onAddTab={document.onAddDetailTab}
+                            addLabel="新增明细"
+                            showModeBadge={false}
+                          />
+                        )}
+                        currentDetailFillType={document.currentDetailFillType}
+                        onPasteTableColumns={document.onPasteDetailTableColumns}
+                        tableBuilderNode={document.documentDetailTableBuilderNode}
+                        fillPlaceholderNode={(
+                          <DetailFillPlaceholder
+                            currentDetailFillType={document.currentDetailFillType}
+                            isSelected={document.isDetailFillSelected}
+                            onActivate={document.onActivateDetailFill}
+                          />
+                        )}
+                      />
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="rounded-[28px] border border-dashed border-[color:var(--workspace-accent-border)] bg-white/72 px-4 py-4 dark:bg-slate-900/75">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">当前未创建明细</div>
+                        <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-300">
+                          点击创建明细后，再展开下方工作台，按现在的上下等分方式继续配置。
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={document.onAddDetailTab}
+                        className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[14px] bg-[color:var(--workspace-accent)] px-4 text-[12px] font-semibold text-white shadow-[0_16px_28px_-24px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">add</span>
+                        创建明细
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

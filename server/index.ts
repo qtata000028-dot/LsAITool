@@ -44,6 +44,30 @@ type TranslationItem = {
   identifier: string;
 };
 
+type AiCreateMainTableColumnInput = {
+  id: string;
+  identifier?: string;
+  name: string;
+  type?: string;
+};
+
+type AiCreateMainTableColumnResult = {
+  id: string;
+  identifier: string;
+  name: string;
+  source: 'ai' | 'existing' | 'heuristic';
+  translated: boolean;
+  type?: string;
+};
+
+type AiCreateMainTablePersistenceResult = {
+  message?: string;
+  requestBody?: Record<string, unknown>;
+  responseBody?: unknown;
+  status: 'failed' | 'pending' | 'saved' | 'skipped';
+  target: string;
+};
+
 app.use(express.json({ limit: '1mb' }));
 
 function getApiKey() {
@@ -109,6 +133,25 @@ function normalizeList(value: unknown, fallback: string[] = []) {
   return fallback;
 }
 
+function extractErrorMessage(data: unknown) {
+  if (typeof data === 'string' && data.trim()) {
+    return data;
+  }
+
+  if (data && typeof data === 'object') {
+    const record = data as Record<string, unknown>;
+    const candidates = [record.message, record.error, record.msg, record.detail];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
 function sanitizeIdentifier(input: string, fallback: string) {
   const normalized = input
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
@@ -118,6 +161,14 @@ function sanitizeIdentifier(input: string, fallback: string) {
     .toLowerCase();
 
   return normalized || fallback;
+}
+
+function isAsciiIdentifier(input: string) {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(input.trim());
+}
+
+function normalizeTableName(input: string) {
+  return sanitizeIdentifier(input, 'main_table');
 }
 
 const identifierDictionary: Array<[string, string]> = [
@@ -443,6 +494,343 @@ function normalizeTranslationItems(rawText: string, columns: Array<{ id: string;
   return mapped satisfies TranslationItem[];
 }
 
+function normalizeAiCreateMainTableColumns(input: unknown) {
+  if (!Array.isArray(input)) {
+    return [] as AiCreateMainTableColumnInput[];
+  }
+
+  return input.flatMap((column, index) => {
+      const record = column && typeof column === 'object' ? column as Record<string, unknown> : {};
+      const name = String(record.name || '').trim();
+      const id = String(record.id || `column_${index + 1}`).trim() || `column_${index + 1}`;
+
+      if (!name) {
+        return [];
+      }
+
+      return [{
+        id,
+        identifier: String(record.identifier || '').trim(),
+        name,
+        type: String(record.type || '').trim(),
+      } satisfies AiCreateMainTableColumnInput];
+    });
+}
+
+function needsIdentifierTranslation(identifier: string | undefined) {
+  const trimmed = String(identifier || '').trim();
+
+  if (!trimmed) {
+    return true;
+  }
+
+  if (/[\u4e00-\u9fff]/.test(trimmed)) {
+    return true;
+  }
+
+  return !/^[A-Za-z0-9_]+$/.test(trimmed);
+}
+
+function dedupeAiCreateMainTableColumns(columns: AiCreateMainTableColumnResult[]) {
+  const used = new Map<string, number>();
+
+  return columns.map((column, index) => {
+    const baseIdentifier = sanitizeIdentifier(column.identifier, `field_${index + 1}`);
+    const currentCount = used.get(baseIdentifier) ?? 0;
+
+    if (currentCount === 0) {
+      used.set(baseIdentifier, 1);
+      return {
+        ...column,
+        identifier: baseIdentifier,
+      };
+    }
+
+    let nextCount = currentCount + 1;
+    let nextIdentifier = `${baseIdentifier}_${nextCount}`;
+    while (used.has(nextIdentifier)) {
+      nextCount += 1;
+      nextIdentifier = `${baseIdentifier}_${nextCount}`;
+    }
+
+    used.set(baseIdentifier, nextCount);
+    used.set(nextIdentifier, 1);
+
+    return {
+      ...column,
+      identifier: nextIdentifier,
+    };
+  });
+}
+
+async function resolveAiCreateMainTableColumns(columns: AiCreateMainTableColumnInput[]) {
+  const unresolvedColumns = columns.filter((column) => needsIdentifierTranslation(column.identifier));
+  const translatedIdentifierMap = new Map<string, string>();
+  let degraded = false;
+  let message = '';
+  let raw = '';
+
+  if (unresolvedColumns.length > 0) {
+    if (getApiKey()) {
+      try {
+        const { raw: rawText } = await requestMiniMaxJson(
+          buildTranslatePrompt(unresolvedColumns.map((column) => ({
+            id: column.id,
+            identifier: column.identifier,
+            name: column.name,
+          }))),
+        );
+
+        raw = rawText;
+        normalizeTranslationItems(rawText, unresolvedColumns).forEach((item) => {
+          translatedIdentifierMap.set(item.id, item.identifier);
+        });
+      } catch (error) {
+        degraded = true;
+        message = error instanceof Error ? error.message : 'MiniMax identifier translation failed.';
+      }
+    } else {
+      degraded = true;
+      message = 'MINIMAX_API_KEY is missing in .env.local.';
+    }
+  }
+
+  const resolvedColumns = dedupeAiCreateMainTableColumns(columns.map((column, index) => {
+    const normalizedExistingIdentifier = isAsciiIdentifier(String(column.identifier || '').trim())
+      ? sanitizeIdentifier(String(column.identifier || '').trim(), `field_${index + 1}`)
+      : '';
+
+    if (!needsIdentifierTranslation(column.identifier) && normalizedExistingIdentifier) {
+      return {
+        id: column.id,
+        identifier: normalizedExistingIdentifier,
+        name: column.name,
+        source: 'existing',
+        translated: false,
+        type: column.type,
+      } satisfies AiCreateMainTableColumnResult;
+    }
+
+    const aiIdentifier = translatedIdentifierMap.get(column.id);
+    const fallbackIdentifier = guessIdentifierFromName(column.name, index);
+
+    return {
+      id: column.id,
+      identifier: aiIdentifier || fallbackIdentifier,
+      name: column.name,
+      source: aiIdentifier ? 'ai' : 'heuristic',
+      translated: true,
+      type: column.type,
+    } satisfies AiCreateMainTableColumnResult;
+  }));
+
+  return {
+    columns: resolvedColumns,
+    degraded,
+    message,
+    raw,
+    translatedCount: resolvedColumns.filter((column) => column.translated).length,
+    untranslatedCount: unresolvedColumns.length,
+  };
+}
+
+function resolveSqlColumnType(type: string | undefined, name: string, identifier: string) {
+  const combined = `${String(type || '')} ${name} ${identifier}`.toLowerCase();
+
+  if (/(bool|boolean|checkbox|\u590D\u9009|\u5F00\u5173)/i.test(combined)) {
+    return 'BIT';
+  }
+
+  if (/(datetime|timestamp|\u65E5\u671F\u65F6\u95F4|\u65F6\u95F4)/i.test(combined)) {
+    return 'DATETIME';
+  }
+
+  if (/(date|\u65E5\u671F)/i.test(combined)) {
+    return 'DATE';
+  }
+
+  if (/(int|\u6574\u6570|\u5E8F\u53F7)/i.test(combined)) {
+    return 'INT';
+  }
+
+  if (/(decimal|number|qty|count|price|amount|\u6570\u5B57|\u91D1\u989D|\u5355\u4EF7|\u6570\u91CF)/i.test(combined)) {
+    return 'DECIMAL(18,2)';
+  }
+
+  if (/(remark|description|content|memo|note|\u5907\u6CE8|\u8BF4\u660E|\u5185\u5BB9)/i.test(combined)) {
+    return 'NVARCHAR(500)';
+  }
+
+  return 'NVARCHAR(255)';
+}
+
+function buildCreateTableSql(tableName: string, columns: AiCreateMainTableColumnResult[]) {
+  const hasPrimaryId = columns.some((column) => column.identifier === 'id');
+  const definitions = [
+    ...(hasPrimaryId ? [] : ['  [id] BIGINT IDENTITY(1,1) NOT NULL']),
+    ...columns.map((column) => `  [${column.identifier}] ${resolveSqlColumnType(column.type, column.name, column.identifier)} NULL`),
+    ...(hasPrimaryId ? [] : [`  CONSTRAINT [PK_${tableName}] PRIMARY KEY ([id])`]),
+  ];
+
+  return [
+    `CREATE TABLE [${tableName}] (`,
+    definitions.map((line, index) => (index < definitions.length - 1 ? `${line},` : line)).join('\n'),
+    ');',
+  ].join('\n');
+}
+
+function buildMainTableSql(tableName: string, columns: AiCreateMainTableColumnResult[]) {
+  if (columns.length === 0) {
+    return [
+      'SELECT',
+      '  *',
+      `FROM [${tableName}]`,
+      'WHERE 1 = 1',
+    ].join('\n');
+  }
+
+  return [
+    'SELECT',
+    columns.map((column) => `  [${column.identifier}] AS [${column.name}]`).join(',\n'),
+    `FROM [${tableName}]`,
+    'WHERE 1 = 1',
+  ].join('\n');
+}
+
+function buildAiCreateMainTablePersistPayload(input: {
+  columns: AiCreateMainTableColumnResult[];
+  createTableSql: string;
+  defaultQuery: string;
+  description: string;
+  mainSql: string;
+  moduleCode: string;
+  moduleName: string;
+  tableName: string;
+  tableType: string;
+}) {
+  return {
+    action: 'ai_create_main_table',
+    aiGenerated: true,
+    columns: input.columns.map((column, index) => ({
+      id: column.id,
+      identifier: column.identifier,
+      name: column.name,
+      orderId: index + 1,
+      translated: column.translated,
+      translationSource: column.source,
+      type: column.type || '',
+    })),
+    createTableSql: input.createTableSql,
+    defaultQuery: input.defaultQuery,
+    description: input.description,
+    mainTable: input.tableName,
+    moduleCode: input.moduleCode,
+    moduleName: input.moduleName,
+    querySql: input.mainSql,
+    tableType: input.tableType,
+  } satisfies Record<string, unknown>;
+}
+
+async function parseUpstreamPayload(response: Response) {
+  const contentType = response.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    return response.json().catch(() => null);
+  }
+
+  const text = await response.text().catch(() => '');
+  return text || null;
+}
+
+function resolveAiCreateMainTablePersistPath(moduleCode: string) {
+  const configuredPath = getAiCreateMainTablePersistPathConfig();
+  const fallbackPath = '/api/single-table/modules/{moduleCode}/ai-main-table';
+  const rawPath = configuredPath || fallbackPath;
+
+  return rawPath.replace(/\{moduleCode\}|:moduleCode/g, encodeURIComponent(moduleCode));
+}
+
+function getAiCreateMainTablePersistPathConfig() {
+  const configuredPath = String(process.env.BUSINESS_AI_MAIN_TABLE_SAVE_PATH || '').trim();
+
+  if (!configuredPath) {
+    return '';
+  }
+
+  if (configuredPath.includes('你的保存接口') || configuredPath.includes('your-save-path')) {
+    return '';
+  }
+
+  return configuredPath;
+}
+
+async function persistAiCreateMainTable(
+  req: express.Request,
+  payload: Record<string, unknown>,
+  options: {
+    moduleCode: string;
+    persist: boolean;
+  },
+) {
+  const configuredPath = getAiCreateMainTablePersistPathConfig();
+  const targetPath = resolveAiCreateMainTablePersistPath(options.moduleCode);
+
+  if (!options.persist) {
+    return {
+      status: 'skipped',
+      target: targetPath,
+      message: '当前请求未启用后端持久化。',
+      requestBody: payload,
+    } satisfies AiCreateMainTablePersistenceResult;
+  }
+
+  if (!configuredPath) {
+    return {
+      status: 'pending',
+      target: targetPath,
+      message: '未配置有效的 BUSINESS_AI_MAIN_TABLE_SAVE_PATH，已返回可直接落库的 payload 供后端联调。',
+      requestBody: payload,
+    } satisfies AiCreateMainTablePersistenceResult;
+  }
+
+  try {
+    const headers = buildBusinessProxyHeaders(req);
+    headers.set('content-type', 'application/json');
+
+    const upstream = await fetch(`${businessApiBaseUrl}${targetPath}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    const responseBody = await parseUpstreamPayload(upstream);
+
+    if (!upstream.ok) {
+      return {
+        status: 'failed',
+        target: targetPath,
+        message: extractErrorMessage(responseBody) ?? `业务保存失败，状态码 ${upstream.status}`,
+        requestBody: payload,
+        responseBody,
+      } satisfies AiCreateMainTablePersistenceResult;
+    }
+
+    return {
+      status: 'saved',
+      target: targetPath,
+      message: '后端持久化完成。',
+      requestBody: payload,
+      responseBody,
+    } satisfies AiCreateMainTablePersistenceResult;
+  } catch (error) {
+    return {
+      status: 'failed',
+      target: targetPath,
+      message: error instanceof Error ? error.message : '后端持久化请求失败。',
+      requestBody: payload,
+    } satisfies AiCreateMainTablePersistenceResult;
+  }
+}
+
 app.get('/api/ai/health', (_req, res) => {
   res.json({
     configured: Boolean(getApiKey()),
@@ -547,6 +935,71 @@ app.post('/api/ai/translate-identifiers', async (req, res) => {
           ? column.identifier
           : guessIdentifierFromName(String(column.name || ''), index),
       })),
+    });
+  }
+});
+
+app.post('/api/ai/create-main-table', async (req, res) => {
+  const moduleCode = String(req.body?.moduleCode || '').trim();
+  const moduleName = String(req.body?.moduleName || '').trim();
+  const tableName = normalizeTableName(String(req.body?.tableName || '').trim());
+  const tableType = String(req.body?.tableType || '').trim() || '普通表格';
+  const description = String(req.body?.description || '').trim();
+  const persist = req.body?.persist !== false;
+  const columns = normalizeAiCreateMainTableColumns(req.body?.columns);
+
+  if (!tableName) {
+    return res.status(400).json({
+      message: 'tableName is required.',
+    });
+  }
+
+  if (columns.length === 0) {
+    return res.status(400).json({
+      message: 'columns are required.',
+    });
+  }
+
+  try {
+    const resolved = await resolveAiCreateMainTableColumns(columns);
+    const createTableSql = buildCreateTableSql(tableName, resolved.columns);
+    const mainSql = buildMainTableSql(tableName, resolved.columns);
+    const defaultQuery = '';
+    const persistPayload = buildAiCreateMainTablePersistPayload({
+      columns: resolved.columns,
+      createTableSql,
+      defaultQuery,
+      description,
+      mainSql,
+      moduleCode,
+      moduleName,
+      tableName,
+      tableType,
+    });
+    const persistence = await persistAiCreateMainTable(req, persistPayload, {
+      moduleCode: moduleCode || tableName,
+      persist,
+    });
+
+    return res.json({
+      model,
+      degraded: resolved.degraded,
+      message: resolved.message,
+      result: {
+        createTableSql,
+        defaultQuery,
+        mainSql,
+        persistence,
+        raw: resolved.raw,
+        tableName,
+        translatedColumns: resolved.columns,
+        translatedCount: resolved.translatedCount,
+        untranslatedCount: resolved.untranslatedCount,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error instanceof Error ? error.message : 'AI create main table failed.',
     });
   }
 });

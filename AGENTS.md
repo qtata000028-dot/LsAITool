@@ -93,4 +93,9 @@
 - 只要改动 `src/components/Dashboard.tsx` 或 `src/features/dashboard/**`，默认必须同时遵守：
   - [docs/dashboard-architecture-rules.md](/Users/apple/Desktop/未命名文件夹/LsSmartTool/LsAITool/docs/dashboard-architecture-rules.md)
 - 对人和 AI 都一样适用，不允许例外地把新功能继续堆回 `Dashboard.tsx`。
+- 如果需求涉及“表格详情配置 / 详情布局编辑”，默认必须优先复用统一能力：
+  - `src/features/dashboard/detail-layout-designer`
+  - `FieldBackedDetailLayoutDesigner`
+  - 业务 adapter / bridge 模式
+- 不允许再为某一个详情入口单独造一套新的拖拽布局编辑器。
 - 如果确实必须突破该文档约束，提交前必须先在任务文档中明确写清原因、影响范围和回滚方式。

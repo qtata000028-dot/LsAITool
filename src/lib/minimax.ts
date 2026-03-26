@@ -1,3 +1,5 @@
+import { apiRequest } from './http';
+
 export type SurveyPlan = {
   summary: string;
   complexity: string;
@@ -37,6 +39,42 @@ type ColumnPayload = {
   name: string;
   type?: string;
   identifier?: string;
+};
+
+export type AiCreateMainTableColumn = {
+  id: string;
+  identifier: string;
+  name: string;
+  source: 'existing' | 'ai' | 'heuristic';
+  translated: boolean;
+  type?: string;
+};
+
+export type AiCreateMainTablePersistence = {
+  message?: string;
+  requestBody?: Record<string, unknown>;
+  responseBody?: unknown;
+  status: 'failed' | 'pending' | 'saved' | 'skipped';
+  target: string;
+};
+
+export type AiCreateMainTableResult = {
+  createTableSql: string;
+  defaultQuery: string;
+  mainSql: string;
+  persistence: AiCreateMainTablePersistence;
+  raw: string;
+  tableName: string;
+  translatedColumns: AiCreateMainTableColumn[];
+  translatedCount: number;
+  untranslatedCount: number;
+};
+
+type AiCreateMainTableResponse = {
+  degraded?: boolean;
+  message?: string;
+  model: string;
+  result: AiCreateMainTableResult;
 };
 
 export async function requestSurveyPlan(mode: string, dataSource: string) {
@@ -99,4 +137,20 @@ export async function requestIdentifierTranslation(columns: ColumnPayload[]) {
   }
 
   return payload as IdentifierTranslationResponse;
+}
+
+export async function requestAiCreateMainTable(input: {
+  columns: ColumnPayload[];
+  description: string;
+  moduleCode: string;
+  moduleName: string;
+  persist?: boolean;
+  tableName: string;
+  tableType: string;
+}) {
+  return apiRequest<AiCreateMainTableResponse>('/api/ai/create-main-table', {
+    auth: true,
+    body: input,
+    method: 'POST',
+  });
 }

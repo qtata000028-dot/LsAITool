@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { cn } from '../../../lib/utils';
 import {
   resolveWorkbenchPreviewWidth,
@@ -77,6 +77,11 @@ export type TableBuilderProps = {
   metrics: TableBuilderColumnMetrics;
 };
 
+type TableBuilderDropIndicator =
+  | { kind: 'column'; id: string; position: 'before' | 'after' }
+  | { kind: 'append' }
+  | null;
+
 export const MemoTableBuilder = React.memo(function TableBuilder({
   scope,
   cols,
@@ -110,6 +115,8 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const hasDetailBoardFeature = detailBoardConfig.enabled && detailBoardConfig.groups.some((group: any) => group.columnIds.length > 0);
   const detailBoardFeatureLabel = hasDetailBoardFeature ? '双击详情预览' : null;
   const selectedForDeleteSet = useMemo(() => new Set(selectedForDelete), [selectedForDelete]);
+  const [draggingColumnId, setDraggingColumnId] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<TableBuilderDropIndicator>(null);
 
   const buildScopedSelectionIds = useCallback((currentIds: string[], id: string, append: boolean) => {
     if (currentIds.includes(id)) {
@@ -129,6 +136,110 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       'column',
     );
   }, [activeResize, helpers, metrics.collapsedRenderWidth, metrics.minWidth]);
+
+  const clearColumnDragState = useCallback(() => {
+    setDraggingColumnId(null);
+    setDropIndicator(null);
+  }, []);
+
+  const resolveDropPosition = useCallback((event: React.DragEvent<HTMLElement>) => {
+    const { left, width } = event.currentTarget.getBoundingClientRect();
+    return event.clientX <= left + width / 2 ? 'before' : 'after';
+  }, []);
+
+  const moveColumnById = useCallback((sourceId: string, targetId: string, position: 'before' | 'after') => {
+    if (sourceId === targetId) return;
+
+    setCols((prev) => {
+      const sourceIndex = prev.findIndex((column) => column?.id === sourceId);
+      const targetIndex = prev.findIndex((column) => column?.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0) {
+        return prev;
+      }
+
+      const next = [...prev];
+      const [sourceColumn] = next.splice(sourceIndex, 1);
+      const normalizedTargetIndex = next.findIndex((column) => column?.id === targetId);
+      if (!sourceColumn || normalizedTargetIndex < 0) {
+        return prev;
+      }
+
+      const insertIndex = position === 'after' ? normalizedTargetIndex + 1 : normalizedTargetIndex;
+      next.splice(insertIndex, 0, sourceColumn);
+      return next;
+    });
+  }, [setCols]);
+
+  const moveColumnToEnd = useCallback((sourceId: string) => {
+    setCols((prev) => {
+      const sourceIndex = prev.findIndex((column) => column?.id === sourceId);
+      if (sourceIndex < 0 || sourceIndex === prev.length - 1) {
+        return prev;
+      }
+
+      const next = [...prev];
+      const [sourceColumn] = next.splice(sourceIndex, 1);
+      if (!sourceColumn) {
+        return prev;
+      }
+      next.push(sourceColumn);
+      return next;
+    });
+  }, [setCols]);
+
+  const handleColumnDragStart = useCallback((event: React.DragEvent<HTMLButtonElement>, id: string) => {
+    setDraggingColumnId(id);
+    setDropIndicator(null);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', id);
+  }, []);
+
+  const handleColumnDragOver = useCallback((event: React.DragEvent<HTMLButtonElement>, id: string) => {
+    if (!draggingColumnId || draggingColumnId === id) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const position = resolveDropPosition(event);
+    setDropIndicator((prev) => (
+      prev?.kind === 'column' && prev.id === id && prev.position === position
+        ? prev
+        : { kind: 'column', id, position }
+    ));
+  }, [draggingColumnId, resolveDropPosition]);
+
+  const handleColumnDrop = useCallback((event: React.DragEvent<HTMLButtonElement>, id: string) => {
+    if (!draggingColumnId) {
+      return;
+    }
+
+    event.preventDefault();
+    if (draggingColumnId !== id) {
+      moveColumnById(draggingColumnId, id, resolveDropPosition(event));
+    }
+    clearColumnDragState();
+  }, [clearColumnDragState, draggingColumnId, moveColumnById, resolveDropPosition]);
+
+  const handleAppendDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
+    if (!draggingColumnId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropIndicator((prev) => (prev?.kind === 'append' ? prev : { kind: 'append' }));
+  }, [draggingColumnId]);
+
+  const handleAppendDrop = useCallback((event: React.DragEvent<HTMLElement>) => {
+    if (!draggingColumnId) {
+      return;
+    }
+
+    event.preventDefault();
+    moveColumnToEnd(draggingColumnId);
+    clearColumnDragState();
+  }, [clearColumnDragState, draggingColumnId, moveColumnToEnd]);
 
   const handleColumnHeaderClick = useCallback((event: React.MouseEvent<HTMLButtonElement>, id: string) => {
     setBuilderSelectionContextMenu(null);
@@ -218,14 +329,6 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     return 'text-[color:var(--workspace-accent-strong)]';
   }, [tableSelected]);
 
-  const getHeaderResizeRailClass = useCallback((isActive: boolean) => (
-    isActive
-      ? 'bg-[color:var(--workspace-accent-soft)]'
-      : tableSelected
-        ? 'bg-transparent group-hover:bg-white/30 dark:group-hover:bg-white/6'
-        : ''
-  ), [tableSelected]);
-
   const tableCanvasClass = tableSelected
     ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] text-[color:var(--workspace-accent-strong)]'
     : 'border-slate-200/80 bg-white text-slate-400 hover:border-slate-200/90 hover:bg-white dark:text-slate-500';
@@ -268,11 +371,6 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     width: totalTableWidth,
     minWidth: totalTableWidth,
   }), [totalTableWidth]);
-
-  const visibleResizeTag = useMemo(
-    () => (activeResize && headerColumns.some((column) => column.col.id === activeResize.id) ? activeResize : null),
-    [activeResize, headerColumns],
-  );
 
   const handleAddColumn = useCallback(() => {
     setCols((prev) => [...prev, helpers.buildColumn(scope === 'detail' ? 'd_col' : `${scope}_col`, prev.length + 1)]);
@@ -330,8 +428,8 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     tableCanvasTitleClass,
     tableSelected,
   ]);
-  const centeredCanvasViewportNode = useMemo(() => (
-    <div className="sticky left-1/2 flex w-fit max-w-full -translate-x-1/2 items-center justify-center px-4">
+  const centeredCanvasOverlayNode = useMemo(() => (
+    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4">
       {centeredCanvasPanelNode}
     </div>
   ), [centeredCanvasPanelNode]);
@@ -341,7 +439,10 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       {headerColumns.map(({ col, index, normalizedCol, headerWidth, isCollapsedHeader, isTreeRelation }) => {
         const isActive = selectedId === col.id;
         const isMarkedForDelete = selectedForDeleteSet.has(col.id);
-        const isResizing = activeResize?.id === col.id;
+        const isDragging = draggingColumnId === col.id;
+        const dropIndicatorPosition = dropIndicator?.kind === 'column' && dropIndicator.id === col.id
+          ? dropIndicator.position
+          : null;
 
         return (
           <th
@@ -351,9 +452,20 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
           >
             <button
               type="button"
+              draggable
               onClick={(event) => handleColumnHeaderClick(event, col.id)}
               onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
-              className={`relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? (compactCanvasVariant ? 'min-h-[34px] px-0 pr-1.5 py-0' : 'min-h-[36px] px-0 pr-1.5 py-0') : isCompactModuleSetting ? `${compactCanvasVariant ? 'min-h-[32px]' : 'min-h-[34px]'} px-1.5 pr-3 py-0` : `${compactCanvasVariant ? 'min-h-[38px]' : 'min-h-[42px]'} px-2 pr-3.5 py-0`} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+              onDragStart={(event) => handleColumnDragStart(event, col.id)}
+              onDragOver={(event) => handleColumnDragOver(event, col.id)}
+              onDrop={(event) => handleColumnDrop(event, col.id)}
+              onDragEnd={clearColumnDragState}
+              className={cn(
+                `relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? (compactCanvasVariant ? 'min-h-[34px] px-0 pr-1.5 py-0' : 'min-h-[36px] px-0 pr-1.5 py-0') : isCompactModuleSetting ? `${compactCanvasVariant ? 'min-h-[32px]' : 'min-h-[34px]'} px-1.5 pr-3 py-0` : `${compactCanvasVariant ? 'min-h-[38px]' : 'min-h-[42px]'} px-2 pr-3.5 py-0`} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`,
+                'cursor-grab active:cursor-grabbing',
+                isDragging && 'opacity-70',
+                dropIndicatorPosition && 'shadow-[inset_0_0_0_1px_var(--workspace-accent-border-strong)]',
+              )}
+              title="拖动可调整列顺序，点击可选中字段"
             >
               <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
                 <div
@@ -370,20 +482,25 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
                 </div>
               </div>
             </button>
-            <div
-              className={`absolute right-0 top-0 bottom-0 z-20 flex ${isCompactModuleSetting ? 'w-2.5' : 'w-3'} cursor-col-resize items-center justify-center ${getHeaderResizeRailClass(isActive)}`}
-              onMouseDown={(event) => startResize(event, col.id, cols, setCols, metrics.resizeMinWidth, metrics.resizeMaxWidth, 'column')}
-              onDoubleClick={(event) => autoFitColumnWidth(event, col.id, cols, setCols, metrics.minWidth, metrics.resizeMaxWidth, 'column')}
-              title="拖动调整列宽，双击可自动适配"
-            >
-              <span className={`h-5 rounded-full transition-all ${isResizing ? 'bg-[#2563eb] shadow-[0_0_0_2px_rgba(37,99,235,0.12)]' : 'bg-transparent group-hover:bg-slate-300 dark:group-hover:bg-slate-500'} ${compactCanvasVariant ? 'w-px' : 'w-px'}`} />
-            </div>
+            {dropIndicatorPosition && (
+              <div
+                className={cn(
+                  'pointer-events-none absolute inset-y-1 z-30 w-[3px] rounded-full bg-[color:var(--workspace-accent-strong)] shadow-[0_0_0_2px_rgba(192,107,125,0.18)]',
+                  dropIndicatorPosition === 'before' ? 'left-0 -translate-x-1/2' : 'right-0 translate-x-1/2',
+                )}
+              />
+            )}
           </th>
         );
       })}
       <th
         style={{ width: addColumnWidth, minWidth: addColumnWidth }}
-        className={`border-b p-0 align-top ${addColumnHeaderShellClass}`}
+        onDragOver={handleAppendDragOver}
+        onDrop={handleAppendDrop}
+        className={cn(
+          `relative border-b p-0 align-top ${addColumnHeaderShellClass}`,
+          dropIndicator?.kind === 'append' && 'shadow-[inset_0_0_0_2px_var(--workspace-accent-border-strong)]',
+        )}
       >
         <button
           type="button"
@@ -395,33 +512,35 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
             <span className="material-symbols-outlined text-[17px]">add</span>
           </div>
         </button>
+        {dropIndicator?.kind === 'append' && (
+          <div className="pointer-events-none absolute inset-y-1 right-0 z-30 w-[3px] translate-x-1/2 rounded-full bg-[color:var(--workspace-accent-strong)] shadow-[0_0_0_2px_rgba(192,107,125,0.18)]" />
+        )}
       </th>
     </>
   ), [
-    activeResize,
     addColumnButtonClass,
     addColumnHeaderShellClass,
     addColumnWidth,
-    autoFitColumnWidth,
-    cols,
     getHeaderButtonClass,
     getHeaderCornerClass,
     getHeaderLabelClass,
     getHeaderRequiredMarkClass,
-    getHeaderResizeRailClass,
     handleAddColumn,
+    handleAppendDragOver,
+    handleAppendDrop,
+    handleColumnDragOver,
+    handleColumnDragStart,
+    handleColumnDrop,
     handleColumnHeaderClick,
     handleColumnHeaderContextMenu,
     headerColumns,
     headerDividerClass,
     isCompactModuleSetting,
-    metrics.minWidth,
-    metrics.resizeMaxWidth,
-    metrics.resizeMinWidth,
+    clearColumnDragState,
+    draggingColumnId,
+    dropIndicator,
     selectedForDeleteSet,
     selectedId,
-    setCols,
-    startResize,
   ]);
 
   const compactTableHeadNode = useMemo(() => renderTableHead(true), [renderTableHead]);
@@ -454,13 +573,6 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   if (backgroundSelectable) {
     return (
       <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative flex min-h-0 min-w-0 w-full flex-col overflow-x-auto overflow-y-hidden rounded-[26px] border ${tableSurfaceClass} ${isCompactCanvas ? 'h-full min-h-[184px]' : 'h-full min-h-[260px]'} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
-        {visibleResizeTag && (
-          <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-md border border-[#0b6bcb]/15 bg-white/96 px-2.5 py-1 text-[11px] font-bold text-[#0b6bcb] dark:border-[#0b6bcb]/20 dark:bg-slate-900/92">
-            <span className="material-symbols-outlined text-[14px]">straighten</span>
-            <span className="max-w-[150px] truncate">{visibleResizeTag.label}</span>
-            <span className="rounded-full bg-[#0b6bcb]/8 px-2 py-0.5">{Math.round(visibleResizeTag.width)}px</span>
-          </div>
-        )}
         <div className="min-w-0 shrink-0">
           <table
             style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
@@ -472,30 +584,23 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
             </thead>
           </table>
         </div>
-        <button
-          type="button"
-          onClick={onSelectTable}
-          onDoubleClick={handleCanvasDoubleClick}
-          className={`relative mt-1 flex w-full items-center justify-center overflow-hidden rounded-[20px] border px-4 text-center transition-all dark:border-slate-700 ${tableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] flex-1 py-3' : 'min-h-[188px] flex-1 py-6'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
-        >
-          <div className={`pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.28),transparent_62%)] ${tableSelected ? 'opacity-80' : 'opacity-100'}`} />
-          <div className="relative z-10 flex h-full w-full items-center justify-start overflow-hidden">
-            {centeredCanvasViewportNode}
-          </div>
-        </button>
+        <div className="sticky left-0 z-10 mt-1 flex min-h-0 min-w-full flex-1">
+          <button
+            type="button"
+            onClick={onSelectTable}
+            onDoubleClick={handleCanvasDoubleClick}
+            className={`relative flex h-full w-full items-center justify-center overflow-hidden rounded-[20px] border px-4 text-center transition-all dark:border-slate-700 ${tableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] py-3' : 'min-h-[188px] py-6'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+          >
+            <div className={`pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.28),transparent_62%)] ${tableSelected ? 'opacity-80' : 'opacity-100'}`} />
+            {centeredCanvasOverlayNode}
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
     <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden rounded-[26px] border ${tableSurfaceClass} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
-      {visibleResizeTag && (
-        <div className="pointer-events-none absolute right-3 top-3 z-30 inline-flex items-center gap-2 rounded-md border border-[#1686e3]/15 bg-white/96 px-2.5 py-1 text-[11px] font-bold text-[#1686e3] dark:border-[#1686e3]/20 dark:bg-slate-900/92">
-          <span className="material-symbols-outlined text-[14px]">straighten</span>
-          <span className="max-w-[150px] truncate">{visibleResizeTag.label}</span>
-          <span className="rounded-full bg-[#1686e3]/8 px-2 py-0.5">{Math.round(visibleResizeTag.width)}px</span>
-        </div>
-      )}
       <table
         style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
         className="table-fixed overflow-hidden rounded-[18px] border-separate border-spacing-0 text-left text-[12px]"
@@ -511,9 +616,9 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
                 type="button"
                 onClick={onSelectTable}
                 onDoubleClick={handleCanvasDoubleClick}
-                className={`flex w-full items-center justify-start overflow-hidden rounded-b-md border-t px-4 text-center transition-all ${isCompactModuleSetting ? 'min-h-[190px] py-4' : 'min-h-[230px] py-6'} ${tableSelected ? 'border-[#efd6db]/85 bg-[#fff7f9] hover:bg-[#fff3f6] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+                className={`relative flex w-full items-center justify-start overflow-hidden rounded-b-md border-t px-4 text-center transition-all ${isCompactModuleSetting ? 'min-h-[190px] py-4' : 'min-h-[230px] py-6'} ${tableSelected ? 'border-[#efd6db]/85 bg-[#fff7f9] hover:bg-[#fff3f6] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
               >
-                {centeredCanvasViewportNode}
+                {centeredCanvasOverlayNode}
               </button>
             </td>
           </tr>

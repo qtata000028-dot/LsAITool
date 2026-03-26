@@ -11,6 +11,7 @@ import {
   shadcnSectionTitleClass,
   shadcnTextareaClass,
 } from '../../../components/ui/shadcn-inspector';
+import { DetailTabRelationSection } from './grid-overview-sections';
 
 type DetailFillTypeOption = {
   label: string;
@@ -33,6 +34,7 @@ type DetailTabInspectorProps = {
   inspectorTabsNode: React.ReactNode;
   isCommonPanelTab: boolean;
   normalizedDetailType: string;
+  relationSectionProps?: Record<string, any> | null;
   onUpdateTabConfig: (patch: Record<string, any>) => void;
   onUpdateTabType: (nextType: string) => void;
 };
@@ -57,6 +59,7 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
   inspectorTabsNode,
   isCommonPanelTab,
   normalizedDetailType,
+  relationSectionProps,
   onUpdateTabConfig,
   onUpdateTabType,
 }: DetailTabInspectorProps) {
@@ -153,6 +156,10 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
                 </div>
               </div>
             </section>
+
+            {relationSectionProps ? (
+              <DetailTabRelationSection {...relationSectionProps} />
+            ) : null}
 
             <section className={compactCardClass}>
               <div className={sectionTitleClass}>

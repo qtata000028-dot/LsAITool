@@ -2640,3 +2640,50 @@
 - 单表模块设置“保存本页”现在已经具备真实写后端能力，覆盖主字段、主条件、字段级条件、字段级左表列、字段级颜色、主颜色、主右键、明细、明细列、明细颜色、明细右键、明细图表。
 - 保存成功后会把后端返回的新主键重新回填到前端状态里，后续再次点击“保存本页”会继续走保存而不是重复新增。
 - 当前仍保留一个已知边界：布局编辑器保存明确不在本轮范围内；另外，多个明细同时指向同一个 `UnionModule` 时，前端会按“当前页签优先、资源更完整优先”合并为一份共享资源写回关联模块。
+
+## 2026-03-26 合并整合项目升级到 tdxnewtoolscode
+
+### Requirement Spec
+- 目标：将 `整合项目升级` 分支合并到当前 `tdxnewtoolscode` 分支，并解决冲突，保证仓库退出 merge 状态且当前分支可继续开发。
+- 影响范围：整个前端仓库的 git 历史与冲突文件，尤其是最近持续改动的 `Dashboard` 和 `module-settings` 相关文件。
+- 关键约束：
+  - 不回退用户已有改动。
+  - 冲突解决后至少完成构建或类型层验证。
+  - 保持当前分支的业务逻辑完整，避免把已接好的后端接口逻辑误合并丢失。
+- 不做什么：
+  - 本轮不推送远端。
+  - 本轮不顺手做无关重构。
+- 成功标准：
+  - `整合项目升级` 成功合并进 `tdxnewtoolscode`。
+  - 冲突全部解决，仓库不再处于 merge 中。
+  - 至少完成 `lint` 或 `build` 验证。
+
+### Checklist
+- [x] 确认当前分支、工作区状态和目标分支可用性。
+- [x] 执行 merge 并定位冲突文件。
+- [x] 逐个解决冲突并验证关键逻辑未丢失。
+- [x] 完成 `lint`、`build` 验证。
+- [x] 记录 merge 结果与剩余风险。
+
+### Progress Notes
+- 目标分支实际存在于远端：`origin/codex/整合项目升级`，并且它与当前 `tdxnewtoolscode` 共同基于 `2370721` 之后发生了大量并行修改，因此合并前先把本地未提交的 `tasks/todo.md` 临时 stash，避免任务文档本身挡住 merge。
+- 这次真正产生内容冲突的文件只有 5 个：`src/App.tsx`、`src/components/Dashboard.tsx`、`src/features/dashboard/module-settings/archive-layout-canvas-modal-container.tsx`、`src/lib/http.ts`、`vite.config.ts`。
+- 冲突解决策略：
+  - `App.tsx` 以升级分支引入的 `AppRouter` 多入口架构为主。
+  - `Dashboard.tsx` 保留当前分支已经接好的单表接口、模块设置保存链路和菜单信息前置约束，同时吸收升级分支带来的 `resolveDetailModuleSnapshotByCode` 模块快照逻辑。
+  - `archive-layout-canvas-modal-container.tsx` 保留当前分支的 `designer-controls / designer-groups / designer-layout` 数据来源，但回落到升级分支统一的 `ArchiveLayoutDesignerBridge` 壳层，避免继续依赖已删除的旧画布实现。
+  - `http.ts` 保留当前分支更稳的后端 envelope 拆包逻辑。
+  - `vite.config.ts` 合并保留当前分支的手动分包策略，并恢复升级分支正确的 `/api/ai` 代理目标。
+- 合并后的首次 `lint/build` 暴露出升级分支新增详情布局设计器依赖 `react-rnd`，本地虽然 `package.json` 已声明，但 `node_modules` 缺包，所以额外执行了一次 `npm install` 完成依赖同步。
+
+### Verification
+- `npm install`
+- `npm run lint`
+- `npm run build`
+
+### Result Notes
+- `origin/codex/整合项目升级` 已成功合并进当前 `tdxnewtoolscode` 工作树，冲突均已落地解决。
+- 升级分支带来的多入口平台结构、详情布局设计器与流程设计相关文件已进入当前分支，同时保留了当前分支最近接好的单表模块设置接口与保存逻辑。
+- 当前剩余风险主要有两点：
+  - `vite build` 仍然会提示 `Dashboard` chunk 偏大和手动分包存在 circular chunk 警告，但构建成功，不阻塞本次 merge。
+  - 这次做了 `lint/build` 验证，还没有做浏览器手点回归；后续若继续开发平台入口或 Dashboard 工作台，建议补一轮真实页面联调。

@@ -85,6 +85,54 @@ Dashboard 相关代码优先按功能域组织，而不是全局平铺。
 - 新增运行时 resize：放 `resize` 或对应 feature hook
 - 新增预览 renderer：优先放 `designer`
 
+## 4.1 表格详情布局统一规则
+
+以后凡是“表格详情配置 / 详情布局编辑 / 主表分组布局 / 明细详情布局”相关需求，默认必须复用统一详情布局设计器能力，不允许各入口继续各写各的编辑器。
+
+统一落点：
+
+- `src/features/dashboard/detail-layout-designer`
+  - 统一承载详情布局设计器骨架、交互、registry、基础 hooks、通用 utils
+- `src/features/dashboard/module-settings`
+  - 业务侧只负责 adapter、bridge、modal shell、运行态预览接线
+
+统一模式：
+
+1. 字段型详情布局场景优先复用 `FieldBackedDetailLayoutDesigner`
+2. 每个业务入口只允许新增自己的 `adapter`
+   - 负责 `旧 schema -> designer layout`
+   - 负责 `designer layout -> 旧 schema`
+3. 每个业务入口只允许新增自己的 `shell / bridge`
+   - 负责业务按钮
+   - 负责外层 modal
+   - 负责受控 document 接线
+4. 不允许重新实现第二套 palette / canvas / property panel / drag-resize 机制
+
+当前已接入统一机制的入口：
+
+- detail board 布局编辑入口
+- archive layout 画布入口
+
+后续新增同类入口时，默认沿用这条路径，而不是再造一个新的“字段拖拽编辑器”。
+
+禁止行为：
+
+- 新增新的 row-based 详情布局编辑器
+- 在 `module-settings` 内复制一套新的设计器组件树
+- 为单一业务入口重新实现 `dnd-kit + react-rnd` 交互
+- 直接在业务组件里手写字段 palette、字段 options 和字段 preview 映射
+
+设计态 / 运行态要求：
+
+- 设计态统一由 `detail-layout-designer` 承担
+- 运行态优先读取 `designerLayout`
+- 旧 schema 仅作为兼容层存在，不能再作为新功能主数据模型继续扩展
+
+GroupBox 规则：
+
+- GroupBox 是统一容器控件，不允许每个入口重新定义自己的“分组框”数据结构
+- 业务分组语义如果需要兼容旧数据，必须通过 adapter 映射，而不是修改设计器核心类型
+
 ## 5. 组件 / Hook / Service / Utils 规则
 
 ### 组件
@@ -152,6 +200,11 @@ Dashboard 相关代码优先按功能域组织，而不是全局平铺。
 - 不全项目扫描，优先只看目标目录和直接依赖
 - 不把新逻辑继续堆回 `Dashboard.tsx`
 - 优先复用现有 feature 边界
+- 如果需求涉及“表格详情配置 / 详情布局编辑”，默认先检查并复用：
+  - `src/features/dashboard/detail-layout-designer`
+  - `FieldBackedDetailLayoutDesigner`
+  - 现有业务 adapter / bridge
+- 不得新造第二套详情布局设计器
 - 改完至少执行：
   - `npm run lint`
   - `npm run build`

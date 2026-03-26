@@ -87,6 +87,7 @@ export function useSelectedColumnContext({
 }: UseSelectedColumnContextOptions) {
   return useMemo(() => {
     const panelTabId = activeTab;
+    const hasDetailTabContext = businessType === 'table' || Boolean(panelTabId);
     const activeDetailTabName = detailTabs.find((tab) => tab.id === panelTabId)?.name || '当前明细';
     const selectedDetailInspectorFillType = inspectorTarget.kind === 'detail-grid'
       && detailFillTypeOptions.some((option) => option.value === inspectorTarget.id)
@@ -154,7 +155,7 @@ export function useSelectedColumnContext({
         : null;
     }
 
-    if (selectedDetailFilterId) {
+    if (selectedDetailFilterId && hasDetailTabContext) {
       const condition = (detailFilterFields[panelTabId] || []).find((item) => item.id === selectedDetailFilterId);
       return condition
         ? {
@@ -176,7 +177,7 @@ export function useSelectedColumnContext({
         : null;
     }
 
-    if (selectedDetailTabId) {
+    if (selectedDetailTabId && hasDetailTabContext) {
       return {
         kind: 'detail-tab' as const,
         scope: 'detail-tab' as const,
@@ -222,7 +223,7 @@ export function useSelectedColumnContext({
       };
     }
 
-    if (selectedContextMenuScope === 'detail') {
+    if (selectedContextMenuScope === 'detail' && hasDetailTabContext) {
       return {
         kind: 'contextmenu' as const,
         scope: 'detail-contextmenu' as const,
@@ -300,7 +301,14 @@ export function useSelectedColumnContext({
       };
     }
 
-    if (selectedTableConfigScope === 'detail') {
+    if (selectedTableConfigScope === 'detail' && hasDetailTabContext) {
+      const detailGridLabel = selectedDetailInspectorFillType === '图表'
+        ? '明细图表'
+        : selectedDetailInspectorFillType === '网页'
+          ? '明细网页'
+          : selectedDetailInspectorFillType === '树表格'
+            ? '明细树表'
+            : '明细表格';
       if (businessType === 'table') {
         return {
           kind: 'grid' as const,
@@ -319,7 +327,7 @@ export function useSelectedColumnContext({
       return {
         kind: 'grid' as const,
         scope: 'detail-grid' as const,
-        title: `明细页签配置 · ${activeDetailTabName}`,
+        title: `${detailGridLabel} · ${activeDetailTabName}`,
         description: '',
         icon: selectedDetailInspectorMeta.icon,
         iconClass: 'bg-sky-500/12 text-sky-500',
@@ -370,7 +378,7 @@ export function useSelectedColumnContext({
         : null;
     }
 
-    if (selectedDetailColId) {
+    if (selectedDetailColId && hasDetailTabContext) {
       const detailCols = businessType === 'table' ? billDetailColumns : (detailTableColumns[panelTabId] || []);
       const column = detailCols.find((item) => item.id === selectedDetailColId);
       return column

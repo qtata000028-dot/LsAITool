@@ -6,7 +6,12 @@ type ApiBody = BodyInit | object | null | undefined;
 type ApiResponseEnvelope<T> = {
   code?: boolean | number | string | null;
   data?: T;
+  detail?: unknown;
+  error?: unknown;
   message?: unknown;
+  msg?: unknown;
+  timestamp?: unknown;
+  traceId?: unknown;
 };
 
 export class ApiError extends Error {
@@ -69,9 +74,9 @@ function extractErrorMessage(data: unknown) {
 
 function isApiResponseEnvelope(value: unknown): value is ApiResponseEnvelope<unknown> {
   return Boolean(value) && typeof value === 'object' && (
-    'code' in (value as Record<string, unknown>) ||
-    'data' in (value as Record<string, unknown>) ||
-    'message' in (value as Record<string, unknown>)
+    'code' in (value as Record<string, unknown>)
+    || 'data' in (value as Record<string, unknown>)
+    || 'message' in (value as Record<string, unknown>)
   );
 }
 
@@ -94,7 +99,13 @@ function isSuccessfulEnvelopeCode(code: unknown) {
       return true;
     }
 
-    if (normalizedCode === '0' || normalizedCode === '200' || normalizedCode === 'ok' || normalizedCode === 'success' || normalizedCode === 'true') {
+    if (
+      normalizedCode === '0'
+      || normalizedCode === '200'
+      || normalizedCode === 'ok'
+      || normalizedCode === 'success'
+      || normalizedCode === 'true'
+    ) {
       return true;
     }
 
@@ -147,11 +158,11 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   let resolvedBody: BodyInit | undefined;
   if (body !== undefined && body !== null) {
     if (
-      typeof body === 'string' ||
-      body instanceof Blob ||
-      body instanceof FormData ||
-      body instanceof URLSearchParams ||
-      body instanceof ArrayBuffer
+      typeof body === 'string'
+      || body instanceof Blob
+      || body instanceof FormData
+      || body instanceof URLSearchParams
+      || body instanceof ArrayBuffer
     ) {
       resolvedBody = body;
     } else {

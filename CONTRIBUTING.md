@@ -12,6 +12,9 @@
 - 合并前至少自行检查一遍受影响页面和基础构建。
 - 如果改动涉及 `src/components/Dashboard.tsx` 或 `src/features/dashboard/**`，提交前必须先阅读并遵守：
   - [docs/dashboard-architecture-rules.md](/Users/apple/Desktop/未命名文件夹/LsSmartTool/LsAITool/docs/dashboard-architecture-rules.md)
+- 如果改动涉及“表格详情配置 / 详情布局编辑”，默认必须复用仓库内统一的 `detail-layout-designer` 能力，不允许新增第二套独立编辑器实现。
+- 如果改动涉及应用入口、平台边界、登录流或未来平台扩展，提交前必须先阅读：
+  - [docs/frontend-platform-architecture.md](./docs/frontend-platform-architecture.md)
 
 ## 标准流程
 
@@ -94,6 +97,7 @@ git rebase --continue
 - `npm run build` 通过
 - 未把 `node_modules`、`dist`、日志或本地密钥提交进仓库
 - Dashboard 相关改动没有把新功能重新堆回入口文件，符合 [docs/dashboard-architecture-rules.md](/Users/apple/Desktop/未命名文件夹/LsSmartTool/LsAITool/docs/dashboard-architecture-rules.md)
+- 表格详情布局相关改动没有另起一套编辑器，而是复用了统一的 `detail-layout-designer + adapter + shell` 模式
 
 ## 当前建议分工方式
 

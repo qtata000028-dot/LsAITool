@@ -1,6 +1,7 @@
 ﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMemo } from 'react';
+import { type DesignRouteContext } from '../app/contracts/platform-routing';
 import {
   PointerSensor,
   useDraggable,
@@ -20,6 +21,7 @@ import {
   fetchSingleTableDetailGridFields,
   fetchSingleTableDetailMenus,
   fetchSingleTableFieldColors,
+  fetchSingleTableModuleConfig,
   fetchSingleTableModuleColors,
   fetchSingleTableFieldConditions,
   fetchSingleTableFieldGridFields,
@@ -102,6 +104,7 @@ import { useBillFieldResize } from '../features/dashboard/module-settings/use-bi
 import { useBillHeaderWorkbench } from '../features/dashboard/module-settings/use-bill-header-workbench';
 import { ConfigWizardModalShell } from '../features/dashboard/module-settings/config-wizard-modal-shell';
 import { buildDashboardConfigWizardStepNodes } from '../features/dashboard/module-settings/dashboard-config-wizard-step-nodes';
+import { ProcessDesignPanel } from '../features/dashboard/module-settings/process-design-panel';
 import {
   DETAIL_BOARD_FIELD_DEFAULT_HEIGHT,
   DETAIL_BOARD_FIELD_DEFAULT_WIDTH,
@@ -127,13 +130,22 @@ import {
   type RestrictionProcessDesignItem,
   type RestrictionTopStructureItem,
 } from '../features/dashboard/module-settings/restriction-workbench';
+import { createLinearProcessDesignerDocument } from '../features/dashboard/module-settings/process-designer-types';
 import { useDashboardTableBuilderRuntime } from '../features/dashboard/table-builder/use-dashboard-table-builder-runtime';
 import { cn } from '../lib/utils';
+import {
+  buildDesignWorkspacePath,
+  navigateToDesignPath,
+  resolveDesignMenuSelection,
+  resolveDesignModuleSelection,
+  updateCurrentDesignSearch,
+} from '../platforms/design/navigation/design-navigation';
 import { Badge } from './ui/badge';
 
 interface DashboardProps {
   currentUserName: string;
   onLogout: () => void;
+  routeContext?: DesignRouteContext;
 }
 
 type BusinessType = 'document' | 'table' | 'tree';
@@ -905,7 +917,8 @@ const BILL_SOURCE_CONFIG_TYPE_OPTIONS = ['普通来源', '弹窗来源', '明细
 const BILL_SOURCE_TYPE_OPTIONS = ['SQL', '视图', '接口'];
 const MODULE_SETTING_STEP = 5;
 const RESTRICTION_STEP = 6;
-const MODULE_PREVIEW_STEP = 7;
+const PROCESS_DESIGN_STEP = 7;
+const MODULE_PREVIEW_STEP = 8;
 const MAX_CONFIG_STEP = MODULE_PREVIEW_STEP;
 const TABLE_COLUMN_MIN_WIDTH = 48;
 const TABLE_COLUMN_COLLAPSED_RENDER_WIDTH = 1;
@@ -1201,13 +1214,14 @@ type BuilderSelectionContextMenuState = {
   ids: string[];
 } | null;
 
-export default function Dashboard({ currentUserName, onLogout }: DashboardProps) {
+export default function Dashboard({ currentUserName, onLogout, routeContext = {} }: DashboardProps) {
   const debugParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const currentUserAvatarText = currentUserName.trim().slice(0, 1) || '人';
   const debugStepParam = Number(debugParams?.get('step') || 1);
   const initialConfigStep = Number.isFinite(debugStepParam) ? Math.min(MAX_CONFIG_STEP, Math.max(1, debugStepParam)) : 1;
   const initialConfigOpen = debugParams?.get('config') === '1' || debugParams?.has('step') || false;
   const initialDetailPreview = debugParams?.get('detailPreview') === '1';
+  const initialRouteModuleCode = normalizeMenuCode(debugParams?.get('module') || '');
   const initialBusinessType = BUSINESS_TYPE_OPTIONS.some((option) => option.value === debugParams?.get('mode'))
     ? (String(debugParams?.get('mode')) as BusinessType)
     : 'document';
@@ -1249,8 +1263,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const currentModuleGuide = MODULE_GUIDE_PROFILES[businessType] ?? MODULE_GUIDE_PROFILES.document;
   const currentModuleCode = String(menuConfigDraft.moduleCode || activeConfigMenu?.purviewId || '');
   const currentModuleName = String(menuConfigDraft.menuCaption || activeConfigMenu?.title || '');
-  const currentPrimaryTableName = '';
-  const currentDetailTableName = '';
   const toggleFunc = (id: string) => setCommonFuncs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const funcOptions = [
     { id: 'import', name: '数据导入', icon: 'upload_file' },
@@ -1363,6 +1375,15 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     && Boolean(activeConfigModuleKey)
     && isSingleTableModuleReady
   );
+
+  const closeConfigWizard = useCallback(() => {
+    setIsConfigOpen(false);
+    updateCurrentDesignSearch({
+      config: null,
+      module: null,
+      step: null,
+    }, { replace: true });
+  }, []);
 
   const {
     isFullscreenEditor,
@@ -1569,6 +1590,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const buildGridConfig = (mainSql: string, defaultQuery: string, overrides: Record<string, any> = {}) => ({
     mainSql,
     defaultQuery,
+    createTableSql: '',
+    tableName: '',
     sqlPrompt: '',
     sourceMode: 'sql',
     sourceModuleCode: '',
@@ -1582,6 +1605,32 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     detailBoard: buildDetailBoardConfig(),
     webUrl: '',
     ...overrides,
+  });
+  const buildDefaultLeftTableConfig = () => buildGridConfig('', '', {
+    tableType: '树表格',
+    contextMenuItems: [],
+    colorRules: [],
+    detailBoard: buildDetailBoardConfig([], { enabled: false }),
+  });
+  const buildDefaultMainTableConfig = () => buildGridConfig('', '', {
+    contextMenuItems: [],
+    colorRules: [],
+    detailBoard: buildDetailBoardConfig([], {
+      enabled: false,
+      theme: 'aurora',
+    }),
+  });
+  const buildDefaultBillDetailConfig = () => buildGridConfig('', '', {
+    tableType: '普通表格',
+    contextMenuEnabled: false,
+    contextMenuItems: [],
+    detailBoard: buildDetailBoardConfig([], { enabled: false }),
+  });
+  const buildEmptyRestrictionSelection = (): Record<RestrictionConfigTabId, string | null> => ({
+    guard: null,
+    number: null,
+    structure: null,
+    process: null,
   });
 
   const buildDetailTabConfig = (overrides: Record<string, any> = {}) => ({
@@ -1948,14 +1997,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     });
   };
   const [leftTableColumns, setLeftTableColumns] = useState<any[]>([]);
-  const [leftTableConfig, setLeftTableConfig] = useState(
-    buildGridConfig('', '', {
-      tableType: '树表格',
-      contextMenuItems: [],
-      colorRules: [],
-      detailBoard: buildDetailBoardConfig([], { enabled: false }),
-    }),
-  );
+  const [leftTableConfig, setLeftTableConfig] = useState(() => buildDefaultLeftTableConfig());
   const [leftFilterFields, setLeftFilterFields] = useState<any[]>([]);
   const [mainTableColumns, setMainTableColumns] = useState<any[]>([]);
   const [isMainHiddenColumnsModalOpen, setIsMainHiddenColumnsModalOpen] = useState(false);
@@ -1964,16 +2006,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const [detailTabs, setDetailTabs] = useState<Array<{ id: string; name: string }>>([]);
   const [activeTab, setActiveTab] = useState('');
   const [tabFillTypes, setTabFillTypes] = useState<Record<string, string>>({});
-  const [mainTableConfig, setMainTableConfig] = useState(
-    buildGridConfig('', '', {
-      contextMenuItems: [],
-      colorRules: [],
-      detailBoard: buildDetailBoardConfig(mainTableColumns, {
-        enabled: false,
-        theme: 'aurora',
-      }),
-    }),
-  );
+  const [mainTableConfig, setMainTableConfig] = useState(() => buildDefaultMainTableConfig());
+  const currentPrimaryTableName = String(mainTableConfig.tableName || '').trim();
   const isRenderableMainColumn = (column: any) => {
     const normalizedColumn = normalizeColumn(column);
     return normalizedColumn.visible !== false && Number(normalizedColumn.width) > 0;
@@ -2151,14 +2185,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setBillSourceDraft((prev) => ({ ...prev, ...patch }));
   }, []);
   const [billDetailColumns, setBillDetailColumns] = useState<any[]>([]);
-  const [billDetailConfig, setBillDetailConfig] = useState(
-    buildGridConfig('', '', {
-      tableType: '普通表格',
-      contextMenuEnabled: false,
-      contextMenuItems: [],
-      detailBoard: buildDetailBoardConfig([], { enabled: false }),
-    }),
-  );
+  const [billDetailConfig, setBillDetailConfig] = useState(() => buildDefaultBillDetailConfig());
   const [billMetaFields, setBillMetaFields] = useState<any[]>([]);
   const todayIso = new Date().toISOString().slice(0, 10);
   const buildRestrictionMeasure = (index: number, overrides: Partial<RestrictionMeasureItem> = {}): RestrictionMeasureItem => ({
@@ -2200,6 +2227,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     permissionScope: '',
     businessType: businessType === 'table' ? '单据' : businessType === 'tree' ? '树形单表' : '单表',
     actionDescription: '',
+    designerDocument: createLinearProcessDesignerDocument(currentModuleName),
     ...overrides,
   });
   const buildRestrictionTopStructure = (index: number, overrides: Partial<RestrictionTopStructureItem> = {}): RestrictionTopStructureItem => ({
@@ -2223,12 +2251,29 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const [restrictionNumberRules, setRestrictionNumberRules] = useState<RestrictionNumberRuleItem[]>([]);
   const [restrictionProcessDesigns, setRestrictionProcessDesigns] = useState<RestrictionProcessDesignItem[]>([]);
   const [restrictionTopStructures, setRestrictionTopStructures] = useState<RestrictionTopStructureItem[]>([]);
-  const [restrictionSelection, setRestrictionSelection] = useState<Record<RestrictionConfigTabId, string | null>>({
-    guard: null,
-    number: null,
-    structure: null,
-    process: null,
-  });
+  const [restrictionSelection, setRestrictionSelection] = useState<Record<RestrictionConfigTabId, string | null>>(
+    () => buildEmptyRestrictionSelection(),
+  );
+  const selectedRestrictionProcessDesign = useMemo(
+    () => restrictionProcessDesigns.find((item) => item.id === restrictionSelection.process) ?? restrictionProcessDesigns[0] ?? null,
+    [restrictionProcessDesigns, restrictionSelection.process],
+  );
+  const updateSelectedRestrictionProcessDesign = useCallback((patch: Partial<RestrictionProcessDesignItem>) => {
+    if (!selectedRestrictionProcessDesign) {
+      return;
+    }
+    setRestrictionProcessDesigns((prev) => prev.map((item) => (
+      item.id === selectedRestrictionProcessDesign.id
+        ? { ...item, ...patch }
+        : item
+    )));
+  }, [selectedRestrictionProcessDesign]);
+  const createRestrictionProcessDesignEntry = useCallback(() => {
+    const next = buildRestrictionProcessDesign(restrictionProcessDesigns.length + 1);
+    setRestrictionProcessDesigns((prev) => [...prev, next]);
+    setRestrictionSelection((prev) => ({ ...prev, process: next.id }));
+    showToast('已创建流程设计方案');
+  }, [buildRestrictionProcessDesign, restrictionProcessDesigns.length, showToast]);
   const [documentConditionScope, setDocumentConditionScope] = useState<ConditionWorkbenchScope>('main');
   const [billHeaderWorkbenchConfig, setBillHeaderWorkbenchConfig] = useState<BillHeaderWorkbenchConfig>(
     buildBillHeaderWorkbenchConfig(),
@@ -2340,6 +2385,73 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     beforeId: string | null;
   } | null>(null);
   const [isArchiveLayoutEditorOpen, setIsArchiveLayoutEditorOpen] = useState(false);
+  const resetModuleDesignerState = () => {
+    setLeftTableColumns([]);
+    setLeftTableConfig(buildDefaultLeftTableConfig());
+    setLeftFilterFields([]);
+    setMainTableColumns([]);
+    setIsMainHiddenColumnsModalOpen(false);
+    setSelectedMainHiddenColumnIds([]);
+    setMainHiddenColumnsSearchText('');
+    setDetailTabs([]);
+    setActiveTab('');
+    setTabFillTypes({});
+    setMainTableConfig(buildDefaultMainTableConfig());
+    setDetailTableConfigs({});
+    setMainFilterFields([]);
+    setDetailFilterFields({});
+    setDetailTabConfigs({});
+    setSelectedLeftContextMenuId(null);
+    setSelectedMainContextMenuId(null);
+    setSelectedDetailContextMenuId(null);
+    setSelectedLeftColorRuleId(null);
+    setSelectedMainColorRuleId(null);
+    setSelectedDetailColorRuleId(null);
+    setSelectedPopupMenuParamKey('dllpar1');
+    selectedPopupMenuOwnerRef.current = null;
+    setSelectedLeftForDelete([]);
+    setSelectedMainForDelete([]);
+    setSelectedLeftFiltersForDelete([]);
+    setSelectedMainFiltersForDelete([]);
+    setDetailTableColumns({});
+    setSelectedDetailForDelete([]);
+    setSelectedDetailFiltersForDelete([]);
+    setSelectedArchiveNodeId('archive-main');
+    setBillSources([]);
+    setActiveBillSourceId('');
+    setBillSourceDraft(buildBillSourceEntry(1));
+    setBillSourceDraftMode('create');
+    setBillDetailColumns([]);
+    setBillDetailConfig(buildDefaultBillDetailConfig());
+    setBillMetaFields([]);
+    setRestrictionMeasures([]);
+    setRestrictionNumberRules([]);
+    setRestrictionProcessDesigns([]);
+    setRestrictionTopStructures([]);
+    setRestrictionSelection(buildEmptyRestrictionSelection());
+    setDocumentConditionScope('main');
+    setBillHeaderWorkbenchConfig(buildBillHeaderWorkbenchConfig());
+    setBillDocumentTone('blue');
+    clearResizePreview();
+    setActiveResize(null);
+    setIsDetailBoardOpen(initialDetailPreview);
+    setDetailBoardSortColumnId(null);
+    setDetailBoardOpenedRowId(initialDetailPreview ? 1 : null);
+    setSelectedDetailBoardGroupId(null);
+    setWorkspaceTheme(initialWorkspaceTheme);
+    setDetailBoardClipboardIds([]);
+    setActiveDetailBoardResize(null);
+    setActiveDetailBoardHeightResize(null);
+    setPreviewContextMenu(null);
+    setBuilderSelectionContextMenu(null);
+    setLongTextEditorState(null);
+    setBillHeaderWorkbenchDrag(null);
+    setBillHeaderWorkbenchDropTarget(null);
+    setIsArchiveLayoutEditorOpen(false);
+    setInspectorTarget({ kind: 'main-grid' });
+    setInspectorPanelTab('common');
+    moduleSettingFullscreenInitRef.current = false;
+  };
   const billDocumentViewportRef = useRef<HTMLDivElement | null>(null);
   const billDocumentPaperRef = useRef<HTMLDivElement | null>(null);
   const billHeaderCanvasRef = useRef<HTMLDivElement | null>(null);
@@ -2364,7 +2476,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     : inspectorTarget.kind === 'main-filter-panel'
       ? 'main'
       : null;
-  const isModuleSettingStep = isConfigOpen && (configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP);
+  const isModuleSettingStep = isConfigOpen && (
+    configStep === MODULE_SETTING_STEP
+    || configStep === RESTRICTION_STEP
+    || configStep === PROCESS_DESIGN_STEP
+  );
   const isConfigFullscreenActive = isModuleSettingStep && isFullscreenConfig;
   const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
   const {
@@ -2610,17 +2726,13 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       ...prev,
       modType: nextType === 'table' ? '2' : '1',
     }));
+    resetModuleDesignerState();
     setMenuInfoTab('common');
-    setBuilderSelectionContextMenu(null);
-    setSelectedLeftForDelete([]);
-    setSelectedLeftFiltersForDelete([]);
-    setSelectedMainForDelete([]);
-    setSelectedDetailForDelete([]);
-    setSelectedMainFiltersForDelete([]);
-    setSelectedDetailFiltersForDelete([]);
-    setSelectedArchiveNodeId('archive-main');
-    setInspectorTarget({ kind: 'main-grid' });
-    setInspectorPanelTab('common');
+    if (isConfigOpen) {
+      updateCurrentDesignSearch({
+        mode: nextType,
+      }, { replace: true });
+    }
   };
 
   const updateCurrentMenuDraft = (fieldKey: string, value: ModuleMenuValue) => {
@@ -2650,6 +2762,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     options?: {
       completedSteps?: number[];
       initialStep?: number;
+      moduleCode?: string | null;
     },
   ) => {
     const nextStep = options?.initialStep ?? 1;
@@ -2664,6 +2777,13 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setSurveyPlan(null);
     setSurveyPlanModel('');
     setSurveyError(null);
+
+    updateCurrentDesignSearch({
+      config: true,
+      mode: nextType,
+      module: options?.moduleCode,
+      step: nextStep,
+    }, { replace: true });
   };
 
   const openNewModuleGuide = () => {
@@ -2677,7 +2797,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       subsystemId: toDraftText(selectedSubsystem?.subsysId),
       useFlag: 'true',
     });
-    openModuleGuide('document');
+    openModuleGuide('document', {
+      moduleCode: null,
+    });
   };
 
   const buildCreateModuleRelationPayload = (
@@ -2780,6 +2902,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     openModuleGuide(nextType, {
       completedSteps: [1],
       initialStep: 2,
+      moduleCode: normalizeMenuCode(menu.purviewId) || normalizeMenuCode(menu.code) || menu.id,
     });
     void loadMenuInfoForMenu(menu);
   };
@@ -2846,6 +2969,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
       setMenuConfigDraft(mapSubsystemMenuConfigToDraft(saved));
       setActiveConfigMenu(nextMenuNode);
+      updateCurrentDesignSearch({
+        config: true,
+        module: normalizeMenuCode(nextMenuNode.purviewId) || normalizeMenuCode(nextMenuNode.code) || nextMenuNode.id,
+        step: 2,
+      }, { replace: true });
       setSecondLevelMenus((prev) => {
         const existingIndex = prev.findIndex((item) => item.menuId === nextMenuNode.menuId || item.id === nextMenuNode.id);
         if (existingIndex === -1) {
@@ -2911,7 +3039,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       if (activeConfigMenu?.id === menu.id) {
         setActiveConfigMenu(null);
         setMenuInfoError(null);
-        setIsConfigOpen(false);
+        closeConfigWizard();
       }
 
       setPendingDeleteMenu((prev) => (prev?.id === menu.id ? null : prev));
@@ -2964,6 +3092,20 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       moduleIntroRefs,
       moduleIntroSelectedImageWidth,
     },
+    processDesign: {
+      processDesignNode: (
+        <ProcessDesignPanel
+          currentModuleName={currentModuleName}
+          currentUserName={currentUserName}
+          emptyHint="先创建流程方案，再在这里完成审批流画布和节点属性配置。"
+          mode="wizard"
+          onCreate={createRestrictionProcessDesignEntry}
+          onToast={showToast}
+          onUpdate={updateSelectedRestrictionProcessDesign}
+          processDesign={selectedRestrictionProcessDesign}
+        />
+      ),
+    },
     preview: {
       previewTitle: '模块预览',
     },
@@ -3003,6 +3145,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       return;
     }
     setConfigStep(stepId);
+    updateCurrentDesignSearch({
+      step: stepId,
+    }, { replace: true });
   };
 
   const handleLockedTypeStepSelect = () => {
@@ -3013,7 +3158,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     if (activeConfigMenu !== null && configStep === 2) {
       return;
     }
-    setConfigStep(Math.max(1, configStep - 1));
+    const nextStep = Math.max(1, configStep - 1);
+    setConfigStep(nextStep);
+    updateCurrentDesignSearch({
+      step: nextStep,
+    }, { replace: true });
   };
 
   const handleConfigNext = () => {
@@ -3036,8 +3185,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
     if (configStep < MAX_CONFIG_STEP) {
       setConfigStep(nextStep);
+      updateCurrentDesignSearch({
+        step: nextStep,
+      }, { replace: true });
     } else {
-      setIsConfigOpen(false);
+      closeConfigWizard();
     }
   };
 
@@ -3509,24 +3661,40 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   }, [activeTab]);
 
   const addTab = () => {
-    const newId = `tab_${Date.now()}`;
-    setDetailTabs([...detailTabs, { id: newId, name: `明细 ${detailTabs.length + 1}` }]);
-    setActiveTab(newId);
+    const newId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? `tab_${crypto.randomUUID()}`
+      : `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const nextTabName = `明细 ${detailTabs.length + 1}`;
+
+    setDetailTabs((prev) => [...prev, { id: newId, name: nextTabName }]);
     setDetailFilterFields((prev) => ({
       ...prev,
-      [newId]: [],
+      [newId]: prev[newId] ?? [],
     }));
     setDetailTabConfigs((prev) => ({
       ...prev,
-      [newId]: buildDetailTabConfig({ tabKey: newId, detailName: `明细 ${detailTabs.length + 1}` }),
+      [newId]: prev[newId] ?? buildDetailTabConfig({ tabKey: newId, detailName: nextTabName }),
     }));
-    setDetailTableColumns({ ...detailTableColumns, [newId]: [] });
+    setDetailTableColumns((prev) => ({
+      ...prev,
+      [newId]: prev[newId] ?? [],
+    }));
     setDetailTableConfigs((prev) => ({
       ...prev,
-      [newId]: buildGridConfig('', '', {
+      [newId]: prev[newId] ?? buildGridConfig('', '', {
+        sourceCondition: 'parent_id = ${id}',
+        contextMenuEnabled: false,
         contextMenuItems: [],
+        colorRulesEnabled: false,
+        colorRules: [],
       }),
     }));
+    setSelectedDetailForDelete([]);
+    setSelectedDetailFiltersForDelete([]);
+    setActiveTab(newId);
+    setInspectorTarget({ kind: 'detail-tab', id: newId });
+    setInspectorPanelTab('common');
+    setSelectedArchiveNodeId(`detail-${newId}`);
   };
 
   const deleteTab = (id: string, e: React.MouseEvent) => {
@@ -3557,7 +3725,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       setActiveTab(newTabs.length > 0 ? newTabs[0].id : '');
     }
     if (selectedDetailTabId === id) {
-      setInspectorTarget({ kind: 'none' });
+      const fallbackTabId = newTabs[0]?.id ?? '';
+      setInspectorTarget(
+        fallbackTabId
+          ? { kind: 'detail-tab', id: fallbackTabId }
+          : { kind: 'main-grid' },
+      );
     }
   };
 
@@ -3817,6 +3990,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     { id: 4, title: '调研过程', desc: 'AI 深度业务需求分析' },
     { id: MODULE_SETTING_STEP, title: '模块设置', desc: '字段、表单与流程编排' },
     { id: RESTRICTION_STEP, title: '限制措施', desc: '规则、流程与限制配置' },
+    { id: PROCESS_DESIGN_STEP, title: '流程设计', desc: '独立流程设计器与审批向导配置' },
     { id: MODULE_PREVIEW_STEP, title: '模块预览', desc: '实时交互效果演示' }
   ];
   const selectedSubsystem = useMemo(
@@ -3838,14 +4012,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
     try {
       const data = getEnabledMenuNodes(await fetchSubsystemMenuTree());
+      const nextSelection = resolveDesignMenuSelection(data, routeContext);
+
       setSubsystemMenus(data);
-
-      const nextSubsystem = data.find((item) => getEnabledMenuNodes(item.children).length > 0) ?? data[0] ?? null;
-      const nextFirstLevelMenu = getEnabledMenuNodes(nextSubsystem?.children)[0] ?? null;
-
-      setExpandedSubsystemId(nextSubsystem?.id ?? null);
-      setActiveSubsystem(nextSubsystem?.id ?? '');
-      setActiveFirstLevelMenuId(nextFirstLevelMenu?.id ?? '');
+      setExpandedSubsystemId(nextSelection.expandedSubsystemId);
+      setActiveSubsystem(nextSelection.selectedSubsystem?.id ?? '');
+      setActiveFirstLevelMenuId(nextSelection.selectedMenu?.id ?? '');
       setSecondLevelMenus([]);
     } catch (error) {
       setMenuLoadError(getDashboardErrorMessage(error));
@@ -3861,7 +4033,19 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   useEffect(() => {
     void loadSubsystemMenus();
-  }, []);
+  }, [routeContext]);
+
+  useEffect(() => {
+    if (subsystemMenus.length === 0) {
+      return;
+    }
+
+    const nextSelection = resolveDesignMenuSelection(subsystemMenus, routeContext);
+
+    setExpandedSubsystemId(nextSelection.expandedSubsystemId);
+    setActiveSubsystem(nextSelection.selectedSubsystem?.id ?? '');
+    setActiveFirstLevelMenuId(nextSelection.selectedMenu?.id ?? '');
+  }, [routeContext, subsystemMenus]);
 
   useEffect(() => {
     let isActive = true;
@@ -3909,16 +4093,57 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     };
   }, [activeFirstLevelMenu?.menuId, selectedSubsystem]);
 
+  useEffect(() => {
+    if (!initialConfigOpen || !initialRouteModuleCode || activeConfigMenu || secondLevelMenus.length === 0) {
+      return;
+    }
+
+    const nextMenu = resolveDesignModuleSelection(secondLevelMenus, initialRouteModuleCode);
+    if (!nextMenu?.menuId) {
+      return;
+    }
+
+    const moduleTypeProfile = getMenuModuleTypeProfile(nextMenu.moduleType);
+    const nextType = moduleTypeProfile?.businessType ?? initialBusinessType;
+
+    setActiveConfigMenu(nextMenu);
+    setMenuInfoError(null);
+    setIsMenuInfoSaving(false);
+    setMenuConfigDraft(MENU_CONFIG_DEFAULTS);
+    openModuleGuide(nextType, {
+      completedSteps: [1],
+      initialStep: Math.max(2, initialConfigStep),
+      moduleCode: normalizeMenuCode(nextMenu.purviewId) || normalizeMenuCode(nextMenu.code) || nextMenu.id,
+    });
+    void loadMenuInfoForMenu(nextMenu);
+  }, [
+    activeConfigMenu,
+    initialBusinessType,
+    initialConfigOpen,
+    initialConfigStep,
+    initialRouteModuleCode,
+    secondLevelMenus,
+  ]);
+
   const toggleSubsystemExpansion = (subsystemId: string) => {
     setExpandedSubsystemId((prev) => (prev === subsystemId ? null : subsystemId));
   };
 
   const handleFirstLevelMenuClick = (subsystemId: string, menu: BackendMenuNode) => {
+    const clickedSubsystem = subsystemMenus.find((item) => item.id === subsystemId) ?? null;
+
+    setActiveConfigMenu(null);
     setActiveSubsystem(subsystemId);
     setActiveFirstLevelMenuId(menu.id);
+    setIsConfigOpen(false);
+    setMenuInfoError(null);
     setSecondLevelMenus([]);
     setMenuLoadError(null);
     setExpandedSubsystemId(subsystemId);
+    navigateToDesignPath(buildDesignWorkspacePath({
+      menuCode: menu.code,
+      subsystemCode: clickedSubsystem?.subsysCode ?? clickedSubsystem?.code,
+    }));
   };
 
   const activeMenu = activeFirstLevelMenu?.id ?? selectedSubsystem?.id ?? 'workspace';
@@ -4147,7 +4372,16 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setSelectedDetailForDelete([]);
     setSelectedDetailFiltersForDelete([]);
     setInspectorTarget((prev) => {
-      if (prev.kind === 'detail-col' || prev.kind === 'detail-filter' || prev.kind === 'detail-tab' || prev.kind === 'detail-grid') {
+      if (prev.kind === 'detail-tab') {
+        if (!activeTab) {
+          return { kind: 'main-grid' };
+        }
+        return { kind: 'detail-tab', id: activeTab };
+      }
+      if (prev.kind === 'detail-col' || prev.kind === 'detail-filter' || prev.kind === 'detail-grid') {
+        if (!activeTab) {
+          return { kind: 'main-grid' };
+        }
         return { kind: 'detail-grid', id: currentDetailFillType };
       }
       return prev;
@@ -4180,8 +4414,8 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       setActiveTab(tabId);
     }
     setInspectorTarget({
-      kind: 'detail-grid',
-      id: getDetailFillTypeByTabId(tabId),
+      kind: 'detail-tab',
+      id: tabId,
     });
     setInspectorPanelTab('common');
     setSelectedArchiveNodeId(`detail-${tabId}`);
@@ -4304,6 +4538,102 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     treeRelationColumn,
   ]);
 
+  const cloneColumnsForDetailPreview = useCallback((columns: any[] = []) => (
+    columns.map((column, index) => {
+      const normalizedColumn = JSON.parse(JSON.stringify(normalizeColumn(column)));
+      const { id: _ignoredId, ...rest } = normalizedColumn;
+      return buildColumn('d_col', index + 1, {
+        ...rest,
+        name: normalizedColumn.name || `字段 ${index + 1}`,
+        sourceField: normalizedColumn.sourceField || '',
+      });
+    })
+  ), [buildColumn, normalizeColumn]);
+
+  const resolveDetailModuleSnapshotByCode = useCallback(async (moduleCode: string) => {
+    const normalizedModuleCode = String(moduleCode || '').trim();
+    if (!normalizedModuleCode) {
+      return null;
+    }
+
+    const hasLocalMainTableSnapshot = normalizedModuleCode === currentModuleCode && (
+      mainTableColumns.length > 0
+      || String(mainTableConfig.mainSql || '').trim().length > 0
+      || String(mainTableConfig.tableName || '').trim().length > 0
+      || (mainTableConfig.contextMenuItems ?? []).length > 0
+      || (mainTableConfig.colorRules ?? []).length > 0
+    );
+
+    if (hasLocalMainTableSnapshot) {
+      return {
+        columns: cloneColumnsForDetailPreview(mainTableColumns),
+        gridConfigPatch: {
+          ...JSON.parse(JSON.stringify(mainTableConfig)),
+          mainSql: String(mainTableConfig.mainSql || '').trim()
+            || (currentPrimaryTableName ? `SELECT * FROM ${currentPrimaryTableName}` : ''),
+          tableName: String(mainTableConfig.tableName || '').trim() || currentPrimaryTableName,
+          sourceMode: 'module',
+          sourceModuleCode: normalizedModuleCode,
+        },
+      };
+    }
+
+    const [moduleConfig, moduleFields, menuRows, colorRows] = await Promise.all([
+      fetchSingleTableModuleConfig(normalizedModuleCode),
+      fetchSingleTableModuleFields(normalizedModuleCode),
+      fetchSingleTableModuleMenus(normalizedModuleCode),
+      fetchSingleTableModuleColors(normalizedModuleCode),
+    ]);
+
+    const normalizedModuleConfig = moduleConfig as Record<string, unknown>;
+    const mappedColumns = moduleFields.map((field, index) => mapSingleTableDetailGridFieldToColumn(field, index));
+    const mappedMenus = [...menuRows]
+      .sort(
+        (left, right) => toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId'), 0)
+          - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId'), 0),
+      )
+      .map((item, index) => mapSingleTableContextMenuItem(item, index));
+    const mappedRules = [...colorRows]
+      .sort(
+        (left, right) => toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId'), 0)
+          - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId'), 0),
+      )
+      .map((rule, index) => mapSingleTableColorRule(rule, index));
+    const resolvedMainSql = toRecordText(getRecordFieldValue(normalizedModuleConfig, 'querySql', 'querysql'))
+      || toRecordText(getRecordFieldValue(normalizedModuleConfig, 'mainSql', 'mainsql'));
+    const resolvedTableName = toRecordText(getRecordFieldValue(normalizedModuleConfig, 'mainTable', 'maintable'));
+
+    return {
+      columns: mappedColumns,
+      gridConfigPatch: buildGridConfig(
+        resolvedMainSql || (resolvedTableName ? `SELECT * FROM ${resolvedTableName}` : ''),
+        '',
+        {
+          tableName: resolvedTableName,
+          sourceMode: 'module',
+          sourceModuleCode: normalizedModuleCode,
+          tableType: '普通表格',
+          contextMenuEnabled: mappedMenus.length > 0,
+          contextMenuItems: mappedMenus,
+          colorRulesEnabled: mappedRules.length > 0,
+          colorRules: mappedRules,
+          detailBoard: buildDetailBoardConfig([], {
+            enabled: false,
+            theme: mainTableConfig.detailBoard?.theme || 'aurora',
+          }),
+        },
+      ),
+    };
+  }, [
+    buildColumn,
+    buildGridConfig,
+    cloneColumnsForDetailPreview,
+    currentModuleCode,
+    currentPrimaryTableName,
+    mainTableColumns,
+    mainTableConfig,
+  ]);
+
   useEffect(() => {
     if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
       return;
@@ -4370,7 +4700,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       return;
     }
 
-    if ((configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP) && !moduleSettingFullscreenInitRef.current) {
+    if ((configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP) && !moduleSettingFullscreenInitRef.current) {
       moduleSettingFullscreenInitRef.current = true;
     }
   }, [configStep, isConfigOpen]);
@@ -4584,20 +4914,32 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             const detailId = toRecordNumber(detailConfig.backendId, Number.NaN);
             const detailModuleCode = String(detailConfig.relatedModule || '').trim();
             const detailSql = String(detailGridConfig.mainSql || '').trim();
+            const relationCondition = String(
+              detailConfig.relatedCondition
+              || detailGridConfig.sourceCondition
+              || detailGridConfig.defaultQuery
+              || '',
+            ).trim();
             const gridPatch: Record<string, any> = {};
             let columns: any[] = [];
 
             try {
               if (detailFillType === '表格' || detailFillType === '树表格') {
                 if (detailModuleCode) {
-                  const moduleFields = await fetchSingleTableModuleFields(detailModuleCode);
+                  const moduleSnapshot = await resolveDetailModuleSnapshotByCode(detailModuleCode);
                   if (!isActive) {
                     return null;
                   }
 
-                  columns = moduleFields.map((field, index) => mapSingleTableDetailGridFieldToColumn(field, index));
-                  gridPatch.sourceMode = 'module';
-                  gridPatch.sourceModuleCode = detailModuleCode;
+                  if (moduleSnapshot) {
+                    columns = moduleSnapshot.columns;
+                    Object.assign(gridPatch, moduleSnapshot.gridConfigPatch, {
+                      defaultQuery: relationCondition,
+                      sourceMode: 'module',
+                      sourceModuleCode: detailModuleCode,
+                      sourceCondition: relationCondition,
+                    });
+                  }
                 } else if (Number.isFinite(detailId) && detailSql) {
                   const detailGridFields = await fetchSingleTableDetailGridFields(activeConfigModuleKey, detailId);
                   if (!isActive) {
@@ -4704,7 +5046,15 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     return () => {
       isActive = false;
     };
-  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, canLoadSingleTableModuleResources, captureDetails, configStep, isConfigOpen]);
+  }, [
+    activeConfigMenu?.moduleType,
+    activeConfigModuleKey,
+    canLoadSingleTableModuleResources,
+    captureDetails,
+    configStep,
+    isConfigOpen,
+    resolveDetailModuleSnapshotByCode,
+  ]);
 
   useEffect(() => {
     if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
@@ -4800,7 +5150,14 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     return () => {
       isActive = false;
     };
-  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, captureMainColors, configStep, isConfigOpen]);
+  }, [
+    activeConfigMenu?.moduleType,
+    activeConfigModuleKey,
+    canLoadSingleTableModuleResources,
+    captureMainColors,
+    configStep,
+    isConfigOpen,
+  ]);
 
   useEffect(() => {
     const contextMenuItems = leftTableConfig.contextMenuItems ?? [];
@@ -5046,27 +5403,39 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const detailId = toRecordNumber(detailConfig.backendId, Number.NaN);
     const detailModuleCode = String(detailConfig.relatedModule || '').trim();
     const detailSql = String(detailGridConfig.mainSql || '').trim();
+    const relationCondition = String(
+      detailConfig.relatedCondition
+      || detailGridConfig.sourceCondition
+      || detailGridConfig.defaultQuery
+      || '',
+    ).trim();
 
     try {
       if (detailFillType === '表格' || detailFillType === '树表格') {
         if (detailModuleCode) {
-          const moduleFields = await fetchSingleTableModuleFields(detailModuleCode);
-          const columns = moduleFields.map((field, index) => mapSingleTableDetailGridFieldToColumn(field, index));
+          const moduleSnapshot = await resolveDetailModuleSnapshotByCode(detailModuleCode);
+          if (!moduleSnapshot) {
+            return;
+          }
+
           const nextTableConfig = {
             ...(detailTableConfigs[tabId] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
+            ...moduleSnapshot.gridConfigPatch,
+            defaultQuery: relationCondition,
             sourceMode: 'module',
             sourceModuleCode: detailModuleCode,
+            sourceCondition: relationCondition,
           };
 
           setDetailTableColumns((prev) => ({
             ...prev,
-            [tabId]: columns,
+            [tabId]: moduleSnapshot.columns,
           }));
           setDetailTableConfigs((prev) => ({
             ...prev,
             [tabId]: nextTableConfig,
           }));
-          captureDetailResources(tabId, { columns, tableConfig: nextTableConfig });
+          captureDetailResources(tabId, { columns: moduleSnapshot.columns, tableConfig: nextTableConfig });
           return;
         }
 
@@ -5153,6 +5522,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     detailTableColumns,
     detailTabConfigs,
     detailTableConfigs,
+    resolveDetailModuleSnapshotByCode,
     isConfigOpen,
   ]);
 
@@ -5214,6 +5584,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     normalizeColumn,
     normalizeDetailChartConfig,
     parseSqlFieldNames,
+    resolveDetailModuleSnapshotByCode,
     restrictionTopStructures,
     setDetailTabConfigs,
     setDetailTableColumns,
@@ -5295,6 +5666,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     createBillSourceDraft,
     currentMenuDraft,
     currentModuleCode,
+    currentModuleName,
     defaultFieldSqlTagOptions: DEFAULT_FIELD_SQL_TAG_OPTIONS,
     deleteSelectedColumns,
     deleteSelectedConditions,
@@ -5304,6 +5676,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     detailBoardThemeOptions: DETAIL_BOARD_THEME_OPTIONS,
     detailChartTypeOptions: DETAIL_CHART_TYPE_OPTIONS,
     detailFillTypeOptions: DETAIL_FILL_TYPE_OPTIONS,
+    detailTableColumns,
     detailSourceModuleCandidates,
     buildDetailTabConfig,
     detailTabs,
@@ -5355,6 +5728,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     selectBillSourceDraft,
     setBillDetailColumns,
     setBillMetaFields,
+    setDetailTableConfigs,
     setDetailTableColumns,
     setDetailTabConfigs,
     setDetailTabs,
@@ -5392,7 +5766,6 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
   const dashboardConfigBridgeNodes = buildDashboardConfigBridgeNodes({
     workspace: buildDashboardConfigBridgeWorkspaceInput({
       archiveLayoutState: {
-        activeDetailBoardResize,
         currentDetailBoard: normalizedMainDetailBoardConfig,
         currentModuleCode,
         isOpen: isArchiveLayoutEditorOpen,
@@ -5401,16 +5774,10 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       archiveLayoutActions: {
         onClose: () => setIsArchiveLayoutEditorOpen(false),
         onShowToast: showToast,
-        onResetDetailBoardFieldHeight: resetDetailBoardFieldHeight,
-        onResetDetailBoardFieldWidth: resetDetailBoardFieldWidth,
-        onStartDetailBoardFieldHeightResize: startDetailBoardFieldHeightResize,
-        onStartDetailBoardFieldResize: startDetailBoardFieldResize,
         onUpdateDetailBoard: updateMainDetailBoard,
       },
       archiveLayoutHelpers: {
-        getDetailBoardFieldLiveHeight,
-        getDetailBoardFieldLiveWidth,
-        getLayoutFieldWorkbenchMeta,
+        normalizeColumn,
         renderFieldPreview,
       },
       conditionWorkbenchState: {
@@ -5627,6 +5994,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           isMenuInfoSaving,
           isModuleSettingStep,
           modulePreviewStep: MODULE_PREVIEW_STEP,
+          processDesignStep: PROCESS_DESIGN_STEP,
           moduleSettingStep: MODULE_SETTING_STEP,
           nextDisabled: (configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving || activeConfigMenu === null))
             || (configStep + 1 >= MODULE_SETTING_STEP && !isMenuInfoBuilt)
@@ -5640,14 +6008,14 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
             : configStep === MODULE_SETTING_STEP && isSingleTableModuleSettingsSaving
               ? '保存中...'
               : '保存本页',
-          showFullscreenToggle: configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP,
+          showFullscreenToggle: configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP,
         },
         actions: {
           handleConfigNext,
           handleConfigPrevious,
           handleConfigStepSelect,
           handleLockedTypeStepSelect,
-          onClose: () => setIsConfigOpen(false),
+          onClose: closeConfigWizard,
           onSave: () => {
             void handleConfigPageSave();
           },
@@ -5658,6 +6026,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           menuInfoNode: configWizardStepNodes.menuInfoNode,
           moduleIntroEditorNode: configWizardStepNodes.moduleIntroEditorNode,
           modulePreviewNode: configWizardStepNodes.modulePreviewNode,
+          processDesignNode: configWizardStepNodes.processDesignNode,
           moduleTypeSelectionNode: configWizardStepNodes.moduleTypeSelectionNode,
           surveyPlanningNode: configWizardStepNodes.surveyPlanningNode,
         },
@@ -5927,7 +6296,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         open={isConfigOpen}
         isFullscreenConfigActive={isConfigFullscreenActive}
         isModuleSettingStep={isModuleSettingStep}
-        onClose={() => setIsConfigOpen(false)}
+        onClose={closeConfigWizard}
         toastMessage={toastMessage}
         overlayNodes={dashboardConfigBridgeNodes.configWizardModalNodes.overlayNodes}
         sidebarNode={dashboardConfigBridgeNodes.configWizardModalNodes.sidebarNode}

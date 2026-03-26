@@ -41,6 +41,7 @@ export type BuildConfigWizardStepNodesInput = {
   moduleIntroBlockType: ModuleIntroBlockType;
   moduleIntroRefs: ModuleIntroEditorRefs;
   moduleIntroSelectedImageWidth: number | null;
+  processDesignNode: React.ReactNode;
   moduleTypeOptions: any[];
   onBackToTypeSelect: () => void;
   onBusinessTypeChange: (value: 'document' | 'table' | 'tree') => void;
@@ -106,6 +107,7 @@ export function buildConfigWizardStepNodes(input: BuildConfigWizardStepNodesInpu
         refs={input.moduleIntroRefs}
       />
     ),
+    processDesignNode: input.processDesignNode,
     modulePreviewNode: (
       <ModulePreviewStep title={input.previewTitle} />
     ),

@@ -88,22 +88,20 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
                   </span>
                 </span>
               </Button>
-              {detailTabs.length > 1 ? (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(event) => onDeleteTab(tab.id, event)}
-                  className={cn(
-                    'size-8 shrink-0 rounded-2xl',
-                    isActive
-                      ? 'text-white/80 hover:bg-white/12 hover:text-white'
-                      : 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive',
-                  )}
-                  title="删除页签"
-                >
-                  <X className="size-3.5" />
-                </Button>
-              ) : null}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(event) => onDeleteTab(tab.id, event)}
+                className={cn(
+                  'size-8 shrink-0 rounded-2xl',
+                  isActive
+                    ? 'text-white/80 hover:bg-white/12 hover:text-white'
+                    : 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive',
+                )}
+                title="删除明细"
+              >
+                <X className="size-3.5" />
+              </Button>
             </div>
           );
         })}
@@ -152,7 +150,7 @@ export const MemoDocumentDetailWorkbench = React.memo(function DocumentDetailWor
           {tableBuilderNode}
         </div>
       ) : (
-        <div className="min-h-0 flex-1 bg-transparent px-3 pb-3 pt-1">
+        <div className="flex min-h-0 flex-1 bg-transparent px-3 pb-3 pt-1">
           {fillPlaceholderNode}
         </div>
       )}
