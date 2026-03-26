@@ -6,7 +6,7 @@ import { defineConfig, loadEnv } from 'vite';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   const apiBaseUrl = env.VITE_API_BASE_URL || '114.116.135.188:9093/';
-  const aiProxyTarget = env.VITE_AI_PROXY_TARGET || 'http://127.0.0.1:3001';
+  const aiProxyTarget = env.VITE_AI_PROXY_TARGET || 'http://192.168.0.55:9093';
 
   return {
     plugins: [react(), tailwindcss()],

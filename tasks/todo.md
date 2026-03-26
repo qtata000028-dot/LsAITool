@@ -2293,3 +2293,350 @@
 ### Result Notes
 - `MemoTableBuilder` 内部现在会缓存 `headerColumns`、`colgroup`、标准/紧凑表头节点以及中心画布节点，减少同一轮渲染里的重复列宽计算和节点重建。
 - 几个表头样式 helper 也改成了稳定回调，避免刚做好的 memo 缓存被函数引用变化打穿。
+
+## 2026-03-25 登录页白屏排查
+
+### Requirement Spec
+- 目标：定位 `http://127.0.0.1:3000` 打开后登录页白屏的根因，并在必要时完成修复。
+- 影响范围：应用入口、登录页渲染链路、最近对白屏可能有影响的 `Dashboard` / 调试配置改动。
+- 关键约束：
+  - 先定位运行时异常，再决定是否改代码，禁止只做表面兜底。
+  - 尽量保持改动最小，不扩散到无关的工作台功能。
+  - 验证至少覆盖运行态、`lint` 和 `build`。
+- 不做什么：
+  - 暂不改登录页视觉设计。
+  - 暂不重构已有登录业务流程。
+- 成功标准：
+  - 白屏原因被明确定位。
+  - 若存在前端异常，页面恢复到可见登录态。
+
+### Checklist
+- [x] 收集当前运行态和最近改动，确认是否为运行时崩溃。
+- [x] 定位 `App/Login/Dashboard` 入口链路中的具体白屏根因。
+- [ ] 必要时修复并完成 `lint`、`build`、运行态验证。
+
+### Progress Notes
+- 当前白屏更像入口链路的运行时崩溃，而不是登录页样式消失。`Login.tsx` 自身 JSX 和样式类存在，`vite` 也能正常返回模块源码。
+- 浏览器控制台最终确认的直接崩溃点是 `Login.tsx:58`，报错 `organizations.find is not a function`。也就是登录页把机构数据当数组使用，但接口实际返回了 `{ code, message, data }` 包裹结构。
+- `http://127.0.0.1:3000/api/system/all-servers` 实测返回 `application/json`，并且响应体是 `{ code: 0, message: 'OK', data: [...] }`，不是裸数组。
+- 修复方向改为两层：
+  - 在 `http.ts` 统一拆包后端响应 envelope，避免登录、员工、登录态等接口继续误读。
+  - 在 `Login.tsx` 对机构和人员列表补 `Array.isArray` 兜底，防止再次因异常数据形态触发首屏白屏。
+
+### Verification
+- `Invoke-WebRequest http://127.0.0.1:3000/api/system/all-servers`：返回 `200`，`Content-Type=application/json`，响应体形态为 `{ code, message, data }`。
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+
+### Result Notes
+- 这次登录页白屏的真正根因不是样式，也不是登录卡片缺失，而是接口响应 shape 与前端假设不一致，导致 `organizations.find` 在首屏渲染时直接抛错。
+- `App.tsx` 同时保留了 `Dashboard` 懒加载优化，作为入口隔离强化，但这次直接修住白屏的是接口拆包与登录列表兜底。
+
+## 2026-03-25 控件类型下拉改为接口数据源
+
+### Requirement Spec
+- 目标：将模块设置右侧“控件类型/字段类型”下拉统一改为使用 `GET /api/system/fieldsqltag-options` 的真实数据源。
+- 影响范围：`Dashboard` 中字段类型 option 的加载逻辑、条件配置侧栏的控件类型下拉、当前值回填。
+- 关键约束：
+  - 不再让条件配置继续显示本地写死的“文本/数字/下拉框”粗分类。
+  - 单表字段的树形节点关联限制仍要保留。
+  - 验证至少覆盖 `lint` 和 `build`。
+- 不做什么：
+  - 暂不改保存接口。
+  - 暂不重做现有字段类型与控件预览的视觉样式。
+- 成功标准：
+  - 下拉项直接来自 `fieldsqltag-options`。
+  - 当前已选控件类型能正确回填。
+  - 条件配置与字段配置不再出现两套不一致的数据源。
+
+### Checklist
+- [x] 梳理当前字段/条件配置分别使用哪套 option 源。
+- [x] 将条件配置下拉切到 `fieldsqltag-options`，并修正当前值回填。
+- [x] 完成 `lint`、`build` 验证。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+
+### Result Notes
+- 条件配置侧栏原来仍在使用本地 `FIELD_TYPE_OPTIONS` 粗分类，导致和字段配置的接口 option 源不一致。现在条件配置也统一改为直接展示 `fieldsqltag-options` 返回项。
+- 条件项当前值不再只看本地 `type`，而是会从 `controltype/controlType/fieldSqlTag` 回填；接口提供的 `showname` 也会优先作为下拉显示文案。
+- 单表字段原有的“树形节点关联只能选一个”限制仍然保留，只是条件配置侧不再暴露这类不应该出现的选项。
+
+## 2026-03-25 明细列显示隐藏列与零宽列
+
+### Requirement Spec
+- 目标：单表模块的明细列在通过 `GET /api/single-table/modules/{dllCoId}/fields` 加载时，界面需要显示所有后端返回列，包括隐藏列和宽度为 `0` 的列。
+- 影响范围：明细列加载后的表格构建器展示分支，尤其是单表明细工作台。
+- 关键约束：
+  - 不改主表现有“隐藏列/零宽列不渲染”的规则。
+  - 只针对明细列展示链路修复，不扩散到无关表格。
+  - 验证至少覆盖类型检查和构建检查。
+- 不做什么：
+  - 暂不调整明细列的视觉样式。
+  - 暂不重构明细列加载接口或映射结构。
+- 成功标准：
+  - 明细列通过模块字段接口加载时，不再被前端展示层过滤掉。
+  - 隐藏列和宽度为 `0` 的列在明细表头中仍可见。
+
+### Checklist
+- [x] 梳理明细列当前是从哪里加载，以及隐藏/零宽列在哪一层被过滤。
+- [x] 只修改明细表构建器分支，保留所有已加载列。
+- [x] 完成 `lint`、`build` 验证。
+
+### Progress Notes
+- `Dashboard.tsx` 中明细表在存在关联模块时，本来就会通过 `fetchSingleTableModuleFields(detailModuleCode)` 拉取列；没有关联模块但配置了 `detailSql` 时，才会退到 `fetchSingleTableDetailGridFields(activeConfigModuleKey, detailId)`。
+- 真正丢列的不是接口层，而是 `table-builder.tsx` 的默认展示逻辑：若没有显式传入 `renderableColumns`，它会按 `helpers.isRenderableColumn(column)` 过滤，当前规则是 `visible !== false && width > 0`。
+- 这会让明细工作台里已经加载到状态里的隐藏列、零宽列，在最终表头渲染时被静默丢掉。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+
+### Result Notes
+- `use-dashboard-table-builder-options.ts` 现在会给 `documentDetailTableBuilderOptions` 显式传入 `activeDetailTableColumns` 作为 `renderableColumns`，让明细表直接渲染当前状态里的全部列，不再套用主表那套可见性过滤规则。
+- 主表和其他分支仍然保留原来的 `visible/width` 过滤逻辑，这次修复只针对单表明细列展示。
+
+## 2026-03-25 布局编辑器主表字段改用 designer-controls
+
+### Requirement Spec
+- 目标：打开布局编辑器后，右侧“主表字段”列表改为通过 `GET /api/single-table/modules/{dllCoId}/designer-controls` 获取，而不是继续直接复用当前 `mainTableColumns`。
+- 影响范围：单表模块的主表分组布局编辑器弹层、布局编辑器字段池数据源。
+- 关键约束：
+  - 尽量只影响布局编辑器弹层，不改主表本身字段工作台的加载逻辑。
+  - 保持现有布局编辑器拖拽、分组、预览交互不变。
+  - 验证至少覆盖类型检查和构建检查。
+- 不做什么：
+  - 暂不改布局编辑器保存接口。
+  - 暂不重做布局编辑器视觉样式。
+- 成功标准：
+  - 打开布局编辑器时，右侧字段列表使用 `designer-controls` 接口返回的数据。
+  - 关闭布局编辑器后，不影响主表工作台当前字段状态。
+
+### Checklist
+- [x] 梳理当前布局编辑器字段列表的数据来源与传递链路。
+- [x] 对接 `designer-controls` 接口并只替换布局编辑器字段池来源。
+- [x] 完成 `lint`、`build` 验证。
+
+### Progress Notes
+- 当前布局编辑器右侧字段池和画布字段解析都直接吃 `mainTableColumns`，也就是主表工作台当前状态；打开布局编辑器时并没有单独走后端字段源。
+- 后端 `GET /api/single-table/modules/{dllCoId}/designer-controls` 实际返回的是 Delphi 设计器控件列表，字段里有 `fieldid`、`fieldname`、`username`、`controlWidth`、`controlHeight`、`groupname` 等布局专用信息。
+- 这次改动保持主表工作台字段状态不动，只在布局编辑器容器内部新增“布局编辑器专用字段池”，打开弹层时拉取 `designer-controls`，并和现有主表列做同字段合并，保留原来的类型、预览和字段元数据。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+
+### Result Notes
+- `archive-layout-canvas-modal-container.tsx` 现在会在打开布局编辑器时按 `currentModuleCode` 拉取 `designer-controls`，并把返回结果映射成布局编辑器自己的字段列表。
+- 布局编辑器右侧“主表字段”列表，以及弹层里分组画布用于解析字段的列池，都改成优先使用这套专用字段池，不再直接复用主表工作台的 `mainTableColumns`。
+- 主表工作台本身的字段加载、隐藏列处理和表格构建逻辑没有被改动，这次修复范围只落在布局编辑器弹层。
+
+## 2026-03-25 布局编辑器分组改用 designer-groups
+
+### Requirement Spec
+- 目标：布局编辑器中的分组信息改为通过 `GET /api/single-table/modules/{dllCoId}/designer-groups` 获取，并按接口返回的分组结果展示。
+- 影响范围：单表模块布局编辑器弹层中的分组列表、分组字段归属和初始高亮组。
+- 关键约束：
+  - 继续只影响布局编辑器弹层，不改主表其他地方的分组状态来源。
+  - 分组字段归属要和 `designer-controls` 字段池使用同一套字段匹配规则。
+  - 验证至少覆盖类型检查和构建检查。
+- 不做什么：
+  - 暂不改分组保存接口。
+  - 暂不重做布局编辑器交互。
+- 成功标准：
+  - 打开布局编辑器后，分组按 `designer-groups` 返回结果展示。
+  - 分组内字段归属和右侧字段池保持一致。
+
+### Checklist
+- [x] 确认 `designer-groups` 返回结构与前端分组配置的映射关系。
+- [x] 接入 `designer-groups`，只替换布局编辑器分组来源。
+- [x] 完成 `lint`、`build` 验证。
+
+### Progress Notes
+- 后端 `designer-groups` 实际来自 `p_systemaddgroup`，并且服务层会把每个分组下的 `fields` 一起返回；这些字段行和 `designer-controls` 是同结构的。
+- 当前布局编辑器分组画布直接使用 `currentDetailBoard.groups`，也就是前端当前细节板配置，并不会在打开时主动按后端设计器分组重建。
+- 这次把 `designer-groups` 并入布局编辑器专用字段 hook，在拉取 `designer-controls` 的同时一并拉取分组，并按同一套字段匹配规则生成 `groups / columnIds / columnRows / columnWidths / columnHeights` 后回填到布局编辑器状态。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+
+### Result Notes
+- `use-archive-layout-palette-columns.ts` 现在会并行拉取 `designer-controls` 和 `designer-groups`，右侧字段池和分组画布都基于这两条接口统一构建。
+- 布局编辑器中的分组现在按 `designer-groups` 返回值初始化，分组里的字段归属、行号和宽高也会优先跟随后端设计器配置。
+- 主表其他地方的 `detailBoard` 逻辑没有被改成直接读 `designer-groups`，这次依然只限定在布局编辑器弹层。
+
+## 2026-03-25 布局编辑器归组改用 designer-layout 坐标计算
+
+### Requirement Spec
+- 目标：打开布局编辑器时，分组框继续通过 `GET /api/single-table/modules/{dllCoId}/designer-groups` 获取，但控件属于哪个分组不再使用 `designer-groups.fields`，而是通过 `GET /api/single-table/modules/{dllCoId}/designer-layout` 获取已布局控件坐标，再按“控件位置落在分组框范围内”计算归组。
+- 影响范围：单表模块布局编辑器弹层、布局编辑器初始分组字段归属、行号/宽高恢复逻辑。
+- 关键约束：
+  - 只改 `src/features/dashboard/module-settings` 里的布局编辑器链路，不把新逻辑堆回 `Dashboard.tsx`。
+  - `designer-groups` 只负责分组框元数据；`designer-layout` 才是控件落组依据。
+  - 需要兼容后端原始表 `p_systemaddgroup` / `p_systemControlLocation` 直接 `select *` 带来的大小写与历史字段名差异。
+- 不做什么：
+  - 暂不接布局编辑器保存接口。
+  - 暂不重做布局编辑器视觉样式或拖拽交互。
+- 成功标准：
+  - 打开布局编辑器后，分组内字段归属由控件坐标是否落入分组框范围决定。
+  - `designer-groups.fields` 不再作为控件归组来源。
+  - 已布局控件通过 `designer-layout` 恢复顺序、宽高与行号。
+
+### Checklist
+- [x] 补充 `designer-layout` 接口封装，并梳理分组框/布局控件的字段映射。
+- [x] 将布局编辑器初始分组构建改为 `designer-groups + designer-layout` 联合计算。
+- [x] 完成 `lint`、`build` 验证。
+
+### Progress Notes
+- 用户已明确修正：布局编辑器“控件归属分组”的真实规则是按位置命中分组框，而不是使用 `designer-groups` 服务层附带的 `fields`。
+- 当前实现把 `designer-groups.fields` 直接映射成 `columnIds / columnRows / columnWidths / columnHeights`，这会导致后端分组框正确但字段归属错误。
+- 下一步需要将 `designer-groups` 只作为分组框来源，新增 `designer-layout` 拉取已布局控件，再按控件坐标是否处于分组框矩形范围内决定归组，并按纵向/横向坐标推导行号与顺序。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+
+### Result Notes
+- `backend-module-config.ts` 新增了 `fetchSingleTableDesignerLayout`，布局编辑器现在会并行拉取 `designer-controls`、`designer-groups` 和 `designer-layout`。
+- `use-archive-layout-palette-columns.ts` 不再使用 `designer-groups.fields` 作为归组依据，而是只把 `designer-groups` 当分组框元数据，把 `designer-layout` 当已布局控件元数据，再按控件坐标是否命中分组框来计算 `columnIds / columnRows / columnWidths / columnHeights`。
+- 归组时优先用控件左上角坐标命中分组框，左上角没命中时再退到中心点 / 矩形重叠，尽量兼容后端历史布局数据。
+- 同一个分组内的控件顺序现在按 `top -> left -> orderId` 排，行号通过纵向坐标自动分桶生成，宽高直接沿用 `designer-layout` 里的尺寸。
+
+## 2026-03-26 单表模块设置进入前校验与自动建档
+
+### Requirement Spec
+- 目标：进入“模块设置”前，先确保菜单信息已经建好；进入单表模块设置时，若当前主模块存在则直接继续，若不存在则自动创建最小模块记录，后续修改统一走保存。
+- 影响范围：配置向导的步骤切换、单表模块设置入口、单表模块主配置的初始化请求链路。
+- 关键约束：
+  - 菜单信息未建好时，不允许切换到“模块设置”及其后续步骤。
+  - 单表主模块查询：`GET /api/single-table/modules/{dllCoId}`，查不到返回 `404`。
+  - 单表主模块新增：`POST /api/single-table/modules`，最小 body 可为空，但前端至少传 `dllcoid + toolsname`。
+  - 单表主模块保存：`POST /api/single-table/modules/{dllCoId}`，支持部分字段保存。
+  - 当前新增接口不查重、不幂等，因此前端必须避免重复自动创建。
+- 不做什么：
+  - 暂不实现模块设置各子表的保存接口。
+  - 暂不重构单据分支逻辑。
+- 成功标准：
+  - 菜单信息未保存时，不能进入模块设置。
+  - 进入单表模块设置时，会先检查主模块是否存在；不存在则自动创建。
+  - 自动创建成功后，单表模块设置相关资源加载只在模块已就绪后开始。
+
+### Checklist
+- [x] 梳理配置向导步骤切换与当前单表模块加载链路。
+- [x] 加入菜单信息 gating，阻止未建好的菜单进入模块设置。
+- [x] 接入单表主模块“查询存在性 + 404 自动创建”的初始化逻辑，并串到模块设置加载前。
+- [x] 完成 `lint`、`build` 验证。
+
+### Progress Notes
+- 当前配置向导只在第 2 步用 `activeConfigMenu === null` 阻止继续，但从第 3/4 步继续或点步骤条直跳时，仍然可以在菜单信息未建好的情况下进入模块设置。
+- 单表模块设置的字段、条件、明细、右键、颜色等资源加载，当前都是直接依赖 `activeConfigModuleKey` 发请求，并没有先检查主模块是否存在。
+- 查询/新增/保存接口已经在 `backend-module-config.ts` 里具备，但此前没有真正接入“进入模块设置时先查，不存在就自动建档”的链路。
+
+### Verification
+- `cmd /c npm run lint`：通过。
+- `cmd /c npm run build`：通过。
+
+### Result Notes
+- 新增了 [src/features/dashboard/module-settings/use-ensure-single-table-module.ts](/E:/GithubProject/LsSmatrTools/LsAITool/src/features/dashboard/module-settings/use-ensure-single-table-module.ts)，进入单表模块设置及其后续步骤时会先查 `GET /api/single-table/modules/{dllCoId}`，查不到 `404` 就自动调用 `POST /api/single-table/modules` 创建最小模块骨架，body 至少带 `dllcoid + toolsname`。
+- `Dashboard.tsx` 现在会先判断菜单信息是否已建好；如果菜单信息未保存成功，就不能通过“下一步”或步骤条进入“模块设置”及后续步骤。
+- 单表模块设置下的字段、条件、明细、右键、颜色、明细装饰等请求现在统一挂在“主模块已就绪”状态之后，避免自动建档尚未完成时就先去拉子资源。
+- 自动建档时如果创建请求失败，会再补查一次主模块，尽量兼容并发下“对方刚好先创建成功”的情况，减少因为新增接口不幂等造成的误报。
+
+## 2026-03-26 单表模块设置保存方案分析
+
+### Requirement Spec
+- 目标：分析“模块设置 -> 保存本页”在单表分支下的实现方案，明确前端应如何拆分保存事务，以及还缺哪些接口；本轮只做分析，不落代码。
+- 影响范围：单表模块设置页涉及的主模块、列、条件、明细、颜色、右键、明细颜色/右键、图表、布局等保存链路。
+- 关键约束：
+  - 遵守当前 Dashboard 架构，保存编排应落在 `src/features/dashboard/module-settings` 下，不继续把巨型保存逻辑堆回 `Dashboard.tsx`。
+  - 需要区分“已存在记录更新”和“前端新建但还未落库记录新增”。
+  - 需要识别现有后端已提供的写接口和仍缺失的接口。
+- 不做什么：
+  - 本轮不写保存代码。
+  - 本轮不修改前端交互或状态结构。
+- 成功标准：
+  - 输出一份按保存单元拆开的保存方案。
+  - 列出当前可直接用的写接口。
+  - 列出当前仍缺失、需要你补充的接口。
+
+### Checklist
+- [x] 梳理当前单表模块设置的前端状态块与读取来源。
+- [x] 对照后端现有 single-table controller，盘点已具备的写接口。
+- [x] 列出缺失接口与推荐的保存编排顺序。
+
+### Progress Notes
+- 当前单表模块设置实际由这些状态块组成：主模块本体、主表列、主条件、左侧字段条件、主颜色、主右键、明细页签、明细列、明细颜色、明细右键、明细图表，以及布局编辑器专用的 `designer-controls / designer-groups / designer-layout`。
+- 其中真正会形成“保存本页”压力的，不是单个表，而是多组有父子依赖的资源：例如主表列需要先保存，字段级条件和字段级左表列才能拿稳定 `fieldId`；明细需要先保存，明细列/颜色/右键/图表才能拿稳定 `detailId`。
+- 用户已补充当前真实单表写接口口径：除删除外，所有资源统一通过 `POST` 保存，`body` 不带 `id` 表示新增，带 `id` 表示更新；删除统一通过 `DELETE`。
+- 按用户最新口径，字段级条件、字段级颜色、明细图表、布局编辑器都已存在写接口；此前根据 controller 推测的“缺失接口”判断需要以下发的真实契约为准，不再继续沿用旧假设。
+- 用户进一步明确：当明细配置了 `UnionModule` 时，明细列 / 明细颜色 / 明细右键都应保存到 `dllcoid = UnionModule` 的单表主资源接口；未配置 `UnionModule` 时，明细列 / 明细颜色 / 明细右键才保存到“当前明细局部配置”。
+- 用户同时明确：当前这轮“保存本页”先不纳入布局编辑器保存。
+
+### Result Notes
+- 推荐将“模块设置 -> 保存本页”实现为 `src/features/dashboard/module-settings` 下的单表保存编排器，而不是一个把所有逻辑塞进 `Dashboard.tsx` 的巨大保存函数。
+- 推荐保存顺序：
+  1. 确保主模块已存在。
+  2. 保存主表列。
+  3. 保存主条件、主颜色、主右键。
+  4. 保存字段级条件、字段级左表列。
+  5. 保存明细页签。
+  6. 保存每个明细下的列、颜色、右键、图表。
+- 明细子资源保存分流规则：
+  - 配置了 `UnionModule`：明细列保存到 `POST/DELETE /api/single-table/modules/{dllCoId}/fields`，明细颜色保存到 `POST/DELETE /api/single-table/modules/{dllCoId}/colors`，明细右键保存到 `POST/DELETE /api/single-table/modules/{dllCoId}/menus`，其中 `{dllCoId} = UnionModule`。
+  - 未配置 `UnionModule`：明细列保存到 `POST/DELETE /api/single-table/modules/{dllCoId}/details/{detailId}/grid-fields`，明细颜色保存到 `POST/DELETE /api/single-table/modules/{dllCoId}/details/{detailId}/colors`，明细右键保存到 `POST/DELETE /api/single-table/modules/{dllCoId}/details/{detailId}/menus`。
+  - 明细图表仍按当前明细自身保存。
+- 当前这轮“保存本页”不包含布局编辑器，`designer-layout` 相关接口先不进入本次实现范围。
+- 这轮分析之后，真正还需要继续明确的已经不再是“有没有接口”，而是：
+  - 每个 `POST` 接口各自的最小 body、可选字段和返回结构。
+  - 关联模块本体保存时，各资源 `POST body` 是否只需要目标模块自身字段，还是还需要附带来源明细标识。
+
+## 2026-03-26 单表模块设置保存本页实现
+
+### Requirement Spec
+- 目标：实现“模块设置 -> 保存本页”在单表分支下的真实保存逻辑，覆盖主模块、主字段、主条件、字段级条件、字段级左表列、字段级颜色、明细、明细列、明细颜色、明细右键、明细图表。
+- 影响范围：单表模块设置步骤的保存入口、single-table 接口封装、模块设置特性目录下的保存编排与状态快照逻辑。
+- 关键约束：
+  - 保存编排落在 `src/features/dashboard/module-settings`，不要把大段保存逻辑继续堆回 `Dashboard.tsx`。
+  - 所有写接口统一遵循：`POST` body 无 `id` 为新增，有 `id` 为保存；`DELETE` 为删除。
+  - 主字段 / 主条件 / 字段级条件 / 明细 / 右键 / 图表 优先传数据库原字段名。
+  - 明细子资源保存分流：
+    - 有 `UnionModule`：明细列走关联模块 `fields`，明细颜色走关联模块 `colors`，明细右键走关联模块 `menus`。
+    - 无 `UnionModule`：明细列 / 颜色 / 右键走当前明细局部接口。
+    - 明细图表始终走当前明细自身接口。
+  - 本轮不处理布局编辑器保存。
+- 不做什么：
+  - 不实现单据分支保存。
+  - 不改模块设置页面结构和交互。
+- 成功标准：
+  - 单表模块设置点击“保存本页”时，会按资源依赖顺序执行保存。
+  - 新增 / 修改 / 删除都能映射到对应 `POST(with/without id)` 与 `DELETE`。
+  - 保存成功后有统一成功提示，失败时能明确提示是哪一类资源失败。
+
+### Checklist
+- [x] 补充 single-table 写接口封装。
+- [x] 梳理模块设置当前状态结构与后端快照的 diff 规则。
+- [x] 在 `module-settings` 下实现单表保存编排器。
+- [x] 将模块设置“保存本页”入口接到单表保存编排器。
+- [x] 完成 `lint`、`build` 验证。
+
+### Progress Notes
+- 这轮没有把保存逻辑继续塞回 `Dashboard.tsx`，而是在 `src/features/dashboard/module-settings/use-single-table-module-settings-save.ts` 中新增单表保存编排器，Dashboard 只负责传入当前状态、加载完成后的快照采集，以及保存按钮接线。
+- 保存策略采用“当前状态全量 upsert + 基于初始快照做删除补偿”，不要求前端逐字段比对差异；这样更贴合当前后端统一 `POST(with/without id) + DELETE` 的契约，也能减少复杂状态分支。
+- 主字段 / 主条件 / 字段级条件 / 明细 / 右键 / 图表 这几组保存体都优先回写数据库原字段名；颜色和 grid-fields 继续按后端现有标准化逻辑接受的字段名构建 body。
+- 为了让字段级颜色进入可保存范围，这轮顺手补上了 `GET /api/single-table/modules/{dllCoId}/fields/{fieldId}/colors` 的加载和基线采集；否则删除与更新都拿不到可靠的初始状态。
+- 明细子资源已经按最终规则分流：
+  - 有 `UnionModule` 时，明细列/颜色/右键写到关联模块本体的 `fields/colors/menus`。
+  - 没有 `UnionModule` 时，明细列/颜色/右键写到当前明细局部的 `grid-fields/colors/menus`。
+  - 明细图表始终写到当前明细的 `charts`。
+- 菜单信息未建好时仍然不能进入模块设置；进入模块设置后的“保存本页”现在只在单表分支切到新的保存编排器，其余步骤保持原来的保存入口行为。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+
+### Result Notes
+- 单表模块设置“保存本页”现在已经具备真实写后端能力，覆盖主字段、主条件、字段级条件、字段级左表列、字段级颜色、主颜色、主右键、明细、明细列、明细颜色、明细右键、明细图表。
+- 保存成功后会把后端返回的新主键重新回填到前端状态里，后续再次点击“保存本页”会继续走保存而不是重复新增。
+- 当前仍保留一个已知边界：布局编辑器保存明确不在本轮范围内；另外，多个明细同时指向同一个 `UnionModule` 时，前端会按“当前页签优先、资源更完整优先”合并为一份共享资源写回关联模块。

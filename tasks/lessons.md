@@ -310,3 +310,55 @@
 - In a giant function component, moving a `useMemo` earlier can trigger Temporal Dead Zone failures if the memoized code calls helpers backed by later `const` declarations. `tsc` and `vite build` can still pass while the page crashes at runtime.
 - For shared numeric helpers such as `clampValue`, prefer module-level function declarations before introducing early memoized derivations. That removes initialization-order risk and keeps later refactors safer.
 - After any performance refactor that reorders derivations, verify the real page in a browser. Static build success is not enough for this file.
+
+## 2026-03-25 Login Route Must Not Eagerly Import Dashboard
+- When the login route and the dashboard route share one entry component, avoid statically importing the entire dashboard module at the top of `App.tsx`. A runtime failure anywhere in the dashboard dependency chain can blank the login page before it even gets a chance to render.
+- Protected or heavyweight workbench branches should be lazy-loaded and wrapped with a local error boundary. That keeps public entry screens recoverable even when downstream module-setting code is unstable.
+- A passing `vite build` does not prove the safe route is isolated. Real startup verification should include the unauthenticated path, not just the dashboard path.
+
+## 2026-03-25 Backend Envelope Mismatch Can Crash The Login Route
+- Before trusting a backend list endpoint as `T[]`, check the real payload shape. This backend returns `{ code, message, data }`, so treating the whole response as an array will blow up immediately on calls like `.find()` and `.map()`.
+- Fix response-shape mismatches at the request layer first. Central envelope unwrapping in `http.ts` is safer and less repetitive than patching each screen one by one.
+- Public entry screens should still keep lightweight `Array.isArray` guards around remote lists. Even with a normalized request layer, malformed or partially migrated endpoints should not be able to blank the whole page.
+
+## 2026-03-25 Field Type Dropdown Must Follow Backend Options, Not Local Labels
+- If the backend already exposes `fieldsqltag-options`, the inspector dropdown should display those option rows directly. Keeping a separate local `文本/数字/下拉框` list for one branch creates immediate inconsistency.
+- For condition configuration, current type recovery must read `controltype/controlType` in addition to `fieldsqltag/fieldSqlTag`; otherwise the dropdown cannot correctly show the persisted selection.
+- When both backend `showname` and local fallback labels exist, prefer the backend label first. Fallbacks should only cover missing or malformed option rows, not override valid server metadata.
+
+## 2026-03-25 Detail Columns Can Already Be Loaded But Still Disappear At Render Time
+- When a user says 明细列接口已经有值但界面没全显示, do not stop at the fetch branch. For this workbench, detail columns were already loaded from `single-table/modules/{dllCoId}/fields`; the loss happened later in the table-builder render filter.
+- `MemoTableBuilder` falls back to `helpers.isRenderableColumn(column)` unless a branch explicitly passes `renderableColumns`. That generic rule currently hides `visible=false` and `width<=0`, which is correct for the main table but wrong for detail screens that must expose all backend fields.
+- For branches that need to show every returned field, prefer passing explicit `renderableColumns` instead of weakening the shared global visibility rule. That keeps the fix scoped and avoids regressing the main table.
+
+## 2026-03-25 Archive Layout Editor Needs Its Own Field Source
+- If the user points at the archive layout editor's right-side field list, do not assume it should keep reusing `mainTableColumns`. That workbench has a dedicated backend source: `single-table/modules/{dllCoId}/designer-controls`.
+- For layout-only field pools, keep the fetch and mapping inside `src/features/dashboard/module-settings` instead of pushing another special-case branch into `Dashboard.tsx`. The main page should only pass module-level coordination inputs such as `currentModuleCode` and toast handlers.
+- When replacing the layout editor field source, prefer merging designer-control rows with existing main-table field metadata. That preserves preview/type behavior while still switching the source of truth for layout width, height, and palette membership.
+
+## 2026-03-25 Archive Layout Groups Must Follow Designer Groups Too
+- Once the layout editor field pool switches to `designer-controls`, do not leave the group canvas on the old front-end-only `currentDetailBoard.groups` assumption. The backend already exposes the matching group source through `single-table/modules/{dllCoId}/designer-groups`.
+- `designer-groups` and `designer-controls` should be mapped with the same field identity strategy; otherwise the right-side palette and the group canvas will talk about different field IDs and drag assignment will drift.
+- For this editor, the safest pattern is to load both sources together inside the module-settings feature and hydrate the editor state once on open. That keeps the modal internally consistent without turning the whole dashboard state tree into a special-case designer mode.
+
+## 2026-03-25 Designer Group Fields Are Not Always The Real Membership Source
+- When the user explicitly says “控件属于哪个分组是通过位置计算的”, stop trusting `designer-groups.fields` as the authoritative membership list. That service-level nesting may be a convenience view, but the real source of truth for layout editors can still be the separate `designer-layout` coordinate table.
+- For Delphi-style layout data pulled via `select *`, treat group rectangles and control rectangles as separate datasets. Use `designer-groups` for the group boxes, `designer-layout` for placed controls, and derive membership from rectangle containment instead of assuming backend-attached children are correct.
+- When a backend table is exposed as raw records, build field-name readers that tolerate historical casing and synonyms (`left/top/width/height`, `controlLeft/controlTop`, etc.). Otherwise the logic can look correct in code but silently produce empty groups at runtime.
+
+## 2026-03-26 Single-Table Module Settings Must Be Gated By Menu Persistence
+- In this wizard, “菜单信息已建好” is stronger than “当前在第 2 步点过保存”. The safe gate is whether a real menu node already exists and has a stable `menuId + purviewId/moduleCode`; otherwise users can jump from steps 3/4 into module settings with no durable module identity.
+- If the single-table parent record may not exist yet, do not let every child loader (`fields/conditions/details/menus/colors`) race ahead and fail independently. Add one module-level ensure step first, then start the child-resource effects only after that record is ready.
+- When a hook performs backend bootstrapping, avoid depending on unstable inline callbacks like a freshly recreated `showToast`. Either memoize the callback or keep it out of the effect dependency loop, or the bootstrap request can repeat unexpectedly.
+
+## 2026-03-26 Single-Table Save Contract Is POST-Upsert Plus DELETE
+- For this backend, do not keep assuming a REST-style split of `POST=create` and `PUT=update`. The real write contract is resource-level `POST` upsert: no `id` means create, with `id` means save/update, and deletion stays on `DELETE`.
+- Once the user provides the real write contract, stop extrapolating missing interfaces from old controller reads or earlier assumptions. Save-plan analysis should immediately pivot to the user-confirmed contract, even if it differs from previous code reading.
+- Under this contract, the front-end save orchestrator's main job is to classify each record into `create / update / delete`, not to choose among many HTTP verbs. Build the diff logic around record identity first, then map creates/updates to `POST(with/without id)` uniformly.
+
+## 2026-03-26 Detail Save Target Depends On UnionModule
+- For single-table detail resources, do not treat all detail columns/colors/menus as local detail data by default. The exact split must follow the user's latest interface mapping, not an earlier paraphrase.
+- In the latest confirmed rule, detail columns, detail colors, and detail menus all move to the related module root when `UnionModule` is present, using the main-module `fields/colors/menus` endpoints with `dllCoId = UnionModule`.
+- For branches the user re-explains with concrete endpoint lists, trust the explicit endpoint mapping over the earlier natural-language summary. Restating a rule loosely can easily drift from the real API contract.
+- Chart config is a separate branch from detail columns/colors/menus. Even when a detail has `UnionModule`, chart save still belongs to the current detail unless the user explicitly redefines that rule.
+- When the user says “先不管布局编辑器里的保存”, remove designer-layout from the current save scope instead of leaving it half-included in the plan. Partial inclusion is worse than explicit exclusion for a multi-resource save workflow.

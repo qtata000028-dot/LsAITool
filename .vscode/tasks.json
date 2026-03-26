@@ -4,11 +4,15 @@
     {
       "label": "ensure-dev-server",
       "type": "shell",
-      "command": "/bin/zsh",
-      "args": [
-        "-lc",
-        "source ~/.zshrc >/dev/null 2>&1 && node scripts/ensure-dev-server.mjs"
-      ],
+      "command": "node",
+      "args": ["scripts/ensure-dev-server.mjs"],
+      "problemMatcher": []
+    },
+    {
+      "label": "ensure-client-dev-server",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/ensure-client-dev-server.mjs"],
       "problemMatcher": []
     },
     {

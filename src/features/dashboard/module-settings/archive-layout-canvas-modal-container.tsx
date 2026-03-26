@@ -2,6 +2,7 @@ import React from 'react';
 import { ArchiveLayoutCanvasModal } from './archive-layout-canvas-modal';
 import type { LayoutFieldWorkbenchMetaResolver } from './layout-field-workbench-meta';
 import { useArchiveLayoutEditor } from './use-archive-layout-editor';
+import { useArchiveLayoutPaletteColumns } from './use-archive-layout-palette-columns';
 
 type ArchiveLayoutCanvasModalContainerProps = {
   activeDetailBoardResize: {
@@ -14,11 +15,13 @@ type ArchiveLayoutCanvasModalContainerProps = {
     width: number;
   } | null;
   currentDetailBoard: Record<string, any>;
+  currentModuleCode: string;
   getDetailBoardFieldLiveHeight: (groupId: string, columnId: string, fallbackHeight: number) => number;
   getDetailBoardFieldLiveWidth: (groupId: string, columnId: string, fallbackWidth: number) => number;
   getLayoutFieldWorkbenchMeta: LayoutFieldWorkbenchMetaResolver;
   isOpen: boolean;
   mainTableColumns: Record<string, any>[];
+  onShowToast: (message: string) => void;
   onClose: () => void;
   onResetDetailBoardFieldHeight: (event: React.MouseEvent<any>, groupId: string, columnId: string) => void;
   onResetDetailBoardFieldWidth: (event: React.MouseEvent<any>, groupId: string, columnId: string) => void;
@@ -43,11 +46,13 @@ type ArchiveLayoutCanvasModalContainerProps = {
 export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayoutCanvasModalContainer({
   activeDetailBoardResize,
   currentDetailBoard,
+  currentModuleCode,
   getDetailBoardFieldLiveHeight,
   getDetailBoardFieldLiveWidth,
   getLayoutFieldWorkbenchMeta,
   isOpen,
   mainTableColumns,
+  onShowToast,
   onClose,
   onResetDetailBoardFieldHeight,
   onResetDetailBoardFieldWidth,
@@ -56,10 +61,18 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
   onUpdateDetailBoard,
   renderFieldPreview,
 }: ArchiveLayoutCanvasModalContainerProps) {
+  const layoutPaletteColumns = useArchiveLayoutPaletteColumns({
+    currentModuleCode,
+    isOpen,
+    mainTableColumns,
+    onUpdateDetailBoard,
+    onShowToast,
+  });
+
   const archiveLayoutEditor = useArchiveLayoutEditor({
     currentDetailBoard,
     isOpen,
-    mainTableColumns,
+    mainTableColumns: layoutPaletteColumns,
     onClose,
     onUpdateDetailBoard,
   });
@@ -77,7 +90,7 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
       highlightedGroup={archiveLayoutEditor.highlightedGroup}
       highlightedGroupId={archiveLayoutEditor.highlightedGroupId}
       isOpen={isOpen}
-      mainTableColumns={mainTableColumns}
+      mainTableColumns={layoutPaletteColumns}
       onAddArchiveLayoutGroup={archiveLayoutEditor.addArchiveLayoutGroup}
       onClearArchiveLayoutGroups={archiveLayoutEditor.clearArchiveLayoutGroups}
       onClose={archiveLayoutEditor.closeEditor}

@@ -3,6 +3,11 @@ import { getAccessToken } from './auth-session';
 
 type QueryValue = string | number | boolean | null | undefined;
 type ApiBody = BodyInit | object | null | undefined;
+type ApiResponseEnvelope<T> = {
+  code?: boolean | number | string | null;
+  data?: T;
+  message?: unknown;
+};
 
 export class ApiError extends Error {
   status: number;
@@ -60,6 +65,64 @@ function extractErrorMessage(data: unknown) {
   }
 
   return null;
+}
+
+function isApiResponseEnvelope(value: unknown): value is ApiResponseEnvelope<unknown> {
+  return Boolean(value) && typeof value === 'object' && (
+    'code' in (value as Record<string, unknown>) ||
+    'data' in (value as Record<string, unknown>) ||
+    'message' in (value as Record<string, unknown>)
+  );
+}
+
+function isSuccessfulEnvelopeCode(code: unknown) {
+  if (code === undefined || code === null || code === '') {
+    return true;
+  }
+
+  if (typeof code === 'boolean') {
+    return code;
+  }
+
+  if (typeof code === 'number') {
+    return code === 0 || code === 200;
+  }
+
+  if (typeof code === 'string') {
+    const normalizedCode = code.trim().toLowerCase();
+    if (!normalizedCode) {
+      return true;
+    }
+
+    if (normalizedCode === '0' || normalizedCode === '200' || normalizedCode === 'ok' || normalizedCode === 'success' || normalizedCode === 'true') {
+      return true;
+    }
+
+    const parsed = Number(normalizedCode);
+    return !Number.isNaN(parsed) && (parsed === 0 || parsed === 200);
+  }
+
+  return false;
+}
+
+function unwrapApiResponse<T>(responseData: unknown, status: number): T {
+  if (!isApiResponseEnvelope(responseData)) {
+    return responseData as T;
+  }
+
+  if (!isSuccessfulEnvelopeCode(responseData.code)) {
+    throw new ApiError(
+      extractErrorMessage(responseData) ?? `请求失败，状态码 ${status}`,
+      status,
+      responseData,
+    );
+  }
+
+  if ('data' in responseData) {
+    return responseData.data as T;
+  }
+
+  return responseData as T;
 }
 
 async function parseResponse(response: Response) {
@@ -127,5 +190,5 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     );
   }
 
-  return responseData as T;
+  return unwrapApiResponse<T>(responseData, response.status);
 }

@@ -160,7 +160,11 @@ export function FieldInspectorController({
       ];
   const isSingleTableField = !isConditionConfig && businessType !== 'table';
   const currentFieldSqlTagValue = String(resolveColumnFieldSqlTagId(currentColumn));
-  const currentFieldSqlTagLabel = toRecordText(currentColumn.fieldSqlTagName)
+  const currentFieldSqlTagLabel = toRecordText(
+    currentColumn.fieldSqlTagName
+    ?? currentColumn.controlTypeName
+    ?? currentColumn.controltypename,
+  )
     || fieldSqlTagLabelFallbacks[normalizeFieldSqlTagId(currentFieldSqlTagValue, 0)]
     || currentColumn.type;
   const availableFieldSqlTagOptions = (fieldSqlTagOptions.length > 0 ? fieldSqlTagOptions : defaultFieldSqlTagOptions).reduce<Array<Record<string, any>>>((collection, option) => {
@@ -189,13 +193,15 @@ export function FieldInspectorController({
     ? fieldTypeOptions.filter((type) => type !== '树形节点关联')
     : fieldTypeOptions;
 
-  const handleFieldTypeChange = (nextValue: string) => {
-    if (isConditionConfig) {
-      updateColumn({ type: nextValue });
-      return;
-    }
+  const selectableFieldSqlTagOptions = isConditionConfig
+    ? availableFieldSqlTagOptions.filter((option) => {
+        const optionLabel = getFieldSqlTagOptionLabel(option);
+        return mapFieldSqlTagToFieldType(option.showid, optionLabel, '文本') !== '树形节点关联';
+      })
+    : availableFieldSqlTagOptions;
 
-    const selectedOption = availableFieldSqlTagOptions.find((option) => String(normalizeFieldSqlTagId(option.showid, -1)) === nextValue);
+  const handleFieldTypeChange = (nextValue: string) => {
+    const selectedOption = selectableFieldSqlTagOptions.find((option) => String(normalizeFieldSqlTagId(option.showid, -1)) === nextValue);
     if (!selectedOption) {
       return;
     }
@@ -210,6 +216,10 @@ export function FieldInspectorController({
       type: nextFieldType,
       fieldSqlTag: normalizeFieldSqlTagId(selectedOption.showid, 0),
       fieldSqlTagName: getFieldSqlTagOptionLabel(selectedOption),
+      controltype: normalizeFieldSqlTagId(selectedOption.showid, 0),
+      controlType: normalizeFieldSqlTagId(selectedOption.showid, 0),
+      controltypename: getFieldSqlTagOptionLabel(selectedOption),
+      controlTypeName: getFieldSqlTagOptionLabel(selectedOption),
     });
   };
 
@@ -356,17 +366,11 @@ export function FieldInspectorController({
                     <div>
                       <label className={mutedLabelClass}>{isConditionConfig || isBillHeaderField ? '控件类型' : '字段类型'}</label>
                       <select
-                        value={isConditionConfig ? currentColumn.type : currentFieldSqlTagValue}
+                        value={currentFieldSqlTagValue}
                         onChange={(e) => handleFieldTypeChange(e.target.value)}
                         className={fieldClass}
                       >
-                        {isConditionConfig
-                          ? availableFieldTypes.map((type) => (
-                              <option key={type} value={type}>
-                                {type}
-                              </option>
-                            ))
-                          : availableFieldSqlTagOptions.map((option) => {
+                        {selectableFieldSqlTagOptions.map((option) => {
                               const optionId = normalizeFieldSqlTagId(option.showid, -1);
                               const optionLabel = getFieldSqlTagOptionLabel(option);
                               const optionFieldType = mapFieldSqlTagToFieldType(option.showid, optionLabel, '文本');

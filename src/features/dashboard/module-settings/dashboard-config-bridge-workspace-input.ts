@@ -4,10 +4,12 @@ type BuildDashboardConfigBridgeWorkspaceInput = {
   archiveLayoutState: {
     activeDetailBoardResize: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['activeDetailBoardResize'];
     currentDetailBoard: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['currentDetailBoard'];
+    currentModuleCode: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['currentModuleCode'];
     isOpen: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['isOpen'];
     mainTableColumns: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['mainTableColumns'];
   };
   archiveLayoutActions: {
+    onShowToast: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onShowToast'];
     onClose: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onClose'];
     onResetDetailBoardFieldHeight: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onResetDetailBoardFieldHeight'];
     onResetDetailBoardFieldWidth: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onResetDetailBoardFieldWidth'];

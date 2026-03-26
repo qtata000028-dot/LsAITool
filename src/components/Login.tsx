@@ -38,6 +38,8 @@ export default function Login({ onLogin }: LoginProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const organizationRef = useRef<HTMLDivElement>(null);
   const employeeRef = useRef<HTMLDivElement>(null);
+  const organizationOptions = Array.isArray(organizations) ? organizations : [];
+  const employeeOptions = Array.isArray(employees) ? employees : [];
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -55,37 +57,37 @@ export default function Login({ onLogin }: LoginProps) {
   }, []);
 
   const selectedOrganization = useMemo(() => {
-    return organizations.find((option) => option.companyKey === organizationKey) ?? null;
-  }, [organizationKey, organizations]);
+    return organizationOptions.find((option) => option.companyKey === organizationKey) ?? null;
+  }, [organizationKey, organizationOptions]);
 
   const selectedEmployee = useMemo(() => {
     if (selectedEmployeeId === null) {
       return null;
     }
 
-    return employees.find((employee) => employee.employeeId === selectedEmployeeId) ?? null;
-  }, [employees, selectedEmployeeId]);
+    return employeeOptions.find((employee) => employee.employeeId === selectedEmployeeId) ?? null;
+  }, [employeeOptions, selectedEmployeeId]);
 
   const accountSuggestions = useMemo(() => {
     const keyword = employeeKeyword.trim().toLowerCase();
     if (!keyword) {
-      return employees.slice(0, 10);
+      return employeeOptions.slice(0, 10);
     }
 
-    return employees
+    return employeeOptions
       .filter((employee) => {
         const searchable = [employee.employeeName, employee.py].join(' ').toLowerCase();
 
         return searchable.includes(keyword);
       })
       .slice(0, 10);
-  }, [employees, employeeKeyword]);
+  }, [employeeKeyword, employeeOptions]);
 
   const accountHelperText = selectedOrganization
     ? isLoadingEmployees
       ? '正在加载该机构下的可登录人员...'
-      : employees.length > 0
-        ? `已加载 ${employees.length} 位可登录人员`
+      : employeeOptions.length > 0
+        ? `已加载 ${employeeOptions.length} 位可登录人员`
         : '当前机构暂无可登录人员'
     : '请先选择所属机构';
 
@@ -95,7 +97,7 @@ export default function Login({ onLogin }: LoginProps) {
 
     try {
       const data = await fetchServerOptions();
-      setOrganizations(data);
+      setOrganizations(Array.isArray(data) ? data : []);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
       setOrganizations([]);
@@ -136,7 +138,7 @@ export default function Login({ onLogin }: LoginProps) {
           return;
         }
 
-        setEmployees(data);
+        setEmployees(Array.isArray(data) ? data : []);
       } catch (error) {
         if (!isActive) {
           return;
@@ -307,7 +309,7 @@ export default function Login({ onLogin }: LoginProps) {
                   </button>
 
                   <AnimatePresence>
-                    {isOrganizationOpen && organizations.length > 0 && (
+                    {isOrganizationOpen && organizationOptions.length > 0 && (
                       <motion.div
                         initial={{ opacity: 0, y: -10, scale: 0.97 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -317,7 +319,7 @@ export default function Login({ onLogin }: LoginProps) {
                       >
                         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.18),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.72),rgba(248,250,252,0.62))]" />
                         <div className="relative p-2" role="listbox">
-                          {organizations.map((option) => {
+                          {organizationOptions.map((option) => {
                             const isActive = option.companyKey === organizationKey;
 
                             return (
@@ -473,7 +475,7 @@ export default function Login({ onLogin }: LoginProps) {
                 </div>
               </div>
 
-              {!isLoadingOrganizations && organizations.length === 0 ? (
+              {!isLoadingOrganizations && organizationOptions.length === 0 ? (
                 <div className="flex justify-end">
                   <button
                     className="text-xs font-semibold text-primary transition-colors hover:text-erp-blue"
