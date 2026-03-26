@@ -3196,3 +3196,89 @@
   - 当前分支已有的登录、主界面、模块配置链路继续有效。
   - `整合项目升级` 分支的非冲突更新已被吸收。
 - 当前仍有一个已知但不阻塞本次 merge 的边界：`vite build` 仍会给出大 chunk warning，不过这属于已有构建体积提示，不是本次合并引入的新错误。
+
+## 2026-03-26 AI 请求统一补登录 Token
+
+### Requirement Spec
+- 目标：让当前前端已接入的 AI 接口统一携带登录 token，请求头格式为 `Authorization: Bearer YOUR_TOKEN`。
+- 影响范围：`/api/ai/*` 对应的前端请求封装及其调用链路。
+- 关键约束：
+  - 尽量只改请求层，不扩散改动到 Dashboard 业务 UI。
+  - 使用当前项目已有登录态 token，不新增第二套存储。
+  - 保持现有 AI 请求参数和返回处理不变。
+- 不做什么：
+  - 本轮不改 AI 交互文案与页面结构。
+  - 本轮不新增未使用的 AI 入口。
+- 成功标准：
+  - 当前前端已接入的 AI 请求会带 `Authorization: Bearer <accessToken>`。
+  - `lint`、`build` 通过。
+
+### Checklist
+- [x] 定位当前前端已接入的 AI 请求封装。
+- [x] 在 AI 请求链路中统一补 Bearer token。
+- [x] 完成验证并记录结果。
+
+### Progress Notes
+- 已确认当前前端实际接入的 AI 请求封装都集中在 `src/lib/minimax.ts`。
+- 旧实现里 `requestSurveyPlan()`、`requestSqlDraft()`、`requestIdentifierTranslation()` 混用了原生 `fetch` 与统一请求层，导致一部分 AI 接口不会自动附带当前登录态 `Authorization`。
+- 本轮已改成走统一请求层 `apiRequest(..., { auth: true })`，这样会自动带：
+  - `Authorization: Bearer <accessToken>`
+  - `accessToken: <accessToken>`
+
+### Verification
+- `npm run lint`
+- `npm run build`
+- 代码级核对：
+  - `requestSurveyPlan()` 已从直接 `fetch` 改为 `apiRequest(..., { auth: true })`。
+  - `requestSqlDraft()` 已从直接 `fetch` 改为 `apiRequest(..., { auth: true })`。
+  - `requestIdentifierTranslation()` 已从直接 `fetch` 改为 `apiRequest(..., { auth: true })`。
+  - `requestAiCreateMainTable()` 继续保持 `apiRequest(..., { auth: true })`。
+  - 当前前端已接入的 AI 路径仍保持不变：`/api/ai/survey-plan`、`/api/ai/sql-draft`、`/api/ai/translate-identifiers`、`/api/ai/create-main-table`。
+
+### Result Notes
+- 这次把当前前端已经接入的 AI 请求都统一到了带鉴权的请求层，不再只是一键翻译单点修复。
+- 现在只要当前用户已登录并且本地有 `accessToken`，问卷方案、SQL 草稿、字段翻译、创建主表这几条 AI 请求都会自动带 Bearer token。
+- 当前仍保留一个联调边界：这次完成了类型和构建验证，但还没替你逐条在浏览器 Network 面板里手点确认请求头；按现在代码，相关请求都应该能直接看到 `Authorization: Bearer ...`。
+
+## 2026-03-26 AI 请求 500 排查与代理回切
+
+### Requirement Spec
+- 目标：定位为什么浏览器里的 `/api/ai/translate-identifiers` 会报 500，而用户直连 `9093` 可以正常返回，并修正当前前端代理链路。
+- 影响范围：本地开发代理与 IIS 反向代理中 `/api/ai/*` 的转发目标。
+- 关键约束：
+  - 以用户最新确认的接口归属为准：AI 接口统一属于现有 Java 后端 `/api/ai/*`。
+  - 保持现有业务接口 `/api/* -> 9093` 不变，不额外改动页面调用代码。
+- 不做什么：
+  - 本轮不删除旧的本地 3001 AI 服务代码。
+  - 本轮不新增新的 AI 页面入口。
+- 成功标准：
+  - 开发环境 `http://127.0.0.1:3000/api/ai/*` 不再转发到 `127.0.0.1:3001`。
+  - IIS 产物中的 `/api/ai/*` 不再反代到 `127.0.0.1:3001`。
+  - `lint`、`build` 通过。
+
+### Checklist
+- [x] 对比直连 `9093` 与前端 `3000` 代理行为差异。
+- [x] 修正 Vite 开发代理中的 AI 转发目标。
+- [x] 修正 IIS `web.config` 中的 AI 转发目标。
+- [x] 完成验证并记录结果。
+
+### Progress Notes
+- 已直接复现：
+  - `http://127.0.0.1:3000/api/ai/translate-identifiers` 返回 `500`
+  - `.codex-dev.log` 中连续出现 `http proxy error: /api/ai/translate-identifiers` 与 `connect ECONNREFUSED 127.0.0.1:3001`
+- 已定位根因：
+  - `vite.config.ts` 仍把 `/api/ai/*` 单独代理到旧的 `http://127.0.0.1:3001`
+  - `public/web.config` 也仍把 `/api/ai/*` 单独反代到旧的 `http://127.0.0.1:3001`
+- 本轮已把 `/api/ai/*` 统一并回现有 `/api/* -> 9093` 这一套后端链路。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+- 代码级核对：
+  - `vite.config.ts` 已移除 `/api/ai` 专用代理规则，开发环境改由 `/api` 统一转发。
+  - `public/web.config` 已移除 `ReverseProxyAiApi`，IIS 改由 `ReverseProxyApi` 统一转发。
+
+### Result Notes
+- 这次 `500` 的直接原因不是 token 错误，而是浏览器经由 `3000` 访问时命中了旧的 `3001` AI 代理，而该端口当前拒绝连接。
+- 你给的直连 `9093` curl 能成功，正好说明 AI 接口实际已经在现有后端上可用，前端问题出在代理配置陈旧。
+- 当前还剩一个操作性边界：开发中的 Vite 服务需要重启一次，新的代理规则才会生效。

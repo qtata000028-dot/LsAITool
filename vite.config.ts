@@ -36,7 +36,6 @@ function buildManualChunks(id: string) {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   const apiBaseUrl = env.VITE_API_BASE_URL || 'http://114.116.135.188:9093/';
-  const aiProxyTarget = env.VITE_AI_PROXY_TARGET || 'http://127.0.0.1:3001';
 
   return {
     plugins: [react(), tailwindcss()],
@@ -54,11 +53,6 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
-        '/api/ai': {
-          changeOrigin: true,
-          secure: false,
-          target: aiProxyTarget,
-        },
         '/api': {
           changeOrigin: true,
           secure: false,

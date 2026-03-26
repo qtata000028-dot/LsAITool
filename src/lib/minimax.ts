@@ -78,24 +78,14 @@ type AiCreateMainTableResponse = {
 };
 
 export async function requestSurveyPlan(mode: string, dataSource: string) {
-  const response = await fetch('/api/ai/survey-plan', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+  return apiRequest<SurveyPlanResponse>('/api/ai/survey-plan', {
+    auth: true,
+    body: {
       mode,
       dataSource,
-    }),
+    },
+    method: 'POST',
   });
-
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(payload?.message || 'MiniMax 请求失败。');
-  }
-
-  return payload as SurveyPlanResponse;
 }
 
 export async function requestSqlDraft(input: {
@@ -104,39 +94,19 @@ export async function requestSqlDraft(input: {
   tableType: string;
   columns: ColumnPayload[];
 }) {
-  const response = await fetch('/api/ai/sql-draft', {
+  return apiRequest<SqlDraftResponse>('/api/ai/sql-draft', {
+    auth: true,
+    body: input,
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
   });
-
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(payload?.message || 'MiniMax SQL generation failed.');
-  }
-
-  return payload as SqlDraftResponse;
 }
 
 export async function requestIdentifierTranslation(columns: ColumnPayload[]) {
-  const response = await fetch('/api/ai/translate-identifiers', {
+  return apiRequest<IdentifierTranslationResponse>('/api/ai/translate-identifiers', {
+    auth: true,
+    body: { columns },
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ columns }),
   });
-
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(payload?.message || 'MiniMax identifier translation failed.');
-  }
-
-  return payload as IdentifierTranslationResponse;
 }
 
 export async function requestAiCreateMainTable(input: {

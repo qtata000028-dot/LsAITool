@@ -402,3 +402,12 @@
 - For resources that already keep an entry baseline, compare the normalized POST body against the baseline body before writing. If they are identical, reuse the baseline row locally and skip the network request.
 - When building diff-by-body logic, define a stable identity key first (`id`, then durable business key like `fieldKey`). Without a stable match key, a harmless reorder or remap can look like a delete-and-recreate of every row.
 - Do not stop after fixing just one resource branch if the save orchestrator still uses the same unconditional-upsert pattern elsewhere. Once a user reports “nothing changed but save still posts”, audit the whole save path in the current page and convert the repeated resource loops together.
+## 2026-03-26 Existing AI Endpoints Must Follow The Same Auth Contract
+- Once the backend confirms `/api/ai/*` uses the existing login system, do not patch only the single button the user just reported. Audit every currently wired AI request in the shared client and bring them onto the same auth-aware request layer together.
+- In this project, the safest default is to route AI calls through `apiRequest(..., { auth: true })`, so `Authorization: Bearer <accessToken>` stays consistent with the rest of the app and the proxy/response unwrapping behavior does not diverge.
+- When the user provides explicit curl samples for health, survey, SQL draft, translate, and create-table, treat that as the canonical contract. Any remaining raw `fetch('/api/ai/...')` calls are debt to remove, not harmless variation.
+
+## 2026-03-26 AI Contract Changes Must Update Proxy Configuration Too
+- When the user confirms that `/api/ai/*` has moved onto the main Java backend, do not stop after updating frontend request headers. Audit the dev proxy and IIS reverse-proxy rules too, or the browser can still hit a stale sidecar target and mask the real fix.
+- A direct `curl` to `9093` succeeding while the browser path `3000/api/ai/*` returns `500` is a strong sign of stale proxy routing, not necessarily an application bug. Check `vite.config.ts`, `public/web.config`, and recent proxy error logs before touching request payloads.
+- In this repo, `ECONNREFUSED 127.0.0.1:3001` inside `.codex-dev.log` is a concrete signature that `/api/ai/*` is still being sent to the deprecated local AI server. Treat that as a routing bug first.
