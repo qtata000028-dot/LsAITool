@@ -10,7 +10,7 @@ export type DesignRouteMeta = {
 
 export const DESIGN_FIXED_ROUTE_META: readonly DesignRouteMeta[] = [
   {
-    href: '/design',
+    href: '/design/workspace',
     key: 'workspace',
     migrationTargets: [
       'Keep the existing dashboard online as the active production workbench.',

@@ -109,11 +109,13 @@ function insertParallel(doc: ProcessDesignerDocument, edgeId: string) {
 }
 
 const getNodeSummary = (node: ProcessDesignerNode) => node.properties.assigneeLabel || node.properties.conditionSummary || node.properties.branchLabel || node.properties.parallelMode || node.properties.stepGroup || node.properties.assigneeMode || '点击后配置属性';
+const getOutgoingEdges = (doc: ProcessDesignerDocument, nodeId: string) => doc.edges.filter((edge) => edge.sourceNodeId === nodeId);
 
 export function ProcessDesignerStudio({ className, onToast, onChange, value }: Props) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState>(null);
+  const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
   const [insertMenu, setInsertMenu] = useState<InsertMenu>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -149,6 +151,15 @@ export function ProcessDesignerStudio({ className, onToast, onChange, value }: P
     setSelectedEdgeId(null);
     setInsertMenu(null);
     onToast?.('已删除连线。');
+  };
+
+  const insertAfterNode = (nodeId: string, kind: 'approver' | 'branch' | 'parallel') => {
+    const outgoing = value.edges.filter((edge) => edge.sourceNodeId === nodeId);
+    if (outgoing.length !== 1) {
+      onToast?.('当前节点不是单出口，暂时不能直接从节点工具条插入。');
+      return;
+    }
+    insertByKind(kind, outgoing[0].id);
   };
 
   useEffect(() => {
@@ -248,17 +259,134 @@ export function ProcessDesignerStudio({ className, onToast, onChange, value }: P
 
           {value.nodes.map((node) => {
             const meta = META[node.type];
+            const showNodeTools = hoverNodeId === node.id || selectedNodeId === node.id;
+            const outgoingEdges = getOutgoingEdges(value, node.id);
+            const showBranchSummary = node.type === 'exclusive-gateway' || node.type === 'parallel-gateway';
             return (
-              <button key={node.id} type="button" onMouseDown={(event) => { const point = getCanvasPoint(event.clientX, event.clientY); setDragState({ nodeId: node.id, offsetX: point.x - node.properties.x, offsetY: point.y - node.properties.y }); setSelectedNodeId(node.id); setSelectedEdgeId(null); setInsertMenu(null); }} className={cn('absolute flex h-[76px] w-[156px] cursor-grab flex-col items-start justify-between rounded-[20px] border px-4 py-3 text-left shadow-[0_18px_40px_-32px_rgba(15,23,42,0.34)] transition-all active:cursor-grabbing', meta.accent, node.id === selectedNodeId && 'ring-2 ring-primary ring-offset-2 ring-offset-white dark:ring-offset-slate-950')} style={{ left: node.properties.x, top: node.properties.y }}>
-                <div className="flex w-full items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-2 py-1 text-[10px] font-black dark:bg-slate-950/40"><span className="material-symbols-outlined text-[13px]">{meta.icon}</span>{meta.label}</span>
-                  <span className="material-symbols-outlined text-[16px] opacity-50">drag_indicator</span>
-                </div>
-                <div className="w-full">
-                  <div className="truncate text-[14px] font-black tracking-[-0.02em]">{node.textValue}</div>
-                  <div className="mt-1 truncate text-[10px] opacity-80">{getNodeSummary(node)}</div>
-                </div>
-              </button>
+              <React.Fragment key={node.id}>
+                <button
+                  type="button"
+                  onMouseEnter={() => setHoverNodeId(node.id)}
+                  onMouseLeave={() => setHoverNodeId((current) => (current === node.id ? null : current))}
+                  onMouseDown={(event) => {
+                    const point = getCanvasPoint(event.clientX, event.clientY);
+                    setDragState({ nodeId: node.id, offsetX: point.x - node.properties.x, offsetY: point.y - node.properties.y });
+                    setSelectedNodeId(node.id);
+                    setSelectedEdgeId(null);
+                    setInsertMenu(null);
+                  }}
+                  className={cn('absolute flex h-[76px] w-[156px] cursor-grab flex-col items-start justify-between rounded-[20px] border px-4 py-3 text-left shadow-[0_18px_40px_-32px_rgba(15,23,42,0.34)] transition-all active:cursor-grabbing', meta.accent, node.id === selectedNodeId && 'ring-2 ring-primary ring-offset-2 ring-offset-white dark:ring-offset-slate-950')}
+                  style={{ left: node.properties.x, top: node.properties.y }}
+                >
+                  <div className="flex w-full items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-2 py-1 text-[10px] font-black dark:bg-slate-950/40"><span className="material-symbols-outlined text-[13px]">{meta.icon}</span>{meta.label}</span>
+                    <span className="material-symbols-outlined text-[16px] opacity-50">drag_indicator</span>
+                  </div>
+                  <div className="w-full">
+                    <div className="truncate text-[14px] font-black tracking-[-0.02em]">{node.textValue}</div>
+                    <div className="mt-1 truncate text-[10px] opacity-80">{getNodeSummary(node)}</div>
+                  </div>
+                </button>
+
+                {showNodeTools ? (
+                  <div
+                    className="absolute z-20 flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/95 px-2 py-1 shadow-[0_18px_30px_-24px_rgba(15,23,42,0.35)] dark:border-slate-700 dark:bg-slate-900/95"
+                    style={{ left: node.properties.x + NODE_W - 8, top: node.properties.y - 18 }}
+                    onMouseEnter={() => setHoverNodeId(node.id)}
+                    onMouseLeave={() => setHoverNodeId((current) => (current === node.id ? null : current))}
+                  >
+                    {node.type !== 'end-node' ? (
+                      <>
+                        <button
+                          type="button"
+                          title="后插审批"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            insertAfterNode(node.id, 'approver');
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-primary/10 hover:text-primary"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">add</span>
+                        </button>
+                        <button
+                          type="button"
+                          title="后插分支"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            insertAfterNode(node.id, 'branch');
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-primary/10 hover:text-primary"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">call_split</span>
+                        </button>
+                      </>
+                    ) : null}
+                    {node.type !== 'start-node' && node.type !== 'end-node' ? (
+                      <button
+                        type="button"
+                        title="删除节点"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          deleteNode(node.id);
+                        }}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-rose-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {showBranchSummary && outgoingEdges.length > 0 ? (
+                  <div
+                    className="absolute z-10 min-w-[180px] max-w-[260px] rounded-[18px] border border-slate-200/80 bg-white/90 px-3 py-2 shadow-[0_18px_30px_-24px_rgba(15,23,42,0.25)] backdrop-blur dark:border-slate-700 dark:bg-slate-900/90"
+                    style={{ left: node.properties.x - 8, top: node.properties.y + NODE_H + 12 }}
+                  >
+                    <div className="text-[10px] font-black tracking-[0.08em] text-slate-400">
+                      {node.type === 'exclusive-gateway' ? 'BRANCHES' : 'PARALLEL PATHS'}
+                    </div>
+                    <div className="mt-2 grid gap-2">
+                      {outgoingEdges.map((edge, index) => (
+                        <div key={edge.id} className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedEdgeId(edge.id);
+                              setSelectedNodeId(null);
+                              setInsertMenu(null);
+                            }}
+                            className={cn(
+                              'min-w-0 flex-1 rounded-full border px-2.5 py-1 text-left text-[10px] font-bold transition-all',
+                              edge.id === selectedEdgeId
+                                ? 'border-primary/20 bg-primary/10 text-primary'
+                                : 'border-slate-200/80 bg-slate-50 text-slate-500 hover:border-primary/20 hover:text-primary dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300',
+                            )}
+                          >
+                            {edge.properties.conditionLabel || (node.type === 'exclusive-gateway' ? `分支 ${index + 1}` : `并行 ${index + 1}`)}
+                          </button>
+                          <button
+                            type="button"
+                            title="在该分支上新增审批节点"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              insertByKind('approver', edge.id);
+                            }}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200/80 bg-white text-slate-400 transition-all hover:border-primary/20 hover:text-primary dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">add</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </React.Fragment>
             );
           })}
         </div>

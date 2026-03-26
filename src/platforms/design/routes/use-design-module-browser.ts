@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import type { DesignRouteContext } from '../../../app/contracts/platform-routing';
 import {
   fetchSubsystemMenuTree,
   fetchSubsystemSecondLevelMenus,
   type BackendMenuNode,
   type BackendSubsystemNode,
 } from '../../../lib/backend-menus';
+import { getEnabledMenuNodes, getModuleBrowserErrorMessage } from './design-module-browser-utils';
 import {
-  getEnabledMenuNodes,
-  getModuleBrowserErrorMessage,
-} from './design-module-browser-utils';
+  resolveDesignMenuSelection,
+  resolveDesignModuleSelection,
+} from '../navigation/design-navigation';
 
-export function useDesignModuleBrowser() {
+export function useDesignModuleBrowser(routeContext: DesignRouteContext) {
   const [activeFirstLevelMenuId, setActiveFirstLevelMenuId] = useState('');
   const [activeSubsystemId, setActiveSubsystemId] = useState('');
   const [expandedSubsystemId, setExpandedSubsystemId] = useState<string | null>(null);
@@ -46,13 +48,12 @@ export function useDesignModuleBrowser() {
 
       try {
         const data = getEnabledMenuNodes(await fetchSubsystemMenuTree());
-        const nextSubsystem = data.find((item) => getEnabledMenuNodes(item.children).length > 0) ?? data[0] ?? null;
-        const nextFirstLevelMenu = getEnabledMenuNodes(nextSubsystem?.children)[0] ?? null;
+        const nextSelection = resolveDesignMenuSelection(data, routeContext);
 
         setSubsystemMenus(data);
-        setExpandedSubsystemId(nextSubsystem?.id ?? null);
-        setActiveSubsystemId(nextSubsystem?.id ?? '');
-        setActiveFirstLevelMenuId(nextFirstLevelMenu?.id ?? '');
+        setExpandedSubsystemId(nextSelection.expandedSubsystemId);
+        setActiveSubsystemId(nextSelection.selectedSubsystem?.id ?? '');
+        setActiveFirstLevelMenuId(nextSelection.selectedMenu?.id ?? '');
         setSecondLevelMenus([]);
         setSelectedModuleId('');
       } catch (error) {
@@ -69,7 +70,19 @@ export function useDesignModuleBrowser() {
     };
 
     void loadSubsystemMenus();
-  }, []);
+  }, [routeContext]);
+
+  useEffect(() => {
+    if (subsystemMenus.length === 0) {
+      return;
+    }
+
+    const nextSelection = resolveDesignMenuSelection(subsystemMenus, routeContext);
+
+    setExpandedSubsystemId(nextSelection.expandedSubsystemId);
+    setActiveSubsystemId(nextSelection.selectedSubsystem?.id ?? '');
+    setActiveFirstLevelMenuId(nextSelection.selectedMenu?.id ?? '');
+  }, [routeContext, subsystemMenus]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -97,10 +110,16 @@ export function useDesignModuleBrowser() {
           return;
         }
 
+        const nextSelectedModule = resolveDesignModuleSelection(data, routeContext.moduleCode);
+
         setSecondLevelMenus(data);
-        setSelectedModuleId((currentSelectedId) => (
-          data.some((item) => item.id === currentSelectedId) ? currentSelectedId : (data[0]?.id ?? '')
-        ));
+        setSelectedModuleId((currentSelectedId) => {
+          if (nextSelectedModule) {
+            return nextSelectedModule.id;
+          }
+
+          return data.some((item) => item.id === currentSelectedId) ? currentSelectedId : (data[0]?.id ?? '');
+        });
       } catch (error) {
         if (!isCurrent) {
           return;
@@ -121,7 +140,7 @@ export function useDesignModuleBrowser() {
     return () => {
       isCurrent = false;
     };
-  }, [activeFirstLevelMenu?.menuId, selectedSubsystem]);
+  }, [activeFirstLevelMenu?.menuId, routeContext.moduleCode, selectedSubsystem]);
 
   return {
     activeFirstLevelMenu,

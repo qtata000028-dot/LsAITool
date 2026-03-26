@@ -28,11 +28,11 @@ export function DesignPlatformApp({
     case 'workspace':
       return (
         <Suspense fallback={<AppLoadingScreen title="Loading Design Studio" description="Preparing the design workspace and dashboard bundle." />}>
-          <Dashboard currentUserName={currentUserName} onLogout={onLogout} />
+          <Dashboard currentUserName={currentUserName} onLogout={onLogout} routeContext={route.context} />
         </Suspense>
       );
     case 'module':
-      return <DesignModulePage currentPath={currentPath} platform={platform} />;
+      return <DesignModulePage currentPath={currentPath} platform={platform} route={route} />;
     case 'bill':
       return <DesignBillPage currentPath={currentPath} platform={platform} />;
     case 'settings':

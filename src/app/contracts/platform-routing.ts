@@ -18,6 +18,12 @@ export interface PlatformMenuDescriptor {
 
 export type DesignRouteKey = 'workspace' | 'module' | 'bill' | 'settings';
 
+export interface DesignRouteContext {
+  menuCode?: string;
+  moduleCode?: string;
+  subsystemCode?: string;
+}
+
 const DESIGN_ROUTE_META: Record<
   DesignRouteKey,
   {
@@ -50,6 +56,7 @@ const DESIGN_ROUTE_META: Record<
 
 export interface DesignFixedRoute {
   kind: 'design-fixed';
+  context: DesignRouteContext;
   pageType: PlatformPageType;
   pathname: string;
   permissionMode: 'page';
@@ -60,15 +67,43 @@ export interface DesignFixedRoute {
   title: string;
 }
 
+function decodeRouteSegment(value?: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function resolveDesignRoute(pathname: string, segments: string[]): DesignFixedRoute | null {
   let routeKey: DesignRouteKey;
+  let context: DesignRouteContext = {};
 
-  if (segments.length === 0 || (segments.length === 1 && segments[0] === 'workspace')) {
+  if (
+    segments.length === 0
+    || (segments[0] === 'workspace' && segments.length <= 3)
+  ) {
     routeKey = 'workspace';
-  } else if (segments.length === 1 && segments[0] === 'module') {
+    context = {
+      subsystemCode: segments[0] === 'workspace' ? decodeRouteSegment(segments[1]) : undefined,
+      menuCode: segments[0] === 'workspace' ? decodeRouteSegment(segments[2]) : undefined,
+    };
+  } else if (segments[0] === 'module' && segments.length <= 4) {
     routeKey = 'module';
-  } else if (segments.length === 1 && segments[0] === 'bill') {
+    context = {
+      subsystemCode: decodeRouteSegment(segments[1]),
+      menuCode: decodeRouteSegment(segments[2]),
+      moduleCode: decodeRouteSegment(segments[3]),
+    };
+  } else if (segments[0] === 'bill' && segments.length <= 2) {
     routeKey = 'bill';
+    context = {
+      moduleCode: decodeRouteSegment(segments[1]),
+    };
   } else if (segments.length === 1 && segments[0] === 'settings') {
     routeKey = 'settings';
   } else {
@@ -79,6 +114,7 @@ export function resolveDesignRoute(pathname: string, segments: string[]): Design
 
   return {
     kind: 'design-fixed',
+    context,
     pageType: meta.pageType,
     pathname,
     permissionMode: 'page',

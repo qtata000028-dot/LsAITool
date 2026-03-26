@@ -1,6 +1,12 @@
+import type { DesignFixedRoute } from '../../../app/contracts/platform-routing';
 import type { PlatformDefinition } from '../../../app/registry/platform-registry';
 import type { BackendMenuNode } from '../../../lib/backend-menus';
 import { DesignFixedRouteShell } from '../design-fixed-route-shell';
+import {
+  buildDesignModulePath,
+  buildDesignWorkspacePath,
+  navigateToDesignPath,
+} from '../navigation/design-navigation';
 import { getDesignRouteMeta } from '../design-route-meta';
 import { DesignModuleDetailPanel } from './design-module-detail-panel';
 import {
@@ -16,11 +22,13 @@ import { useDesignModuleBrowser } from './use-design-module-browser';
 type DesignModulePageProps = {
   currentPath: string;
   platform: PlatformDefinition;
+  route: DesignFixedRoute;
 };
 
 export function DesignModulePage({
   currentPath,
   platform,
+  route,
 }: DesignModulePageProps) {
   const routeMeta = getDesignRouteMeta('module');
   const {
@@ -39,7 +47,7 @@ export function DesignModulePage({
     setActiveSubsystemId,
     setExpandedSubsystemId,
     setSelectedModuleId,
-  } = useDesignModuleBrowser();
+  } = useDesignModuleBrowser(route.context);
 
   if (!routeMeta) {
     return null;
@@ -118,6 +126,10 @@ export function DesignModulePage({
                         setExpandedSubsystemId((prev) => prev === subsystem.id ? null : subsystem.id);
                         setActiveSubsystemId(subsystem.id);
                         setActiveFirstLevelMenuId(nextFirstLevelMenu?.id ?? '');
+                        navigateToDesignPath(buildDesignModulePath({
+                          menuCode: nextFirstLevelMenu?.code,
+                          subsystemCode: subsystem.subsysCode ?? subsystem.code,
+                        }));
                       }}
                       className={`flex w-full items-center justify-between px-5 py-4 text-left transition-colors ${
                         isActiveSubsystem ? 'text-primary' : 'text-slate-700 hover:text-primary'
@@ -144,9 +156,13 @@ export function DesignModulePage({
                               <button
                                 key={menu.id}
                                 type="button"
-                                onClick={() => {
+                              onClick={() => {
                                   setActiveSubsystemId(subsystem.id);
                                   setActiveFirstLevelMenuId(menu.id);
+                                  navigateToDesignPath(buildDesignModulePath({
+                                    menuCode: menu.code,
+                                    subsystemCode: subsystem.subsysCode ?? subsystem.code,
+                                  }));
                                 }}
                                 className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition-all ${
                                   isActiveMenu
@@ -182,12 +198,15 @@ export function DesignModulePage({
                 {normalizeMenuTitle(activeFirstLevelMenu?.title) || 'Select a menu'}
               </h3>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-                This is the first real page extracted from the dashboard flow. It reuses the current menu APIs so the
-                module route can evolve independently before we move over the full module-setting workbench.
+                This page now keeps subsystem, first-level menu, and module selection in the URL so refresh and
+                collaboration links can reopen the same module context instead of resetting to the default entry.
               </p>
             </div>
             <a
-              href="/design"
+              href={buildDesignWorkspacePath({
+                menuCode: activeFirstLevelMenu?.code,
+                subsystemCode: selectedSubsystem?.subsysCode ?? selectedSubsystem?.code,
+              })}
               className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold text-slate-600 transition-colors hover:border-primary/20 hover:text-primary"
             >
               Open workspace
@@ -222,7 +241,14 @@ export function DesignModulePage({
                   return (
                     <article
                       key={menu.id}
-                      onClick={() => setSelectedModuleId(menu.id)}
+                      onClick={() => {
+                        setSelectedModuleId(menu.id);
+                        navigateToDesignPath(buildDesignModulePath({
+                          menuCode: activeFirstLevelMenu?.code,
+                          moduleCode: menu.purviewId || menu.code,
+                          subsystemCode: selectedSubsystem?.subsysCode ?? selectedSubsystem?.code,
+                        }));
+                      }}
                       className="group flex cursor-pointer flex-col rounded-[24px] border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_52px_-36px_rgba(15,23,42,0.3)]"
                     >
                       <div className="flex items-start justify-between px-5 pb-0 pt-5">
@@ -270,7 +296,10 @@ export function DesignModulePage({
                           {selectedModule?.id === menu.id ? 'Selected for detail review' : 'Future destination: module workbench'}
                         </span>
                         <a
-                          href="/design"
+                          href={buildDesignWorkspacePath({
+                            menuCode: activeFirstLevelMenu?.code,
+                            subsystemCode: selectedSubsystem?.subsysCode ?? selectedSubsystem?.code,
+                          })}
                           className={`text-[13px] font-bold text-slate-500 transition-colors ${accent.actionClass}`}
                         >
                           Continue in workspace

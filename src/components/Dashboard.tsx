@@ -1,6 +1,7 @@
 ﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMemo } from 'react';
+import { type DesignRouteContext } from '../app/contracts/platform-routing';
 import {
   PointerSensor,
   useDraggable,
@@ -128,11 +129,19 @@ import {
 import { createLinearProcessDesignerDocument } from '../features/dashboard/module-settings/process-designer-types';
 import { useDashboardTableBuilderRuntime } from '../features/dashboard/table-builder/use-dashboard-table-builder-runtime';
 import { cn } from '../lib/utils';
+import {
+  buildDesignWorkspacePath,
+  navigateToDesignPath,
+  resolveDesignMenuSelection,
+  resolveDesignModuleSelection,
+  updateCurrentDesignSearch,
+} from '../platforms/design/navigation/design-navigation';
 import { Badge } from './ui/badge';
 
 interface DashboardProps {
   currentUserName: string;
   onLogout: () => void;
+  routeContext?: DesignRouteContext;
 }
 
 type BusinessType = 'document' | 'table' | 'tree';
@@ -1201,13 +1210,14 @@ type BuilderSelectionContextMenuState = {
   ids: string[];
 } | null;
 
-export default function Dashboard({ currentUserName, onLogout }: DashboardProps) {
+export default function Dashboard({ currentUserName, onLogout, routeContext = {} }: DashboardProps) {
   const debugParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const currentUserAvatarText = currentUserName.trim().slice(0, 1) || '人';
   const debugStepParam = Number(debugParams?.get('step') || 1);
   const initialConfigStep = Number.isFinite(debugStepParam) ? Math.min(MAX_CONFIG_STEP, Math.max(1, debugStepParam)) : 1;
   const initialConfigOpen = debugParams?.get('config') === '1' || debugParams?.has('step') || false;
   const initialDetailPreview = debugParams?.get('detailPreview') === '1';
+  const initialRouteModuleCode = normalizeMenuCode(debugParams?.get('module') || '');
   const initialBusinessType = BUSINESS_TYPE_OPTIONS.some((option) => option.value === debugParams?.get('mode'))
     ? (String(debugParams?.get('mode')) as BusinessType)
     : 'document';
@@ -1344,6 +1354,15 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
+
+  const closeConfigWizard = useCallback(() => {
+    setIsConfigOpen(false);
+    updateCurrentDesignSearch({
+      config: null,
+      module: null,
+      step: null,
+    }, { replace: true });
+  }, []);
 
   const {
     isFullscreenEditor,
@@ -2627,6 +2646,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setSelectedArchiveNodeId('archive-main');
     setInspectorTarget({ kind: 'main-grid' });
     setInspectorPanelTab('common');
+
+    if (isConfigOpen) {
+      updateCurrentDesignSearch({
+        mode: nextType,
+      }, { replace: true });
+    }
   };
 
   const updateCurrentMenuDraft = (fieldKey: string, value: ModuleMenuValue) => {
@@ -2656,6 +2681,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     options?: {
       completedSteps?: number[];
       initialStep?: number;
+      moduleCode?: string | null;
     },
   ) => {
     const nextStep = options?.initialStep ?? 1;
@@ -2670,6 +2696,13 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     setSurveyPlan(null);
     setSurveyPlanModel('');
     setSurveyError(null);
+
+    updateCurrentDesignSearch({
+      config: true,
+      mode: nextType,
+      module: options?.moduleCode,
+      step: nextStep,
+    }, { replace: true });
   };
 
   const openNewModuleGuide = () => {
@@ -2683,7 +2716,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       subsystemId: toDraftText(selectedSubsystem?.subsysId),
       useFlag: 'true',
     });
-    openModuleGuide('document');
+    openModuleGuide('document', {
+      moduleCode: null,
+    });
   };
 
   const buildCreateModuleRelationPayload = (
@@ -2786,6 +2821,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     openModuleGuide(nextType, {
       completedSteps: [1],
       initialStep: 2,
+      moduleCode: normalizeMenuCode(menu.purviewId) || normalizeMenuCode(menu.code) || menu.id,
     });
     void loadMenuInfoForMenu(menu);
   };
@@ -2852,6 +2888,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
       setMenuConfigDraft(mapSubsystemMenuConfigToDraft(saved));
       setActiveConfigMenu(nextMenuNode);
+      updateCurrentDesignSearch({
+        config: true,
+        module: normalizeMenuCode(nextMenuNode.purviewId) || normalizeMenuCode(nextMenuNode.code) || nextMenuNode.id,
+        step: 2,
+      }, { replace: true });
       setSecondLevelMenus((prev) => {
         const existingIndex = prev.findIndex((item) => item.menuId === nextMenuNode.menuId || item.id === nextMenuNode.id);
         if (existingIndex === -1) {
@@ -2905,7 +2946,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       if (activeConfigMenu?.id === menu.id) {
         setActiveConfigMenu(null);
         setMenuInfoError(null);
-        setIsConfigOpen(false);
+        closeConfigWizard();
       }
 
       setPendingDeleteMenu((prev) => (prev?.id === menu.id ? null : prev));
@@ -3003,6 +3044,9 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   const handleConfigStepSelect = (stepId: number) => {
     setConfigStep(stepId);
+    updateCurrentDesignSearch({
+      step: stepId,
+    }, { replace: true });
   };
 
   const handleLockedTypeStepSelect = () => {
@@ -3013,7 +3057,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     if (activeConfigMenu !== null && configStep === 2) {
       return;
     }
-    setConfigStep(Math.max(1, configStep - 1));
+    const nextStep = Math.max(1, configStep - 1);
+    setConfigStep(nextStep);
+    updateCurrentDesignSearch({
+      step: nextStep,
+    }, { replace: true });
   };
 
   const handleConfigNext = () => {
@@ -3031,8 +3079,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     const nextStep = configStep + 1;
     if (configStep < MAX_CONFIG_STEP) {
       setConfigStep(nextStep);
+      updateCurrentDesignSearch({
+        step: nextStep,
+      }, { replace: true });
     } else {
-      setIsConfigOpen(false);
+      closeConfigWizard();
     }
   };
 
@@ -3834,14 +3885,12 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
     try {
       const data = getEnabledMenuNodes(await fetchSubsystemMenuTree());
+      const nextSelection = resolveDesignMenuSelection(data, routeContext);
+
       setSubsystemMenus(data);
-
-      const nextSubsystem = data.find((item) => getEnabledMenuNodes(item.children).length > 0) ?? data[0] ?? null;
-      const nextFirstLevelMenu = getEnabledMenuNodes(nextSubsystem?.children)[0] ?? null;
-
-      setExpandedSubsystemId(nextSubsystem?.id ?? null);
-      setActiveSubsystem(nextSubsystem?.id ?? '');
-      setActiveFirstLevelMenuId(nextFirstLevelMenu?.id ?? '');
+      setExpandedSubsystemId(nextSelection.expandedSubsystemId);
+      setActiveSubsystem(nextSelection.selectedSubsystem?.id ?? '');
+      setActiveFirstLevelMenuId(nextSelection.selectedMenu?.id ?? '');
       setSecondLevelMenus([]);
     } catch (error) {
       setMenuLoadError(getDashboardErrorMessage(error));
@@ -3857,7 +3906,19 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
 
   useEffect(() => {
     void loadSubsystemMenus();
-  }, []);
+  }, [routeContext]);
+
+  useEffect(() => {
+    if (subsystemMenus.length === 0) {
+      return;
+    }
+
+    const nextSelection = resolveDesignMenuSelection(subsystemMenus, routeContext);
+
+    setExpandedSubsystemId(nextSelection.expandedSubsystemId);
+    setActiveSubsystem(nextSelection.selectedSubsystem?.id ?? '');
+    setActiveFirstLevelMenuId(nextSelection.selectedMenu?.id ?? '');
+  }, [routeContext, subsystemMenus]);
 
   useEffect(() => {
     let isActive = true;
@@ -3905,16 +3966,57 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     };
   }, [activeFirstLevelMenu?.menuId, selectedSubsystem]);
 
+  useEffect(() => {
+    if (!initialConfigOpen || !initialRouteModuleCode || activeConfigMenu || secondLevelMenus.length === 0) {
+      return;
+    }
+
+    const nextMenu = resolveDesignModuleSelection(secondLevelMenus, initialRouteModuleCode);
+    if (!nextMenu?.menuId) {
+      return;
+    }
+
+    const moduleTypeProfile = getMenuModuleTypeProfile(nextMenu.moduleType);
+    const nextType = moduleTypeProfile?.businessType ?? initialBusinessType;
+
+    setActiveConfigMenu(nextMenu);
+    setMenuInfoError(null);
+    setIsMenuInfoSaving(false);
+    setMenuConfigDraft(MENU_CONFIG_DEFAULTS);
+    openModuleGuide(nextType, {
+      completedSteps: [1],
+      initialStep: Math.max(2, initialConfigStep),
+      moduleCode: normalizeMenuCode(nextMenu.purviewId) || normalizeMenuCode(nextMenu.code) || nextMenu.id,
+    });
+    void loadMenuInfoForMenu(nextMenu);
+  }, [
+    activeConfigMenu,
+    initialBusinessType,
+    initialConfigOpen,
+    initialConfigStep,
+    initialRouteModuleCode,
+    secondLevelMenus,
+  ]);
+
   const toggleSubsystemExpansion = (subsystemId: string) => {
     setExpandedSubsystemId((prev) => (prev === subsystemId ? null : subsystemId));
   };
 
   const handleFirstLevelMenuClick = (subsystemId: string, menu: BackendMenuNode) => {
+    const clickedSubsystem = subsystemMenus.find((item) => item.id === subsystemId) ?? null;
+
+    setActiveConfigMenu(null);
     setActiveSubsystem(subsystemId);
     setActiveFirstLevelMenuId(menu.id);
+    setIsConfigOpen(false);
+    setMenuInfoError(null);
     setSecondLevelMenus([]);
     setMenuLoadError(null);
     setExpandedSubsystemId(subsystemId);
+    navigateToDesignPath(buildDesignWorkspacePath({
+      menuCode: menu.code,
+      subsystemCode: clickedSubsystem?.subsysCode ?? clickedSubsystem?.code,
+    }));
   };
 
   const activeMenu = activeFirstLevelMenu?.id ?? selectedSubsystem?.id ?? 'workspace';
@@ -5481,7 +5583,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           handleConfigPrevious,
           handleConfigStepSelect,
           handleLockedTypeStepSelect,
-          onClose: () => setIsConfigOpen(false),
+          onClose: closeConfigWizard,
           onSave: () => {
             void handleMenuInfoSave();
           },
@@ -5762,7 +5864,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
         open={isConfigOpen}
         isFullscreenConfigActive={isConfigFullscreenActive}
         isModuleSettingStep={isModuleSettingStep}
-        onClose={() => setIsConfigOpen(false)}
+        onClose={closeConfigWizard}
         toastMessage={toastMessage}
         overlayNodes={dashboardConfigBridgeNodes.configWizardModalNodes.overlayNodes}
         sidebarNode={dashboardConfigBridgeNodes.configWizardModalNodes.sidebarNode}
