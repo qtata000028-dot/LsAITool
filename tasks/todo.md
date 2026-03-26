@@ -3034,3 +3034,117 @@
 - IIS 生产包报错的根因是 `vite.config.ts` 的 React 分包条件过宽，不是业务代码本身。
 - 现在新的生产包已经移除 `vendor/react-vendor` 循环依赖，浏览器可正常渲染登录页。
 - 当前仍保留一个环境边界：这次是在本机 `vite preview` + Edge headless 下验证通过，尚未在真实 IIS 服务器上做最终回归，但前端生产包本身已经恢复可用。
+
+## 2026-03-26 条件保存字段污染修复
+
+### Requirement Spec
+- 目标：修复单表模块设置中条件保存时把大量前端派生字段一并发到后端的问题，只保留条件表原字段名。
+- 影响范围：`src/features/dashboard/module-settings/use-single-table-module-settings-save.ts` 中主条件、字段级条件的保存 body 构造。
+- 关键约束：
+  - 保持现有条件编辑 UI 不变，只收窄保存映射。
+  - 优先使用后端查询返回的原字段名，不再混发 `name/type/width/backendId/readonly/visible` 这类前端派生字段。
+  - 不破坏现有 diff 保存逻辑。
+- 不做什么：
+  - 本轮不改条件工作台布局。
+  - 本轮不改别的资源（颜色、右键、明细）保存结构。
+- 成功标准：
+  - 条件保存请求体只包含条件表需要的原字段。
+  - 修改条件名时，不再发送 `name` 这类无关字段。
+  - `lint`、`build` 通过。
+
+### Checklist
+- [x] 确认当前条件保存 body 为什么会夹带前端派生字段。
+- [x] 收窄条件保存映射到数据库原字段名。
+- [x] 完成验证并记录结果。
+
+### Progress Notes
+- 根因已确认：`buildConditionBody()` 先执行了 `...cloneValue(record)`，把整个前端条件编辑对象全部铺进了 POST body，然后才补数据库字段。
+- 这会导致诸如 `name`、`type`、`width`、`backendId`、`readonly`、`visible`、`placeholder` 等 UI/派生字段一起被发送给后端。
+- 另外还存在一个映射优先级问题：用户在界面改的是 `name`，但旧实现优先读取 `controlLabel`，所以即使界面名称变了，也不一定会落到真正的条件名字段上。
+- 本轮已将条件保存 body 改为显式映射，只保留条件表原字段：
+  - `sourceId`
+  - `BSColPercent`
+  - `Column_ID`
+  - `orderId`
+  - `defaultValue`
+  - `controlTop`
+  - `controlName`
+  - `resultField`
+  - `id`
+  - `keyField`
+  - `controlWidth`
+  - `formKey`
+  - `edited`
+  - `checkCond`
+  - `BSRowId`
+  - `controlType`
+  - `sourceSql`
+  - `isFix`
+  - `controlLabel`
+  - `controlLeft`
+  - `controlHeight`
+  - `leftNotLinkFlag`
+- 同时把 `controlLabel` 的保存优先级改成 `name -> controlLabel`，保证在界面改条件名时，会真正落到后端条件名字段。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+- 代码级核对：
+  - `buildConditionBody()` 已移除 `...cloneValue(record)`。
+  - 条件保存不再夹带 `name/type/width/backendId/visible/readonly/placeholder` 等前端派生字段。
+  - 条件名称保存现在优先取 UI 编辑态的 `name` 并映射到 `controlLabel`。
+
+### Result Notes
+- 之前条件保存传太多字段，是因为前端把整个条件编辑对象错误地当成了后端保存对象。
+- 现在主条件和字段级条件的保存 body 都已经收窄为后端原字段结构。
+- 当前仍保留一个验证边界：这次完成了类型、构建和代码级核对，但还没有替你在浏览器 Network 面板里手点一次“改条件名后保存本页”；如果你下一步联调时发现某个条件字段还要调整映射，我会继续沿这套显式映射补。 
+
+## 2026-03-26 主字段/明细/右键/图表保存字段对齐
+
+### Requirement Spec
+- 目标：继续收紧单表模块设置“保存本页”里主字段、明细、右键、图表这几组资源的 POST body，只传后端数据库原字段名。
+- 影响范围：`src/features/dashboard/module-settings/use-single-table-module-settings-save.ts` 中主字段、明细、右键、图表相关 body 构造与 diff 保存。
+- 关键约束：
+  - 遵守用户给出的统一规则：`POST body` 无 `id` 视为新增，有 `id` 视为保存。
+  - 对“主字段 / 明细 / 右键 / 图表”优先按数据库原字段名传值，不再夹带前端派生字段。
+  - 保持现有保存编排、差异比对和 `UnionModule` 分流逻辑不变，只收窄字段映射。
+- 不做什么：
+  - 本轮不处理布局编辑器保存。
+  - 本轮不重构 UI 状态结构。
+- 成功标准：
+  - 这几组资源保存 body 不再混入 `name/type/width/backendId/visible/readonly` 一类前端派生字段。
+  - `lint`、`build` 通过。
+
+### Checklist
+- [x] 核对后端单表服务对主字段、明细、右键、图表的原字段结构。
+- [x] 收窄对应保存 body 到显式字段映射。
+- [x] 验证构建通过并记录结果。
+
+### Progress Notes
+- 已核对后端单表服务：
+  - 主字段 `POST /fields` 走 `normalizePersistedValues("p_systemwordbooktab", body, ...)`，适合传数据库原字段名。
+  - 右键 `POST /menus` 走 `normalizePersistedValues("p_systempopupmenu", body, ...)`，适合传数据库原字段名。
+  - 明细 `POST /details` 走 `normalizePersistedValues("p_systemdlltabdetail", body, ...)`，适合传数据库原字段名。
+  - 明细图表 `POST /details/{detailId}/charts` 走 `SingleTableDetailChartCommandService.normalizePersistedValues(...)`，适合传数据库原字段名。
+- 根因已确认：`buildMainFieldBody / buildMenuBody / buildDetailBody / buildDetailChartBody` 之前都在 `POST body` 构造时执行了 `...cloneValue(record)`，会把整份前端编辑态对象铺进后端。
+- 本轮已完成：
+  - 主字段保存 body 去掉整对象铺开，仅保留后端原字段，如 `tab / username1 / fieldname / sysname / fieldkey / fieldsqltag / orderid / isquery / isreadonly / isneed / isvisible / prompttext / defaultdate / dictcode / formula / relationsql / dynamicsql / helptext`。
+  - 顺手把共用列分支 `buildGridFieldBody()` 的整对象铺开也去掉了，避免字段级左表列 / 明细列继续夹带前端派生字段。
+  - 右键保存 body 去掉整对象铺开，仅保留 `tab / menuname / dllname / action / actiontype / orderid / menuid / menucond / beforemsg / menutype`。
+  - 明细保存 body 去掉整对象铺开，并去掉不该由前端合成覆盖的 `tab / tabkey`，保留 `detailname / detailtype / library / unionmodule / unionparentfield / unionvalue / unioncond / detailsql / rightvisible / addvisible / defaultitem / scanmode / menumode / bandheight / bandwidth / displayrows / nocolumnheader / griddetailcheck / unionflag / dragcond / ismrpdrag / mrpdragtag / privilegeoper / fremark / autorefresh / isvisible / visiblecond / orderid`。
+  - 明细图表保存 body 去掉整对象铺开，仅保留图表表原字段，如 `orderid / charttype / charttitle / chartcolor / chartcolordf / chart3d / gridlinevisible / xlabelfield / yvaluefield / xaxistitle / yaxistitle / yaxisshared / markvisible / legendvisible / isvisible / isabsolutely / yscale / yvaluefield1 / yvaluefield2 / valuevisible / labelangle / labelvisible / labelsize / labelspaced / circlejagge / circlehollow`。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+- 代码级核对：
+  - `buildMainFieldBody / buildMenuBody / buildDetailBody / buildDetailChartBody` 不再使用 `...cloneValue(record)`。
+  - 明细保存不再把前端临时 `tab/detail_x` 之类值回写成 `p_systemdlltabdetail.tabkey`。
+  - 这四组资源保存 body 不再夹带 `name/type/width/backendId/visible/readonly/placeholder` 等前端派生字段。
+
+### Result Notes
+- 这轮的重点不是改保存顺序，而是把“主字段 / 右键 / 明细 / 图表”的保存体从“前端状态对象”收紧成“后端数据库字段白名单”。
+- 对于主字段和明细，还顺手修掉了两个危险兜底：
+  - 主字段不再把 `formKey` 兜底写成 `fieldkey`。
+  - 明细不再把前端临时 `id/formKey` 兜底写成 `tabkey`，避免覆盖后端默认关系键。
+- 当前仍有一个范围边界：颜色等分支本轮没有一起全部收口；如果后续联调发现这些分支也有同类字段污染，再沿同样方式继续收窄。

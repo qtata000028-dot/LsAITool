@@ -382,6 +382,16 @@
 - For color rules, the authoritative editing model is the single-table color table fields (`condition`, `forcecolor`, `backcolor`, `useflag`, `dfcolor`, `dbcolor`, style flags, `fontsize`). Any extra UI-only fields such as `label`, `disabled`, `textColor`, or `backgroundColor` should be treated as compatibility/preview helpers, not the primary schema.
 - When fixing schema drift in an editor, update all three layers together: default object builder, API-to-state mapper, and the editor component itself. Fixing only the form labels leaves newly created rows and loaded rows speaking different field dialects.
 
+## 2026-03-26 Save Bodies Must Not Spread The Entire UI Edit Object
+- When a save mapper starts with `...cloneValue(record)`, treat that as a red flag for schema drift. It almost guarantees UI-only fields (`name`, `type`, `width`, flags, helper IDs) will leak into backend POST bodies sooner or later.
+- For pages where the user already gave the database structure, save mappers should be explicit allow-lists, not merge-based transforms. Build the POST body field by field from the backend schema and map UI aliases onto it deliberately.
+- Be careful with precedence when the UI renames a field. In the condition editor, the editable label lived in `name`, but the persisted field was `controlLabel`; preferring the old backend field over the edited UI value silently discarded the user's change.
+
+## 2026-03-26 For normalizePersistedValues Endpoints, Let Backend Defaults Own Relationship Keys
+- If a backend save endpoint simply feeds the request through `normalizePersistedValues(tableName, body, columnLookup)`, the front end should send only the raw database columns it truly wants to persist. Do not also spread the whole editor object "just in case".
+- For tables that generate relationship keys server-side, avoid synthesizing those keys from front-end temp IDs. In the single-table detail editor, sending a guessed `tabkey` from a temporary tab/form ID was more dangerous than omitting it and letting the backend apply its default module form key.
+- The same rule applies to generated field identifiers. If `fieldkey` is missing for a newly added field, do not fall back to unrelated UI state like `formKey`; leave it blank and let the backend create the canonical key.
+
 ## 2026-03-26 React Vendor Chunk Matching Must Be Exact
 - In `vite.config.ts`, never classify the React runtime chunk with a broad rule like `id.includes('react')`. That will accidentally catch packages such as `react-rnd` or `lucide-react`, and Rollup can split them into a `react-vendor` chunk that later depends back on `vendor`.
 - When a production bundle throws `Cannot read properties of undefined (reading 'memo')` from a vendor chunk, inspect the built chunk import graph before touching app code. A `vendor <-> react-vendor` cycle can leave React exports uninitialized even though `vite build` succeeds.

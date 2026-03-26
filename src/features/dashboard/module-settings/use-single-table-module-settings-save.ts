@@ -429,29 +429,26 @@ async function saveDiffedCollection({
 }
 
 function buildMainFieldBody(record: any, dllCoId: string, index: number) {
+  const fieldName = toText(record?.fieldname || record?.fieldName || record?.sourceField);
+  const systemName = toText(record?.sysname || record?.systemName || record?.sourceField);
+  const fieldKey = toText(record?.fieldkey || record?.fieldKey || record?.backendFieldKey);
+
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
-    dllcoid: dllCoId,
     tab: toText(record?.tab || dllCoId),
     username1: toText(record?.username1 || record?.displayName || record?.name),
-    fieldname: toText(record?.fieldname || record?.fieldName || record?.sourceField),
-    sysname: toText(record?.sysname || record?.systemName || record?.sourceField),
-    fieldkey: toText(record?.fieldkey || record?.fieldKey || record?.backendFieldKey || record?.formKey),
+    fieldname: fieldName,
+    sysname: systemName,
+    fieldkey: fieldKey,
     fieldsqltag: toInteger(record?.fieldsqltag ?? record?.fieldSqlTag ?? record?.controltype ?? record?.controlType, 0),
     fieldsqltagname: toText(record?.fieldsqltagname || record?.fieldSqlTagName || record?.controltypename || record?.controlTypeName),
     orderid: toInteger(record?.orderid ?? record?.orderId, index + 1),
     width: toInteger(record?.width, 0),
     controlwidth: toInteger(record?.controlwidth ?? record?.controlWidth ?? record?.width, toInteger(record?.width, 0)),
     mobilewidth: toInteger(record?.mobilewidth ?? record?.mobileWidth, toInteger(record?.width, 0)),
-    visible: toBooleanNumber(record?.visible, true),
-    isvisible: toBooleanNumber(record?.visible, true),
-    searchable: toBooleanNumber(record?.searchable, false),
     isquery: toBooleanNumber(record?.searchable, false),
-    readonly: toBooleanNumber(record?.readonly, false),
     isreadonly: toBooleanNumber(record?.readonly, false),
-    required: toBooleanNumber(record?.required, false),
     isneed: toBooleanNumber(record?.required, false),
-    placeholder: toText(record?.placeholder),
+    isvisible: toBooleanNumber(record?.visible, true),
     prompttext: toText(record?.prompttext || record?.promptText || record?.placeholder),
     defaultdate: toText(record?.defaultdate || record?.defaultDate || record?.defaultValue),
     dictcode: toText(record?.dictcode || record?.dictCode),
@@ -464,27 +461,32 @@ function buildMainFieldBody(record: any, dllCoId: string, index: number) {
 
 function buildConditionBody(record: any, index: number, sourceId?: number | null, formKey?: string) {
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
-    sourceid: sourceId ?? toInteger(record?.sourceid ?? record?.sourceId),
-    formkey: toText(formKey || record?.formkey || record?.formKey),
-    orderid: toInteger(record?.orderid ?? record?.orderId, index + 1),
-    controlname: toText(record?.controlname || record?.controlName || record?.sourceField),
-    controllabel: toText(record?.controllabel || record?.controlLabel || record?.name),
-    controltype: toInteger(record?.controltype ?? record?.controlType ?? record?.fieldsqltag ?? record?.fieldSqlTag, 0),
-    controltypename: toText(record?.controltypename || record?.controlTypeName || record?.fieldsqltagname || record?.fieldSqlTagName || record?.type),
-    controlwidth: toInteger(record?.controlwidth ?? record?.controlWidth ?? record?.width, 300),
-    defaultvalue: toText(record?.defaultvalue || record?.defaultValue),
-    sourcesql: toText(record?.sourcesql || record?.sourceSql || record?.relationSql),
-    resultfield: toText(record?.resultfield || record?.resultField || record?.formula),
-    checkcond: toText(record?.checkcond || record?.checkCondition || record?.dynamicSql),
-    keyfield: toText(record?.keyfield || record?.keyField || record?.dictCode || record?.sourceField),
-    placeholder: toText(record?.placeholder),
+    sourceId: sourceId ?? toInteger(record?.sourceId ?? record?.sourceid, 0),
+    BSColPercent: toInteger(record?.BSColPercent ?? record?.bscolpercent, 0),
+    Column_ID: toInteger(record?.Column_ID ?? record?.columnId ?? record?.column_id, 0),
+    orderId: toInteger(record?.orderId ?? record?.orderid, index + 1),
+    defaultValue: toText(record?.defaultValue ?? record?.defaultvalue),
+    controlTop: toInteger(record?.controlTop ?? record?.controltop, 0),
+    controlName: toText(record?.controlName ?? record?.controlname ?? record?.sourceField),
+    resultField: toText(record?.resultField ?? record?.resultfield ?? record?.formula),
+    keyField: toText(record?.keyField ?? record?.keyfield ?? record?.dictCode ?? record?.sourceField),
+    controlWidth: toInteger(record?.controlWidth ?? record?.controlwidth ?? record?.width, 300),
+    formKey: toText(formKey || record?.formKey || record?.formkey),
+    edited: toInteger(record?.edited, 0),
+    checkCond: toText(record?.checkCond ?? record?.checkcond ?? record?.dynamicSql),
+    BSRowId: toInteger(record?.BSRowId ?? record?.bsrowid, 0),
+    controlType: toInteger(record?.controlType ?? record?.controltype ?? record?.fieldSqlTag ?? record?.fieldsqltag, 0),
+    sourceSql: toText(record?.sourceSql ?? record?.sourcesql ?? record?.relationSql),
+    isFix: toInteger(record?.isFix ?? record?.isfix, 0),
+    controlLabel: toText(record?.name ?? record?.controlLabel ?? record?.controllabel),
+    controlLeft: toInteger(record?.controlLeft ?? record?.controlleft, 0),
+    controlHeight: toInteger(record?.controlHeight ?? record?.controlheight, 21),
+    leftNotLinkFlag: toBooleanNumber(record?.leftNotLinkFlag ?? record?.leftnotlinkflag, false),
   }), record);
 }
 
 function buildGridFieldBody(record: any, fieldId?: number | null) {
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
     ...(fieldId != null ? { fieldId } : {}),
     fieldKey: toText(record?.fieldKey || record?.fieldkey || record?.backendFieldKey),
     fieldName: toText(record?.fieldName || record?.fieldname || record?.sourceField),
@@ -521,7 +523,6 @@ function buildColorBody(record: any, tab: string) {
 
 function buildMenuBody(record: any, tab: string, index: number) {
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
     tab,
     menuname: toText(record?.menuname || record?.menuName || record?.label),
     dllname: toText(record?.dllname || record?.dllName || record?.actionKey),
@@ -546,12 +547,9 @@ function normalizeDetailTypeCode(fillType: string, rawValue: unknown) {
   return '0';
 }
 
-function buildDetailBody(record: any, gridConfig: any, moduleCode: string, fillType: string, index: number) {
+function buildDetailBody(record: any, gridConfig: any, _moduleCode: string, fillType: string, index: number) {
   const detailTypeCode = normalizeDetailTypeCode(fillType, record?.detailTypeCode);
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
-    tab: moduleCode,
-    tabkey: toText(record?.tabkey || record?.tabKey || record?.formKey || record?.id || `detail_${index + 1}`),
     detailname: toText(record?.detailname || record?.detailName || record?.name || `明细 ${index + 1}`),
     detailtype: detailTypeCode,
     library: toText(record?.library || record?.dllTemplate),
@@ -585,7 +583,6 @@ function buildDetailBody(record: any, gridConfig: any, moduleCode: string, fillT
 
 function buildDetailChartBody(record: any, index: number) {
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
     orderid: toInteger(record?.orderid ?? record?.orderId, index + 1),
     charttype: toText(record?.charttype || record?.chartType || '0'),
     charttitle: toText(record?.charttitle || record?.chartTitle),
