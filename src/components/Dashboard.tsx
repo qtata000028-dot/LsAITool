@@ -5550,11 +5550,13 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     workspace: buildDashboardConfigBridgeWorkspaceInput({
       archiveLayoutState: {
         currentDetailBoard: normalizedMainDetailBoardConfig,
+        currentModuleCode,
         isOpen: isArchiveLayoutEditorOpen,
         mainTableColumns,
       },
       archiveLayoutActions: {
         onClose: () => setIsArchiveLayoutEditorOpen(false),
+        onShowToast: showToast,
         onUpdateDetailBoard: updateMainDetailBoard,
       },
       archiveLayoutHelpers: {

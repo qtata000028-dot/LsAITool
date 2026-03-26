@@ -3,10 +3,12 @@ import type { BuildDashboardConfigBridgeNodesInput } from './dashboard-config-br
 type BuildDashboardConfigBridgeWorkspaceInput = {
   archiveLayoutState: {
     currentDetailBoard: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['currentDetailBoard'];
+    currentModuleCode: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['currentModuleCode'];
     isOpen: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['isOpen'];
     mainTableColumns: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['mainTableColumns'];
   };
   archiveLayoutActions: {
+    onShowToast: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onShowToast'];
     onClose: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onClose'];
     onUpdateDetailBoard: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['onUpdateDetailBoard'];
   };

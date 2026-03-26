@@ -13,6 +13,9 @@ export interface SingleTableModuleConfigDto {
 }
 
 export type SingleTableModuleFieldDto = Record<string, unknown>;
+export type SingleTableDesignerControlDto = Record<string, unknown>;
+export type SingleTableDesignerGroupDto = Record<string, unknown>;
+export type SingleTableDesignerLayoutDto = Record<string, unknown>;
 export type SingleTableConditionDto = Record<string, unknown>;
 export type SingleTableDetailDto = Record<string, unknown>;
 export type SingleTableGridFieldDto = Record<string, unknown>;
@@ -47,6 +50,27 @@ export async function fetchSingleTableModuleConfig(dllCoId: string) {
 
 export async function fetchSingleTableModuleFields(dllCoId: string) {
   return apiRequest<SingleTableModuleFieldDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/fields`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableDesignerControls(dllCoId: string) {
+  return apiRequest<SingleTableDesignerControlDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/designer-controls`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableDesignerGroups(dllCoId: string) {
+  return apiRequest<SingleTableDesignerGroupDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/designer-groups`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableDesignerLayout(dllCoId: string) {
+  return apiRequest<SingleTableDesignerLayoutDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/designer-layout`, {
     auth: true,
     method: 'GET',
   });

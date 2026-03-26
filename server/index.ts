@@ -8,6 +8,7 @@ const app = express();
 const port = Number(process.env.PORT || 3001);
 const baseUrl = process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1';
 const model = process.env.MINIMAX_MODEL || 'MiniMax-M2.1';
+const translateModel = process.env.MINIMAX_TRANSLATE_MODEL || model;
 const businessApiBaseUrl = (process.env.BUSINESS_API_BASE_URL || process.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
 
 const hopByHopHeaders = new Set([
@@ -311,7 +312,7 @@ async function forwardBusinessApi(req: express.Request, res: express.Response) {
   }
 }
 
-async function requestMiniMaxJson(prompt: string) {
+async function requestMiniMaxJson(prompt: string, modelName = model) {
   const apiKey = getApiKey();
 
   if (!apiKey) {
@@ -325,7 +326,7 @@ async function requestMiniMaxJson(prompt: string) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model,
+      model: modelName,
       temperature: 0.35,
       messages: [
         {
@@ -579,6 +580,7 @@ async function resolveAiCreateMainTableColumns(columns: AiCreateMainTableColumnI
             identifier: column.identifier,
             name: column.name,
           }))),
+          translateModel,
         );
 
         raw = rawText;
@@ -835,6 +837,7 @@ app.get('/api/ai/health', (_req, res) => {
   res.json({
     configured: Boolean(getApiKey()),
     model,
+    translateModel,
   });
 });
 
@@ -912,21 +915,21 @@ app.post('/api/ai/translate-identifiers', async (req, res) => {
 
   if (columns.length === 0) {
     return res.json({
-      model,
+      model: translateModel,
       items: [],
     });
   }
 
   try {
-    const { raw } = await requestMiniMaxJson(buildTranslatePrompt(columns));
+    const { raw } = await requestMiniMaxJson(buildTranslatePrompt(columns), translateModel);
 
     return res.json({
-      model,
+      model: translateModel,
       items: normalizeTranslationItems(raw, columns),
     });
   } catch (error) {
     return res.json({
-      model,
+      model: translateModel,
       degraded: true,
       message: error instanceof Error ? error.message : 'MiniMax identifier translation failed.',
       items: columns.map((column: any, index: number) => ({
@@ -982,7 +985,7 @@ app.post('/api/ai/create-main-table', async (req, res) => {
     });
 
     return res.json({
-      model,
+      model: translateModel,
       degraded: resolved.degraded,
       message: resolved.message,
       result: {
@@ -1010,5 +1013,7 @@ app.use('/api', async (req, res) => {
 
 app.listen(port, () => {
   console.log(`MiniMax API server listening on http://127.0.0.1:${port}`);
+  console.log(`MiniMax primary model: ${model}`);
+  console.log(`MiniMax translate model: ${translateModel}`);
   console.log(`Business API proxy target: ${businessApiBaseUrl}`);
 });
