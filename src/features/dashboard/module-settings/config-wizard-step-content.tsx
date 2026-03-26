@@ -4,6 +4,8 @@ import { motion } from 'framer-motion';
 type ConfigWizardStepContentProps = {
   configStep: number;
   moduleIntroEditorNode: React.ReactNode;
+  processDesignNode: React.ReactNode;
+  processDesignStep: number;
   modulePreviewNode: React.ReactNode;
   modulePreviewStep: number;
   moduleSettingNode: React.ReactNode;
@@ -18,6 +20,8 @@ type ConfigWizardStepContentProps = {
 export function ConfigWizardStepContent({
   configStep,
   moduleIntroEditorNode,
+  processDesignNode,
+  processDesignStep,
   modulePreviewNode,
   modulePreviewStep,
   moduleSettingNode,
@@ -56,6 +60,18 @@ export function ConfigWizardStepContent({
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           {restrictionNode}
+        </motion.div>
+      ) : null}
+
+      {configStep === processDesignStep ? (
+        <motion.div
+          key="process-design-step"
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4 }}
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        >
+          {processDesignNode}
         </motion.div>
       ) : null}
 

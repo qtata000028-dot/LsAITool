@@ -101,6 +101,7 @@ import { useBillFieldResize } from '../features/dashboard/module-settings/use-bi
 import { useBillHeaderWorkbench } from '../features/dashboard/module-settings/use-bill-header-workbench';
 import { ConfigWizardModalShell } from '../features/dashboard/module-settings/config-wizard-modal-shell';
 import { buildDashboardConfigWizardStepNodes } from '../features/dashboard/module-settings/dashboard-config-wizard-step-nodes';
+import { ProcessDesignPanel } from '../features/dashboard/module-settings/process-design-panel';
 import {
   DETAIL_BOARD_FIELD_DEFAULT_HEIGHT,
   DETAIL_BOARD_FIELD_DEFAULT_WIDTH,
@@ -124,6 +125,7 @@ import {
   type RestrictionProcessDesignItem,
   type RestrictionTopStructureItem,
 } from '../features/dashboard/module-settings/restriction-workbench';
+import { createLinearProcessDesignerDocument } from '../features/dashboard/module-settings/process-designer-types';
 import { useDashboardTableBuilderRuntime } from '../features/dashboard/table-builder/use-dashboard-table-builder-runtime';
 import { cn } from '../lib/utils';
 import { Badge } from './ui/badge';
@@ -902,7 +904,8 @@ const BILL_SOURCE_CONFIG_TYPE_OPTIONS = ['普通来源', '弹窗来源', '明细
 const BILL_SOURCE_TYPE_OPTIONS = ['SQL', '视图', '接口'];
 const MODULE_SETTING_STEP = 5;
 const RESTRICTION_STEP = 6;
-const MODULE_PREVIEW_STEP = 7;
+const PROCESS_DESIGN_STEP = 7;
+const MODULE_PREVIEW_STEP = 8;
 const MAX_CONFIG_STEP = MODULE_PREVIEW_STEP;
 const TABLE_COLUMN_MIN_WIDTH = 48;
 const TABLE_COLUMN_COLLAPSED_RENDER_WIDTH = 1;
@@ -2178,6 +2181,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     permissionScope: '',
     businessType: businessType === 'table' ? '单据' : businessType === 'tree' ? '树形单表' : '单表',
     actionDescription: '',
+    designerDocument: createLinearProcessDesignerDocument(currentModuleName),
     ...overrides,
   });
   const buildRestrictionTopStructure = (index: number, overrides: Partial<RestrictionTopStructureItem> = {}): RestrictionTopStructureItem => ({
@@ -2207,6 +2211,26 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     structure: null,
     process: null,
   });
+  const selectedRestrictionProcessDesign = useMemo(
+    () => restrictionProcessDesigns.find((item) => item.id === restrictionSelection.process) ?? restrictionProcessDesigns[0] ?? null,
+    [restrictionProcessDesigns, restrictionSelection.process],
+  );
+  const updateSelectedRestrictionProcessDesign = useCallback((patch: Partial<RestrictionProcessDesignItem>) => {
+    if (!selectedRestrictionProcessDesign) {
+      return;
+    }
+    setRestrictionProcessDesigns((prev) => prev.map((item) => (
+      item.id === selectedRestrictionProcessDesign.id
+        ? { ...item, ...patch }
+        : item
+    )));
+  }, [selectedRestrictionProcessDesign]);
+  const createRestrictionProcessDesignEntry = useCallback(() => {
+    const next = buildRestrictionProcessDesign(restrictionProcessDesigns.length + 1);
+    setRestrictionProcessDesigns((prev) => [...prev, next]);
+    setRestrictionSelection((prev) => ({ ...prev, process: next.id }));
+    showToast('已创建流程设计方案');
+  }, [buildRestrictionProcessDesign, restrictionProcessDesigns.length, showToast]);
   const [documentConditionScope, setDocumentConditionScope] = useState<ConditionWorkbenchScope>('main');
   const [billHeaderWorkbenchConfig, setBillHeaderWorkbenchConfig] = useState<BillHeaderWorkbenchConfig>(
     buildBillHeaderWorkbenchConfig(),
@@ -2342,7 +2366,11 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     : inspectorTarget.kind === 'main-filter-panel'
       ? 'main'
       : null;
-  const isModuleSettingStep = isConfigOpen && (configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP);
+  const isModuleSettingStep = isConfigOpen && (
+    configStep === MODULE_SETTING_STEP
+    || configStep === RESTRICTION_STEP
+    || configStep === PROCESS_DESIGN_STEP
+  );
   const isConfigFullscreenActive = isModuleSettingStep && isFullscreenConfig;
   const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
   const {
@@ -2929,6 +2957,20 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       moduleIntroBlockType,
       moduleIntroRefs,
       moduleIntroSelectedImageWidth,
+    },
+    processDesign: {
+      processDesignNode: (
+        <ProcessDesignPanel
+          currentModuleName={currentModuleName}
+          currentUserName={currentUserName}
+          emptyHint="先创建流程方案，再在这里完成审批流画布和节点属性配置。"
+          mode="wizard"
+          onCreate={createRestrictionProcessDesignEntry}
+          onToast={showToast}
+          onUpdate={updateSelectedRestrictionProcessDesign}
+          processDesign={selectedRestrictionProcessDesign}
+        />
+      ),
     },
     preview: {
       previewTitle: '模块预览',
@@ -3770,6 +3812,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
     { id: 4, title: '调研过程', desc: 'AI 深度业务需求分析' },
     { id: MODULE_SETTING_STEP, title: '模块设置', desc: '字段、表单与流程编排' },
     { id: RESTRICTION_STEP, title: '限制措施', desc: '规则、流程与限制配置' },
+    { id: PROCESS_DESIGN_STEP, title: '流程设计', desc: '独立流程设计器与审批向导配置' },
     { id: MODULE_PREVIEW_STEP, title: '模块预览', desc: '实时交互效果演示' }
   ];
   const selectedSubsystem = useMemo(
@@ -4205,7 +4248,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
       return;
     }
 
-    if ((configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP) && !moduleSettingFullscreenInitRef.current) {
+    if ((configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP) && !moduleSettingFullscreenInitRef.current) {
       moduleSettingFullscreenInitRef.current = true;
     }
   }, [configStep, isConfigOpen]);
@@ -5424,13 +5467,14 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           isMenuInfoSaving,
           isModuleSettingStep,
           modulePreviewStep: MODULE_PREVIEW_STEP,
+          processDesignStep: PROCESS_DESIGN_STEP,
           moduleSettingStep: MODULE_SETTING_STEP,
           nextDisabled: configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving || activeConfigMenu === null),
           nextLabel: configStep === MODULE_PREVIEW_STEP ? '完成配置' : '下一步',
           restrictionStep: RESTRICTION_STEP,
           saveDisabled: configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving),
           saveLabel: configStep === 2 && isMenuInfoSaving ? (activeConfigMenu ? '保存中...' : '创建中...') : '保存本页',
-          showFullscreenToggle: configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP,
+          showFullscreenToggle: configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP,
         },
         actions: {
           handleConfigNext,
@@ -5448,6 +5492,7 @@ export default function Dashboard({ currentUserName, onLogout }: DashboardProps)
           menuInfoNode: configWizardStepNodes.menuInfoNode,
           moduleIntroEditorNode: configWizardStepNodes.moduleIntroEditorNode,
           modulePreviewNode: configWizardStepNodes.modulePreviewNode,
+          processDesignNode: configWizardStepNodes.processDesignNode,
           moduleTypeSelectionNode: configWizardStepNodes.moduleTypeSelectionNode,
           surveyPlanningNode: configWizardStepNodes.surveyPlanningNode,
         },

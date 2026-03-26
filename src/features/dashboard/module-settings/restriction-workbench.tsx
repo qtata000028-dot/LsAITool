@@ -12,6 +12,8 @@ import {
   shadcnSectionCardClass,
   shadcnTextareaClass,
 } from '../../../components/ui/shadcn-inspector';
+import { ProcessDesignPanel } from './process-design-panel';
+import type { ProcessDesignerDocument } from './process-designer-types';
 import { type LongTextEditorState } from './long-text-editor-modal';
 
 export type RestrictionConfigTabId =
@@ -59,6 +61,7 @@ export type RestrictionProcessDesignItem = {
   permissionScope: string;
   businessType: string;
   actionDescription: string;
+  designerDocument: ProcessDesignerDocument;
 };
 
 export type RestrictionTopStructureItem = {
@@ -753,68 +756,12 @@ export function RestrictionWorkbench({
     };
 
     return (
-      <div className={restrictionDetailGridClass}>
-        <section className={`${restrictionHeroClass} xl:col-span-12`}>
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex h-8 items-center rounded-full bg-[color:var(--workspace-accent)] px-3 text-[11px] font-black text-white shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)]">
-                  流程设计
-                </span>
-                <span className="inline-flex h-8 items-center rounded-full bg-white/92 px-3 text-[11px] font-bold text-slate-500 dark:bg-slate-900/78 dark:text-slate-300">
-                  {selectedProcessDesign.schemeCode || '未编号'}
-                </span>
-              </div>
-              <input
-                type="text"
-                value={selectedProcessDesign.schemeName}
-                onChange={(event) => updateSelectedProcess({ schemeName: event.target.value })}
-                placeholder="输入流程方案名称"
-                className={restrictionHeroTitleInputClass}
-              />
-            </div>
-            <div className={restrictionHeroMetricGridClass}>
-              {restrictionMetric('方案 ID', selectedProcessDesign.planValue || '未设置', 'accent')}
-              {restrictionMetric('业务编号', selectedProcessDesign.businessCode || '未设置')}
-              {restrictionMetric('方案编号', selectedProcessDesign.schemeCode || '未设置')}
-              {restrictionMetric('业务类型', selectedProcessDesign.businessType || '未设置', 'success')}
-            </div>
-          </div>
-        </section>
-        <section className={`${restrictionCardClass} xl:col-span-6`}>
-          {restrictionSectionHeader('审批方案主信息', '方案标识与业务挂接')}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className={restrictionLabelClass}>审批方案 ID 值</label>
-              <input type="text" value={selectedProcessDesign.planValue} onChange={(event) => updateSelectedProcess({ planValue: event.target.value })} className={restrictionFieldClass} />
-            </div>
-            <div>
-              <label className={restrictionLabelClass}>对应业务编号</label>
-              <input type="text" value={selectedProcessDesign.businessCode} onChange={(event) => updateSelectedProcess({ businessCode: event.target.value })} className={restrictionFieldClass} />
-            </div>
-            <div>
-              <label className={restrictionLabelClass}>审批方案编号</label>
-              <input type="text" value={selectedProcessDesign.schemeCode} onChange={(event) => updateSelectedProcess({ schemeCode: event.target.value })} className={restrictionFieldClass} />
-            </div>
-            <div>
-              <label className={restrictionLabelClass}>所属业务类型</label>
-              <input type="text" value={selectedProcessDesign.businessType} onChange={(event) => updateSelectedProcess({ businessType: event.target.value })} className={restrictionFieldClass} />
-            </div>
-          </div>
-        </section>
-        <section className={`${restrictionCardClass} xl:col-span-6`}>
-          {restrictionSectionHeader('权限范围')}
-          <textarea rows={4} value={selectedProcessDesign.permissionScope} onChange={(event) => updateSelectedProcess({ permissionScope: event.target.value })} className={`${restrictionTextareaClass} min-h-[172px] resize-none`} />
-        </section>
-        <section className={`${restrictionCardClass} xl:col-span-12`}>
-          {restrictionSectionHeader(
-            '操作说明',
-            '审批说明与执行建议',
-            restrictionLongTextButton('流程操作说明', selectedProcessDesign.actionDescription, '描述流程设计动作和审批说明', (value) => updateSelectedProcess({ actionDescription: value })),
-          )}
-          <textarea rows={7} value={selectedProcessDesign.actionDescription} onChange={(event) => updateSelectedProcess({ actionDescription: event.target.value })} className={`${restrictionTextareaClass} min-h-[190px] resize-none`} />
-        </section>
-      </div>
+      <ProcessDesignPanel
+        currentModuleName={currentModuleName}
+        mode="workspace"
+        onUpdate={updateSelectedProcess}
+        processDesign={selectedProcessDesign}
+      />
     );
   };
 

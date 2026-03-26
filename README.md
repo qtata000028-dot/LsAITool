@@ -16,6 +16,15 @@ Dashboard architecture evolution rules are documented in [docs/dashboard-archite
 
 Frontend platform architecture and multi-entry evolution rules are documented in [docs/frontend-platform-architecture.md](./docs/frontend-platform-architecture.md).
 
+Process designer integration notes are documented in [docs/process-designer-integration-v1.md](./docs/process-designer-integration-v1.md).
+
+To preview the new process designer UI:
+
+1. Run `npm run dev`
+2. Open `http://localhost:3000`
+3. Enter the design-platform configuration wizard
+4. Go to step `7. 流程设计`
+
 GitHub collaboration files are available in:
 
 - `.github/CODEOWNERS`

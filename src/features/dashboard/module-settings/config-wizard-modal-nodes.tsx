@@ -26,6 +26,8 @@ export type BuildConfigWizardModalNodesInput = {
   moduleIntroEditorNode: React.ReactNode;
   modulePreviewNode: React.ReactNode;
   modulePreviewStep: number;
+  processDesignNode: React.ReactNode;
+  processDesignStep: number;
   moduleSettingNode: React.ReactNode;
   moduleSettingStep: number;
   moduleTypeSelectionNode: React.ReactNode;
@@ -66,6 +68,8 @@ export function buildConfigWizardModalNodes(input: BuildConfigWizardModalNodesIn
           moduleIntroEditorNode={input.moduleIntroEditorNode}
           modulePreviewNode={input.modulePreviewNode}
           modulePreviewStep={input.modulePreviewStep}
+          processDesignNode={input.processDesignNode}
+          processDesignStep={input.processDesignStep}
           moduleSettingNode={input.moduleSettingNode}
           moduleSettingStep={input.moduleSettingStep}
           moduleTypeSelectionNode={input.moduleTypeSelectionNode}
