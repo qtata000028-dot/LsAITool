@@ -3148,3 +3148,51 @@
   - 主字段不再把 `formKey` 兜底写成 `fieldkey`。
   - 明细不再把前端临时 `id/formKey` 兜底写成 `tabkey`，避免覆盖后端默认关系键。
 - 当前仍有一个范围边界：颜色等分支本轮没有一起全部收口；如果后续联调发现这些分支也有同类字段污染，再沿同样方式继续收窄。
+
+## 2026-03-26 合并整合项目升级分支到 tdxnewtoolscode
+
+### Requirement Spec
+- 目标：把“整合项目升级”分支合并到当前 `tdxnewtoolscode` 分支，并处理可能出现的冲突。
+- 影响范围：当前仓库 Git 历史及冲突涉及的业务代码文件。
+- 关键约束：
+  - 以当前 `tdxnewtoolscode` 的有效功能为基准，吸收目标分支新增能力。
+  - 若出现冲突，优先保留已联调通过的登录、主界面、模块设置与保存链路。
+  - 合并完成前必须做至少 `lint` 和 `build` 验证。
+- 不做什么：
+  - 本轮不额外重构无关代码。
+  - 本轮不处理部署发布。
+- 成功标准：
+  - 合并成功，退出 merge 状态。
+  - 冲突已解决。
+  - `npm run lint`、`npm run build` 通过。
+
+### Checklist
+- [x] 确认当前分支、工作区状态和目标分支引用。
+- [x] 执行合并并处理冲突。
+- [x] 完成验证并记录结果。
+
+### Progress Notes
+- 当前分支：`tdxnewtoolscode`
+- 工作区状态：干净
+- 当前可见目标分支引用：`origin/codex/整合项目升级`
+- 已执行 `git merge --no-ff origin/codex/整合项目升级`。
+- 本次明确冲突点：
+  - `src/features/dashboard/module-settings/use-archive-layout-palette-columns.ts`
+  - `vite.config.ts`
+- 冲突处理策略：
+  - `use-archive-layout-palette-columns.ts` 两边仅有格式层面的 add/add 差异，保留当前分支版本。
+  - `vite.config.ts` 保留当前分支版本，避免丢失前面已修复的 React 精确分包与生产构建稳定性。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+- Git 状态核对：
+  - `All conflicts fixed but you are still merging.`
+  - 待提交内容已收敛为合并后的有效文件集合。
+
+### Result Notes
+- 这次合并已经完成冲突解决，且 `lint/build` 均通过。
+- 当前保留下来的核心行为是：
+  - 当前分支已有的登录、主界面、模块配置链路继续有效。
+  - `整合项目升级` 分支的非冲突更新已被吸收。
+- 当前仍有一个已知但不阻塞本次 merge 的边界：`vite build` 仍会给出大 chunk warning，不过这属于已有构建体积提示，不是本次合并引入的新错误。
