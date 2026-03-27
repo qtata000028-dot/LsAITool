@@ -164,6 +164,9 @@
 - Dense admin/workbench screens should move technical mapping hints and counts into compact badge rows or header metadata instead of dedicated mini cards, so the editable form fields remain the visual focus.
 - Central canvas surfaces and right-side inspectors must be tightened together. If only the right inspector becomes dense while the center still uses large cloudy shells, the whole screen still reads as loose and inconsistent.
 
+## 2026-03-27 Single Table Table Edge Tightening
+- 表格区域“看起来还有一圈窄边距”时，不能只盯外层容器 padding；还要检查表格本体自己的宽度策略、壳层边框和圆角。哪怕外层贴边了，如果表格仍按内容宽度渲染或保留 wrapper border，视觉上还是会像留了一圈边距。
+
 ## 2026-03-23 Archive Main Layout Popup Workbench
 - If the user says the right inspector should only show summary information, do not leave the real layout editor embedded in that narrow side panel. Move dense layout editing into a dedicated popup workbench and keep the inspector read-oriented.
 - For archive main-table grouping, the draggable source must be the real main-table columns. Do not invent a second synthetic field source, or the user loses trust in what is actually being laid out.

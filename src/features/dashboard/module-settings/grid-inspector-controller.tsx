@@ -78,6 +78,7 @@ type GridInspectorControllerProps = {
   isTranslatingIdentifiers: boolean;
   leftFilterFields: any[];
   loadSingleTableDetailResourcesById: (tabId: string, fillType: string) => Promise<any>;
+  mainTableHiddenColumnsCount: number;
   fieldClass: string;
   getBillHeaderRowCount: () => number;
   getOrderedBillHeaderFields: () => any[];
@@ -86,6 +87,7 @@ type GridInspectorControllerProps = {
   normalizeDetailChartConfig: (config: any) => any;
   normalizeDetailFillTypeValue: (fillType?: string) => string;
   onOpenArchiveLayoutEditor: () => void;
+  onOpenMainHiddenColumnsModal: () => void;
   onOpenDetailBoardPreview: (previewRows?: number, sortColumnId?: string | null) => void;
   onOpenColorRules: () => void;
   onOpenContextMenus: () => void;
@@ -175,6 +177,7 @@ export function GridInspectorController({
   isTranslatingIdentifiers,
   leftFilterFields,
   loadSingleTableDetailResourcesById,
+  mainTableHiddenColumnsCount,
   fieldClass,
   getBillHeaderRowCount,
   getOrderedBillHeaderFields,
@@ -183,6 +186,7 @@ export function GridInspectorController({
   normalizeDetailChartConfig,
   normalizeDetailFillTypeValue,
   onOpenArchiveLayoutEditor,
+  onOpenMainHiddenColumnsModal,
   onOpenColorRules,
   onOpenContextMenus,
   onOpenDetailBoardPreview,
@@ -632,7 +636,7 @@ export function GridInspectorController({
         {inspectorTabsNode}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-0 py-0">
         {isContextMenuPanelTab && isGridDecorationManagerAvailable ? (
           <PopupMenuManager
             contextMenuItems={contextMenuItems}
@@ -683,7 +687,7 @@ export function GridInspectorController({
           />
         ) : isCommonPanelTab ? (
           isBillHeadGridConfig ? (
-            <div className="space-y-4">
+            <div className="space-y-0">
               <section className={compactCardClass}>
                 <div className={sectionTitleClass}>
                   <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">dashboard</span>
@@ -774,7 +778,7 @@ export function GridInspectorController({
               />
             </div>
           ) : isBillDetailGridConfig ? (
-            <div className="space-y-4">
+            <div className="space-y-0">
               <GridConfigSummarySection
                 title="明细表属性"
                 activeTitle={context.title}
@@ -813,7 +817,7 @@ export function GridInspectorController({
               />
             </div>
           ) : isLeftGridConfig ? (
-            <div className="space-y-4">
+            <div className="space-y-0">
               <LeftGridMappingSection
                 hasTreeRelationColumn={Boolean(treeRelationColumn)}
                 onLocateOwnerField={() => {
@@ -848,7 +852,7 @@ export function GridInspectorController({
               />
             </div>
           ) : isDocumentDetailGrid ? (
-            <div className="space-y-4">
+            <div className="space-y-0">
               {isDetailChartInspector ? (
                 <DetailChartConfigSection
                   chartTypeOptions={detailChartTypeOptions}
@@ -914,14 +918,17 @@ export function GridInspectorController({
               )}
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-0">
               {isDocumentArchiveGrid ? (
                 <>
                   <DocumentMainTableSetupSection
                     isGeneratingSqlDraft={isGeneratingSqlDraft}
+                    mainTableHiddenColumnsCount={mainTableHiddenColumnsCount}
                     mainTableName={String(currentGridConfig.tableName || '')}
                     onGenerateSqlDraft={createMainTableWithAi}
+                    onOpenMainHiddenColumnsModal={onOpenMainHiddenColumnsModal}
                     onUpdateMainTableName={(value) => updateGridConfig({ tableName: value })}
+                    showMainHiddenColumnsAction={isMainGridConfig}
                   />
                   <GridIdentifierTranslationSection
                     availableGridColumnCount={availableGridColumns.length}

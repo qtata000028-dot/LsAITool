@@ -1,5 +1,5 @@
 export const shadcnPanelShellClass =
-  'flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-950';
+  'flex h-full min-h-0 flex-col overflow-hidden border border-slate-200/80 bg-white shadow-none dark:border-slate-800 dark:bg-slate-950';
 
 export const shadcnPanelHeaderClass =
   'shrink-0 border-b border-slate-200/80 bg-slate-50/70 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-950';
@@ -14,10 +14,10 @@ export const shadcnPanelIconShellClass =
   'flex size-8 shrink-0 items-center justify-center rounded-md border border-slate-200/80 bg-white text-[color:var(--workspace-accent)] dark:border-slate-800 dark:bg-slate-950';
 
 export const shadcnInfoCardClass =
-  'rounded-md border border-slate-200/70 bg-slate-50/70 px-2.5 py-2 dark:border-slate-800 dark:bg-slate-900/55';
+  'border border-slate-200/70 bg-slate-50/70 px-2.5 py-2 dark:border-slate-800 dark:bg-slate-900/55';
 
 export const shadcnSectionCardClass =
-  'rounded-md border border-slate-200/80 bg-white px-3 py-3 dark:border-slate-800 dark:bg-slate-950';
+  'border border-slate-200/80 bg-white px-3 py-3 shadow-none dark:border-slate-800 dark:bg-slate-950';
 
 export const shadcnSectionTitleClass =
   'mb-2.5 flex items-center gap-1.5 text-[12px] font-semibold text-slate-700 dark:text-slate-100';

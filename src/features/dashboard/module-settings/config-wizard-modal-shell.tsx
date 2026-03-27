@@ -64,7 +64,7 @@ export function ConfigWizardModalShell({
             ) : null}
 
             <div className={`relative z-10 flex flex-1 flex-col ${
-              isFullscreenConfigActive ? 'overflow-hidden p-3 lg:p-4' : isModuleSettingStep ? 'overflow-y-auto p-4 lg:p-4' : 'overflow-y-auto p-6 lg:p-8'
+              isFullscreenConfigActive ? 'overflow-hidden p-3 lg:p-4' : isModuleSettingStep ? 'overflow-hidden p-0' : 'overflow-y-auto p-6 lg:p-8'
             }`}>
               {bodyNode}
             </div>
