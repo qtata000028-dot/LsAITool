@@ -144,9 +144,11 @@ export function useDashboardTableBuilderOptions({
     tableSelected: isDetailGridTableSelected,
     onSelectTable: handleActiveDetailTableSelect,
     detailBoardConfig: activeDetailTableConfig?.detailBoard,
+    renderableColumns: activeDetailTableColumns,
     canvasLabel: '点击配置明细表属性',
     density: 'compact',
   }), [
+    activeDetailTableColumns,
     activeDetailTableConfig?.contextMenuEnabled,
     activeDetailTableConfig?.contextMenuItems,
     activeDetailTableConfig?.detailBoard,

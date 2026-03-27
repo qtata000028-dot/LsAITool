@@ -20,6 +20,7 @@ import {
   fetchSingleTableDetailColors,
   fetchSingleTableDetailGridFields,
   fetchSingleTableDetailMenus,
+  fetchSingleTableFieldColors,
   fetchSingleTableModuleConfig,
   fetchSingleTableModuleColors,
   fetchSingleTableFieldConditions,
@@ -117,6 +118,8 @@ import {
 } from '../features/dashboard/module-settings/layout-field-workbench-meta';
 import { buildModuleSettingStepShellProps } from '../features/dashboard/module-settings/module-setting-step-shell-props';
 import { useModuleIntroEditor } from '../features/dashboard/module-settings/use-module-intro-editor';
+import { useEnsureSingleTableModule } from '../features/dashboard/module-settings/use-ensure-single-table-module';
+import { useSingleTableModuleSettingsSave } from '../features/dashboard/module-settings/use-single-table-module-settings-save';
 import {
   type LongTextEditorState,
 } from '../features/dashboard/module-settings/long-text-editor-modal';
@@ -145,6 +148,8 @@ interface DashboardProps {
   onLogout: () => void;
   routeContext?: DesignRouteContext;
 }
+
+const DEFAULT_DESIGN_ROUTE_CONTEXT: DesignRouteContext = {};
 
 type BusinessType = 'document' | 'table' | 'tree';
 type BillSourceEntry = {
@@ -440,7 +445,7 @@ function getFieldSqlTagOptionLabel(option: FieldSqlTagOptionDto | null | undefin
   const optionId = normalizeFieldSqlTagId(option?.showid, -1);
   const rawLabel = toRecordText(option?.showname);
 
-  return FIELD_SQL_TAG_LABEL_FALLBACKS[optionId] || rawLabel || `类型 ${optionId}`;
+  return rawLabel || FIELD_SQL_TAG_LABEL_FALLBACKS[optionId] || `类型 ${optionId}`;
 }
 
 function mapFieldSqlTagToFieldType(fieldSqlTagValue: unknown, fieldSqlTagLabel = '', fallbackType = '文本') {
@@ -491,7 +496,7 @@ function resolveColumnFieldType(column: Record<string, unknown> | null | undefin
 }
 
 function resolveColumnFieldSqlTagId(column: Record<string, unknown> | null | undefined) {
-  const rawFieldSqlTag = getRecordFieldValue(column, 'fieldsqltag', 'fieldSqlTag');
+  const rawFieldSqlTag = getRecordFieldValue(column, 'fieldsqltag', 'fieldSqlTag', 'controltype', 'controlType');
   if (rawFieldSqlTag !== undefined && rawFieldSqlTag !== null && String(rawFieldSqlTag).trim() !== '') {
     return normalizeFieldSqlTagId(rawFieldSqlTag, 0);
   }
@@ -1212,7 +1217,7 @@ type BuilderSelectionContextMenuState = {
   ids: string[];
 } | null;
 
-export default function Dashboard({ currentUserName, onLogout, routeContext = {} }: DashboardProps) {
+export default function Dashboard({ currentUserName, onLogout, routeContext = DEFAULT_DESIGN_ROUTE_CONTEXT }: DashboardProps) {
   const debugParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const currentUserAvatarText = currentUserName.trim().slice(0, 1) || '人';
   const debugStepParam = Number(debugParams?.get('step') || 1);
@@ -1351,10 +1356,29 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
   const [restrictionActiveTab, setRestrictionActiveTab] = useState<RestrictionConfigTabId>('guard');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
-  };
+  }, []);
+
+  const isSingleTableModuleBranch = normalizeModuleType(activeConfigMenu?.moduleType) === 'single-table';
+  const isMenuInfoBuilt = Boolean(activeConfigMenu?.menuId && activeConfigModuleKey);
+  const {
+    isReady: isSingleTableModuleReady,
+    isLoading: isSingleTableModuleEnsuring,
+  } = useEnsureSingleTableModule({
+    currentModuleCode: activeConfigModuleKey,
+    currentModuleName,
+    isActive: isConfigOpen && configStep >= MODULE_SETTING_STEP && isSingleTableModuleBranch && isMenuInfoBuilt,
+    onShowToast: showToast,
+  });
+  const canLoadSingleTableModuleResources = (
+    isConfigOpen
+    && configStep === MODULE_SETTING_STEP
+    && isSingleTableModuleBranch
+    && Boolean(activeConfigModuleKey)
+    && isSingleTableModuleReady
+  );
 
   const closeConfigWizard = useCallback(() => {
     setIsConfigOpen(false);
@@ -1462,13 +1486,21 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     id: `color_${Date.now()}_${index}`,
     label: `颜色规则 ${index}`,
     disabled: false,
-    field: '',
-    operator: '等于',
-    value: '',
     tab: '',
+    condition: '',
+    forcecolor: '#9f1239',
+    backcolor: '#ffe4e6',
+    orderid: index,
+    useflag: 1,
+    dfcolor: '#9f1239',
+    dbcolor: '#ffe4e6',
+    ifBold: 0,
+    ifItalic: 0,
+    ifStrickOut: 0,
+    ifUnderLine: 0,
+    fontsize: 12,
     textColor: '#9f1239',
     backgroundColor: '#ffe4e6',
-    note: '',
     ...overrides,
   });
   const mapSingleTableContextMenuItem = (item: SingleTableContextMenuDto, index: number) => normalizeContextMenuItem({
@@ -1499,9 +1531,13 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
       orderId,
       tab: toRecordText(getRecordFieldValue(rule, 'tab')),
       label,
+      condition: conditionSql,
       disabled: !useFlag,
-      note: conditionSql,
-      conditionSql,
+      useflag: useFlag ? 1 : 0,
+      forcecolor: foregroundColor || foregroundToken || '#9f1239',
+      backcolor: backgroundColor || backgroundToken || '#ffe4e6',
+      dfcolor: foregroundToken || foregroundColor || '#9f1239',
+      dbcolor: backgroundToken || backgroundColor || '#ffe4e6',
       useFlag,
       foregroundToken,
       backgroundToken,
@@ -1512,6 +1548,11 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
       isItalic: toRecordBoolean(getRecordFieldValue(rule, 'ifitalic', 'ifItalic', 'isitalic', 'isItalic'), false),
       isStrikeOut: toRecordBoolean(getRecordFieldValue(rule, 'ifstrickout', 'ifStrickOut', 'isstrikeout', 'isStrikeOut'), false),
       isUnderline: toRecordBoolean(getRecordFieldValue(rule, 'ifunderline', 'ifUnderLine', 'isunderline', 'isUnderline'), false),
+      ifBold: toRecordBoolean(getRecordFieldValue(rule, 'ifbold', 'ifBold', 'isbold', 'isBold'), false) ? 1 : 0,
+      ifItalic: toRecordBoolean(getRecordFieldValue(rule, 'ifitalic', 'ifItalic', 'isitalic', 'isItalic'), false) ? 1 : 0,
+      ifStrickOut: toRecordBoolean(getRecordFieldValue(rule, 'ifstrickout', 'ifStrickOut', 'isstrikeout', 'isStrikeOut'), false) ? 1 : 0,
+      ifUnderLine: toRecordBoolean(getRecordFieldValue(rule, 'ifunderline', 'ifUnderLine', 'isunderline', 'isUnderline'), false) ? 1 : 0,
+      fontsize: toRecordNumber(getRecordFieldValue(rule, 'fontsize', 'fontSize'), 12),
     });
   };
 
@@ -2976,6 +3017,18 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     }
   };
 
+  const handleConfigPageSave = async () => {
+    if (configStep === MODULE_SETTING_STEP && isSingleTableModuleBranch) {
+      const saved = await saveSingleTableModuleSettingsPage();
+      if (saved) {
+        markStepCompleted(configStep);
+      }
+      return;
+    }
+
+    await handleMenuInfoSave();
+  };
+
   const handleSecondLevelMenuDelete = async (menu: BackendMenuNode) => {
     const moduleTypeProfile = getMenuModuleTypeProfile(menu.moduleType);
     const moduleKey = normalizeMenuCode(menu.purviewId);
@@ -3106,6 +3159,14 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
   });
 
   const handleConfigStepSelect = (stepId: number) => {
+    if (stepId >= MODULE_SETTING_STEP && !isMenuInfoBuilt) {
+      showToast('请先保存菜单信息，创建模块后再进入模块设置。');
+      return;
+    }
+    if (stepId > MODULE_SETTING_STEP && isSingleTableModuleEnsuring) {
+      showToast('单表模块正在初始化，请稍后再继续。');
+      return;
+    }
     setConfigStep(stepId);
     updateCurrentDesignSearch({
       step: stepId,
@@ -3133,13 +3194,18 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
       return;
     }
 
+    const nextStep = configStep + 1;
+    if (nextStep >= MODULE_SETTING_STEP && !isMenuInfoBuilt) {
+      showToast('请先保存菜单信息，创建模块后再进入模块设置。');
+      return;
+    }
+
     const newCompleted = [...completedSteps];
     if (!newCompleted.includes(configStep)) {
       newCompleted.push(configStep);
       setCompletedSteps(newCompleted);
     }
 
-    const nextStep = configStep + 1;
     if (configStep < MAX_CONFIG_STEP) {
       setConfigStep(nextStep);
       updateCurrentDesignSearch({
@@ -4296,6 +4362,61 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     )
     : '';
   const documentConditionOwnerSourceId = treeRelationColumnConfig?.backendId ?? treeRelationColumn?.id ?? '';
+  const {
+    captureDetailResources,
+    captureDetails,
+    captureFieldColors,
+    captureFieldConditions,
+    captureFieldGridFields,
+    captureMainColors,
+    captureMainConditions,
+    captureMainFields,
+    captureMainMenus,
+    isSaving: isSingleTableModuleSettingsSaving,
+    saveCurrentPage: saveSingleTableModuleSettingsPage,
+  } = useSingleTableModuleSettingsSave({
+    activeTab,
+    currentModuleCode: activeConfigModuleKey,
+    currentModuleName,
+    detailTabConfigs,
+    detailTableColumns,
+    detailTableConfigs,
+    detailTabs,
+    documentConditionOwnerFieldKey,
+    documentConditionOwnerSourceId: String(documentConditionOwnerSourceId ?? ''),
+    isActive: canLoadSingleTableModuleResources,
+    leftFilterFields,
+    leftTableColumns,
+    leftTableConfig,
+    mainFilterFields,
+    mainTableColumns,
+    mainTableConfig,
+    mapColorRule: mapSingleTableColorRule,
+    mapConditionRecordToField: mapSingleTableConditionRecordToField,
+    mapContextMenuItem: mapSingleTableContextMenuItem,
+    mapDetailChartConfig: mapSingleTableDetailChartConfig,
+    mapDetailGridFieldToColumn: mapSingleTableDetailGridFieldToColumn,
+    mapDetailRecord: mapSingleTableDetailRecord,
+    mapFieldGridFieldToColumn: mapSingleTableGridFieldRecordToColumn,
+    mapMainFieldRecordToColumn: mapSingleTableFieldRecordToColumn,
+    onShowToast: showToast,
+    setActiveTab,
+    setDetailTabConfigs,
+    setDetailTableColumns,
+    setDetailTableConfigs,
+    setDetailTabs,
+    setLeftFilterFields,
+    setLeftTableColumns,
+    setLeftTableConfig,
+    setMainFilterFields,
+    setMainTableColumns,
+    setMainTableConfig,
+  });
+  const detailTableColumnsRef = useRef(detailTableColumns);
+
+  useEffect(() => {
+    detailTableColumnsRef.current = detailTableColumns;
+  }, [detailTableColumns]);
 
   useEffect(() => {
     setSelectedDetailForDelete([]);
@@ -4388,7 +4509,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
       return;
     }
 
-    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+    if (!canLoadSingleTableModuleResources) {
       return;
     }
 
@@ -4425,18 +4546,24 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
             - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId'), 0),
         );
 
-        setLeftTableColumns((prev) => orderedRows.map((row, index) => {
-          const backendId = getRecordFieldValue(row, 'id');
-          const fieldName = toRecordText(getRecordFieldValue(row, 'fieldname', 'fieldName'));
-          const fieldKey = toRecordText(getRecordFieldValue(row, 'fieldkey', 'fieldKey'));
-          const existing = prev.find((item) => (
-            (backendId != null && getRecordFieldValue(item, 'backendid', 'backendId') === backendId)
-            || (fieldName && item.sourceField === fieldName)
-            || (fieldKey && getRecordFieldValue(item, 'backendfieldkey', 'backendFieldKey') === fieldKey)
-          ));
+        let mappedColumns: any[] = [];
+        setLeftTableColumns((prev) => {
+          mappedColumns = orderedRows.map((row, index) => {
+            const backendId = getRecordFieldValue(row, 'id');
+            const fieldName = toRecordText(getRecordFieldValue(row, 'fieldname', 'fieldName'));
+            const fieldKey = toRecordText(getRecordFieldValue(row, 'fieldkey', 'fieldKey'));
+            const existing = prev.find((item) => (
+              (backendId != null && getRecordFieldValue(item, 'backendid', 'backendId') === backendId)
+              || (fieldName && item.sourceField === fieldName)
+              || (fieldKey && getRecordFieldValue(item, 'backendfieldkey', 'backendFieldKey') === fieldKey)
+            ));
 
-          return mapSingleTableGridFieldRecordToColumn(row, index, existing);
-        }));
+            return mapSingleTableGridFieldRecordToColumn(row, index, existing);
+          });
+
+          return mappedColumns;
+        });
+        captureFieldGridFields(fieldId, mappedColumns);
       } catch {
         if (isActive) {
           applyFallbackColumns();
@@ -4452,6 +4579,8 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
   }, [
     activeConfigMenu?.moduleType,
     activeConfigModuleKey,
+    canLoadSingleTableModuleResources,
+    captureFieldGridFields,
     configStep,
     documentConditionOwnerSourceId,
     isConfigOpen,
@@ -4554,6 +4683,71 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     mainTableColumns,
     mainTableConfig,
   ]);
+  const resolveDetailModuleSnapshotByCodeRef = useRef(resolveDetailModuleSnapshotByCode);
+
+  useEffect(() => {
+    resolveDetailModuleSnapshotByCodeRef.current = resolveDetailModuleSnapshotByCode;
+  }, [resolveDetailModuleSnapshotByCode]);
+
+  useEffect(() => {
+    if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
+      return;
+    }
+
+    if (!canLoadSingleTableModuleResources || !treeRelationColumn || !documentConditionOwnerSourceId) {
+      return;
+    }
+
+    const fieldId = Number(documentConditionOwnerSourceId);
+    if (!Number.isFinite(fieldId) || fieldId <= 0) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadSingleTableFieldColors = async () => {
+      try {
+        const rows = await fetchSingleTableFieldColors(activeConfigModuleKey, fieldId);
+        if (!isActive) {
+          return;
+        }
+
+        const mappedRules = [...rows]
+          .sort(
+            (left, right) => toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId'), 0)
+              - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId'), 0),
+          )
+          .map((rule, index) => mapSingleTableColorRule(rule, index));
+
+        setLeftTableConfig((prev) => ({
+          ...prev,
+          colorRulesEnabled: mappedRules.length > 0,
+          colorRules: mappedRules,
+        }));
+        captureFieldColors(fieldId, mappedRules);
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        showToast(getDashboardErrorMessage(error));
+      }
+    };
+
+    void loadSingleTableFieldColors();
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    activeConfigModuleKey,
+    canLoadSingleTableModuleResources,
+    captureFieldColors,
+    configStep,
+    documentConditionOwnerSourceId,
+    isConfigOpen,
+    treeRelationColumn,
+  ]);
 
   useEffect(() => {
     if (!isConfigOpen) {
@@ -4572,7 +4766,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
       return;
     }
 
-    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+    if (!canLoadSingleTableModuleResources) {
       setIsSingleTableFieldsLoading(false);
       return;
     }
@@ -4590,6 +4784,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
 
         const mappedColumns = rows.map((field, index) => mapSingleTableFieldRecordToColumn(field, index)) as typeof mainTableColumns;
         setMainTableColumns(mappedColumns);
+        captureMainFields(mappedColumns);
         setSelectedMainForDelete([]);
         setInspectorTarget((prev) => {
           if (prev.kind === 'main-col' && !mappedColumns.some((column) => column.id === prev.id)) {
@@ -4619,14 +4814,14 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     return () => {
       isActive = false;
     };
-  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen]);
+  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, canLoadSingleTableModuleResources, captureMainFields, configStep, isConfigOpen]);
 
   useEffect(() => {
     if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
       return;
     }
 
-    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+    if (!canLoadSingleTableModuleResources) {
       return;
     }
 
@@ -4642,6 +4837,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
 
         const mappedFields = rows.map((condition, index) => mapSingleTableConditionRecordToField(condition, index));
         setMainFilterFields(mappedFields);
+        captureMainConditions(mappedFields);
         setSelectedMainFiltersForDelete([]);
         setInspectorTarget((prev) => {
           if (prev.kind === 'main-filter' && !mappedFields.some((field) => field.id === prev.id)) {
@@ -4664,14 +4860,14 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     return () => {
       isActive = false;
     };
-  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen]);
+  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, canLoadSingleTableModuleResources, captureMainConditions, configStep, isConfigOpen]);
 
   useEffect(() => {
     if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
       return;
     }
 
-    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+    if (!canLoadSingleTableModuleResources) {
       return;
     }
 
@@ -4701,6 +4897,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
           formKey: documentConditionOwnerFieldKey,
         }));
         setLeftFilterFields(mappedFields);
+        captureFieldConditions(fieldId, mappedFields);
         setSelectedLeftFiltersForDelete([]);
         setInspectorTarget((prev) => {
           if (prev.kind === 'left-filter' && !mappedFields.some((field) => field.id === prev.id)) {
@@ -4726,6 +4923,8 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
   }, [
     activeConfigMenu?.moduleType,
     activeConfigModuleKey,
+    canLoadSingleTableModuleResources,
+    captureFieldConditions,
     configStep,
     documentConditionOwnerFieldKey,
     documentConditionOwnerSourceId,
@@ -4738,7 +4937,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
       return;
     }
 
-    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+    if (!canLoadSingleTableModuleResources) {
       return;
     }
 
@@ -4782,7 +4981,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
             try {
               if (detailFillType === '表格' || detailFillType === '树表格') {
                 if (detailModuleCode) {
-                  const moduleSnapshot = await resolveDetailModuleSnapshotByCode(detailModuleCode);
+                  const moduleSnapshot = await resolveDetailModuleSnapshotByCodeRef.current(detailModuleCode);
                   if (!isActive) {
                     return null;
                   }
@@ -4875,6 +5074,12 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
         setDetailTabConfigs(nextTabConfigs);
         setDetailTableConfigs(nextGridConfigs);
         setDetailTableColumns(nextDetailColumns);
+        captureDetails({
+          tabConfigs: nextTabConfigs,
+          tableColumns: nextDetailColumns,
+          tableConfigs: nextGridConfigs,
+          tabs: nextTabs,
+        });
         setDetailFilterFields(nextDetailFilters);
         setSelectedDetailForDelete([]);
         setSelectedDetailFiltersForDelete([]);
@@ -4896,14 +5101,21 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     return () => {
       isActive = false;
     };
-  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen, resolveDetailModuleSnapshotByCode]);
+  }, [
+    activeConfigMenu?.moduleType,
+    activeConfigModuleKey,
+    canLoadSingleTableModuleResources,
+    captureDetails,
+    configStep,
+    isConfigOpen,
+  ]);
 
   useEffect(() => {
     if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
       return;
     }
 
-    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+    if (!canLoadSingleTableModuleResources) {
       return;
     }
 
@@ -4929,6 +5141,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
           contextMenuEnabled: mappedMenus.length > 0,
           contextMenuItems: mappedMenus,
         }));
+        captureMainMenus(mappedMenus);
       } catch (error) {
         if (!isActive) {
           return;
@@ -4943,14 +5156,14 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     return () => {
       isActive = false;
     };
-  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen]);
+  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, canLoadSingleTableModuleResources, captureMainMenus, configStep, isConfigOpen]);
 
   useEffect(() => {
     if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
       return;
     }
 
-    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+    if (!canLoadSingleTableModuleResources) {
       return;
     }
 
@@ -4976,6 +5189,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
           colorRulesEnabled: mappedRules.length > 0,
           colorRules: mappedRules,
         }));
+        captureMainColors(mappedRules);
       } catch (error) {
         if (!isActive) {
           return;
@@ -4990,7 +5204,14 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     return () => {
       isActive = false;
     };
-  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, configStep, isConfigOpen]);
+  }, [
+    activeConfigMenu?.moduleType,
+    activeConfigModuleKey,
+    canLoadSingleTableModuleResources,
+    captureMainColors,
+    configStep,
+    isConfigOpen,
+  ]);
 
   useEffect(() => {
     const contextMenuItems = leftTableConfig.contextMenuItems ?? [];
@@ -5055,7 +5276,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
       return;
     }
 
-    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey || !activeTab) {
+    if (!canLoadSingleTableModuleResources || !activeTab) {
       return;
     }
 
@@ -5093,16 +5314,25 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
         )
         .map((item, index) => mapSingleTableColorRule(item, index));
 
-      setDetailTableConfigs((prev) => ({
-        ...prev,
-        [activeTab]: {
+      let nextTableConfig: Record<string, any> = {};
+      setDetailTableConfigs((prev) => {
+        nextTableConfig = {
           ...(prev[activeTab] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
           contextMenuEnabled: mappedMenus.length > 0,
           contextMenuItems: mappedMenus,
           colorRulesEnabled: mappedRules.length > 0,
           colorRules: mappedRules,
-        },
-      }));
+        };
+
+        return {
+          ...prev,
+          [activeTab]: nextTableConfig,
+        };
+      });
+      captureDetailResources(activeTab, {
+        columns: detailTableColumnsRef.current[activeTab] ?? [],
+        tableConfig: nextTableConfig,
+      });
     };
 
     const loadSingleTableDetailDecorations = async () => {
@@ -5157,6 +5387,8 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     activeDetailRelatedModuleCode,
     activeDetailSql,
     activeTab,
+    canLoadSingleTableModuleResources,
+    captureDetailResources,
     configStep,
     currentDetailFillType,
     isConfigOpen,
@@ -5216,7 +5448,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
       return;
     }
 
-    if (normalizeModuleType(activeConfigMenu?.moduleType) !== 'single-table' || !activeConfigModuleKey) {
+    if (!canLoadSingleTableModuleResources) {
       return;
     }
 
@@ -5241,27 +5473,35 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
             return;
           }
 
+          const nextTableConfig = {
+            ...(detailTableConfigs[tabId] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
+            ...moduleSnapshot.gridConfigPatch,
+            defaultQuery: relationCondition,
+            sourceMode: 'module',
+            sourceModuleCode: detailModuleCode,
+            sourceCondition: relationCondition,
+          };
+
           setDetailTableColumns((prev) => ({
             ...prev,
             [tabId]: moduleSnapshot.columns,
           }));
           setDetailTableConfigs((prev) => ({
             ...prev,
-            [tabId]: {
-              ...(prev[tabId] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
-              ...moduleSnapshot.gridConfigPatch,
-              defaultQuery: relationCondition,
-              sourceMode: 'module',
-              sourceModuleCode: detailModuleCode,
-              sourceCondition: relationCondition,
-            },
+            [tabId]: nextTableConfig,
           }));
+          captureDetailResources(tabId, { columns: moduleSnapshot.columns, tableConfig: nextTableConfig });
           return;
         }
 
         if (Number.isFinite(detailId) && detailSql) {
           const detailGridFields = await fetchSingleTableDetailGridFields(activeConfigModuleKey, detailId);
           const columns = detailGridFields.map((field, index) => mapSingleTableDetailGridFieldToColumn(field, index));
+          const nextTableConfig = {
+            ...(detailTableConfigs[tabId] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
+            sourceMode: 'sql',
+            sourceModuleCode: '',
+          };
 
           setDetailTableColumns((prev) => ({
             ...prev,
@@ -5269,12 +5509,9 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
           }));
           setDetailTableConfigs((prev) => ({
             ...prev,
-            [tabId]: {
-              ...(prev[tabId] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
-              sourceMode: 'sql',
-              sourceModuleCode: '',
-            },
+            [tabId]: nextTableConfig,
           }));
+          captureDetailResources(tabId, { columns, tableConfig: nextTableConfig });
         }
         return;
       }
@@ -5294,13 +5531,16 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
           return;
         }
 
+        const nextTableConfig = {
+          ...(detailTableConfigs[tabId] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
+          chartConfig: mapSingleTableDetailChartConfig(firstChart),
+        };
+
         setDetailTableConfigs((prev) => ({
           ...prev,
-          [tabId]: {
-            ...(prev[tabId] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
-            chartConfig: mapSingleTableDetailChartConfig(firstChart),
-          },
+          [tabId]: nextTableConfig,
         }));
+        captureDetailResources(tabId, { columns: detailTableColumns[tabId] ?? [], tableConfig: nextTableConfig });
         return;
       }
 
@@ -5314,13 +5554,16 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
             )
             : '';
 
+        const nextTableConfig = {
+          ...(detailTableConfigs[tabId] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
+          webUrl,
+        };
+
         setDetailTableConfigs((prev) => ({
           ...prev,
-          [tabId]: {
-            ...(prev[tabId] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' })),
-            webUrl,
-          },
+          [tabId]: nextTableConfig,
         }));
+        captureDetailResources(tabId, { columns: detailTableColumns[tabId] ?? [], tableConfig: nextTableConfig });
       }
     } catch (error) {
       showToast(getDashboardErrorMessage(error));
@@ -5328,7 +5571,10 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
   }, [
     activeConfigMenu?.moduleType,
     activeConfigModuleKey,
+    canLoadSingleTableModuleResources,
+    captureDetailResources,
     configStep,
+    detailTableColumns,
     detailTabConfigs,
     detailTableConfigs,
     resolveDetailModuleSnapshotByCode,
@@ -5805,11 +6051,18 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
           modulePreviewStep: MODULE_PREVIEW_STEP,
           processDesignStep: PROCESS_DESIGN_STEP,
           moduleSettingStep: MODULE_SETTING_STEP,
-          nextDisabled: configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving || activeConfigMenu === null),
+          nextDisabled: (configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving || activeConfigMenu === null))
+            || (configStep + 1 >= MODULE_SETTING_STEP && !isMenuInfoBuilt)
+            || (configStep === MODULE_SETTING_STEP && (isSingleTableModuleEnsuring || isSingleTableModuleSettingsSaving)),
           nextLabel: configStep === MODULE_PREVIEW_STEP ? '完成配置' : '下一步',
           restrictionStep: RESTRICTION_STEP,
-          saveDisabled: configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving),
-          saveLabel: configStep === 2 && isMenuInfoSaving ? (activeConfigMenu ? '保存中...' : '创建中...') : '保存本页',
+          saveDisabled: (configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving))
+            || (configStep === MODULE_SETTING_STEP && (isSingleTableModuleEnsuring || isSingleTableModuleSettingsSaving)),
+          saveLabel: configStep === 2 && isMenuInfoSaving
+            ? (activeConfigMenu ? '保存中...' : '创建中...')
+            : configStep === MODULE_SETTING_STEP && isSingleTableModuleSettingsSaving
+              ? '保存中...'
+              : '保存本页',
           showFullscreenToggle: configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP,
         },
         actions: {
@@ -5819,7 +6072,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
           handleLockedTypeStepSelect,
           onClose: closeConfigWizard,
           onSave: () => {
-            void handleMenuInfoSave();
+            void handleConfigPageSave();
           },
           onToggleFullscreen: () => setIsFullscreenConfig((prev) => !prev),
         },

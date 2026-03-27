@@ -201,12 +201,12 @@ function getRecordFieldValue(record: Record<string, unknown>, ...keys: string[])
     }
   }
 
-  const normalizedEntries = Object.entries(record).map(([key, value]) => [normalizeRecordKey(key), value] as const);
+  const normalizedRecordEntries = Object.entries(record).map(([key, value]) => [normalizeRecordKey(key), value] as const);
   for (const key of keys) {
     const normalizedKey = normalizeRecordKey(key);
-    const matched = normalizedEntries.find(([candidate]) => candidate === normalizedKey);
-    if (matched) {
-      return matched[1];
+    const matchedEntry = normalizedRecordEntries.find(([candidate]) => candidate === normalizedKey);
+    if (matchedEntry) {
+      return matchedEntry[1];
     }
   }
 
@@ -248,11 +248,21 @@ function buildBaseColumnLookup(columns: Record<string, any>[]): ColumnLookup {
     const sourceFieldKey = normalizeLookupKey(column.sourceField || column.fieldName);
     const nameKey = normalizeLookupKey(column.name);
 
-    if (backendIdKey) byBackendId.set(backendIdKey, column);
-    if (controlNameKey) byControlName.set(controlNameKey, column);
-    if (fieldKey) byFieldKey.set(fieldKey, column);
-    if (sourceFieldKey) bySourceField.set(sourceFieldKey, column);
-    if (nameKey) byName.set(nameKey, column);
+    if (backendIdKey) {
+      byBackendId.set(backendIdKey, column);
+    }
+    if (controlNameKey) {
+      byControlName.set(controlNameKey, column);
+    }
+    if (fieldKey) {
+      byFieldKey.set(fieldKey, column);
+    }
+    if (sourceFieldKey) {
+      bySourceField.set(sourceFieldKey, column);
+    }
+    if (nameKey) {
+      byName.set(nameKey, column);
+    }
   });
 
   return { byBackendId, byControlName, byFieldKey, byName, bySourceField };
@@ -375,8 +385,13 @@ function mapDesignerGroup(group: SingleTableDesignerGroupDto, groupIndex: number
   const rect = resolveLayoutRect(group);
 
   return {
-    configuredColumnsPerRow: Math.max(1, toRecordNumber(getRecordFieldValue(group, ...GROUP_COLUMNS_PER_ROW_KEYS), 2)),
-    configuredRows: clampGroupRows(toRecordNumber(getRecordFieldValue(group, ...GROUP_ROW_COUNT_KEYS), 1)),
+    configuredColumnsPerRow: Math.max(
+      1,
+      toRecordNumber(getRecordFieldValue(group, ...GROUP_COLUMNS_PER_ROW_KEYS), 2),
+    ),
+    configuredRows: clampGroupRows(
+      toRecordNumber(getRecordFieldValue(group, ...GROUP_ROW_COUNT_KEYS), 1),
+    ),
     description: toRecordText(getRecordFieldValue(group, 'description', 'remark', 'memo')),
     id: toRecordText(getRecordFieldValue(group, 'id', 'groupid', 'groupId')) || `designer_group_${groupIndex + 1}`,
     name: toRecordText(getRecordFieldValue(group, 'groupname', 'groupName', 'name', 'caption', 'title')) || `Group ${groupIndex + 1}`,
@@ -420,12 +435,16 @@ function mapDesignerLayoutToEntry(
 function chooseTargetGroup(entry: DesignerLayoutEntry, groups: DesignerGroupMeta[]) {
   const groupsWithRect = groups.filter((group) => group.rect);
 
-  const topLeftMatches = groupsWithRect.filter((group) => group.rect && isPointInsideRect(group.rect, entry.rect.left + 1, entry.rect.top + 1));
+  const topLeftMatches = groupsWithRect.filter((group) => (
+    group.rect && isPointInsideRect(group.rect, entry.rect.left + 1, entry.rect.top + 1)
+  ));
   if (topLeftMatches.length > 0) {
     return [...topLeftMatches].sort((left, right) => getRectArea(left.rect!) - getRectArea(right.rect!))[0] ?? null;
   }
 
-  const centerMatches = groupsWithRect.filter((group) => group.rect && isPointInsideRect(group.rect, entry.rect.centerX, entry.rect.centerY));
+  const centerMatches = groupsWithRect.filter((group) => (
+    group.rect && isPointInsideRect(group.rect, entry.rect.centerX, entry.rect.centerY)
+  ));
   if (centerMatches.length > 0) {
     return [...centerMatches].sort((left, right) => getRectArea(left.rect!) - getRectArea(right.rect!))[0] ?? null;
   }
@@ -440,8 +459,14 @@ function chooseTargetGroup(entry: DesignerLayoutEntry, groups: DesignerGroupMeta
 
 function buildGroupRowAssignments(entries: DesignerLayoutEntry[]) {
   const deduplicatedEntries = [...entries]
-    .sort((left, right) => left.rect.top - right.rect.top || left.rect.left - right.rect.left || left.orderId - right.orderId)
-    .filter((entry, index, sortedEntries) => sortedEntries.findIndex((candidate) => candidate.columnId === entry.columnId) === index);
+    .sort((left, right) => (
+      left.rect.top - right.rect.top
+      || left.rect.left - right.rect.left
+      || left.orderId - right.orderId
+    ))
+    .filter((entry, index, sortedEntries) => (
+      sortedEntries.findIndex((candidate) => candidate.columnId === entry.columnId) === index
+    ));
 
   const rows: DesignerLayoutEntry[][] = [];
   let currentRowBaselineTop: number | null = null;
@@ -469,7 +494,10 @@ function buildGroupRowAssignments(entries: DesignerLayoutEntry[]) {
   });
 
   rows.forEach((rowEntries) => {
-    rowEntries.sort((left, right) => left.rect.left - right.rect.left || left.orderId - right.orderId);
+    rowEntries.sort((left, right) => (
+      left.rect.left - right.rect.left
+      || left.orderId - right.orderId
+    ));
   });
 
   const columnHeights: Record<string, number> = {};
@@ -525,7 +553,9 @@ function buildDesignerGroupBoardConfig(
 
   const normalizedGroups = groups.map((group) => {
     const layoutAssignment = buildGroupRowAssignments(groupedEntries.get(group.id) ?? []);
-    const effectiveRows = clampGroupRows(Math.max(group.configuredRows, layoutAssignment.rows || 1));
+    const effectiveRows = clampGroupRows(
+      Math.max(group.configuredRows, layoutAssignment.rows || 1),
+    );
 
     return {
       columnHeights: layoutAssignment.columnHeights,
@@ -594,10 +624,12 @@ export function useArchiveLayoutPaletteColumns({
 
         const lookup = buildBaseColumnLookup(mainTableColumns);
         const mappedColumns = [...controlRows]
-          .sort((left, right) => (
-            toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId', 'tabOrder'), 0)
-            - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId', 'tabOrder'), 0)
-          ))
+          .sort(
+            (left, right) => (
+              toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId', 'tabOrder'), 0)
+              - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId', 'tabOrder'), 0)
+            ),
+          )
           .map((row, index) => mapDesignerControlToColumn(row, index, lookup));
 
         setDesignerColumns(mappedColumns);

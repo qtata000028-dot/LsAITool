@@ -310,3 +310,85 @@
 - In a giant function component, moving a `useMemo` earlier can trigger Temporal Dead Zone failures if the memoized code calls helpers backed by later `const` declarations. `tsc` and `vite build` can still pass while the page crashes at runtime.
 - For shared numeric helpers such as `clampValue`, prefer module-level function declarations before introducing early memoized derivations. That removes initialization-order risk and keeps later refactors safer.
 - After any performance refactor that reorders derivations, verify the real page in a browser. Static build success is not enough for this file.
+
+## 2026-03-25 Login Route Must Not Eagerly Import Dashboard
+- When the login route and the dashboard route share one entry component, avoid statically importing the entire dashboard module at the top of `App.tsx`. A runtime failure anywhere in the dashboard dependency chain can blank the login page before it even gets a chance to render.
+- Protected or heavyweight workbench branches should be lazy-loaded and wrapped with a local error boundary. That keeps public entry screens recoverable even when downstream module-setting code is unstable.
+- A passing `vite build` does not prove the safe route is isolated. Real startup verification should include the unauthenticated path, not just the dashboard path.
+
+## 2026-03-25 Backend Envelope Mismatch Can Crash The Login Route
+- Before trusting a backend list endpoint as `T[]`, check the real payload shape. This backend returns `{ code, message, data }`, so treating the whole response as an array will blow up immediately on calls like `.find()` and `.map()`.
+- Fix response-shape mismatches at the request layer first. Central envelope unwrapping in `http.ts` is safer and less repetitive than patching each screen one by one.
+- Public entry screens should still keep lightweight `Array.isArray` guards around remote lists. Even with a normalized request layer, malformed or partially migrated endpoints should not be able to blank the whole page.
+
+## 2026-03-25 Field Type Dropdown Must Follow Backend Options, Not Local Labels
+- If the backend already exposes `fieldsqltag-options`, the inspector dropdown should display those option rows directly. Keeping a separate local `文本/数字/下拉框` list for one branch creates immediate inconsistency.
+- For condition configuration, current type recovery must read `controltype/controlType` in addition to `fieldsqltag/fieldSqlTag`; otherwise the dropdown cannot correctly show the persisted selection.
+- When both backend `showname` and local fallback labels exist, prefer the backend label first. Fallbacks should only cover missing or malformed option rows, not override valid server metadata.
+
+## 2026-03-25 Detail Columns Can Already Be Loaded But Still Disappear At Render Time
+- When a user says 明细列接口已经有值但界面没全显示, do not stop at the fetch branch. For this workbench, detail columns were already loaded from `single-table/modules/{dllCoId}/fields`; the loss happened later in the table-builder render filter.
+- `MemoTableBuilder` falls back to `helpers.isRenderableColumn(column)` unless a branch explicitly passes `renderableColumns`. That generic rule currently hides `visible=false` and `width<=0`, which is correct for the main table but wrong for detail screens that must expose all backend fields.
+- For branches that need to show every returned field, prefer passing explicit `renderableColumns` instead of weakening the shared global visibility rule. That keeps the fix scoped and avoids regressing the main table.
+
+## 2026-03-25 Archive Layout Editor Needs Its Own Field Source
+- If the user points at the archive layout editor's right-side field list, do not assume it should keep reusing `mainTableColumns`. That workbench has a dedicated backend source: `single-table/modules/{dllCoId}/designer-controls`.
+- For layout-only field pools, keep the fetch and mapping inside `src/features/dashboard/module-settings` instead of pushing another special-case branch into `Dashboard.tsx`. The main page should only pass module-level coordination inputs such as `currentModuleCode` and toast handlers.
+- When replacing the layout editor field source, prefer merging designer-control rows with existing main-table field metadata. That preserves preview/type behavior while still switching the source of truth for layout width, height, and palette membership.
+
+## 2026-03-25 Archive Layout Groups Must Follow Designer Groups Too
+- Once the layout editor field pool switches to `designer-controls`, do not leave the group canvas on the old front-end-only `currentDetailBoard.groups` assumption. The backend already exposes the matching group source through `single-table/modules/{dllCoId}/designer-groups`.
+- `designer-groups` and `designer-controls` should be mapped with the same field identity strategy; otherwise the right-side palette and the group canvas will talk about different field IDs and drag assignment will drift.
+- For this editor, the safest pattern is to load both sources together inside the module-settings feature and hydrate the editor state once on open. That keeps the modal internally consistent without turning the whole dashboard state tree into a special-case designer mode.
+
+## 2026-03-25 Designer Group Fields Are Not Always The Real Membership Source
+- When the user explicitly says “控件属于哪个分组是通过位置计算的”, stop trusting `designer-groups.fields` as the authoritative membership list. That service-level nesting may be a convenience view, but the real source of truth for layout editors can still be the separate `designer-layout` coordinate table.
+- For Delphi-style layout data pulled via `select *`, treat group rectangles and control rectangles as separate datasets. Use `designer-groups` for the group boxes, `designer-layout` for placed controls, and derive membership from rectangle containment instead of assuming backend-attached children are correct.
+- When a backend table is exposed as raw records, build field-name readers that tolerate historical casing and synonyms (`left/top/width/height`, `controlLeft/controlTop`, etc.). Otherwise the logic can look correct in code but silently produce empty groups at runtime.
+
+## 2026-03-26 Single-Table Module Settings Must Be Gated By Menu Persistence
+- In this wizard, “菜单信息已建好” is stronger than “当前在第 2 步点过保存”. The safe gate is whether a real menu node already exists and has a stable `menuId + purviewId/moduleCode`; otherwise users can jump from steps 3/4 into module settings with no durable module identity.
+- If the single-table parent record may not exist yet, do not let every child loader (`fields/conditions/details/menus/colors`) race ahead and fail independently. Add one module-level ensure step first, then start the child-resource effects only after that record is ready.
+- When a hook performs backend bootstrapping, avoid depending on unstable inline callbacks like a freshly recreated `showToast`. Either memoize the callback or keep it out of the effect dependency loop, or the bootstrap request can repeat unexpectedly.
+
+## 2026-03-26 Single-Table Save Contract Is POST-Upsert Plus DELETE
+- For this backend, do not keep assuming a REST-style split of `POST=create` and `PUT=update`. The real write contract is resource-level `POST` upsert: no `id` means create, with `id` means save/update, and deletion stays on `DELETE`.
+- Once the user provides the real write contract, stop extrapolating missing interfaces from old controller reads or earlier assumptions. Save-plan analysis should immediately pivot to the user-confirmed contract, even if it differs from previous code reading.
+- Under this contract, the front-end save orchestrator's main job is to classify each record into `create / update / delete`, not to choose among many HTTP verbs. Build the diff logic around record identity first, then map creates/updates to `POST(with/without id)` uniformly.
+
+## 2026-03-26 Detail Save Target Depends On UnionModule
+- For single-table detail resources, do not treat all detail columns/colors/menus as local detail data by default. The exact split must follow the user's latest interface mapping, not an earlier paraphrase.
+- In the latest confirmed rule, detail columns, detail colors, and detail menus all move to the related module root when `UnionModule` is present, using the main-module `fields/colors/menus` endpoints with `dllCoId = UnionModule`.
+- For branches the user re-explains with concrete endpoint lists, trust the explicit endpoint mapping over the earlier natural-language summary. Restating a rule loosely can easily drift from the real API contract.
+- Chart config is a separate branch from detail columns/colors/menus. Even when a detail has `UnionModule`, chart save still belongs to the current detail unless the user explicitly redefines that rule.
+- When the user says “先不管布局编辑器里的保存”, remove designer-layout from the current save scope instead of leaving it half-included in the plan. Partial inclusion is worse than explicit exclusion for a multi-resource save workflow.
+## 2026-03-26 Merge Platform Entry Must Not Replace The Existing App Shell By Default
+- If the active branch is still a single-entry login/workbench product, do not let a merge silently replace `src/App.tsx` with a multi-platform router. Preserve the current product entry unless the user explicitly asks to migrate routes.
+- When a user reports the main page suddenly looks broken right after a merge, inspect the app entry and current browser path before touching component styles. A redirect from `/` to `/design` can look like a layout failure while the real issue is simply the wrong shell.
+- Before treating post-merge `/api` 404s as a backend regression, clear duplicate local `vite` and `tsx watch` processes. Stale dev servers can keep serving old route behavior and make proxied API paths fall back to `index.html`, which masquerades as a code bug.
+
+## 2026-03-26 Default Object Props Can Trigger Infinite Dashboard Effects
+- In `Dashboard`, do not use an object literal like `routeContext = {}` as a function-parameter default when downstream effects depend on that value. A new object is created on every render, so any effect keyed by `[routeContext]` will rerun forever.
+- If a page-level prop is optional but used as an effect dependency, default it to a module-level stable constant or normalize it with memoization before wiring effects to it.
+- When the browser network panel shows the same menu endpoints looping with no user interaction, inspect top-level optional object props first. An unstable default prop can look like a state-flow bug even when the effect bodies themselves are correct.
+
+## 2026-03-26 Module-Settings Effects Must Not Reload From Their Own Hydration State
+- In the module-settings step, avoid wiring resource-loading effects to collection objects that the same effect hydrates, such as `detailTableConfigs` or `detailTableColumns`. If an effect fetches menus/colors and then immediately writes those collections back, using them as dependencies will create a fetch loop.
+- When a loader only needs the latest helper callback or latest column snapshot during merge/capture, keep that value in a ref and read `ref.current` inside the effect. Do not let callback identity churn or large mutable collections decide whether the network request should run again.
+- For related-module detail hydration, separate "when should we refetch" from "what helper logic do we use during this fetch". A callback like `resolveDetailModuleSnapshotByCode` can legitimately depend on many states, but those dependency changes should not automatically retrigger the parent detail-loading effect unless the fetch inputs themselves changed.
+
+## 2026-03-26 UI Editors Must Follow The Backend Table Shape When The User Gives It Explicitly
+- If the user provides the exact table structure for an editor page, stop preserving older front-end abstractions like `field/operator/value` just because they still "sort of work". The form should be realigned to the backend field model, not wrapped in a second invented rules vocabulary.
+- For color rules, the authoritative editing model is the single-table color table fields (`condition`, `forcecolor`, `backcolor`, `useflag`, `dfcolor`, `dbcolor`, style flags, `fontsize`). Any extra UI-only fields such as `label`, `disabled`, `textColor`, or `backgroundColor` should be treated as compatibility/preview helpers, not the primary schema.
+- When fixing schema drift in an editor, update all three layers together: default object builder, API-to-state mapper, and the editor component itself. Fixing only the form labels leaves newly created rows and loaded rows speaking different field dialects.
+
+## 2026-03-26 React Vendor Chunk Matching Must Be Exact
+- In `vite.config.ts`, never classify the React runtime chunk with a broad rule like `id.includes('react')`. That will accidentally catch packages such as `react-rnd` or `lucide-react`, and Rollup can split them into a `react-vendor` chunk that later depends back on `vendor`.
+- When a production bundle throws `Cannot read properties of undefined (reading 'memo')` from a vendor chunk, inspect the built chunk import graph before touching app code. A `vendor <-> react-vendor` cycle can leave React exports uninitialized even though `vite build` succeeds.
+- For manual chunking, match only the real runtime packages (`react`, `react-dom`, `scheduler`) using normalized `node_modules` paths. Everything else in the React ecosystem should stay in its own explicit bucket or fall back to `vendor`.
+
+## 2026-03-26 Save Orchestrators Should Not Upsert Baseline-Identical Rows
+- A save orchestrator that blindly `POST`s every current row is only half-finished, even if the backend supports upsert. Users will immediately notice unchanged resources still hitting write endpoints, and that noise makes later save debugging much harder.
+- For resources that already keep an entry baseline, compare the normalized POST body against the baseline body before writing. If they are identical, reuse the baseline row locally and skip the network request.
+- When building diff-by-body logic, define a stable identity key first (`id`, then durable business key like `fieldKey`). Without a stable match key, a harmless reorder or remap can look like a delete-and-recreate of every row.
+- Do not stop after fixing just one resource branch if the save orchestrator still uses the same unconditional-upsert pattern elsewhere. Once a user reports “nothing changed but save still posts”, audit the whole save path in the current page and convert the repeated resource loops together.
