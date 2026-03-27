@@ -108,7 +108,7 @@ export function ResearchRecordWordEditor({
           documentServerUrl={runtime.documentServerUrl}
           id="research-record-word-editor"
           onLoadComponentError={(errorCode, errorDescription) => {
-            const nextMessage = `Word 组件加载失败（${errorCode}）`;
+            const nextMessage = `Word 组件加载失败：${errorCode}`;
             setLoadError(nextMessage);
             onStatusChange?.(errorDescription || nextMessage);
           }}

@@ -3615,3 +3615,48 @@
 - 右侧预览已恢复到原始样式结构；导出模板则单独朝这套预览版式对齐，并补充 Word 兼容边框写法。
 - 用户最新反馈后，右侧预览已恢复到原始样式；导出则改为单独增强 Word 兼容表格边框，避免再让预览为导出妥协。
 - 当前唯一残留风险不是类型错误，而是本机 `vite build` 原生进程退出；`tsc --noEmit` 已通过，后续若要发布，需继续排查该构建进程崩溃。
+
+## 2026-03-27 当前分支 merge 冲突收敛
+
+### Requirement Spec
+- 目标：
+  - 解决当前分支正在进行的 merge 冲突，恢复可继续提交的 git 状态。
+- 影响范围：
+  - `.vscode/launch.json`
+- 关键约束：
+  - 以当前 Windows 开发环境可用为优先。
+  - 保留完整开发栈入口，同时保留浏览器直接调试入口。
+  - 不引入新的平台专属无效配置。
+- 不做什么：
+  - 本轮不改业务代码。
+  - 不顺带调整其它 VS Code 配置文件。
+- 验证标准：
+  - 冲突标记消失。
+  - `launch.json` 是合法 JSON。
+  - git 不再显示未解决冲突文件。
+
+### Checklist
+- [x] 识别冲突文件和两边差异
+- [x] 合并成适合当前环境的 `launch.json`
+- [x] 标记冲突已解决
+- [x] 验证 JSON 与 git 状态
+
+### Progress Notes
+- 已确认当前未解决冲突实际只有 `.vscode/launch.json`。
+- 冲突两边分别代表：
+  - 一边保留完整开发栈入口 `Run Full App / Start Full Dev Stack Only`
+  - 一边保留 Windows 下可直接用的 Edge 调试入口与 `dev:client`
+- 最终合并策略：
+  - 保留完整开发栈入口
+  - 保留 `Run App in Installed Edge`
+  - 保留 `Start Vite Dev Server Only`
+  - 去掉当前环境无价值的 Safari 启动项
+
+### Verification
+- `Get-Content .vscode/launch.json | ConvertFrom-Json | Out-Null`
+- `git diff --name-only --diff-filter=U` 为空
+
+### Result Notes
+- 当前分支已不存在未解决冲突文件。
+- `.vscode/launch.json` 现在同时支持完整开发栈启动与 Windows 本机 Edge 调试。
+- 当前仓库仍有普通修改文件，但它们不再属于 git 冲突状态。
