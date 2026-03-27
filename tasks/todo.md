@@ -3511,3 +3511,181 @@
 - 第十三轮进一步统一了标题下方工作区底色，让页头与内容区的色温更接近，减少割裂感。
 - 第十四轮把“详细列”入口从左侧主表头部移走，并迁到右侧主表设置区，只在点击主表后显示。
 - 仍保留一个非阻塞风险：`Dashboard` 产物 chunk 仍偏大，但和本次样式调整无关。
+
+## 2026-03-27 调研记录主/明细接口接入与导出改造
+
+### Requirement Spec
+- 目标：
+  - 调研记录模块进入后，改成从后端主记录/明细接口加载数据，而不是只依赖本地 `localStorage draft`。
+  - 若主记录列表查到数据，当前阶段只加载第一行主记录，并同步加载其明细。
+  - 若主记录列表没有数据，不自动创建；仅在用户点击“保存”时再创建主记录与明细。
+  - 底部按钮改成“保存”和“导出”两个按钮。
+  - 导出要按右侧预览样式生成 Word 文件。
+- 影响范围：
+  - `src/features/dashboard/research-record-workbench.tsx`
+  - 调研记录预览/导出能力
+  - 新增 survey 接口封装与 dto 映射
+- 关键约束：
+  - 不改 Dashboard 主壳层路由和其它工作台逻辑。
+  - 主记录默认只取列表首条，不做分页/选择列表。
+  - 保存时遵守后端 `POST body 无 id=新增，有 id=保存` 规则。
+  - 主记录与明细都需要走现有鉴权请求层。
+  - 导出产物要尽量贴合右侧 Word 预览版式。
+- 不做什么：
+  - 本轮不接主记录列表切换器。
+  - 本轮不做多主记录管理。
+  - 本轮不重做整套调研记录 UI，只接数据链路和按钮。
+- 验证标准：
+  - 进入调研记录模块时能按接口加载首条主记录及其明细。
+  - 无数据时不会自动创建，点击保存后才发创建请求。
+  - 有数据时点击保存走保存接口。
+  - 导出按钮能生成 Word 文件。
+  - `npm run lint`、`npm run build` 通过。
+
+### Checklist
+- [x] 新增 survey 主记录/明细接口封装
+- [x] 建立主记录/明细 dto 与 research draft/content item 的双向映射
+- [x] 进入模块时加载主记录首条与其明细
+- [x] 底部按钮拆成“保存 / 导出”
+- [x] 接入主记录与明细保存逻辑
+- [x] 导出改成按右侧预览样式生成 Word 文件
+- [x] 完成 lint/build 验证并记录结果
+
+### Risks / Assumptions
+- 假设当前“调研部门”仍可用一级菜单名作为展示值，因主记录接口只返回 `departId` 不直接返回部门名称。
+- 假设右侧预览样式可以通过 HTML Word 兼容导出实现；若后续必须输出真 `docx` 二进制，再补专门生成链路。
+- 假设明细的 `position1/2/3`、`workingRate1/2/3` 可以先映射到当前 UI 的 `jobRole/timeShare` 聚合表达，不额外重做表单结构。
+- 当前 `npm run build` 在 Windows 本机上于 Vite transform 后原生进程退出，退出码 `-1073740791`；这轮已记录为环境级残留风险。
+
+### Progress Notes
+- 已完成需求规格梳理，并确认当前调研记录模块现状：
+  - 左侧仍是一套本地 `draft` workbench。
+  - 右侧已有两套能力：OnlyOffice Word 编辑器与模板预览。
+  - 底部当前只有“导出保存”，导出逻辑还是 HTML 文件。
+- 用户进一步修正了调研主记录的查询约束：
+  - 首条加载查询当前不需要任何参数，直接查询全部后取第一条。
+  - 不再使用当前登录人 `departmentId` 作为查询参数。
+  - 也不再使用当前入口 `id` 参与首条查询。
+  - `departId` 仅保留给主记录新增/保存时的默认值逻辑。
+- 已定位当前接入落点：
+  - 主工作台：`src/features/dashboard/research-record-workbench.tsx`
+  - 右侧预览：`src/features/dashboard/research-record-word-template-preview.tsx`
+  - Word 运行时：`src/features/dashboard/research-record-word-template-config.ts`
+- 已新增 `src/lib/backend-survey.ts`，封装主记录 / 明细的列表、单条、保存、删除接口，并统一走 `auth: true`。
+- 已将调研记录工作台改成：
+  - 进入模块先查主记录列表。
+  - 若有数据，只加载第一条主记录和其明细。
+  - 若无数据，不自动创建，只回填默认草稿。
+- 用户后续再次修正后，已把“首条加载”改成无参数查询全部再取第一条：
+  - `departId` 不再参与首条查询。
+  - 当前一级菜单 `id` 也不再参与首条查询。
+  - `departId` 仅保留给主记录新增/保存时的默认值链路。
+- 已将主记录 / 明细映射到左侧现有控件：
+  - 主记录映射到调研信息、部门情况、输出确认。
+  - 明细映射到调研内容区的内容项。
+- 已把底部按钮拆成“保存 / 导出”，并分别接入：
+  - 保存：`POST /api/survey/mains` 与 `POST /api/survey/mains/{mainId}/details`
+  - 导出：按右侧 Word 预览样式生成 `.doc`
+- 用户继续提高导出要求：
+  - 导出的 Word 必须严格按右侧预览样式输出。
+  - 重点包括表格线、文本位置、表格大小、行高与整体版面。
+  - 这轮应优先消除“预览模板”和“导出模板”双份结构漂移的问题。
+- 已将调研记录 Word 预览和导出收敛到共用模板：
+  - 新增 `research-record-word-template-shared.ts` 统一输出页面结构与核心 CSS。
+  - 右侧预览改为直接渲染这套共享模板。
+  - 导出 `.doc` 也改成使用同一套页面 HTML 与版式 CSS。
+- 用户随后明确反馈：
+  - 右侧预览原始样式被改坏，必须先恢复到之前的样式。
+  - 导出文档当前看不到表格边框线，Word 兼容边框需要单独补强。
+  - 本轮优先级应调整为“预览保真优先，导出贴近预览”，而不是继续让预览迁就导出。
+- 已按反馈调整实现策略：
+  - 右侧预览组件已恢复到修改前的原始实现与样式结构。
+  - 导出链路单独增加 Word 兼容边框增强，不再通过修改预览 DOM 去迁就导出。
+- 中途发现 `research-record-workbench.tsx` 工作副本被乱码化，先恢复到 `HEAD` 干净版本，再重新按 UTF-8 补回接口逻辑，避免在损坏文件上继续叠修。
+
+### Verification
+- `npm run lint` 通过
+- `npm run build` 未完全通过：Vite 在 `transforming... ✓ 2242 modules transformed.` 后进程原生退出，退出码 `-1073740791`
+
+### Result Notes
+- 调研记录模块现在不再依赖本地 `localStorage draft` 作为主数据源，而是优先读取后端主记录首条及其明细。
+- 调研记录首条查询当前已改成无参数查询全部后取第一条，不再错误使用当前登录人的 `departmentId` 或当前入口 `id`。
+- 当前阶段满足“有数据加载首条、无数据不自动创建、点击保存才创建/保存”的接口规则。
+- 导出能力已从旧的 HTML 报告切到贴近右侧模板预览的 Word 版式。
+- 右侧预览已恢复到原始样式结构；导出模板则单独朝这套预览版式对齐，并补充 Word 兼容边框写法。
+- 用户最新反馈后，右侧预览已恢复到原始样式；导出则改为单独增强 Word 兼容表格边框，避免再让预览为导出妥协。
+- 当前唯一残留风险不是类型错误，而是本机 `vite build` 原生进程退出；`tsc --noEmit` 已通过，后续若要发布，需继续排查该构建进程崩溃。
+
+## 2026-03-27 当前分支 merge 冲突收敛
+
+### Requirement Spec
+- 目标：
+  - 解决当前分支正在进行的 merge 冲突，恢复可继续提交的 git 状态。
+- 影响范围：
+  - `.vscode/launch.json`
+- 关键约束：
+  - 以当前 Windows 开发环境可用为优先。
+  - 保留完整开发栈入口，同时保留浏览器直接调试入口。
+  - 不引入新的平台专属无效配置。
+- 不做什么：
+  - 本轮不改业务代码。
+  - 不顺带调整其它 VS Code 配置文件。
+- 验证标准：
+  - 冲突标记消失。
+  - `launch.json` 是合法 JSON。
+  - git 不再显示未解决冲突文件。
+
+### Checklist
+- [x] 识别冲突文件和两边差异
+- [x] 合并成适合当前环境的 `launch.json`
+- [x] 标记冲突已解决
+- [x] 验证 JSON 与 git 状态
+
+### Progress Notes
+- 已确认当前未解决冲突实际只有 `.vscode/launch.json`。
+- 冲突两边分别代表：
+  - 一边保留完整开发栈入口 `Run Full App / Start Full Dev Stack Only`
+  - 一边保留 Windows 下可直接用的 Edge 调试入口与 `dev:client`
+- 最终合并策略：
+  - 保留完整开发栈入口
+  - 保留 `Run App in Installed Edge`
+  - 保留 `Start Vite Dev Server Only`
+  - 去掉当前环境无价值的 Safari 启动项
+
+### Verification
+- `Get-Content .vscode/launch.json | ConvertFrom-Json | Out-Null`
+- `git diff --name-only --diff-filter=U` 为空
+
+### Result Notes
+- 当前分支已不存在未解决冲突文件。
+- `.vscode/launch.json` 现在同时支持完整开发栈启动与 Windows 本机 Edge 调试。
+- 当前仓库仍有普通修改文件，但它们不再属于 git 冲突状态。
+
+## 2026-03-27 当前分支启动链路巡检
+
+### Requirement Spec
+- 目标：
+  - 重新运行当前分支项目，并确认本地开发地址能正常打开。
+- 影响范围：
+  - Vite 开发服务启动链路。
+  - `research-record-word-editor` 相关模块解析。
+- 关键约束：
+  - 只修启动阻塞，不顺带改业务逻辑。
+  - 修复后必须实际访问本地地址确认。
+- 不做什么：
+  - 不处理生产构建的历史环境崩溃问题。
+- 验证标准：
+  - `npm run lint` 通过。
+  - `http://127.0.0.1:3000/` 返回 200。
+
+### Checklist
+- [x] 复查 lessons 并确认当前任务规格
+- [x] 重启 Vite 开发服务
+- [x] 定位当前启动阻塞
+- [x] 修复 `research-record-word-editor` 编译问题
+- [x] 实测首页与关键模块入口返回 200
+
+### Progress Notes
+- 重启开发服务后，最初访问 `3000` 失败，日志里出现 `research-record-word-editor.tsx` 相关预处理错误。
+- 实际检查发现该文件存在编码损坏与断裂字符串，已重写为可编译的 UTF-8 版本。
+- 重新验证后，`http://127.0.0.1:3000/`、`/src/components/Dashboard.tsx` 与 `/src/features/dashboard/research-record-word-editor.tsx` 均返回 `200`。
