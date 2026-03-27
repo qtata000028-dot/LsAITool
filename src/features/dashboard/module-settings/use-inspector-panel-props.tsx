@@ -51,6 +51,7 @@ export type UseInspectorPanelPropsOptions = {
   defaultFieldSqlTagOptions: any[];
   deleteSelectedColumns: (scope: 'left' | 'main' | 'detail', ids: string[]) => void;
   deleteSelectedConditions: (scope: 'left' | 'main' | 'detail', ids: string[]) => void;
+  deleteDetailTabById: (tabId: string) => void;
   designerWorkbenchSensors: any;
   detailBoardClipboardIds: string[];
   detailBoardFieldDefaultWidth: number;
@@ -181,6 +182,7 @@ export function useInspectorPanelProps({
   currentModuleCode,
   currentModuleName,
   defaultFieldSqlTagOptions,
+  deleteDetailTabById,
   deleteSelectedColumns,
   deleteSelectedConditions,
   designerWorkbenchSensors,
@@ -381,6 +383,7 @@ export function useInspectorPanelProps({
         currentTabName,
         detailFillTypeOptions,
         normalizedDetailType: normalizeDetailFillTypeValue(currentDetailTabConfig?.detailType),
+        onDeleteTab: () => deleteDetailTabById(currentTabId),
         relationSectionProps: detailTabRelationSectionProps,
         onUpdateTabConfig: updateActiveDetailTabConfig,
         onUpdateTabType: updateActiveDetailTabType,

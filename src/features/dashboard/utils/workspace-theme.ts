@@ -16,6 +16,11 @@ export const WORKSPACE_THEME_VARS: Record<string, Record<string, string>> = {
     '--workspace-accent-border': 'rgba(37,99,235,0.18)',
     '--workspace-accent-border-strong': 'rgba(96,165,250,0.44)',
     '--workspace-accent-shadow': 'rgba(37,99,235,0.34)',
+    '--app-scrollbar-size': '9px',
+    '--app-scrollbar-track': 'rgba(219, 234, 254, 0.72)',
+    '--app-scrollbar-thumb': 'rgba(96, 165, 250, 0.72)',
+    '--app-scrollbar-thumb-hover': 'rgba(59, 130, 246, 0.86)',
+    '--app-scrollbar-thumb-border': 'rgba(248, 250, 252, 0.96)',
   },
   sunset: {
     '--workspace-accent': '#ea580c',
@@ -27,6 +32,11 @@ export const WORKSPACE_THEME_VARS: Record<string, Record<string, string>> = {
     '--workspace-accent-border': 'rgba(249,115,22,0.2)',
     '--workspace-accent-border-strong': 'rgba(251,146,60,0.46)',
     '--workspace-accent-shadow': 'rgba(234,88,12,0.32)',
+    '--app-scrollbar-size': '9px',
+    '--app-scrollbar-track': 'rgba(255, 237, 213, 0.74)',
+    '--app-scrollbar-thumb': 'rgba(251, 146, 60, 0.74)',
+    '--app-scrollbar-thumb-hover': 'rgba(234, 88, 12, 0.86)',
+    '--app-scrollbar-thumb-border': 'rgba(255, 251, 235, 0.96)',
   },
   jade: {
     '--workspace-accent': '#059669',
@@ -38,6 +48,11 @@ export const WORKSPACE_THEME_VARS: Record<string, Record<string, string>> = {
     '--workspace-accent-border': 'rgba(5,150,105,0.2)',
     '--workspace-accent-border-strong': 'rgba(52,211,153,0.42)',
     '--workspace-accent-shadow': 'rgba(5,150,105,0.28)',
+    '--app-scrollbar-size': '9px',
+    '--app-scrollbar-track': 'rgba(209, 250, 229, 0.72)',
+    '--app-scrollbar-thumb': 'rgba(52, 211, 153, 0.74)',
+    '--app-scrollbar-thumb-hover': 'rgba(5, 150, 105, 0.84)',
+    '--app-scrollbar-thumb-border': 'rgba(244, 253, 249, 0.96)',
   },
 };
 

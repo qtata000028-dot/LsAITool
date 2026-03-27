@@ -960,6 +960,47 @@ html[data-browser-engine="chromium"][data-app-mode="dev"] body {
   background: transparent;
 }
 
+.workspace-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--workspace-accent) var(--workspace-accent-soft);
+}
+
+.workspace-scrollbar::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.workspace-scrollbar::-webkit-scrollbar-track {
+  background:
+    linear-gradient(
+      180deg,
+      var(--workspace-accent-tint) 0%,
+      var(--workspace-accent-soft) 100%
+    );
+  border-radius: 999px;
+}
+
+.workspace-scrollbar::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(
+      180deg,
+      var(--workspace-accent-border-strong) 0%,
+      var(--workspace-accent) 100%
+    );
+  border: 2px solid rgba(255, 255, 255, 0.96);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+.workspace-scrollbar::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(
+      180deg,
+      var(--workspace-accent) 0%,
+      var(--workspace-accent-strong) 100%
+    );
+}
+
 .status-dot {
   width: 6px;
   height: 6px;

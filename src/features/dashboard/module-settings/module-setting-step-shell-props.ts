@@ -48,6 +48,7 @@ export type BuildModuleSettingStepShellPropsInput = {
   onActivateDetailTab: (tabId: string) => void;
   onActivateTableConfig: (scope: 'detail', targetId?: string | null) => void;
   onOpenMainHiddenColumnsModal: () => void;
+  onToggleFullscreen: () => void;
   onStartDocumentLeftResize: (event: React.MouseEvent<HTMLDivElement>) => void;
   renderFieldPreview: ModuleSettingStepShellProps['tree']['renderFieldPreview'];
   selectedDetailForDelete: string[];
@@ -90,6 +91,7 @@ export function buildModuleSettingStepShellProps(
     isConfigFullscreenActive: input.isConfigFullscreenActive,
     moduleSettingStageHeightClass: input.moduleSettingStageHeightClass,
     moduleSettingStageStyle: input.moduleSettingStageStyle,
+    onToggleFullscreen: input.onToggleFullscreen,
     workspaceTheme: input.workspaceTheme,
     workspaceThemeStyles: input.workspaceThemeStyles,
     document: {

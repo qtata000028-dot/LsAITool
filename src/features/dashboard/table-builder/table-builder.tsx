@@ -23,6 +23,7 @@ export type TableBuilderOptions = {
   onCanvasDoubleClick?: () => void;
   density?: 'default' | 'compact';
   surfaceVariant?: 'glass' | 'solid';
+  surfaceShape?: 'rounded' | 'square';
 };
 
 export type TableBuilderHelpers = {
@@ -113,6 +114,8 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const density = options?.density ?? 'default';
   const surfaceVariant = options?.surfaceVariant ?? 'glass';
   const useSolidSurface = surfaceVariant === 'solid';
+  const surfaceShape = options?.surfaceShape ?? 'rounded';
+  const useSquareSurface = useSolidSurface && surfaceShape === 'square';
   const isCompactCanvas = density === 'compact';
   const detailBoardTheme = helpers.getDetailBoardTheme(workspaceTheme);
   const hasDetailBoardFeature = detailBoardConfig.enabled && detailBoardConfig.groups.some((group: any) => group.columnIds.length > 0);
@@ -292,11 +295,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   ]);
 
   const addColumnWidth = isCompactModuleSetting ? 58 : 74;
+  const tableSurfaceRadiusClass = useSquareSurface ? 'rounded-none' : 'rounded-[20px]';
   const tableSurfaceClass = useSolidSurface
     ? (
         tableSelected
-          ? 'rounded-[20px] border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-surface)] shadow-none'
-          : 'rounded-[20px] border border-[#d9e3ef] bg-white shadow-none'
+          ? `${tableSurfaceRadiusClass} border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-surface)] shadow-none`
+          : `${tableSurfaceRadiusClass} border border-[#d9e3ef] bg-white shadow-none`
       )
     : (
         tableSelected
@@ -454,7 +458,10 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const centeredCanvasPanelNode = useMemo(() => {
     if (isCompactCanvas) {
       return (
-        <div className="pointer-events-none relative z-10 flex w-full max-w-[340px] items-center gap-2 rounded-xl border border-slate-200/80 bg-white/92 px-3 py-2 text-left text-[11px] text-slate-500 shadow-[0_18px_36px_-34px_rgba(15,23,42,0.22)] backdrop-blur-sm dark:border-slate-700 dark:bg-slate-950/84 dark:text-slate-300">
+        <div className={cn(
+          'pointer-events-none relative z-10 flex w-full max-w-[340px] items-center gap-2 border border-slate-200/80 bg-white/92 px-3 py-2 text-left text-[11px] text-slate-500 shadow-[0_18px_36px_-34px_rgba(15,23,42,0.22)] backdrop-blur-sm dark:border-slate-700 dark:bg-slate-950/84 dark:text-slate-300',
+          useSquareSurface ? 'rounded-none' : 'rounded-xl',
+        )}>
           <span className="material-symbols-outlined text-[15px] text-[color:var(--workspace-accent)]">table_view</span>
           <span className="min-w-0 flex-1 truncate font-medium text-slate-600 dark:text-slate-100">
             {canvasLabel}
@@ -468,7 +475,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
 
     return (
       <div
-        className={`pointer-events-none relative z-10 flex w-full flex-col items-center gap-2 rounded-[18px] border text-center backdrop-blur-sm ${tableCanvasPanelShellClass} ${isCompactCanvas ? 'max-w-[320px] px-4 py-3' : 'max-w-[420px] px-5 py-4'}`}
+        className={cn(
+          'pointer-events-none relative z-10 flex w-full flex-col items-center gap-2 border text-center backdrop-blur-sm',
+          useSquareSurface ? 'rounded-none' : 'rounded-[18px]',
+          tableCanvasPanelShellClass,
+          isCompactCanvas ? 'max-w-[320px] px-4 py-3' : 'max-w-[420px] px-5 py-4',
+        )}
       >
         <div className={`flex items-center justify-center rounded-md border ${isCompactModuleSetting ? 'size-10' : 'size-12'} ${tableCanvasIconClass}`}>
           <span
@@ -508,6 +520,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     tableCanvasTitleClass,
     tableSelected,
     useSolidSurface,
+    useSquareSurface,
   ]);
   const centeredCanvasOverlayNode = useMemo(() => (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4">
@@ -683,7 +696,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
 
   if (backgroundSelectable) {
     return (
-      <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative flex min-h-0 min-w-0 w-full flex-col overflow-x-auto overflow-y-hidden ${tableSurfaceClass} ${isCompactCanvas ? 'h-full min-h-[184px]' : 'h-full min-h-[260px]'}`}>
+      <div style={workspaceThemeVars} className={`workspace-scrollbar cloudy-cloud-grid relative flex min-h-0 min-w-0 w-full flex-col overflow-x-auto overflow-y-hidden ${tableSurfaceClass} ${isCompactCanvas ? 'h-full min-h-[184px]' : 'h-full min-h-[260px]'}`}>
         <div className="min-w-full w-full shrink-0">
           <table
             style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
@@ -711,7 +724,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   }
 
   return (
-    <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden ${tableSurfaceClass}`}>
+    <div style={workspaceThemeVars} className={`workspace-scrollbar cloudy-cloud-grid relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden ${tableSurfaceClass}`}>
       <table
         style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
         className="table-fixed border-separate border-spacing-0 text-left text-[12px]"

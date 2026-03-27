@@ -3733,9 +3733,9 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     setSelectedArchiveNodeId(`detail-${newId}`);
   };
 
-  const deleteTab = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const removeDetailTab = (id: string) => {
     const newTabs = detailTabs.filter(t => t.id !== id);
+    const fallbackTabId = newTabs[0]?.id ?? '';
     setDetailTabs(newTabs);
     setDetailFilterFields((prev) => {
       const next = { ...prev };
@@ -3758,16 +3758,21 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
       return next;
     });
     if (activeTab === id) {
-      setActiveTab(newTabs.length > 0 ? newTabs[0].id : '');
+      setActiveTab(fallbackTabId);
     }
-    if (selectedDetailTabId === id) {
-      const fallbackTabId = newTabs[0]?.id ?? '';
+    if (activeTab === id || selectedDetailTabId === id) {
       setInspectorTarget(
         fallbackTabId
           ? { kind: 'detail-tab', id: fallbackTabId }
           : { kind: 'main-grid' },
       );
+      setSelectedArchiveNodeId(fallbackTabId ? `detail-${fallbackTabId}` : 'archive-main');
     }
+  };
+
+  const deleteTab = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    removeDetailTab(id);
   };
 
   const handlePasteColumns = (
@@ -5755,6 +5760,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     currentModuleCode,
     currentModuleName,
     defaultFieldSqlTagOptions: DEFAULT_FIELD_SQL_TAG_OPTIONS,
+    deleteDetailTabById: removeDetailTab,
     deleteSelectedColumns,
     deleteSelectedConditions,
     designerWorkbenchSensors,
@@ -5937,6 +5943,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         onActivateDetailTab: activateDetailWorkbenchTab,
         onActivateTableConfig: activateTableConfigSelection,
         onOpenMainHiddenColumnsModal: openMainHiddenColumnsModal,
+        onToggleFullscreen: () => setIsFullscreenConfig((prev) => !prev),
         setBuilderSelectionContextMenu,
         setInspectorPanelTab,
         setSelectedArchiveNodeId,

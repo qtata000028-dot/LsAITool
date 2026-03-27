@@ -25,6 +25,7 @@ type BuildDashboardModuleSettingStepShellPropsInput = {
     | 'onActivateDetailTab'
     | 'onActivateTableConfig'
     | 'onOpenMainHiddenColumnsModal'
+    | 'onToggleFullscreen'
     | 'renderFieldPreview'
     | 'setBuilderSelectionContextMenu'
     | 'setInspectorPanelTab'

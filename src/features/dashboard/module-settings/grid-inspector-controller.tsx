@@ -597,13 +597,6 @@ export function GridInspectorController({
                 </span>
               ) : null}
             </div>
-            {useQuietDocumentInspector ? (
-              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
-                {isDocumentDetailGrid
-                  ? `${detailGridFillTypeMeta?.label || '表格'} · 右侧只维护当前视图本身配置`
-                  : '右侧只保留当前表格的直接配置，去掉低价值摘要和装饰信息'}
-              </p>
-            ) : null}
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
