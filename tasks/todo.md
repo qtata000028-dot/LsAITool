@@ -2294,6 +2294,32 @@
 - `MemoTableBuilder` 内部现在会缓存 `headerColumns`、`colgroup`、标准/紧凑表头节点以及中心画布节点，减少同一轮渲染里的重复列宽计算和节点重建。
 - 几个表头样式 helper 也改成了稳定回调，避免刚做好的 memo 缓存被函数引用变化打穿。
 
+## 2026-03-27 Design Branch Dynamic Import 500 Fix
+
+### Requirement Spec
+- 目标：修复 `/design` 分支启动时 `research-record-word-editor.tsx` 和 `Dashboard.tsx` 懒加载失败导致的动态导入 500。
+- 影响范围：Word 编辑器懒加载模块源码、OnlyOffice 相关依赖安装状态、本地 dev 与 build 验证。
+- 关键约束：
+  - 先定位源码语法问题，再确认是否缺少依赖。
+  - 不改业务流程，只修复导致模块无法被 Vite 解析的问题。
+  - 需要同时验证 `lint`、`build` 和 dev 模块 URL 可访问。
+
+### Checklist
+- [x] 检查 `research-record-word-editor.tsx` 语法与字符串断裂问题。
+- [x] 修复 Word 编辑器模块源码。
+- [x] 补齐缺失的 `@onlyoffice/document-editor-react` 依赖。
+- [x] 验证 `npm run lint`、`npm run build` 和 dev 模块 URL `200`。
+
+### Verification
+- `npm run lint`：通过
+- `npm run build`：通过
+- `http://127.0.0.1:3000/src/features/dashboard/research-record-word-editor.tsx`：返回 `200`
+- `http://127.0.0.1:3000/src/components/Dashboard.tsx`：返回 `200`
+
+### Result Notes
+- 根因是两层叠加：`research-record-word-editor.tsx` 自身字符串断裂导致语法无效，同时本地 `node_modules` 缺少 `@onlyoffice/document-editor-react`。
+- 现在该懒加载模块源码已重写为可编译状态，并且依赖已补齐，Vite 已能正常返回模块内容。
+
 ## 2026-03-25 登录页白屏排查
 
 ### Requirement Spec

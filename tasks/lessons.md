@@ -313,6 +313,9 @@
 - In a giant function component, moving a `useMemo` earlier can trigger Temporal Dead Zone failures if the memoized code calls helpers backed by later `const` declarations. `tsc` and `vite build` can still pass while the page crashes at runtime.
 - For shared numeric helpers such as `clampValue`, prefer module-level function declarations before introducing early memoized derivations. That removes initialization-order risk and keeps later refactors safer.
 - After any performance refactor that reorders derivations, verify the real page in a browser. Static build success is not enough for this file.
+## 2026-03-27 Lazy Module 500 Often Means Source Or Dependency Breakage
+- 如果 Vite 在浏览器里报 `Failed to fetch dynamically imported module`，不要先把它当成路由或后端问题。先直接检查对应懒加载 TSX 文件本身能否被解析，再核对它引用的第三方包是否真的装在 `node_modules` 里。
+- 懒加载分支的源码断裂和缺失依赖可以叠加出现：先修语法，再补依赖，再同时验证 `lint/build` 与 dev 模块 URL 是否返回 `200`，这样才能确认整条动态导入链恢复。
 
 ## 2026-03-25 Login Route Must Not Eagerly Import Dashboard
 - When the login route and the dashboard route share one entry component, avoid statically importing the entire dashboard module at the top of `App.tsx`. A runtime failure anywhere in the dashboard dependency chain can blank the login page before it even gets a chance to render.
