@@ -24,7 +24,6 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
   onShowToast,
   onClose,
   onUpdateDetailBoard,
-  renderFieldPreview,
 }: ArchiveLayoutCanvasModalContainerProps) {
   const layoutPaletteColumns = useArchiveLayoutPaletteColumns({
     currentModuleCode,
@@ -37,12 +36,12 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
   return (
     <ArchiveLayoutDesignerBridge
       currentDetailBoard={currentDetailBoard}
+      currentModuleCode={currentModuleCode}
       isOpen={isOpen}
       mainTableColumns={layoutPaletteColumns}
       normalizeColumn={normalizeColumn}
       onClose={onClose}
       onUpdateDetailBoard={onUpdateDetailBoard}
-      renderFieldPreview={renderFieldPreview}
     />
   );
 });

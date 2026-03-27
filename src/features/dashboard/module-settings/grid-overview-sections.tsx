@@ -132,10 +132,83 @@ type GridConfigSummarySectionProps = {
   yAxisField: string;
 };
 
+type GridLayoutWorkflowSectionProps = {
+  assignedFieldCount: number;
+  description: string;
+  groupCount: number;
+  onApplySuggestedLayout: () => void;
+  onOpenPreview: () => void;
+  previewDisabled: boolean;
+  title: string;
+  totalFieldCount: number;
+};
+
 const quietDocumentInspectorCardClass = 'border border-slate-200/75 bg-white px-4 py-3 shadow-none dark:border-slate-800 dark:bg-slate-950/78';
 const quietDocumentInspectorSummaryClass = 'border border-slate-200/70 bg-slate-50/80 px-3 py-2 text-[11px] leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-300';
 const quietDocumentInspectorActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200/80 bg-white px-3 text-[11px] font-medium text-slate-600 transition-colors hover:border-[color:var(--workspace-accent-border)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200';
 const quietDocumentInspectorPrimaryActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-md bg-[color:var(--workspace-accent)] px-3 text-[11px] font-medium text-white shadow-none transition-colors hover:bg-[color:var(--workspace-accent-strong)]';
+
+export const GridLayoutWorkflowSection = React.memo(function GridLayoutWorkflowSection({
+  assignedFieldCount,
+  description,
+  groupCount,
+  onApplySuggestedLayout,
+  onOpenPreview,
+  previewDisabled,
+  title,
+  totalFieldCount,
+}: GridLayoutWorkflowSectionProps) {
+  const pendingFieldCount = Math.max(0, totalFieldCount - assignedFieldCount);
+
+  return (
+    <section className={`${quietDocumentInspectorCardClass} space-y-3`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className={shadcnSectionTitleClass}>
+          <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">view_quilt</span>
+          <div className="min-w-0">
+            <h4>{title}</h4>
+            <p className="mt-1 text-[11px] font-normal leading-5 text-slate-500 dark:text-slate-300">
+              {description}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onApplySuggestedLayout}
+            className={quietDocumentInspectorPrimaryActionClass}
+          >
+            <span className="material-symbols-outlined text-[14px]">auto_awesome</span>
+            推荐布局
+          </button>
+          <button
+            type="button"
+            onClick={onOpenPreview}
+            disabled={previewDisabled}
+            className={`${quietDocumentInspectorActionClass} disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            <span className="material-symbols-outlined text-[14px]">preview</span>
+            预览效果
+          </button>
+        </div>
+      </div>
+      <div className="grid gap-2.5 sm:grid-cols-3">
+        <div className={quietDocumentInspectorSummaryClass}>
+          <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">分组数量</div>
+          <div className="mt-1 text-[13px] font-semibold text-slate-700 dark:text-slate-100">{groupCount} 组</div>
+        </div>
+        <div className={quietDocumentInspectorSummaryClass}>
+          <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">已排布字段</div>
+          <div className="mt-1 text-[13px] font-semibold text-slate-700 dark:text-slate-100">{assignedFieldCount} 项</div>
+        </div>
+        <div className={quietDocumentInspectorSummaryClass}>
+          <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">待排布字段</div>
+          <div className="mt-1 text-[13px] font-semibold text-slate-700 dark:text-slate-100">{pendingFieldCount} 项</div>
+        </div>
+      </div>
+    </section>
+  );
+});
 
 export const GridSqlConfigSection = React.memo(function GridSqlConfigSection({
   conditionValue,

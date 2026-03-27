@@ -5,7 +5,10 @@ type ArchiveLayoutSummarySectionProps = {
   availableGridColumnCount: number;
   compactCardClass: string;
   compactInfoCardClass: string;
+  emptyStateText?: string;
+  groupSummaryTitle?: string;
   groups: Record<string, any>[];
+  title?: string;
   onOpenEditor: () => void;
   onOpenPreview: () => void;
   sectionTitleClass: string;
@@ -15,7 +18,10 @@ export const ArchiveLayoutSummarySection = React.memo(function ArchiveLayoutSumm
   availableGridColumnCount,
   compactCardClass,
   compactInfoCardClass,
+  emptyStateText = '还没有分组，点击上方“点击设计”开始创建。',
+  groupSummaryTitle = '分组概览',
   groups,
+  title = '基础档案详情布局',
   onOpenEditor,
   onOpenPreview,
   sectionTitleClass,
@@ -31,11 +37,8 @@ export const ArchiveLayoutSummarySection = React.memo(function ArchiveLayoutSumm
           <div>
             <div className={sectionTitleClass}>
               <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">dashboard_customize</span>
-              <h4>主表分组布局</h4>
+              <h4>{title}</h4>
             </div>
-            <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-              右侧只展示当前布局摘要，真正的分组、行数和字段排布统一在弹出式布局编辑器里处理。
-            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -44,7 +47,7 @@ export const ArchiveLayoutSummarySection = React.memo(function ArchiveLayoutSumm
               className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[color:var(--workspace-accent)] px-3.5 text-[12px] font-semibold text-white transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
             >
               <span className="material-symbols-outlined text-[15px]">open_in_new</span>
-              打开布局编辑器
+              点击设计
             </button>
             <button
               type="button"
@@ -80,7 +83,7 @@ export const ArchiveLayoutSummarySection = React.memo(function ArchiveLayoutSumm
       <section className={compactCardClass}>
         <div className={sectionTitleClass}>
           <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">tab_group</span>
-          <h4>分组摘要</h4>
+          <h4>{groupSummaryTitle}</h4>
         </div>
         {groupCount > 0 ? (
           <div className="grid gap-2.5">
@@ -105,7 +108,7 @@ export const ArchiveLayoutSummarySection = React.memo(function ArchiveLayoutSumm
           </div>
         ) : (
           <div className="rounded-md border border-dashed border-slate-200/80 bg-slate-50/60 px-4 py-8 text-center text-[12px] text-slate-500 dark:border-slate-800 dark:bg-slate-900/35 dark:text-slate-400">
-            还没有分组，点击上方“打开布局编辑器”开始创建。
+            {emptyStateText}
           </div>
         )}
       </section>

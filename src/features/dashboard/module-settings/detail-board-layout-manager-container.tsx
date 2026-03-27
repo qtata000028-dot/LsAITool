@@ -1,5 +1,7 @@
-import React from 'react';
-import { DetailBoardLayoutDesignerBridge } from './detail-board-layout-designer-bridge';
+import React, { useState } from 'react';
+
+import { ArchiveLayoutSummarySection } from './archive-layout-summary-section';
+import { DetailBoardLayoutModalBridge } from './detail-board-layout-modal-bridge';
 
 type DetailBoardLayoutManagerContainerProps = {
   DesignerWorkbenchDraggableItem: React.ComponentType<any>;
@@ -10,6 +12,8 @@ type DetailBoardLayoutManagerContainerProps = {
     width: number;
   } | null;
   availableGridColumns: Record<string, any>[];
+  compactCardClass: string;
+  compactInfoCardClass: string;
   currentDetailBoard: Record<string, any>;
   designerWorkbenchSensors: any;
   detailBoardClipboardIds: string[];
@@ -22,7 +26,7 @@ type DetailBoardLayoutManagerContainerProps = {
   normalizeColumn: (column: Record<string, any>) => Record<string, any>;
   selectedDetailBoardGroupId: string | null;
   setSelectedDetailBoardGroupId: (groupId: string | null) => void;
-  onOpenDetailBoardPreview: (rowId: number) => void;
+  onOpenDetailBoardPreview: (previewRows?: number, sortColumnId?: string | null) => void;
   onResetDetailBoardFieldWidth: (event: React.MouseEvent<HTMLDivElement>, groupId: string, columnId: string) => void;
   onResetMainSelection: () => void;
   onShowToast: (message: string) => void;
@@ -30,32 +34,55 @@ type DetailBoardLayoutManagerContainerProps = {
   onUpdateDetailBoard: (patch: Record<string, any> | ((current: any) => any)) => void;
   parseDetailBoardClipboardColumnIds: (text: string, availableColumns: Record<string, any>[]) => string[];
   renderFieldPreview: (column: Record<string, any>, index: number, scope: string) => React.ReactNode;
+  sectionTitleClass: string;
 };
 
 export const DetailBoardLayoutManagerContainer = React.memo(function DetailBoardLayoutManagerContainer({
   availableGridColumns,
+  compactCardClass,
+  compactInfoCardClass,
   currentDetailBoard,
   emptyFieldsNode,
   normalizeColumn,
   selectedDetailBoardGroupId,
   setSelectedDetailBoardGroupId,
   onOpenDetailBoardPreview,
-  onShowToast,
   onUpdateDetailBoard,
-  renderFieldPreview,
+  sectionTitleClass,
 }: DetailBoardLayoutManagerContainerProps) {
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+
+  if (availableGridColumns.length === 0) {
+    return <>{emptyFieldsNode}</>;
+  }
+
   return (
-    <DetailBoardLayoutDesignerBridge
-      availableGridColumns={availableGridColumns}
-      currentDetailBoard={currentDetailBoard}
-      emptyFieldsNode={emptyFieldsNode}
-      normalizeColumn={normalizeColumn}
-      onOpenDetailBoardPreview={onOpenDetailBoardPreview}
-      onShowToast={onShowToast}
-      onUpdateDetailBoard={onUpdateDetailBoard}
-      renderFieldPreview={renderFieldPreview}
-      selectedDetailBoardGroupId={selectedDetailBoardGroupId}
-      setSelectedDetailBoardGroupId={setSelectedDetailBoardGroupId}
-    />
+    <>
+      <ArchiveLayoutSummarySection
+        availableGridColumnCount={availableGridColumns.length}
+        compactCardClass={compactCardClass}
+        compactInfoCardClass={compactInfoCardClass}
+        emptyStateText="还没有明细分组，点击上方“点击设计”开始创建。"
+        groupSummaryTitle="明细分组"
+        groups={Array.isArray(currentDetailBoard?.groups) ? currentDetailBoard.groups : []}
+        onOpenEditor={() => setIsEditorOpen(true)}
+        onOpenPreview={() => onOpenDetailBoardPreview(1, currentDetailBoard.sortColumnId)}
+        sectionTitleClass={sectionTitleClass}
+        title="明细表格布局"
+      />
+
+      <DetailBoardLayoutModalBridge
+        availableGridColumns={availableGridColumns}
+        currentDetailBoard={currentDetailBoard}
+        isOpen={isEditorOpen}
+        normalizeColumn={normalizeColumn}
+        onClose={() => setIsEditorOpen(false)}
+        onOpenPreview={() => onOpenDetailBoardPreview(1, currentDetailBoard.sortColumnId)}
+        onUpdateDetailBoard={onUpdateDetailBoard}
+        selectedGroupId={selectedDetailBoardGroupId}
+        setSelectedGroupId={setSelectedDetailBoardGroupId}
+        title="明细表格布局"
+      />
+    </>
   );
 });

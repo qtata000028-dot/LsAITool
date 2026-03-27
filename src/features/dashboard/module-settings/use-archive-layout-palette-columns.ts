@@ -638,12 +638,22 @@ export function useArchiveLayoutPaletteColumns({
         }
 
         const designerBoardConfig = buildDesignerGroupBoardConfig(groupRows, layoutRows, mappedColumns);
-        onUpdateDetailBoard((current: any) => ({
-          ...current,
-          enabled: true,
-          groups: designerBoardConfig.groups,
-          sortColumnId: designerBoardConfig.sortColumnId ?? current.sortColumnId ?? null,
-        }));
+        onUpdateDetailBoard((current: any) => {
+          const hasLocalDesignerLayout = Array.isArray(current?.designerLayout?.items) && current.designerLayout.items.length > 0;
+          const hasAssignedGroups = Array.isArray(current?.groups)
+            && current.groups.some((group: any) => Array.isArray(group?.columnIds) && group.columnIds.length > 0);
+
+          if (hasLocalDesignerLayout || hasAssignedGroups) {
+            return current;
+          }
+
+          return {
+            ...current,
+            enabled: true,
+            groups: designerBoardConfig.groups,
+            sortColumnId: designerBoardConfig.sortColumnId ?? current.sortColumnId ?? null,
+          };
+        });
       } catch (error) {
         if (!isActive) {
           return;
