@@ -1,9 +1,22 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   fetchSingleTableModuleConfig,
   fetchSingleTableModuleDetails,
   fetchSingleTableModuleFields,
 } from '../../lib/backend-module-config';
+import {
+  deleteSurveyDetail,
+  fetchSurveyDetails,
+  fetchSurveyMain,
+  fetchSurveyMainList,
+  saveSurveyDetail,
+  saveSurveyMain,
+  type SaveSurveyDetailPayload,
+  type SaveSurveyMainPayload,
+  type SurveyDetailDto,
+  type SurveyMainDto,
+} from '../../lib/backend-survey';
+import { getStoredAuthSession } from '../../lib/auth-session';
 import {
   applyLineColor,
   buildMultilineDisplayLines,
@@ -15,6 +28,7 @@ import {
   type ResearchLineColorMap,
   type ResearchLineColorTone,
 } from './research-record-multiline';
+import { buildResearchRecordWordDocumentHtml } from './research-record-word-export';
 import { ResearchRecordWordEditor } from './research-record-word-editor';
 import { ResearchRecordWordTemplatePreview } from './research-record-word-template-preview';
 import { getResearchRecordWordEditorRuntime } from './research-record-word-template-config';
@@ -44,6 +58,8 @@ type ResearchContentLineColors = Partial<Record<ResearchContentMultilineFieldKey
 type ResearchDraftLineColors = Partial<Record<ResearchDraftMultilineFieldKey, ResearchLineColorMap>>;
 
 type ResearchContentItem = {
+  backendBillNo: string;
+  backendId: number | null;
   businessTheme: string;
   capturedDetailNames: string[];
   capturedFieldNames: string[];
@@ -93,6 +109,12 @@ type ResearchRecordWorkbenchProps = {
   onExit: () => void;
   onShowToast?: (message: string) => void;
   storageKey: string;
+};
+
+type ResearchSurveyRecordBinding = {
+  detailIds: number[];
+  departId: number | null;
+  mainId: number | null;
 };
 
 type CapturedModuleSnapshot = {
@@ -329,6 +351,8 @@ function createResearchContentMaster(defaultTitle: string): ResearchContentMaste
 
 function createResearchContentItem(index: number): ResearchContentItem {
   return {
+    backendBillNo: '',
+    backendId: null,
     businessTheme: '',
     capturedDetailNames: [],
     capturedFieldNames: [],
@@ -384,16 +408,201 @@ function getContentItemStatusText(item: ResearchContentItem) {
   return filledCount > 0 ? `${baseLabel} · ${filledCount}/4 项事项` : baseLabel;
 }
 
+function normalizeResearchScope(value: unknown): ResearchRecordScope {
+  const text = toText(value).trim();
+  if (text === '全员') {
+    return '全员';
+  }
+  if (text === '单独') {
+    return '单独';
+  }
+  return '部门';
+}
+
+function normalizeDateInputValue(value: unknown) {
+  const text = toText(value).trim();
+  if (!text) {
+    return '';
+  }
+  const matched = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  return matched ? matched[1] : text;
+}
+
+function splitDelimitedValues(value: string) {
+  return value
+    .split(/[、,，\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function splitRateValues(value: string) {
+  return splitDelimitedValues(value)
+    .map((item) => {
+      const parsed = Number.parseFloat(item.replace(/%/g, '').trim());
+      return Number.isFinite(parsed) ? parsed : null;
+    })
+    .filter((item): item is number => item !== null);
+}
+
+function buildRoleDisplay(detail: SurveyDetailDto) {
+  return [detail.position1, detail.position2, detail.position3]
+    .map((item) => toText(item).trim())
+    .filter(Boolean)
+    .join('、');
+}
+
+function buildRateDisplay(detail: SurveyDetailDto) {
+  return [detail.workingRate1, detail.workingRate2, detail.workingRate3]
+    .map((item) => {
+      const text = toText(item).trim();
+      if (!text) {
+        return '';
+      }
+      return text.includes('%') ? text : `${text}%`;
+    })
+    .filter(Boolean)
+    .join('、');
+}
+
+function mapSurveyDetailToContentItem(detail: SurveyDetailDto, index: number): ResearchContentItem {
+  const fallback = createResearchContentItem(index + 1);
+  return {
+    ...fallback,
+    backendBillNo: toText(detail.billNo),
+    backendId: detail.id,
+    businessTheme: toText(detail.moduleName).trim(),
+    formsProvided: normalizeMultilineValue(toText(detail.moduleId)),
+    linkedModuleCode: toText(detail.moduleId).trim(),
+    linkedModuleName: toText(detail.moduleName).trim(),
+    jobRole: buildRoleDisplay(detail),
+    painPoints: normalizeMultilineValue(toText(detail.painsBak)),
+    suggestions: normalizeMultilineValue(toText(detail.suggestionBak)),
+    timeShare: buildRateDisplay(detail),
+    workDescription: normalizeMultilineValue(toText(detail.workingBak)),
+  };
+}
+
+function mapSurveyMainAndDetailsToDraft(input: {
+  defaultDraft: ResearchRecordDraft;
+  details: SurveyDetailDto[];
+  firstLevelMenuName: string;
+  main: SurveyMainDto;
+}): ResearchRecordDraft {
+  const contentItems = input.details.length > 0
+    ? input.details.map((item, index) => mapSurveyDetailToContentItem(item, index))
+    : [createResearchContentItem(1)];
+
+  return {
+    ...input.defaultDraft,
+    companyName: input.defaultDraft.companyName,
+    contentItems,
+    departmentName: normalizeWorkspaceLabel(input.firstLevelMenuName) || input.defaultDraft.departmentName,
+    departmentPosts: normalizeMultilineValue(toText(input.main.positionsBak), /[；;\n]+/),
+    documentNo: toText(input.main.fileNo).trim() || input.defaultDraft.documentNo,
+    engineers: normalizeMultilineValue(toText(input.main.surveyUsers || input.main.operatorName), /[、,，\n]+/) || input.defaultDraft.engineers,
+    extraNotes: normalizeMultilineValue(toText(input.main.otherBak)),
+    overallPainPoints: normalizeMultilineValue(toText(input.main.painsBak)),
+    respondents: normalizeMultilineValue(toText(input.main.empNames), /[、,，\n]+/),
+    signer: toText(input.main.surveyUsers || input.main.operatorName).trim(),
+    signerDate: normalizeDateInputValue(input.main.operateDate ?? input.main.surveyDate) || input.defaultDraft.signerDate,
+    specialDiscussion: normalizeMultilineValue(toText(input.main.specialBak)),
+    surveyCount: toText(input.main.orderNum).trim() || input.defaultDraft.surveyCount,
+    surveyDate: normalizeDateInputValue(input.main.surveyDate) || input.defaultDraft.surveyDate,
+    surveyLocation: toText(input.main.address).trim(),
+    surveyScope: normalizeResearchScope(input.main.scope),
+    workTools: normalizeMultilineValue(toText(input.main.toolsBak), /[、,，\n]+/),
+  };
+}
+
+function hasMeaningfulContentItem(item: ResearchContentItem) {
+  return Boolean(
+    item.backendId
+    || item.businessTheme.trim()
+    || item.formsProvided.trim()
+    || item.jobRole.trim()
+    || item.timeShare.trim()
+    || item.workDescription.trim()
+    || item.painPoints.trim()
+    || item.suggestions.trim(),
+  );
+}
+
+function buildSurveyMainPayload(input: {
+  defaultDepartId: number | null;
+  draft: ResearchRecordDraft;
+  existingId: number | null;
+  existingMain: SurveyMainDto | null;
+}): SaveSurveyMainPayload {
+  const departId = input.existingMain?.departId ?? input.defaultDepartId;
+  const payload: SaveSurveyMainPayload = {
+    address: input.draft.surveyLocation.trim(),
+    empNames: normalizeMultilineValue(input.draft.respondents, /[、,，\n]+/),
+    otherBak: normalizeMultilineValue(input.draft.extraNotes),
+    painsBak: normalizeMultilineValue(input.draft.overallPainPoints),
+    positionsBak: normalizeMultilineValue(input.draft.departmentPosts, /[；;\n]+/),
+    scope: input.draft.surveyScope,
+    specialBak: normalizeMultilineValue(input.draft.specialDiscussion),
+    surveyDate: input.draft.surveyDate.trim(),
+    surveyUsers: normalizeMultilineValue(input.draft.engineers, /[、,，\n]+/),
+    toolsBak: normalizeMultilineValue(input.draft.workTools, /[、,，\n]+/),
+  };
+
+  if (departId !== null && departId !== undefined && `${departId}`.trim()) {
+    payload.departId = departId as number | string;
+  }
+
+  if (input.existingId) {
+    payload.id = input.existingId;
+  }
+
+  const documentNo = input.draft.documentNo.trim();
+  if (documentNo || input.existingId) {
+    payload.fileNo = documentNo;
+  }
+
+  const surveyCount = input.draft.surveyCount.trim();
+  if (surveyCount || input.existingId) {
+    payload.orderNum = surveyCount ? Number.parseInt(surveyCount, 10) || surveyCount : '';
+  }
+
+  return payload;
+}
+
+function buildSurveyDetailPayload(item: ResearchContentItem): SaveSurveyDetailPayload {
+  const positions = splitDelimitedValues(item.jobRole);
+  const rates = splitRateValues(item.timeShare);
+  const payload: SaveSurveyDetailPayload = {
+    moduleName: item.businessTheme.trim() || item.linkedModuleName.trim() || '调研明细',
+    moduleId: item.linkedModuleCode.trim() || item.formsProvided.trim(),
+    painsBak: normalizeMultilineValue(item.painPoints),
+    position1: positions[0] || '',
+    position2: positions[1] || '',
+    position3: positions[2] || '',
+    suggestionBak: normalizeMultilineValue(item.suggestions),
+    workingBak: normalizeMultilineValue(item.workDescription),
+    workingRate1: rates[0] ?? '',
+    workingRate2: rates[1] ?? '',
+    workingRate3: rates[2] ?? '',
+  };
+
+  if (item.backendId) {
+    payload.id = item.backendId;
+  }
+
+  return payload;
+}
+
 function buildDefaultDraft(input: {
   activeFirstLevelMenuName: string;
   activeSubsystemName: string;
+  companyTitle: string;
   currentUserName: string;
 }): ResearchRecordDraft {
   const firstLevelMenuName = normalizeWorkspaceLabel(input.activeFirstLevelMenuName);
   const subsystemName = normalizeWorkspaceLabel(input.activeSubsystemName);
 
   return {
-    companyName: '',
+    companyName: normalizeWorkspaceLabel(input.companyTitle),
     contentItems: [createResearchContentItem(1)],
     contentMaster: createResearchContentMaster(firstLevelMenuName || '主业务主题'),
     departmentName: firstLevelMenuName || '',
@@ -467,6 +676,8 @@ function normalizeContentItem(raw: unknown, index: number): ResearchContentItem 
 
   const record = raw as Partial<ResearchContentItem>;
   return {
+    backendBillNo: toText(record.backendBillNo),
+    backendId: typeof record.backendId === 'number' ? record.backendId : null,
     businessTheme: toText(record.businessTheme),
     capturedDetailNames: Array.isArray(record.capturedDetailNames) ? record.capturedDetailNames.map((item) => toText(item)).filter(Boolean) : [],
     capturedFieldNames: Array.isArray(record.capturedFieldNames) ? record.capturedFieldNames.map((item) => toText(item)).filter(Boolean) : [],
@@ -540,256 +751,6 @@ function buildCapturedWorkDescriptionFromItem(item: ResearchContentItem) {
 function buildCapturedFormsProvided(snapshot: CapturedModuleSnapshot) {
   const lines = snapshot.fieldNames.slice(0, 10);
   return lines.join('\n');
-}
-
-function buildResearchRecordHtmlDocument(draft: ResearchRecordDraft) {
-  const renderNumberedLinesHtml = (value: string, lineColors: ResearchLineColorMap = {}) => {
-    const lines = buildMultilineDisplayLines(value, lineColors);
-    if (lines.length === 0) {
-      return '<div class="muted">未填写</div>';
-    }
-    return `
-      <div class="line-stack">
-        ${lines.map((line) => `<div class="line-item${line.color === 'red' ? ' line-item-red' : ''}">${escapeHtml(line.numberedText)}</div>`).join('')}
-      </div>
-    `;
-  };
-
-  const contentItemsHtml = draft.contentItems.map((item, index) => {
-    return `
-      <section class="content-card">
-        <div class="content-head">
-          <h3>${index + 1}. ${escapeHtml(getContentItemDisplayName(item, index))}</h3>
-          ${getContentItemSubheading(item) ? `<div class="content-subhead">${escapeHtml(getContentItemSubheading(item))}</div>` : ''}
-        </div>
-        <div class="meta-grid">
-          <div><span>工作岗位</span><strong>${escapeHtml(renderValue(item.jobRole))}</strong></div>
-          <div><span>工时占比</span><strong>${escapeHtml(renderValue(item.timeShare))}</strong></div>
-        </div>
-        <div class="field-block">
-          <span>表单提供</span>
-          ${renderNumberedLinesHtml(item.formsProvided, item.lineColors.formsProvided)}
-        </div>
-        <div class="field-block">
-          <span>工作描述</span>
-          ${renderNumberedLinesHtml(item.workDescription, item.lineColors.workDescription)}
-        </div>
-        <div class="field-block">
-          <span>痛点说明</span>
-          ${renderNumberedLinesHtml(item.painPoints, item.lineColors.painPoints)}
-        </div>
-        <div class="field-block">
-          <span>朗速建议</span>
-          ${renderNumberedLinesHtml(item.suggestions, item.lineColors.suggestions)}
-        </div>
-      </section>
-    `;
-  }).join('');
-
-  return `
-    <!doctype html>
-    <html lang="zh-CN">
-      <head>
-        <meta charset="UTF-8" />
-        <title>${escapeHtml(renderValue(draft.departmentName, '调研记录'))}</title>
-        <style>
-          :root {
-            color-scheme: light;
-            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
-          }
-          body {
-            margin: 0;
-            background: #f3f6fb;
-            color: #0f172a;
-            padding: 36px;
-          }
-          .page {
-            max-width: 980px;
-            margin: 0 auto;
-            background: #ffffff;
-            border: 1px solid #dbe5f1;
-            border-radius: 28px;
-            overflow: hidden;
-            box-shadow: 0 32px 70px -48px rgba(15, 23, 42, 0.34);
-          }
-          .hero {
-            padding: 36px 42px 30px;
-            background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 68%, #eff6ff 180%);
-            color: white;
-          }
-          .hero h1 {
-            margin: 0;
-            font-size: 30px;
-            line-height: 1.15;
-          }
-          .hero p {
-            margin: 10px 0 0;
-            color: rgba(255,255,255,0.82);
-            font-size: 15px;
-          }
-          .body {
-            padding: 34px 42px 42px;
-          }
-          .section {
-            margin-top: 28px;
-          }
-          .section:first-child {
-            margin-top: 0;
-          }
-          .section h2 {
-            margin: 0 0 14px;
-            font-size: 18px;
-          }
-          .meta-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-          }
-          .meta-grid.compact {
-            margin-top: 14px;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-          }
-          .meta-grid div, .field-block, .master-block {
-            border: 1px solid #dbe5f1;
-            border-radius: 18px;
-            padding: 14px 16px;
-            background: #f8fbff;
-          }
-          .meta-grid span, .field-block span, .master-block span {
-            display: block;
-            color: #64748b;
-            font-size: 12px;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            margin-bottom: 6px;
-          }
-          .content-card {
-            border: 1px solid #dbe5f1;
-            border-radius: 20px;
-            padding: 20px;
-            background: #ffffff;
-            margin-bottom: 16px;
-          }
-          .content-head {
-            margin-bottom: 16px;
-          }
-          .content-card h3 {
-            margin: 0;
-            font-size: 16px;
-          }
-          .content-subhead {
-            margin-top: 6px;
-            color: #475569;
-            font-size: 14px;
-            font-weight: 600;
-          }
-          .field-block p, .master-block p {
-            margin: 0;
-            white-space: pre-wrap;
-            line-height: 1.7;
-          }
-          .line-stack {
-            display: grid;
-            gap: 4px;
-          }
-          .line-item {
-            line-height: 1.7;
-            white-space: pre-wrap;
-          }
-          .line-item-red {
-            color: #8f1d2c;
-          }
-          .master-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-          }
-          .muted {
-            color: #94a3b8;
-          }
-          .signature {
-            display: flex;
-            justify-content: space-between;
-            gap: 24px;
-          }
-        </style>
-      </head>
-      <body>
-        <main class="page">
-          <section class="hero">
-            <h1>${escapeHtml(renderValue(draft.companyName, '未填写公司名称'))}</h1>
-            <p>${escapeHtml(renderValue(draft.projectName, '未填写项目名称'))}</p>
-          </section>
-          <section class="body">
-            <section class="section">
-              <h2>一、调研信息</h2>
-              <div class="meta-grid">
-                <div><span>调研时间</span><strong>${escapeHtml(renderValue(draft.surveyDate))}</strong></div>
-                <div><span>调研地点</span><strong>${escapeHtml(renderValue(draft.surveyLocation))}</strong></div>
-                <div><span>文件号</span><strong>${escapeHtml(renderValue(draft.documentNo))}</strong></div>
-                <div><span>调研部门</span><strong>${escapeHtml(renderValue(draft.departmentName))}</strong></div>
-                <div><span>调研范围</span><strong>${escapeHtml(renderValue(draft.surveyScope))}</strong></div>
-                <div><span>调研次数</span><strong>${escapeHtml(renderValue(draft.surveyCount))}</strong></div>
-                <div><span>受访人员</span><strong>${escapeHtml(renderValue(draft.respondents))}</strong></div>
-                <div><span>调研工程师</span><strong>${escapeHtml(renderValue(draft.engineers))}</strong></div>
-              </div>
-            </section>
-
-            <section class="section">
-              <h2>二、部门情况</h2>
-              <div class="field-block">
-                <span>部门岗位</span>
-                ${renderNumberedLinesHtml(draft.departmentPosts, draft.lineColors.departmentPosts)}
-              </div>
-              <div class="field-block" style="margin-top: 12px;">
-                <span>工作工具</span>
-                ${renderNumberedLinesHtml(draft.workTools, draft.lineColors.workTools)}
-              </div>
-            </section>
-
-            <section class="section">
-              <h2>三、调研内容</h2>
-              <div>
-                ${contentItemsHtml}
-              </div>
-            </section>
-
-            <section class="section">
-              <h2>四、整体痛点难点描述</h2>
-              <div class="field-block">
-                ${renderNumberedLinesHtml(draft.overallPainPoints, draft.lineColors.overallPainPoints)}
-              </div>
-            </section>
-
-            <section class="section">
-              <h2>五、业务专项事项讨论</h2>
-              <div class="field-block">
-                ${renderNumberedLinesHtml(draft.specialDiscussion, draft.lineColors.specialDiscussion)}
-              </div>
-            </section>
-
-            <section class="section">
-              <h2>六、其他补充</h2>
-              <div class="field-block">
-                ${renderNumberedLinesHtml(draft.extraNotes, draft.lineColors.extraNotes)}
-              </div>
-            </section>
-
-            <section class="section signature">
-              <div class="field-block" style="flex: 1;">
-                <span>受访人（签字确认）</span>
-                <p>${escapeHtml(renderValue(draft.signer))}</p>
-              </div>
-              <div class="field-block" style="flex: 1;">
-                <span>确认日期</span>
-                <p>${escapeHtml(renderValue(draft.signerDate))}</p>
-              </div>
-            </section>
-          </section>
-        </main>
-      </body>
-    </html>
-  `;
 }
 
 function FieldShell({
@@ -1127,21 +1088,35 @@ export function ResearchRecordWorkbench({
   currentUserName,
   onExit,
   onShowToast,
-  storageKey,
+  storageKey: _storageKey,
 }: ResearchRecordWorkbenchProps) {
+  const authSession = useMemo(() => getStoredAuthSession(), []);
+  const defaultDepartId = useMemo(() => {
+    const parsed = Number.parseInt(toText(authSession?.departmentId).trim(), 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [authSession?.departmentId]);
   const defaultDraft = useMemo(
     () => buildDefaultDraft({
       activeFirstLevelMenuName,
       activeSubsystemName,
+      companyTitle: toText(authSession?.companyTitle).trim(),
       currentUserName,
     }),
-    [activeFirstLevelMenuName, activeSubsystemName, currentUserName],
+    [activeFirstLevelMenuName, activeSubsystemName, authSession?.companyTitle, currentUserName],
   );
   const [activeStep, setActiveStep] = useState<ResearchStepId>('overview');
   const [capturingItemId, setCapturingItemId] = useState<string | null>(null);
+  const [isRecordLoading, setIsRecordLoading] = useState(true);
+  const [isRecordSaving, setIsRecordSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [draft, setDraft] = useState<ResearchRecordDraft>(defaultDraft);
+  const [loadedMainRecord, setLoadedMainRecord] = useState<SurveyMainDto | null>(null);
   const [previewFocusKey, setPreviewFocusKey] = useState<string>('overview');
+  const [recordBinding, setRecordBinding] = useState<ResearchSurveyRecordBinding>({
+    detailIds: [],
+    departId: defaultDepartId,
+    mainId: null,
+  });
   const [selectedContentItemId, setSelectedContentItemId] = useState<string | null>(defaultDraft.contentItems[0]?.id ?? null);
   const [activeOverviewQuickTarget, setActiveOverviewQuickTarget] = useState<ResearchOverviewQuickTarget>('surveyDate');
   const [activeEnvironmentQuickTarget, setActiveEnvironmentQuickTarget] = useState<ResearchEnvironmentQuickTarget>('departmentPosts');
@@ -1149,7 +1124,6 @@ export function ResearchRecordWorkbench({
   const [activeContentQuickTarget, setActiveContentQuickTarget] = useState<ResearchContentQuickTarget>('formsProvided');
   const [activeMultilineInputColor, setActiveMultilineInputColor] = useState<ResearchLineColorTone>('default');
   const [activeMultilineLineIndex, setActiveMultilineLineIndex] = useState<number | null>(0);
-  const storageRecordKey = `ls-ai-research-record:${storageKey}`;
   const sortedModules = useMemo(
     () => [...availableModules].sort((left, right) => left.moduleName.localeCompare(right.moduleName, 'zh-Hans-CN')),
     [availableModules],
@@ -1157,29 +1131,83 @@ export function ResearchRecordWorkbench({
   const wordEditorRuntime = useMemo(() => getResearchRecordWordEditorRuntime(), []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
+    let disposed = false;
+
+    async function loadFirstSurveyRecord() {
+      setIsRecordLoading(true);
+
+      try {
+        const mains = await fetchSurveyMainList();
+        const firstMain = Array.isArray(mains) && mains.length > 0 ? mains[0] : null;
+
+        if (!firstMain || !firstMain.id) {
+          if (disposed) {
+            return;
+          }
+          setLoadedMainRecord(null);
+          setRecordBinding({
+            detailIds: [],
+            departId: defaultDepartId,
+            mainId: null,
+          });
+          setDraft(defaultDraft);
+          return;
+        }
+
+        const [main, details] = await Promise.all([
+          fetchSurveyMain(firstMain.id),
+          fetchSurveyDetails(firstMain.id),
+        ]);
+
+        if (disposed) {
+          return;
+        }
+
+        const resolvedDepartId = (() => {
+          const rawValue = main.departId ?? defaultDepartId;
+          const parsed = Number.parseInt(String(rawValue ?? ''), 10);
+          return Number.isFinite(parsed) ? parsed : defaultDepartId;
+        })();
+
+        setLoadedMainRecord(main);
+        setRecordBinding({
+          detailIds: details.map((item) => item.id).filter((item): item is number => typeof item === 'number'),
+          departId: resolvedDepartId ?? null,
+          mainId: main.id,
+        });
+        setDraft(mapSurveyMainAndDetailsToDraft({
+          defaultDraft,
+          details,
+          firstLevelMenuName: activeFirstLevelMenuName,
+          main,
+        }));
+      } catch (error) {
+        if (disposed) {
+          return;
+        }
+        const nextMessage = error instanceof Error ? error.message : '调研记录加载失败';
+        setLoadedMainRecord(null);
+        setRecordBinding({
+          detailIds: [],
+          departId: defaultDepartId,
+          mainId: null,
+        });
+        setDraft(defaultDraft);
+        setStatusMessage(nextMessage);
+        onShowToast?.(nextMessage);
+      } finally {
+        if (!disposed) {
+          setIsRecordLoading(false);
+        }
+      }
     }
 
-    const raw = window.localStorage.getItem(storageRecordKey);
-    if (!raw) {
-      setDraft(defaultDraft);
-      return;
-    }
+    void loadFirstSurveyRecord();
 
-    try {
-      setDraft(normalizeDraft(JSON.parse(raw), defaultDraft));
-    } catch {
-      setDraft(defaultDraft);
-    }
-  }, [defaultDraft, storageRecordKey]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    window.localStorage.setItem(storageRecordKey, JSON.stringify(draft));
-  }, [draft, storageRecordKey]);
+    return () => {
+      disposed = true;
+    };
+  }, [activeFirstLevelMenuName, defaultDepartId, defaultDraft, onShowToast]);
 
   useEffect(() => {
     setSelectedContentItemId((current) => {
@@ -1286,18 +1314,88 @@ export function ResearchRecordWorkbench({
     }
   }, [draft.contentItems, selectedContentItemId]);
 
-  const handleExportSave = useCallback(() => {
-    const html = buildResearchRecordHtmlDocument(draft);
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const handleSaveRecord = useCallback(async () => {
+    setIsRecordSaving(true);
+
+    try {
+      const savedMain = await saveSurveyMain(buildSurveyMainPayload({
+        defaultDepartId,
+        draft,
+        existingId: recordBinding.mainId,
+        existingMain: loadedMainRecord,
+      }));
+      const mainId = savedMain.id;
+      const persistableItems = draft.contentItems.filter((item) => hasMeaningfulContentItem(item));
+      const savedDetailPairs: Array<{ clientId: string; detail: SurveyDetailDto }> = [];
+
+      for (const item of persistableItems) {
+        const savedDetail = await saveSurveyDetail(mainId, buildSurveyDetailPayload(item));
+        savedDetailPairs.push({ clientId: item.id, detail: savedDetail });
+      }
+
+      const savedDetailIds = savedDetailPairs
+        .map((entry) => entry.detail.id)
+        .filter((item): item is number => typeof item === 'number');
+      const removedDetailIds = recordBinding.detailIds.filter((id) => !savedDetailIds.includes(id));
+
+      for (const detailId of removedDetailIds) {
+        await deleteSurveyDetail(mainId, detailId);
+      }
+
+      setLoadedMainRecord(savedMain);
+      setRecordBinding({
+        detailIds: savedDetailIds,
+        departId: (() => {
+          const rawValue = savedMain.departId ?? recordBinding.departId ?? defaultDepartId;
+          const parsed = Number.parseInt(String(rawValue ?? ''), 10);
+          return Number.isFinite(parsed) ? parsed : defaultDepartId;
+        })(),
+        mainId,
+      });
+      setDraft((current) => ({
+        ...current,
+        documentNo: toText(savedMain.fileNo).trim() || current.documentNo,
+        surveyCount: toText(savedMain.orderNum).trim() || current.surveyCount,
+        surveyDate: normalizeDateInputValue(savedMain.surveyDate) || current.surveyDate,
+        contentItems: current.contentItems
+          .map((item) => {
+            const matched = savedDetailPairs.find((entry) => entry.clientId === item.id);
+            if (!matched) {
+              return item;
+            }
+            return {
+              ...item,
+              backendBillNo: toText(matched.detail.billNo),
+              backendId: matched.detail.id,
+              linkedModuleCode: item.linkedModuleCode.trim() || toText(matched.detail.moduleId).trim(),
+              linkedModuleName: item.linkedModuleName.trim() || toText(matched.detail.moduleName).trim(),
+            };
+          })
+          .filter((item) => item.backendId || hasMeaningfulContentItem(item)),
+      }));
+      setStatusMessage('已保存调研记录');
+      onShowToast?.('已保存调研记录');
+    } catch (error) {
+      const nextMessage = error instanceof Error ? error.message : '调研记录保存失败';
+      setStatusMessage(nextMessage);
+      onShowToast?.(nextMessage);
+    } finally {
+      setIsRecordSaving(false);
+    }
+  }, [defaultDepartId, draft, loadedMainRecord, onShowToast, recordBinding]);
+
+  const handleExportWord = useCallback(() => {
+    const html = buildResearchRecordWordDocumentHtml(draft);
+    const blob = new Blob([html], { type: 'application/msword;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
-    const fileName = `${(draft.departmentName || activeFirstLevelMenuName || '调研记录').replace(/\s+/g, '')}-调研记录.html`;
+    const fileName = `${(draft.documentNo || draft.departmentName || activeFirstLevelMenuName || '调研记录').replace(/\s+/g, '')}-调研记录.doc`;
 
     anchor.href = url;
     anchor.download = fileName;
     anchor.click();
     URL.revokeObjectURL(url);
-    setStatusMessage('已导出 HTML');
+    setStatusMessage('已导出 Word');
   }, [activeFirstLevelMenuName, draft]);
 
   const syncActiveLineFromTextarea = useCallback((event: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -2692,11 +2790,21 @@ export function ResearchRecordWorkbench({
             {statusMessage ? <div className="text-[12px] font-semibold text-emerald-600">{statusMessage}</div> : null}
             <button
               type="button"
-              onClick={handleExportSave}
-              className="inline-flex items-center gap-1.5 bg-primary px-5 py-2.5 text-[12px] font-semibold text-white transition-all hover:bg-erp-blue"
+              onClick={() => void handleSaveRecord()}
+              disabled={isRecordLoading || isRecordSaving}
+              className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-5 py-2.5 text-[12px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span className="material-symbols-outlined text-[20px]">save</span>
-              导出保存
+              {isRecordSaving ? '保存中...' : '保存'}
+            </button>
+            <button
+              type="button"
+              onClick={handleExportWord}
+              disabled={isRecordLoading}
+              className="inline-flex items-center gap-1.5 bg-primary px-5 py-2.5 text-[12px] font-semibold text-white transition-all hover:bg-erp-blue disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-[20px]">download</span>
+              导出
             </button>
           </div>
         </div>
