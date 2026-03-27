@@ -2,19 +2,25 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run App in Installed Edge",
-      "type": "pwa-msedge",
+      "name": "Run Full App",
+      "type": "node",
       "request": "launch",
-      "runtimeExecutable": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-      "url": "http://127.0.0.1:3000",
-      "webRoot": "${workspaceFolder}",
-      "preLaunchTask": "ensure-client-dev-server"
+      "program": "${workspaceFolder}/scripts/dev-with-api.mjs",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "outputCapture": "std",
+      "skipFiles": ["<node_internals>/**"],
+      "serverReadyAction": {
+        "pattern": "Local:\\s+(https?://\\S+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
     },
     {
-      "name": "Start Vite Dev Server Only",
+      "name": "Start Full Dev Stack Only",
       "type": "node-terminal",
       "request": "launch",
-      "command": "npm run dev:client"
+      "command": "npm run dev"
     }
   ]
 }
