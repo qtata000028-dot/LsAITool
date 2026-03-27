@@ -592,17 +592,19 @@ function mapSingleTableFieldRecordToColumn(field: SingleTableModuleFieldDto, ind
   const fieldName = toRecordText(getRecordFieldValue(field, 'fieldname', 'fieldName'));
   const systemName = toRecordText(getRecordFieldValue(field, 'sysname', 'systemName'));
   const fieldKey = toRecordText(getRecordFieldValue(field, 'fieldkey', 'fieldKey'));
-  const placeholder = toRecordText(getRecordFieldValue(field, 'placeholder', 'prompttext', 'promptText'));
+  const placeholder = toRecordText(getRecordFieldValue(field, 'InputHintText', 'inputhinttext', 'placeholder', 'prompttext', 'promptText'));
   const relationSql = toRecordText(getRecordFieldValue(field, 'relationsql', 'relationSql'));
-  const dynamicSql = toRecordText(getRecordFieldValue(field, 'dynamicsql', 'dynamicSql', 'fieldsql', 'fieldSql'));
-  const helpText = toRecordText(getRecordFieldValue(field, 'helptext', 'helpText', 'remark', 'memo'));
+  const dynamicSql = toRecordText(getRecordFieldValue(field, 'fieldsql', 'fieldSql', 'dynamicsql', 'dynamicSql'));
+  const helpText = toRecordText(getRecordFieldValue(field, 'bak', 'helptext', 'helpText', 'remark', 'memo'));
   const defaultValue = toRecordText(getRecordFieldValue(field, 'defaultdate', 'defaultDate', 'defaultvalue', 'defaultValue'));
   const fieldSqlTag = normalizeFieldSqlTagId(getRecordFieldValue(field, 'fieldsqltag', 'fieldSqlTag'), 0);
   const fieldSqlTagName = toRecordText(getRecordFieldValue(field, 'fieldsqltagname', 'fieldSqlTagName', 'showname', 'showName'));
-  const visibleValue = getRecordFieldValue(field, 'visible', 'isVisible', 'showmobile', 'showMobile');
-  const requiredValue = getRecordFieldValue(field, 'required', 'isneed', 'isNeed', 'mustinput', 'mustInput');
-  const readonlyValue = getRecordFieldValue(field, 'readonly', 'readOnly', 'isreadonly', 'isReadOnly');
-  const searchableValue = getRecordFieldValue(field, 'searchable', 'isquery', 'isQuery', 'queryable');
+  const alignValue = toRecordText(getRecordFieldValue(field, 'dataAlign', 'dataalign', 'align'));
+  const hiddenValue = getRecordFieldValue(field, 'vislble', 'vislble');
+  const visibleAliasValue = getRecordFieldValue(field, 'visible', 'isVisible', 'showmobile', 'showMobile');
+  const requiredValue = getRecordFieldValue(field, 'tagid', 'required', 'isneed', 'isNeed', 'mustinput', 'mustInput');
+  const readonlyValue = getRecordFieldValue(field, 'edit', 'readonly', 'readOnly', 'isreadonly', 'isReadOnly');
+  const searchableValue = getRecordFieldValue(field, 'ifSearch', 'ifsearch', 'searchable', 'isquery', 'isQuery', 'queryable');
 
   return buildSingleTableFieldColumn(index, {
     ...field,
@@ -622,13 +624,14 @@ function mapSingleTableFieldRecordToColumn(field: SingleTableModuleFieldDto, ind
       BILL_FORM_DEFAULT_WIDTH,
     ),
     required: toRecordBoolean(requiredValue, false),
-    visible: toRecordBoolean(visibleValue, true),
+    visible: hiddenValue == null ? toRecordBoolean(visibleAliasValue, true) : !toRecordBoolean(hiddenValue, false),
     searchable: toRecordBoolean(searchableValue, false),
     readonly: toRecordBoolean(readonlyValue, false),
+    align: alignValue || '左对齐',
     placeholder,
     defaultValue,
-    dictCode: toRecordText(getRecordFieldValue(field, 'dictcode', 'dictCode')),
-    formula: toRecordText(getRecordFieldValue(field, 'formula')),
+    dictCode: toRecordText(getRecordFieldValue(field, 'fieldsqlid', 'fieldSqlId', 'dictcode', 'dictCode')),
+    formula: toRecordText(getRecordFieldValue(field, 'calcExpr', 'calcexpr', 'formula')),
     relationSql,
     dynamicSql,
     helpText,
@@ -1503,6 +1506,9 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   });
   const mapSingleTableContextMenuItem = (item: SingleTableContextMenuDto, index: number) => normalizeContextMenuItem({
     ...item,
+    id: getRecordFieldValue(item, 'id'),
+    backendId: getRecordFieldValue(item, 'id'),
+    tab: getRecordFieldValue(item, 'tab'),
     menuname: getRecordFieldValue(item, 'menuname', 'menuName'),
     dllname: getRecordFieldValue(item, 'dllname', 'dllName'),
     action: getRecordFieldValue(item, 'action', 'actionSql'),
@@ -4336,6 +4342,8 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     )
     : '';
   const documentConditionOwnerSourceId = treeRelationColumnConfig?.backendId ?? treeRelationColumn?.id ?? '';
+  const detailDecorationSnapshotRef = useRef(new Map<string, { colorRules: any[]; contextMenuItems: any[] }>());
+  const detailModuleDecorationSnapshotRef = useRef(new Map<string, { colorRules: any[]; contextMenuItems: any[] }>());
   const {
     captureDetailResources,
     captureDetails,
@@ -4365,6 +4373,8 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     mainFilterFields,
     mainTableColumns,
     mainTableConfig,
+    getCachedDetailDecorations: (moduleCode, detailId) => detailDecorationSnapshotRef.current.get(`${moduleCode}:${detailId}`) ?? null,
+    getCachedModuleDecorations: (moduleCode) => detailModuleDecorationSnapshotRef.current.get(moduleCode) ?? null,
     mapColorRule: mapSingleTableColorRule,
     mapConditionRecordToField: mapSingleTableConditionRecordToField,
     mapContextMenuItem: mapSingleTableContextMenuItem,
@@ -4623,6 +4633,10 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
           - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId'), 0),
       )
       .map((rule, index) => mapSingleTableColorRule(rule, index));
+    detailModuleDecorationSnapshotRef.current.set(normalizedModuleCode, {
+      colorRules: JSON.parse(JSON.stringify(mappedRules)),
+      contextMenuItems: JSON.parse(JSON.stringify(mappedMenus)),
+    });
     const resolvedMainSql = toRecordText(getRecordFieldValue(normalizedModuleConfig, 'querySql', 'querysql'))
       || toRecordText(getRecordFieldValue(normalizedModuleConfig, 'mainSql', 'mainsql'));
     const resolvedTableName = toRecordText(getRecordFieldValue(normalizedModuleConfig, 'mainTable', 'maintable'));
@@ -5287,6 +5301,17 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
             - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId'), 0),
         )
         .map((item, index) => mapSingleTableColorRule(item, index));
+      if (activeDetailRelatedModuleCode) {
+        detailModuleDecorationSnapshotRef.current.set(activeDetailRelatedModuleCode, {
+          colorRules: JSON.parse(JSON.stringify(mappedRules)),
+          contextMenuItems: JSON.parse(JSON.stringify(mappedMenus)),
+        });
+      } else if (Number.isFinite(activeDetailBackendId)) {
+        detailDecorationSnapshotRef.current.set(`${activeConfigModuleKey}:${activeDetailBackendId}`, {
+          colorRules: JSON.parse(JSON.stringify(mappedRules)),
+          contextMenuItems: JSON.parse(JSON.stringify(mappedMenus)),
+        });
+      }
 
       let nextTableConfig: Record<string, any> = {};
       setDetailTableConfigs((prev) => {

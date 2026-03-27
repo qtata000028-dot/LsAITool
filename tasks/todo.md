@@ -3282,3 +3282,117 @@
 - 这次 `500` 的直接原因不是 token 错误，而是浏览器经由 `3000` 访问时命中了旧的 `3001` AI 代理，而该端口当前拒绝连接。
 - 你给的直连 `9093` curl 能成功，正好说明 AI 接口实际已经在现有后端上可用，前端问题出在代理配置陈旧。
 - 当前还剩一个操作性边界：开发中的 Vite 服务需要重启一次，新的代理规则才会生效。
+
+## 2026-03-26 单表列属性保存与无关右键写入排查
+
+### Requirement Spec
+- 目标：修复“只改列属性时保存会触发多次 `menus` 写请求，而且列属性本身没有保存到后端”的问题。
+- 影响范围：`src/features/dashboard/module-settings/use-single-table-module-settings-save.ts` 的单表保存编排，以及主字段/共享资源的 body 映射与差异判断。
+- 关键约束：
+  - 以当前单表保存契约为准：无变更时不应发 `POST`。
+  - 不允许为了压住 `menus` 噪音而牺牲列属性真实落库。
+  - 继续遵守 Dashboard 模块化规则，不把新分支堆回 `Dashboard.tsx`。
+- 不做什么：
+  - 本轮不扩展新的保存范围。
+  - 本轮不调整布局编辑器保存。
+- 成功标准：
+  - 只改主字段属性时，不再出现与本次修改无关的 `menus` 批量 `POST`。
+  - 主字段名称/标识/宽度/默认值等当前可编辑属性能正确进入主字段保存 body。
+  - `npm run lint`、`npm run build` 通过。
+
+### Checklist
+- [x] 核对主字段保存 body 与当前 UI 编辑字段的映射优先级。
+- [x] 修正主字段读写口径与菜单 identity，降低无关 `menus/colors` 被判定为变更的概率。
+- [x] 完成验证并记录结果。
+
+### Progress Notes
+- 已定位当前主字段保存存在“旧后端字段优先级高于当前 UI 编辑值”的风险，例如 `displayName / fieldName / promptText` 会压过用户刚改的 `name / sourceField / placeholder`。
+- 已定位 `UnionModule` 共享资源保存存在“当前内容来自代表明细，但 baseline 仍取第一条明细”的风险，这会把 unchanged `menus/colors` 误判为整组有改动。
+- 已将主字段保存 body 改成以当前 UI 编辑值优先，例如 `name -> username1`、`sourceField -> fieldname/sysname`、`placeholder -> prompttext`、`defaultValue -> defaultdate`，避免旧后端别名把刚编辑的列属性覆盖回去。
+- 已将 `UnionModule` 共享资源的代表选择改为“优先当前激活明细，否则选择字段/右键/颜色信息最完整的一组”，并同步替换 baseline 与 current，避免只改列属性时把共享右键整组误判成有改动。
+- 用户最新反馈表明上一轮还不够，继续排查后确认主字段读写口径仍未真正对齐 `p_systemwordbooktab`：当前前端还在使用 `isvisible / isreadonly / isquery / prompttext / helptext` 这类别名，而文档里的真实字段是 `vislble / edit / tagid / ifSearch / InputHintText / bak`。
+- 继续排查发现右键资源虽然已经有差异比较，但 `normalizeContextMenuItem()` 仍可能在缺少稳定 `id` 时退回临时前端 id，`getMenuIdentityKey()` 也只用 `tab/menuName/dllName` 组合，过弱时容易把没改动的菜单项错误配对，继而触发无关 `menus` 写入。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+
+### Result Notes
+- 这次修的是两条真正的保存链路根因，而不是只在 `menus` 外层加拦截。
+- 主字段保存现在不会再因为旧别名字段优先级过高而丢掉当前 UI 的列属性修改。
+- `UnionModule` 明细共享资源保存现在会基于同一份代表快照做 current/baseline 比较，能显著降低“只改列属性却批量 POST menus/colors”的误判概率。
+- 这轮又进一步把主字段保存改成了 `p_systemwordbooktab` 原字段口径，例如：
+  - `vislble / edit / tagid / ifSearch / bak / fieldsql / fieldsqlid / fieldsqlname / fieldsqlTag / InputHintText / dataAlign`
+  - 并同步把主字段回填映射切到这些真实列名，避免“界面改的是一套字段，保存发的是另一套别名”。
+- 右键映射和 identity 也补强了：
+  - 菜单项现在会显式保留后端 `id/backendId`
+  - 菜单 identity 不再只看 `tab/menuName/dllName`，还会纳入 `menuid/action/actiontype`
+  - 目标是避免弱主键配对把没改的菜单项误当成新数据整批 `POST`
+- 当前仍有一个联调边界：这次完成了代码级和构建级验证，但还没替你逐条在浏览器 Network 面板里手点确认具体 `fields/menus/colors` 请求数量；建议你刷新后再实际点一次“保存本页”观察是否已经回到只发该发的接口。
+
+## 2026-03-27 单表保存仍误触发明细颜色与右键写入
+
+### Requirement Spec
+- 目标：修复“只改主字段属性时，保存仍触发颜色/右键保存，且右键会调用很多次”的问题，并确保列属性保存继续正常。
+- 影响范围：`src/features/dashboard/module-settings/use-single-table-module-settings-save.ts` 中主资源、明细局部资源、`UnionModule` 共享资源的 diff 与保存分支。
+- 关键约束：
+  - 用户没有改动颜色、右键、明细时，不得产生对应 `POST`。
+  - 不允许回退当前已经修好的主字段保存。
+  - 优先定位误判根因，不用“临时硬拦截所有菜单保存”来掩盖问题。
+- 不做什么：
+  - 本轮不扩展新的保存接口。
+  - 本轮不处理布局编辑器保存。
+- 成功标准：
+  - 只改主字段属性时，只触发必要的 `fields` 保存。
+  - `menus/colors` 不再在无改动时批量触发。
+  - `npm run lint`、`npm run build` 通过。
+
+### Checklist
+- [ ] 复核主资源、明细局部资源、`UnionModule` 共享资源的 diff 输入是否使用了同一份 baseline。
+- [ ] 定位为什么无改动时仍会把 `menus/colors` 判定为 dirty。
+- [ ] 修复误判逻辑并保持主字段保存正常。
+- [ ] 完成验证并记录结果。
+
+### Progress Notes
+- 用户最新反馈表明：主字段保存接口已经能正确触发并落库，但保存时仍会误触发颜色和右键写入，且右键调用很多次。
+- 用户进一步确认，当前误触发的是“下方明细模块”的颜色和右键保存，不是主表颜色/右键分支。
+- 当前高优先级怀疑点：
+  - 明细局部资源与 `UnionModule` 共享资源的 baseline/current 代表不一致。
+  - 颜色 body 或 identity 仍夹带前端派生字段，导致 diff 恒为不等。
+  - 明细聚合时同一个共享模块被多条明细重复保存。
+- 已确认 `buildColorBody()` 还在通过 `...cloneValue(record)` 整包展开前端对象，导致 `label / disabled / textColor / backgroundColor / foregroundToken` 等 UI 派生字段一起进入颜色 diff 与 POST body。
+- 已新增集合级 body 指纹比较：如果一整组列/颜色/右键的后端字段 body 完全一致，就直接复用 baseline，不再逐条进入 `POST` 分支。
+- 已在明细保存循环里增加“明细级短路”：
+  - 对带 `UnionModule` 的明细，先用共享模块口径比较列/颜色/右键是否真的变化；无变化则直接复用 baseline，不再参与共享模块写入。
+  - 对本地明细资源，同样先比较 `grid-fields / colors / menus` 的后端字段 body；无变化则整支跳过，不再进入保存与删除逻辑。
+- 用户再次反馈后确认：即使只改主单表列的 `username1`，保存仍会触发下方明细模块的颜色/右键写入。这说明问题不只是“整支分支误入”，还存在“列变化时颜色/右键被顺带保存”的情况。
+- 已继续把明细保存拆到资源级：
+  - 明细局部资源现在分别计算 `columnsChanged / colorsChanged / menusChanged`，只有对应资源真的变化才调用对应保存接口。
+  - `UnionModule` 共享资源也改成分别计算 `sharedColumnsChanged / sharedColorsChanged / sharedMenusChanged`，避免列变化时顺带触发共享颜色/右键保存。
+- 根据用户贴出的真实 `menus` 请求体与响应继续排查后发现，当前更像是“同一条后端菜单/颜色记录在 baseline 与当前 state 里的对象形态不一致”，而不一定是业务字段真的变了。
+- 已继续把明细与 `UnionModule` 共享资源的颜色/右键，在比较前统一重新走一遍 `mapColorRule / mapContextMenuItem` 规范化，再按后端 body 做差异判断，降低 UI 对象形态差异导致的误判。
+- 用户继续贴出颜色请求后，进一步确认还有一个误判来源：当前代码把“UnionModule 关联关系变化”也算进了共享资源保存条件里。但关联关系本身已经由明细本体保存，不应单独触发共享颜色/右键写入。
+- 已去掉 `shouldSyncSharedResources` 对 `unionModuleChanged` 的依赖，改成只有共享列/颜色/右键自身 body 真变化时，才允许进入共享资源保存。
+- 用户继续贴出一条实际 `menus` 请求后，已确认请求体和后端返回记录在逻辑上是同一条数据，问题更像是集合 diff 仍然只靠 body 指纹，没把带主键 `id` 的稳定记录优先按 identity 对位。
+- 已把集合级比较升级成“先按稳定 identity + backend body 对位，再用原有 body 指纹兜底”，并让明细局部资源与 `UnionModule` 共享资源外层 `changed` 判定也统一走这套规则，避免已有 `id` 的明细颜色/右键因对象形态差异被误判为 changed。
+- 用户再次贴出共享模块 `tab=1000401` 的实际 `menus/colors` 请求后，继续确认当前误判仍然落在 `UnionModule` 共享资源分支，而本地明细分支已经有“后端权威基线回读”保护。
+- 已补齐共享模块分支的同类保护：
+  - 当共享 `colors/menus` 在前端比较里看起来 changed，但当前行都带后端主键时，会先回读共享模块真实后端 `colors/menus`，再用规范化后的后端 body 与当前 state 比较。
+  - 如果当前 state 与权威后端数据等价，就直接把共享分支视为未改动，跳过 `POST /colors`、`POST /menus`。
+- 用户继续反馈后确认：虽然多余的 `POST` 已经不再触发，但保存阶段仍会额外发一轮明细/共享模块 `GET menus/colors`。这轮补成“优先读当前页面加载时已经缓存的装饰快照，只有缓存缺失时才回退网络请求”。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+
+### Result Notes
+- 这轮把颜色保存体改成了纯后端字段白名单，不再把整份前端编辑态对象混进颜色接口请求。
+- 这轮还新增了集合级“整组 body 是否一致”判断，用来兜住 identity 抖动但内容未变的场景；这样无改动的颜色/右键集合会直接复用 baseline，而不是逐条 `POST`。
+- 这轮进一步把明细资源分支前移短路：如果某个明细自身或其 `UnionModule` 共享资源按后端字段完全未变，它不会再被送进颜色/右键保存分支。
+- 这轮又把保存粒度从“整支明细分支”细化到“列 / 颜色 / 右键”三级判定；现在即使某个明细确实需要保存列，也不会默认把颜色和右键一起带去保存。
+- 这轮又把明细与共享资源的颜色/右键比较统一收口到规范化 mapper 后再比；目标是消除“同一条后端记录因为当前 state 形态不同而被误判 changed”的噪音。
+- 这轮还修掉了一个逻辑级误判：明细 `UnionModule` 关系变化不再被当成共享颜色/右键需要保存的理由；共享资源保存现在只由共享资源自身的实际差异驱动。
+- 这轮再往下收了一层：对于已经带后端主键 `id` 的明细颜色/右键，集合是否变化不再只看排序后的 body 指纹，而是先按 identity 对位后再比 backend body。这样即使同一条记录在当前 state 和 baseline 里的对象形态不同，也不会轻易误发 `POST`。
+- 这轮又把同样的“权威后端基线回读”补到了 `UnionModule` 共享资源分支，避免出现“本地明细已被拦住，但共享模块 `menus/colors` 仍按旧 baseline 误判为 changed”的残留情况。
+- 这轮进一步把保存阶段的权威校验改成“先用当前页面加载阶段缓存下来的明细/共享模块装饰快照”，减少用户在点“保存本页”后看到的额外 `GET menus/colors`，只有缓存缺失才会回退到真实接口。
+- 当前仍有一个联调边界：这次完成了代码级和构建级验证，但还没替你逐条在浏览器 Network 面板里手点确认具体 `fields/menus/colors` 请求数量；建议你刷新后再实际点一次“保存本页”观察是否已经回到只发该发的接口。

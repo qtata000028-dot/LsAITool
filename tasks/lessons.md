@@ -373,6 +373,11 @@
 - When the browser network panel shows the same menu endpoints looping with no user interaction, inspect top-level optional object props first. An unstable default prop can look like a state-flow bug even when the effect bodies themselves are correct.
 
 ## 2026-03-26 Module-Settings Effects Must Not Reload From Their Own Hydration State
+
+## 2026-03-27 Persisted Detail Resources Must Diff By Identity Before Body Fingerprints
+- If a detail color/menu row already has a real backend `id`, do not rely only on whole-collection body fingerprints to decide whether the resource changed. Object-shape drift between baseline and current state can still make the collection look different even when each persisted row is logically identical.
+- For persisted collections, prefer matching rows by stable identity first and then comparing the actual backend save body. Body-fingerprint equality should stay as a fallback for rows that genuinely do not have stable keys yet.
+- Apply the same identity-first rule both inside the per-row save helper and in the outer `changed` gate. If the outer gate still uses a weaker comparison, unchanged detail menus/colors can continue to enter the save branch and spam `POST` calls even though row-level bodies match.
 - In the module-settings step, avoid wiring resource-loading effects to collection objects that the same effect hydrates, such as `detailTableConfigs` or `detailTableColumns`. If an effect fetches menus/colors and then immediately writes those collections back, using them as dependencies will create a fetch loop.
 - When a loader only needs the latest helper callback or latest column snapshot during merge/capture, keep that value in a ref and read `ref.current` inside the effect. Do not let callback identity churn or large mutable collections decide whether the network request should run again.
 - For related-module detail hydration, separate "when should we refetch" from "what helper logic do we use during this fetch". A callback like `resolveDetailModuleSnapshotByCode` can legitimately depend on many states, but those dependency changes should not automatically retrigger the parent detail-loading effect unless the fetch inputs themselves changed.
@@ -411,3 +416,58 @@
 - When the user confirms that `/api/ai/*` has moved onto the main Java backend, do not stop after updating frontend request headers. Audit the dev proxy and IIS reverse-proxy rules too, or the browser can still hit a stale sidecar target and mask the real fix.
 - A direct `curl` to `9093` succeeding while the browser path `3000/api/ai/*` returns `500` is a strong sign of stale proxy routing, not necessarily an application bug. Check `vite.config.ts`, `public/web.config`, and recent proxy error logs before touching request payloads.
 - In this repo, `ECONNREFUSED 127.0.0.1:3001` inside `.codex-dev.log` is a concrete signature that `/api/ai/*` is still being sent to the deprecated local AI server. Treat that as a routing bug first.
+
+## 2026-03-26 Main-Field Save Mappers Must Prefer The Current UI Alias Over Stale Backend Mirrors
+- When a field row simultaneously carries UI-editable aliases (`name`, `sourceField`, `placeholder`, `defaultValue`) and hydrated backend mirrors (`displayName`, `fieldName`, `promptText`, `defaultDate`), save mappers must prefer the current UI alias first. Otherwise users can edit the form and still post the old hydrated value back.
+- This class of bug is subtle because the save request still succeeds; the signal is "I changed the column property but it didn't save" even though a `POST /fields` happened.
+- For the single-table main-field table, the safe precedence is to map `name -> username1`, `sourceField -> fieldname/sysname`, `placeholder -> prompttext`, and `defaultValue -> defaultdate` before falling back to older backend aliases.
+
+## 2026-03-26 Shared UnionModule Save Diff Needs One Consistent Representative Baseline
+- When multiple detail tabs point at the same `UnionModule`, do not let one tab provide the current rows while another tab provides the baseline rows. That mismatch makes unchanged shared menus/colors look like a full rewrite on save.
+- Aggregate one representative snapshot per related module and keep its current rows and baseline rows together. A practical rule is "prefer the active detail tab; otherwise prefer the snapshot with the richest field/menu/color data".
+- If a save bug shows many `menus` writes after editing an unrelated column, inspect the shared-module aggregation first. The body mapper may be fine while the representative baseline selection is wrong.
+
+## 2026-03-26 Main Field Save Must Follow p_systemwordbooktab Raw Columns
+- For single-table main fields, do not keep diffing and saving against invented aliases like `isvisible`, `isreadonly`, `isquery`, `prompttext`, or `helptext` once the user has given the real table structure. The persisted contract belongs to `p_systemwordbooktab`, so the save body should use raw columns such as `vislble`, `edit`, `tagid`, `ifSearch`, `bak`, `fieldsql`, `InputHintText`, and `dataAlign`.
+- Fix the read side and write side together. If the loader reads one alias family but the saver writes another, users will see either false "unchanged" comparisons or successful requests that still do not reflect the edited value after reload.
+- When a user says "the column property did not save" and no `fields` request fires, first check whether that property actually maps to a legacy DB column name instead of assuming the diff logic itself is wrong.
+
+## 2026-03-26 Popup Menu Diff Needs Stable Persisted IDs Before Weak Business Keys
+- For right-click menus, always preserve the backend `id`/`backendId` when normalizing fetched rows. If a persisted row falls back to a temporary front-end ID, unchanged rows can be mistaken for creates during save.
+- A fallback identity built only from `tab + menuName + dllName` is too weak for legacy menu rows. Include additional stable fields like `menuid`, `action`, and `actiontype` before trusting the comparison.
+- When a save path unexpectedly writes many `menus` rows after an unrelated field edit, inspect menu normalization first. The actual issue may be lost persisted IDs rather than the save loop itself.
+
+## 2026-03-27 Resource Collections Need A Whole-Collection Equality Gate Before Row-Level Upsert
+- For legacy editors with shared resources (`UnionModule` colors/menus, detail decorations, main-table menus), row-level identity matching is not enough on its own. If the whole collection's backend-field bodies are unchanged, short-circuit the entire save branch before attempting per-row upsert.
+- This collection-level equality gate is especially valuable when rows are normalized through UI-specific adapters. Even if some temporary IDs or derived display fields drift, unchanged backend payloads should not trigger a write.
+- Color rule save mappers must stay on an explicit backend-field allow-list. Reintroducing `...cloneValue(record)` into a color body will make collection equality noisy again and can resurrect false `colors` writes after unrelated edits.
+
+## 2026-03-27 Detail Resource Saves Need A Branch-Level No-Op Gate Before Shared Aggregation
+- When a user reports that saving a main-field change still writes many detail `menus/colors`, do not stop at the generic diff helper. Check whether unchanged detail tabs are still entering the shared/local save branch before diffing even starts.
+- For detail resources, add the no-op check at the detail-branch level: compare the baseline and current collections using the exact backend save body for that branch, and skip aggregation entirely when nothing changed.
+- This is especially important for `UnionModule` details. If unchanged detail tabs are still aggregated into the shared-module map, later collection-level diffing may still execute repeated writes or deletes because the branch itself should never have been entered.
+
+## 2026-03-27 Detail Save Branches Must Diff Columns, Colors, And Menus Independently
+- After a branch-level gate is in place, do not assume that entering the branch means every resource inside it should be saved. A user can change only a column while colors and menus remain untouched.
+- For single-table detail saves, compute `columnsChanged`, `colorsChanged`, and `menusChanged` separately for both local-detail resources and `UnionModule` shared resources. Then call only the corresponding write and delete APIs for the resources that actually changed.
+- This prevents a still-dirty column collection from dragging unrelated `colors/menus` into `POST` calls, even if those subordinate resources compare cleanly.
+
+## 2026-03-27 Detail Color And Menu Diff Must Canonicalize Through The Same Mapper First
+- Legacy detail editors often hold the same backend row in multiple front-end shapes: freshly fetched DTO shape, normalized inspector shape, and in-memory edited shape. Comparing those raw objects directly is noisy even if the persisted fields are unchanged.
+- Before diffing detail `colors/menus` or `UnionModule` shared `colors/menus`, run both baseline and current arrays back through the same normalization mapper (`mapColorRule`, `mapContextMenuItem`) and only then build the backend save body.
+- If a user can paste a request payload that matches the backend row by eye but the app still posts it, that is a strong sign the compare step is being fed mismatched UI object shapes rather than real business-field changes.
+
+## 2026-03-27 UnionModule Relation Changes Must Not Imply Shared Resource Writes
+- In the single-table detail flow, changing or normalizing the `UnionModule` relation is part of saving the detail record itself. It is not evidence that the related module's fields, colors, or menus were edited.
+- Do not include `unionModuleChanged` as a reason to enter the shared-resource save branch. Otherwise a harmless relation normalization can still trigger unrelated `POST /colors` and `POST /menus` for the referenced module.
+- Shared resource writes should be driven only by shared resource body differences, not by the mere fact that a detail points at that module.
+
+## 2026-03-27 Shared UnionModule Resources Need The Same Authoritative Baseline Fallback As Local Detail Resources
+- Fixing local detail `colors/menus` diff is not enough when the same data can also be saved through the `UnionModule` shared-resource branch. If only the local branch uses an authoritative backend re-read, unchanged shared menus/colors can still be posted from stale in-memory baselines.
+- For shared module resources with persisted rows, re-read the authoritative module `colors/menus` before writing whenever the normalized compare says they changed. If the freshly fetched backend rows are equivalent to the current UI state, treat the branch as unchanged and skip `POST`.
+- When a user keeps pasting the exact same `menus/colors` payload with a real `id`, assume the remaining bug is "shared baseline drift" before inventing more compare heuristics.
+
+## 2026-03-27 Save-Time Verification Should Reuse Already-Loaded Detail Decoration Snapshots Before Hitting The Network
+- Once the editor has already loaded a detail tab's `menus/colors` or a related module's shared `menus/colors`, saving should reuse that in-memory snapshot as the first authoritative baseline. A save button that always re-fetches the same decoration data feels broken to users even if no write occurs.
+- Keep two small caches: one keyed by `moduleCode` for shared `UnionModule` decorations, and one keyed by `moduleCode:detailId` for local detail decorations. Save-time diff verification can read these caches before deciding whether a network `GET` is needed.
+- Only fall back to live `fetchSingleTableDetailMenus/Colors` or `fetchSingleTableModuleMenus/Colors` when the cache is absent. That preserves correctness without showing needless post-save reads in normal flows.
