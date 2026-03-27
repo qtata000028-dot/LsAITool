@@ -8,8 +8,13 @@ export type ConfigWizardStepItem = {
 };
 
 type ConfigWizardSidebarProps = {
+  closeIcon?: string;
+  closeTitle?: string;
+  compact?: boolean;
   completedSteps: number[];
   configStep: number;
+  flat?: boolean;
+  headingTitle?: string;
   isFullscreenConfigActive: boolean;
   isTypeStepLocked: boolean;
   onClose: () => void;
@@ -19,8 +24,13 @@ type ConfigWizardSidebarProps = {
 };
 
 export function ConfigWizardSidebar({
+  closeIcon = 'close',
+  closeTitle = '关闭',
+  compact = false,
   completedSteps,
   configStep,
+  flat = false,
+  headingTitle = '配置向导',
   isFullscreenConfigActive,
   isTypeStepLocked,
   onClose,
@@ -29,21 +39,28 @@ export function ConfigWizardSidebar({
   steps,
 }: ConfigWizardSidebarProps) {
   return (
-    <div className={`shrink-0 overflow-hidden border-r border-slate-200 bg-white shadow-[4px_0_18px_rgba(15,23,42,0.04)] transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${
-      isFullscreenConfigActive ? 'w-0 border-r-0 p-0 opacity-0' : 'w-72 p-5 opacity-100'
+    <div className={`shrink-0 overflow-hidden border-r border-slate-200 bg-white transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${
+      flat ? '' : 'shadow-[4px_0_18px_rgba(15,23,42,0.04)]'
+    } ${
+      isFullscreenConfigActive ? 'w-0 border-r-0 p-0 opacity-0' : compact ? 'w-56 p-3 opacity-100' : 'w-72 p-5 opacity-100'
     }`}>
-      <div className="mb-6 flex items-center gap-3">
+      <div className={`flex items-center ${compact ? 'mb-4 gap-2.5' : 'mb-6 gap-3'}`}>
         <button
           onClick={onClose}
-          className="flex size-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:text-slate-900 dark:bg-slate-800 dark:hover:text-white"
+          title={closeTitle}
+          className={`flex items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:text-slate-900 dark:bg-slate-800 dark:hover:text-white ${
+            compact ? 'size-8' : 'size-9'
+          }`}
         >
-          <span className="material-symbols-outlined text-xl">close</span>
+          <span className={`material-symbols-outlined ${compact ? 'text-[18px]' : 'text-xl'}`}>{closeIcon}</span>
         </button>
-        <span className="text-[18px] font-bold tracking-tight text-slate-900 dark:text-white">配置向导</span>
+        <span className={`font-bold tracking-tight text-slate-900 dark:text-white ${compact ? 'text-[16px]' : 'text-[18px]'}`}>{headingTitle}</span>
       </div>
 
-      <div className="relative flex flex-1 flex-col gap-6">
-        <div className="absolute left-[15px] top-4 bottom-6 w-px rounded-full bg-slate-200 dark:bg-slate-800" />
+      <div className={`relative flex flex-1 flex-col ${compact ? 'gap-4' : 'gap-6'}`}>
+        <div className={`absolute w-px rounded-full bg-slate-200 dark:bg-slate-800 ${
+          compact ? 'left-[13px] top-3 bottom-3' : 'left-[15px] top-4 bottom-6'
+        }`} />
 
         {steps.map((step) => {
           const isActive = configStep === step.id;
@@ -60,9 +77,11 @@ export function ConfigWizardSidebar({
                 }
                 onStepSelect(step.id);
               }}
-              className={`relative z-10 flex items-start gap-3 group ${isLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+              className={`relative z-10 flex items-start group ${compact ? 'gap-2.5' : 'gap-3'} ${isLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
             >
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all duration-500 ${
+              <div className={`flex shrink-0 items-center justify-center rounded-full transition-all duration-500 ${
+                compact ? 'h-7 w-7' : 'h-8 w-8'
+              } ${
                 isLocked
                   ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
                   : isCompleted
@@ -85,12 +104,12 @@ export function ConfigWizardSidebar({
               </div>
 
               <div className="mt-0 flex flex-col">
-                <span className={`text-[14px] font-semibold transition-colors duration-300 ${
+                <span className={`${compact ? 'text-[13px]' : 'text-[14px]'} font-semibold transition-colors duration-300 ${
                   isActive ? 'text-primary' : isCompleted ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
                 }`}>
                   {step.title}
                 </span>
-                <span className="mt-1 text-[11px] leading-5 text-slate-500">{step.desc}</span>
+                {!compact ? <span className="mt-1 text-[11px] leading-5 text-slate-500">{step.desc}</span> : null}
               </div>
             </div>
           );

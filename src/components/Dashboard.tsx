@@ -76,6 +76,7 @@ import {
   joinRuntimeDeclarationBlocks,
 } from '../features/dashboard/designer/runtime-dimension-rules';
 import { DashboardOverview } from '../features/dashboard/dashboard-overview';
+import { ResearchRecordWorkbench, type ResearchWorkbenchModuleOption } from '../features/dashboard/research-record-workbench';
 import {
   type ConditionWorkbenchScope,
 } from '../features/dashboard/module-settings/condition-workbench';
@@ -1230,6 +1231,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
   const [subsystemMenus, setSubsystemMenus] = useState<BackendSubsystemNode[]>([]);
   const [activeSubsystem, setActiveSubsystem] = useState('');
   const [activeFirstLevelMenuId, setActiveFirstLevelMenuId] = useState('');
+  const [activeWorkbench, setActiveWorkbench] = useState<'modules' | 'research-record'>('modules');
   const [secondLevelMenus, setSecondLevelMenus] = useState<BackendMenuNode[]>([]);
   const [isLoadingSubsystemMenus, setIsLoadingSubsystemMenus] = useState(true);
   const [isLoadingSecondLevelMenus, setIsLoadingSecondLevelMenus] = useState(false);
@@ -2765,6 +2767,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
   };
 
   const openNewModuleGuide = () => {
+    setActiveWorkbench('modules');
     setActiveConfigMenu(null);
     setMenuInfoError(null);
     setIsMenuInfoLoading(false);
@@ -2873,6 +2876,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
       return;
     }
 
+    setActiveWorkbench('modules');
     setActiveConfigMenu(menu);
     setMenuInfoError(null);
     setIsMenuInfoSaving(false);
@@ -4085,6 +4089,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
   const handleFirstLevelMenuClick = (subsystemId: string, menu: BackendMenuNode) => {
     const clickedSubsystem = subsystemMenus.find((item) => item.id === subsystemId) ?? null;
 
+    setActiveWorkbench('modules');
     setActiveConfigMenu(null);
     setActiveSubsystem(subsystemId);
     setActiveFirstLevelMenuId(menu.id);
@@ -4111,6 +4116,27 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
   const activeMenuCodePrefix = activeMenuCode.replace(/\s+/g, '').toUpperCase().slice(0, 2) || 'MO';
   const activeSubsystemName = normalizeMenuTitle(selectedSubsystem?.title) || '未选择子系统';
   const activeFirstLevelMenuName = normalizeMenuTitle(activeFirstLevelMenu?.title);
+  const isResearchRecordActive = activeWorkbench === 'research-record';
+  const researchRecordStorageKey = [
+    normalizeMenuCode(selectedSubsystem?.subsysCode ?? selectedSubsystem?.code) || activeSubsystem || 'subsystem',
+    normalizeMenuCode(activeFirstLevelMenu?.code) || activeFirstLevelMenuId || 'workspace',
+  ].join(':');
+  const researchCaptureModules = useMemo<ResearchWorkbenchModuleOption[]>(() => (
+    secondLevelMenus.flatMap((menu) => {
+      const profile = getMenuModuleTypeProfile(menu.moduleType);
+      if (!profile || profile.businessType !== 'document') {
+        return [];
+      }
+
+      return [{
+        id: menu.id,
+        menuId: menu.menuId ?? null,
+        moduleCode: normalizeMenuCode(menu.purviewId) || normalizeMenuCode(menu.code) || menu.id,
+        moduleName: normalizeMenuTitle(menu.title) || '未命名模块',
+        moduleType: 'single-table',
+      }];
+    })
+  ), [secondLevelMenus]);
   const billDocumentWorkbenchNode = buildDashboardBillDocumentWorkbenchBridge({
     canvas: {
       activeMenuName,
@@ -5810,6 +5836,42 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
     },
   });
 
+  const researchRecordWorkbenchNode = (
+    <ResearchRecordWorkbench
+      activeFirstLevelMenuName={activeFirstLevelMenuName}
+      activeSubsystemName={activeSubsystemName}
+      availableModules={researchCaptureModules}
+      currentUserName={currentUserName}
+      onExit={() => setActiveWorkbench('modules')}
+      onShowToast={showToast}
+      storageKey={researchRecordStorageKey}
+    />
+  );
+
+  if (isResearchRecordActive) {
+    return (
+      <div className="h-screen overflow-hidden bg-white text-slate-900 dark:bg-background-dark dark:text-slate-100 font-sans">
+        <main className="h-full w-full">
+          {researchRecordWorkbenchNode}
+        </main>
+
+        {dashboardConfigBridgeNodes.deleteConfirmNode}
+
+        <ConfigWizardModalShell
+          open={isConfigOpen}
+          isFullscreenConfigActive={isConfigFullscreenActive}
+          isModuleSettingStep={isModuleSettingStep}
+          onClose={closeConfigWizard}
+          toastMessage={toastMessage}
+          overlayNodes={dashboardConfigBridgeNodes.configWizardModalNodes.overlayNodes}
+          sidebarNode={dashboardConfigBridgeNodes.configWizardModalNodes.sidebarNode}
+          bodyNode={dashboardConfigBridgeNodes.configWizardModalNodes.bodyNode}
+          footerNode={dashboardConfigBridgeNodes.configWizardModalNodes.footerNode}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-sans">
       {/* Sidebar Navigation */}
@@ -5941,6 +6003,21 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
           </div>
 
           <div className="pt-2 space-y-1">
+            <button
+              type="button"
+              onClick={() => setActiveWorkbench('research-record')}
+              className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
+                isResearchRecordActive
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+              }`}
+            >
+              <span className="material-symbols-outlined text-xl">assignment</span>
+              <span className="text-sm font-medium">调研记录</span>
+            </button>
+          </div>
+
+          <div className="pt-2 space-y-1">
             <a className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" href="#">
               <span className="material-symbols-outlined text-xl">schema</span>
               <span className="text-sm font-medium">表单流程</span>
@@ -5997,7 +6074,9 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
         {/* Header */}
         <header className="h-16 flex items-center justify-between px-8 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-10 shrink-0">
           <div className="flex items-center gap-4">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white">模块配置工作台</h2>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+              {isResearchRecordActive ? '调研记录工作台' : '模块配置工作台'}
+            </h2>
             <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
             <nav className="flex items-center gap-2 text-[13px] text-slate-500">
               <span className="hover:text-primary transition-colors cursor-pointer">
@@ -6009,6 +6088,12 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
                   <span className="text-slate-900 dark:text-slate-200 font-semibold tracking-tight">
                     {activeFirstLevelMenuName}
                   </span>
+                </>
+              ) : null}
+              {isResearchRecordActive ? (
+                <>
+                  <span className="material-symbols-outlined text-[16px] text-slate-400">chevron_right</span>
+                  <span className="text-slate-900 dark:text-slate-200 font-semibold tracking-tight">调研记录</span>
                 </>
               ) : null}
             </nav>
@@ -6035,7 +6120,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = {}
         <div className="flex-1 overflow-y-auto p-8 lg:p-10 relative">
           <AnimatePresence mode="wait">
             <motion.div
-              key={activeMenu}
+              key={isResearchRecordActive ? `research-record:${researchRecordStorageKey}` : activeMenu}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
