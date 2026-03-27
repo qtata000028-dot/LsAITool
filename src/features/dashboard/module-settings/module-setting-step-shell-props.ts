@@ -20,6 +20,7 @@ export type BuildModuleSettingStepShellPropsInput = {
   conditionPanelResizeMaxWidth: number;
   conditionPanelResizeMinWidth: number;
   conditionToolbarNode: React.ReactNode;
+  currentModuleName: ModuleSettingStepShellProps['currentModuleName'];
   currentDetailFillType: string;
   currentDetailFillTypeValue: string;
   deleteSelectedColumns: (scope: 'left' | 'main' | 'detail', ids: string[]) => void;
@@ -84,6 +85,7 @@ export function buildModuleSettingStepShellProps(
     billDocumentWorkbenchNode: input.billDocumentWorkbenchNode,
     businessType: input.businessType,
     columnOperationPanel: input.columnOperationPanel,
+    currentModuleName: input.currentModuleName,
     inspectorPaneWidth: input.inspectorPaneWidth,
     isConfigFullscreenActive: input.isConfigFullscreenActive,
     moduleSettingStageHeightClass: input.moduleSettingStageHeightClass,

@@ -12,6 +12,7 @@ type BuildDashboardModuleSettingStepShellPropsInput = {
     | 'businessType'
     | 'columnOperationPanel'
     | 'conditionToolbarNode'
+    | 'currentModuleName'
     | 'currentDetailFillType'
     | 'currentDetailFillTypeValue'
     | 'detailTabs'

@@ -108,9 +108,12 @@ type LeftGridMappingSectionProps = {
 
 type DocumentMainTableSetupSectionProps = {
   isGeneratingSqlDraft: boolean;
+  mainTableHiddenColumnsCount: number;
   mainTableName: string;
   onGenerateSqlDraft: () => void;
+  onOpenMainHiddenColumnsModal: () => void;
   onUpdateMainTableName: (value: string) => void;
+  showMainHiddenColumnsAction: boolean;
 };
 
 type GridConfigSummarySectionProps = {
@@ -129,8 +132,8 @@ type GridConfigSummarySectionProps = {
   yAxisField: string;
 };
 
-const quietDocumentInspectorCardClass = 'rounded-[16px] border border-slate-200/75 bg-white px-4 py-3 shadow-none dark:border-slate-800 dark:bg-slate-950/78';
-const quietDocumentInspectorSummaryClass = 'rounded-[12px] border border-slate-200/70 bg-slate-50/80 px-3 py-2 text-[11px] leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-300';
+const quietDocumentInspectorCardClass = 'border border-slate-200/75 bg-white px-4 py-3 shadow-none dark:border-slate-800 dark:bg-slate-950/78';
+const quietDocumentInspectorSummaryClass = 'border border-slate-200/70 bg-slate-50/80 px-3 py-2 text-[11px] leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-300';
 const quietDocumentInspectorActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200/80 bg-white px-3 text-[11px] font-medium text-slate-600 transition-colors hover:border-[color:var(--workspace-accent-border)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200';
 const quietDocumentInspectorPrimaryActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-md bg-[color:var(--workspace-accent)] px-3 text-[11px] font-medium text-white shadow-none transition-colors hover:bg-[color:var(--workspace-accent-strong)]';
 
@@ -231,20 +234,36 @@ export const GridSqlConfigSection = React.memo(function GridSqlConfigSection({
 
 export const DocumentMainTableSetupSection = React.memo(function DocumentMainTableSetupSection({
   isGeneratingSqlDraft,
+  mainTableHiddenColumnsCount,
   mainTableName,
   onGenerateSqlDraft,
+  onOpenMainHiddenColumnsModal,
   onUpdateMainTableName,
+  showMainHiddenColumnsAction,
 }: DocumentMainTableSetupSectionProps) {
   return (
     <section className={`${quietDocumentInspectorCardClass} space-y-3`}>
-      <div className={shadcnSectionTitleClass}>
-        <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">dataset</span>
-        <div className="min-w-0">
-          <h4>主表定义</h4>
-          <p className="mt-1 text-[11px] font-normal text-slate-500 dark:text-slate-300">
-            翻译未转英文的字段标识，生成建表 SQL，并同步主表 SQL。
-          </p>
+      <div className="flex items-start justify-between gap-3">
+        <div className={shadcnSectionTitleClass}>
+          <span className="material-symbols-outlined text-[17px] text-[color:var(--workspace-accent)]">dataset</span>
+          <div className="min-w-0">
+            <h4>主表定义</h4>
+            <p className="mt-1 text-[11px] font-normal text-slate-500 dark:text-slate-300">
+              翻译未转英文的字段标识，生成建表 SQL，并同步主表 SQL。
+            </p>
+          </div>
         </div>
+        {showMainHiddenColumnsAction ? (
+          <button
+            type="button"
+            onClick={onOpenMainHiddenColumnsModal}
+            disabled={mainTableHiddenColumnsCount === 0}
+            className={`${quietDocumentInspectorActionClass} shrink-0 disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            <span className="material-symbols-outlined text-[14px]">view_column</span>
+            详细列 {mainTableHiddenColumnsCount > 0 ? `(${mainTableHiddenColumnsCount})` : ''}
+          </button>
+        ) : null}
       </div>
       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
         <div>

@@ -6,6 +6,7 @@ type BuildDashboardConfigBridgeModuleSettingInput = {
     activeResize: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['activeResize'];
     activeTab: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['activeTab'];
     businessType: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['businessType'];
+    currentModuleName: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['currentModuleName'];
     currentDetailFillType: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['currentDetailFillType'];
     currentDetailFillTypeValue: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['currentDetailFillTypeValue'];
     detailTabs: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['detailTabs'];

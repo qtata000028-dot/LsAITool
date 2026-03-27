@@ -290,8 +290,8 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
 
   const addColumnWidth = isCompactModuleSetting ? 58 : 74;
   const tableSurfaceClass = tableSelected
-    ? 'cloudy-glass-panel border-[2px] border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] shadow-none'
-    : 'cloudy-glass-panel border-slate-200/80';
+    ? 'cloudy-glass-panel bg-[color:var(--workspace-accent-surface)] shadow-none'
+    : 'cloudy-glass-panel';
   const headerDividerClass = tableSelected ? 'border-[color:var(--workspace-accent-border)]' : 'border-slate-200/70 dark:border-slate-700/80';
 
   const getHeaderButtonClass = useCallback((isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => (
@@ -348,7 +348,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const tableCanvasPanelShellClass = tableSelected
     ? 'border-[color:var(--workspace-accent-border)] bg-white/96 shadow-[0_24px_56px_-36px_rgba(192,107,125,0.5)] dark:bg-slate-950/86'
     : 'border-white/85 bg-white/94 shadow-[0_24px_48px_-36px_rgba(15,23,42,0.24)] dark:border-slate-800/90 dark:bg-slate-950/84';
-  const getHeaderCornerClass = useCallback((index: number) => (index === 0 ? 'rounded-tl-[16px]' : ''), []);
+  const getHeaderCornerClass = useCallback(() => '', []);
   const addColumnHeaderShellClass = tableSelected
     ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] dark:bg-white/6'
     : 'border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(246,249,252,0.6))]';
@@ -375,8 +375,8 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   );
 
   const tableBuilderContentStyle = useMemo<React.CSSProperties>(() => ({
-    width: totalTableWidth,
-    minWidth: totalTableWidth,
+    width: `max(100%, ${totalTableWidth}px)`,
+    minWidth: `max(100%, ${totalTableWidth}px)`,
   }), [totalTableWidth]);
 
   const handleAddColumn = useCallback(() => {
@@ -534,7 +534,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
         <button
           type="button"
           onClick={handleAddColumn}
-          className={`flex h-full w-full items-center justify-center rounded-tr-md transition-all ${isCompactModuleSetting ? (compactCanvasVariant ? 'min-h-[34px]' : 'min-h-[38px]') : (compactCanvasVariant ? 'min-h-[40px]' : 'min-h-[46px]')} hover:bg-white/55 dark:hover:bg-white/8`}
+          className={`flex h-full w-full items-center justify-center transition-all ${isCompactModuleSetting ? (compactCanvasVariant ? 'min-h-[34px]' : 'min-h-[38px]') : (compactCanvasVariant ? 'min-h-[40px]' : 'min-h-[46px]')} hover:bg-white/55 dark:hover:bg-white/8`}
           title="新增字段"
         >
           <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
@@ -609,8 +609,8 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
 
   if (backgroundSelectable) {
     return (
-      <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative flex min-h-0 min-w-0 w-full flex-col overflow-x-auto overflow-y-hidden rounded-[26px] border ${tableSurfaceClass} ${isCompactCanvas ? 'h-full min-h-[184px]' : 'h-full min-h-[260px]'} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
-        <div className="min-w-0 shrink-0">
+      <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative flex min-h-0 min-w-0 w-full flex-col overflow-x-auto overflow-y-hidden ${tableSurfaceClass} ${isCompactCanvas ? 'h-full min-h-[184px]' : 'h-full min-h-[260px]'}`}>
+        <div className="min-w-full w-full shrink-0">
           <table
             style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
             className="table-fixed border-separate border-spacing-0 text-left text-[12px]"
@@ -621,12 +621,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
             </thead>
           </table>
         </div>
-        <div className="sticky left-0 z-10 mt-1 flex min-h-0 min-w-full flex-1">
+        <div className="sticky left-0 z-10 flex min-h-0 min-w-full flex-1">
           <button
             type="button"
             onClick={onSelectTable}
             onDoubleClick={handleCanvasDoubleClick}
-            className={`relative flex h-full w-full items-center justify-center overflow-hidden rounded-[20px] border px-4 text-center transition-all dark:border-slate-700 ${tableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] py-3' : 'min-h-[188px] py-6'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+            className={`relative flex h-full w-full items-center justify-center overflow-hidden border-x-0 border-b-0 border-t px-4 text-center transition-all dark:border-slate-700 ${tableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] py-3' : 'min-h-[188px] py-6'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
           >
             <div className={`pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.28),transparent_62%)] ${tableSelected ? 'opacity-80' : 'opacity-100'}`} />
             {centeredCanvasOverlayNode}
@@ -637,10 +637,10 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   }
 
   return (
-    <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden rounded-[26px] border ${tableSurfaceClass} ${isCompactModuleSetting ? 'p-1.5' : 'p-2'}`}>
+    <div style={workspaceThemeVars} className={`cloudy-cloud-grid relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden ${tableSurfaceClass}`}>
       <table
         style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
-        className="table-fixed overflow-hidden rounded-[18px] border-separate border-spacing-0 text-left text-[12px]"
+        className="table-fixed border-separate border-spacing-0 text-left text-[12px]"
       >
         {tableColGroupNode}
         <thead className={`sticky top-0 z-20 select-none bg-transparent ${tableSelected ? 'shadow-[inset_0_-1px_0_rgba(239,199,207,0.55)]' : ''}`}>
@@ -653,7 +653,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
                 type="button"
                 onClick={onSelectTable}
                 onDoubleClick={handleCanvasDoubleClick}
-                className={`relative flex w-full items-center justify-start overflow-hidden rounded-b-md border-t px-4 text-center transition-all ${isCompactModuleSetting ? 'min-h-[190px] py-4' : 'min-h-[230px] py-6'} ${tableSelected ? 'border-[#efd6db]/85 bg-[#fff7f9] hover:bg-[#fff3f6] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
+                className={`relative flex w-full items-center justify-start overflow-hidden border-t px-4 text-center transition-all ${isCompactModuleSetting ? 'min-h-[190px] py-4' : 'min-h-[230px] py-6'} ${tableSelected ? 'border-[#efd6db]/85 bg-[#fff7f9] hover:bg-[#fff3f6] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
               >
                 {centeredCanvasOverlayNode}
               </button>

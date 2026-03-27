@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 
 import {
+  fetchSingleTableDetailColors,
+  fetchSingleTableDetailMenus,
+  fetchSingleTableModuleColors,
+  fetchSingleTableModuleMenus,
   deleteSingleTableDetailChart,
   deleteSingleTableDetailColor,
   deleteSingleTableDetailGridField,
@@ -100,6 +104,8 @@ type UseSingleTableModuleSettingsSaveOptions = {
   mainFilterFields: any[];
   mainTableColumns: any[];
   mainTableConfig: any;
+  getCachedDetailDecorations?: (moduleCode: string, detailId: number) => { colorRules: any[]; contextMenuItems: any[] } | null;
+  getCachedModuleDecorations?: (moduleCode: string) => { colorRules: any[]; contextMenuItems: any[] } | null;
   mapColorRule: (row: any, index: number) => any;
   mapConditionRecordToField: (row: any, index: number, overrides?: Record<string, unknown>) => any;
   mapContextMenuItem: (row: any, index: number) => any;
@@ -236,6 +242,10 @@ function uniquePersistedIds(items: any[]) {
   return Array.from(new Set(items.map((item) => getPersistedId(item)).filter((id): id is number => id != null)));
 }
 
+function areAllRowsPersisted(items: any[]) {
+  return items.length > 0 && items.every((item) => getPersistedId(item) != null);
+}
+
 function normalizeComparableValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => normalizeComparableValue(item));
@@ -255,6 +265,81 @@ function normalizeComparableValue(value: unknown): unknown {
 
 function areBodiesEqual(left: Record<string, unknown>, right: Record<string, unknown>) {
   return JSON.stringify(normalizeComparableValue(left)) === JSON.stringify(normalizeComparableValue(right));
+}
+
+function getComparableBodyFingerprint(body: Record<string, unknown>) {
+  const { id: _ignoredId, ...rest } = body;
+  return JSON.stringify(normalizeComparableValue(rest));
+}
+
+function areCollectionsEqualByBody(
+  baselineRows: any[],
+  currentRows: any[],
+  buildBody: (record: any, index: number) => Record<string, unknown>,
+) {
+  if (baselineRows.length !== currentRows.length) {
+    return false;
+  }
+
+  const baselineFingerprints = baselineRows
+    .map((record, index) => getComparableBodyFingerprint(buildBody(record, index)))
+    .sort();
+  const currentFingerprints = currentRows
+    .map((record, index) => getComparableBodyFingerprint(buildBody(record, index)))
+    .sort();
+
+  return baselineFingerprints.every((fingerprint, index) => fingerprint === currentFingerprints[index]);
+}
+
+function areCollectionsEqualByIdentityAndBody(
+  baselineRows: any[],
+  currentRows: any[],
+  getIdentityKey: (record: any) => string,
+  buildBody: (record: any, index: number) => Record<string, unknown>,
+) {
+  if (baselineRows.length !== currentRows.length) {
+    return false;
+  }
+
+  const baselineMap = new Map<string, any>();
+
+  for (const baselineRow of baselineRows) {
+    const identityKey = getIdentityKey(baselineRow);
+    if (!identityKey || baselineMap.has(identityKey)) {
+      return false;
+    }
+    baselineMap.set(identityKey, baselineRow);
+  }
+
+  for (const [index, currentRow] of currentRows.entries()) {
+    const identityKey = getIdentityKey(currentRow);
+    if (!identityKey) {
+      return false;
+    }
+
+    const baselineRow = baselineMap.get(identityKey);
+    if (!baselineRow) {
+      return false;
+    }
+
+    if (!areBodiesEqual(buildBody(currentRow, index), buildBody(baselineRow, index))) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function areCollectionsEquivalent(
+  baselineRows: any[],
+  currentRows: any[],
+  getIdentityKey: (record: any) => string,
+  buildBody: (record: any, index: number) => Record<string, unknown>,
+) {
+  return (
+    areCollectionsEqualByIdentityAndBody(baselineRows, currentRows, getIdentityKey, buildBody)
+    || areCollectionsEqualByBody(baselineRows, currentRows, buildBody)
+  );
 }
 
 function getMainFieldIdentityKey(record: any) {
@@ -335,8 +420,11 @@ function getMenuIdentityKey(record: any) {
   const menuName = normalizeLookupKey(toText(record?.menuname || record?.menuName || record?.label));
   const dllName = normalizeLookupKey(toText(record?.dllname || record?.dllName || record?.actionKey));
   const tab = normalizeLookupKey(toText(record?.tab));
-  if (menuName || dllName || tab) {
-    return `menu:${tab}:${menuName}:${dllName}`;
+  const menuId = normalizeLookupKey(toText(record?.menuid || record?.menuId));
+  const action = normalizeLookupKey(toText(record?.action || record?.actionSql));
+  const actionType = normalizeLookupKey(toText(record?.actiontype || record?.actionType));
+  if (menuName || dllName || tab || menuId || action || actionType) {
+    return `menu:${tab}:${menuId}:${menuName}:${dllName}:${actionType}:${action}`;
   }
 
   return '';
@@ -376,6 +464,14 @@ function getChartIdentityKey(record: any) {
   return '';
 }
 
+function getSharedModuleResourceScore(entry: Pick<SharedModuleResourceEntry, 'baselineColors' | 'baselineColumns' | 'baselineMenus' | 'colors' | 'columns' | 'menus'>) {
+  return (
+    ((entry.columns?.length ?? 0) + (entry.baselineColumns?.length ?? 0)) * 10_000
+    + ((entry.menus?.length ?? 0) + (entry.baselineMenus?.length ?? 0)) * 100
+    + ((entry.colors?.length ?? 0) + (entry.baselineColors?.length ?? 0))
+  );
+}
+
 function findBaselineRecord<T>(baselineRows: T[], currentRow: any, getIdentityKey: (record: any) => string) {
   const currentKey = getIdentityKey(currentRow);
   if (!currentKey) {
@@ -402,12 +498,32 @@ async function saveDiffedCollection({
   mapSavedRow,
   saveRow,
 }: SaveDiffedCollectionOptions) {
+  if (areCollectionsEquivalent(baselineRows, currentRows, getIdentityKey, buildBody)) {
+    const rows = currentRows.map((record, index) => {
+      const baselineRecord = findBaselineRecord(baselineRows, record, getIdentityKey) ?? baselineRows[index] ?? record;
+      return cloneValue(baselineRecord);
+    });
+
+    return {
+      pairs: currentRows.map((current, index) => ({ current, saved: rows[index] })),
+      rows,
+    };
+  }
+
   const rows: any[] = [];
   const pairs: Array<{ current: any; saved: any }> = [];
 
   for (const [index, record] of currentRows.entries()) {
     const currentBody = buildBody(record, index);
-    const baselineRecord = findBaselineRecord(baselineRows, record, getIdentityKey);
+    const currentBodyFingerprint = getComparableBodyFingerprint(currentBody);
+    const baselineRecord = findBaselineRecord(baselineRows, record, getIdentityKey)
+      ?? (
+        baselineRows.length === currentRows.length
+          ? baselineRows.find(
+            (candidate) => getComparableBodyFingerprint(buildBody(candidate, index)) === currentBodyFingerprint,
+          ) ?? null
+          : null
+      );
 
     if (baselineRecord) {
       const baselineBody = buildBody(baselineRecord, index);
@@ -429,62 +545,68 @@ async function saveDiffedCollection({
 }
 
 function buildMainFieldBody(record: any, dllCoId: string, index: number) {
+  const sourceField = toText(record?.sourceField);
+  const fieldName = sourceField || toText(record?.fieldname || record?.fieldName || record?.sysname || record?.systemName);
+  const systemName = sourceField || toText(record?.sysname || record?.systemName || record?.fieldname || record?.fieldName);
+  const fieldKey = toText(record?.fieldkey || record?.fieldKey || record?.backendFieldKey);
+  const displayName = toText(record?.name || record?.username1 || record?.displayName);
+  const width = toInteger(record?.width, 0);
+
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
-    dllcoid: dllCoId,
     tab: toText(record?.tab || dllCoId),
-    username1: toText(record?.username1 || record?.displayName || record?.name),
-    fieldname: toText(record?.fieldname || record?.fieldName || record?.sourceField),
-    sysname: toText(record?.sysname || record?.systemName || record?.sourceField),
-    fieldkey: toText(record?.fieldkey || record?.fieldKey || record?.backendFieldKey || record?.formKey),
-    fieldsqltag: toInteger(record?.fieldsqltag ?? record?.fieldSqlTag ?? record?.controltype ?? record?.controlType, 0),
-    fieldsqltagname: toText(record?.fieldsqltagname || record?.fieldSqlTagName || record?.controltypename || record?.controlTypeName),
+    username1: displayName,
+    fieldname: fieldName,
+    sysname: systemName,
+    fieldKey,
+    fieldsqlTag: toInteger(record?.fieldsqltag ?? record?.fieldSqlTag ?? record?.controltype ?? record?.controlType, 0),
     orderid: toInteger(record?.orderid ?? record?.orderId, index + 1),
-    width: toInteger(record?.width, 0),
-    controlwidth: toInteger(record?.controlwidth ?? record?.controlWidth ?? record?.width, toInteger(record?.width, 0)),
-    mobilewidth: toInteger(record?.mobilewidth ?? record?.mobileWidth, toInteger(record?.width, 0)),
-    visible: toBooleanNumber(record?.visible, true),
-    isvisible: toBooleanNumber(record?.visible, true),
-    searchable: toBooleanNumber(record?.searchable, false),
-    isquery: toBooleanNumber(record?.searchable, false),
-    readonly: toBooleanNumber(record?.readonly, false),
-    isreadonly: toBooleanNumber(record?.readonly, false),
-    required: toBooleanNumber(record?.required, false),
-    isneed: toBooleanNumber(record?.required, false),
-    placeholder: toText(record?.placeholder),
-    prompttext: toText(record?.prompttext || record?.promptText || record?.placeholder),
-    defaultdate: toText(record?.defaultdate || record?.defaultDate || record?.defaultValue),
-    dictcode: toText(record?.dictcode || record?.dictCode),
-    formula: toText(record?.formula),
-    relationsql: toText(record?.relationsql || record?.relationSql),
-    dynamicsql: toText(record?.dynamicsql || record?.dynamicSql || record?.fieldsql || record?.fieldSql),
-    helptext: toText(record?.helptext || record?.helpText || record?.remark || record?.memo),
+    width,
+    vislble: toBooleanNumber(!(record?.visible ?? true), false),
+    edit: toBooleanNumber(record?.readonly, false),
+    defaultdate: toText(record?.defaultValue || record?.defaultdate || record?.defaultDate),
+    bak: toText(record?.helpText || record?.bak || record?.helptext || record?.remark || record?.memo),
+    tagid: toBooleanNumber(record?.required, false),
+    fieldsql: toText(record?.dynamicSql || record?.fieldsql || record?.fieldSql || record?.dynamicsql),
+    fieldsqlid: toText(record?.fieldsqlid || record?.fieldSqlId || record?.dictCode || record?.dictcode),
+    fieldsqlname: toText(record?.fieldsqlname || record?.fieldSqlName),
+    calcExpr: toText(record?.formula || record?.calcExpr || record?.calcexpr),
+    ifSearch: toBooleanNumber(record?.searchable, false),
+    dataAlign: toText(record?.align || record?.dataAlign || record?.dataalign),
+    controlWidth: toInteger(record?.controlWidth ?? record?.controlwidth ?? record?.width, width),
+    MobileWidth: toInteger(record?.mobileWidth ?? record?.mobilewidth, width),
+    formKey: toText(record?.formKey || record?.formkey),
+    InputHintText: toText(record?.placeholder || record?.InputHintText || record?.inputhinttext || record?.prompttext || record?.promptText),
   }), record);
 }
 
 function buildConditionBody(record: any, index: number, sourceId?: number | null, formKey?: string) {
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
-    sourceid: sourceId ?? toInteger(record?.sourceid ?? record?.sourceId),
-    formkey: toText(formKey || record?.formkey || record?.formKey),
-    orderid: toInteger(record?.orderid ?? record?.orderId, index + 1),
-    controlname: toText(record?.controlname || record?.controlName || record?.sourceField),
-    controllabel: toText(record?.controllabel || record?.controlLabel || record?.name),
-    controltype: toInteger(record?.controltype ?? record?.controlType ?? record?.fieldsqltag ?? record?.fieldSqlTag, 0),
-    controltypename: toText(record?.controltypename || record?.controlTypeName || record?.fieldsqltagname || record?.fieldSqlTagName || record?.type),
-    controlwidth: toInteger(record?.controlwidth ?? record?.controlWidth ?? record?.width, 300),
-    defaultvalue: toText(record?.defaultvalue || record?.defaultValue),
-    sourcesql: toText(record?.sourcesql || record?.sourceSql || record?.relationSql),
-    resultfield: toText(record?.resultfield || record?.resultField || record?.formula),
-    checkcond: toText(record?.checkcond || record?.checkCondition || record?.dynamicSql),
-    keyfield: toText(record?.keyfield || record?.keyField || record?.dictCode || record?.sourceField),
-    placeholder: toText(record?.placeholder),
+    sourceId: sourceId ?? toInteger(record?.sourceId ?? record?.sourceid, 0),
+    BSColPercent: toInteger(record?.BSColPercent ?? record?.bscolpercent, 0),
+    Column_ID: toInteger(record?.Column_ID ?? record?.columnId ?? record?.column_id, 0),
+    orderId: toInteger(record?.orderId ?? record?.orderid, index + 1),
+    defaultValue: toText(record?.defaultValue ?? record?.defaultvalue),
+    controlTop: toInteger(record?.controlTop ?? record?.controltop, 0),
+    controlName: toText(record?.controlName ?? record?.controlname ?? record?.sourceField),
+    resultField: toText(record?.resultField ?? record?.resultfield ?? record?.formula),
+    keyField: toText(record?.keyField ?? record?.keyfield ?? record?.dictCode ?? record?.sourceField),
+    controlWidth: toInteger(record?.controlWidth ?? record?.controlwidth ?? record?.width, 300),
+    formKey: toText(formKey || record?.formKey || record?.formkey),
+    edited: toInteger(record?.edited, 0),
+    checkCond: toText(record?.checkCond ?? record?.checkcond ?? record?.dynamicSql),
+    BSRowId: toInteger(record?.BSRowId ?? record?.bsrowid, 0),
+    controlType: toInteger(record?.controlType ?? record?.controltype ?? record?.fieldSqlTag ?? record?.fieldsqltag, 0),
+    sourceSql: toText(record?.sourceSql ?? record?.sourcesql ?? record?.relationSql),
+    isFix: toInteger(record?.isFix ?? record?.isfix, 0),
+    controlLabel: toText(record?.name ?? record?.controlLabel ?? record?.controllabel),
+    controlLeft: toInteger(record?.controlLeft ?? record?.controlleft, 0),
+    controlHeight: toInteger(record?.controlHeight ?? record?.controlheight, 21),
+    leftNotLinkFlag: toBooleanNumber(record?.leftNotLinkFlag ?? record?.leftnotlinkflag, false),
   }), record);
 }
 
 function buildGridFieldBody(record: any, fieldId?: number | null) {
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
     ...(fieldId != null ? { fieldId } : {}),
     fieldKey: toText(record?.fieldKey || record?.fieldkey || record?.backendFieldKey),
     fieldName: toText(record?.fieldName || record?.fieldname || record?.sourceField),
@@ -502,7 +624,6 @@ function buildColorBody(record: any, tab: string) {
   const foregroundColor = toText(record?.forcecolor || record?.foregroundColor || record?.textColor);
   const backgroundColor = toText(record?.backcolor || record?.backgroundColor);
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
     tab,
     condition: toText(record?.condition || record?.conditionSql || record?.note || record?.label),
     forcecolor: foregroundColor,
@@ -521,7 +642,6 @@ function buildColorBody(record: any, tab: string) {
 
 function buildMenuBody(record: any, tab: string, index: number) {
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
     tab,
     menuname: toText(record?.menuname || record?.menuName || record?.label),
     dllname: toText(record?.dllname || record?.dllName || record?.actionKey),
@@ -546,12 +666,9 @@ function normalizeDetailTypeCode(fillType: string, rawValue: unknown) {
   return '0';
 }
 
-function buildDetailBody(record: any, gridConfig: any, moduleCode: string, fillType: string, index: number) {
+function buildDetailBody(record: any, gridConfig: any, _moduleCode: string, fillType: string, index: number) {
   const detailTypeCode = normalizeDetailTypeCode(fillType, record?.detailTypeCode);
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
-    tab: moduleCode,
-    tabkey: toText(record?.tabkey || record?.tabKey || record?.formKey || record?.id || `detail_${index + 1}`),
     detailname: toText(record?.detailname || record?.detailName || record?.name || `明细 ${index + 1}`),
     detailtype: detailTypeCode,
     library: toText(record?.library || record?.dllTemplate),
@@ -585,7 +702,6 @@ function buildDetailBody(record: any, gridConfig: any, moduleCode: string, fillT
 
 function buildDetailChartBody(record: any, index: number) {
   return ensureOptionalId(stripUndefinedEntries({
-    ...cloneValue(record),
     orderid: toInteger(record?.orderid ?? record?.orderId, index + 1),
     charttype: toText(record?.charttype || record?.chartType || '0'),
     charttitle: toText(record?.charttitle || record?.chartTitle),
@@ -647,6 +763,8 @@ export function useSingleTableModuleSettingsSave({
   mainFilterFields,
   mainTableColumns,
   mainTableConfig,
+  getCachedDetailDecorations,
+  getCachedModuleDecorations,
   mapColorRule,
   mapConditionRecordToField,
   mapContextMenuItem,
@@ -747,6 +865,46 @@ export function useSingleTableModuleSettingsSave({
       baselineRef.current.details.tableConfigs[tabId] = cloneValue(input.tableConfig);
     }
   }, []);
+
+  const fetchAuthoritativeModuleColors = useCallback(async (targetModuleCode: string) => {
+    const cachedDecorations = getCachedModuleDecorations?.(targetModuleCode);
+    if (cachedDecorations?.colorRules) {
+      return sortByOrderId(cachedDecorations.colorRules.map((row, index) => mapColorRule(row, index)));
+    }
+
+    const rows = await fetchSingleTableModuleColors(targetModuleCode);
+    return sortByOrderId(rows.map((row, index) => mapColorRule(row, index)));
+  }, [getCachedModuleDecorations, mapColorRule]);
+
+  const fetchAuthoritativeModuleMenus = useCallback(async (targetModuleCode: string) => {
+    const cachedDecorations = getCachedModuleDecorations?.(targetModuleCode);
+    if (cachedDecorations?.contextMenuItems) {
+      return sortByOrderId(cachedDecorations.contextMenuItems.map((row, index) => mapContextMenuItem(row, index)));
+    }
+
+    const rows = await fetchSingleTableModuleMenus(targetModuleCode);
+    return sortByOrderId(rows.map((row, index) => mapContextMenuItem(row, index)));
+  }, [getCachedModuleDecorations, mapContextMenuItem]);
+
+  const fetchAuthoritativeDetailColors = useCallback(async (targetModuleCode: string, detailId: number) => {
+    const cachedDecorations = getCachedDetailDecorations?.(targetModuleCode, detailId);
+    if (cachedDecorations?.colorRules) {
+      return sortByOrderId(cachedDecorations.colorRules.map((row, index) => mapColorRule(row, index)));
+    }
+
+    const rows = await fetchSingleTableDetailColors(targetModuleCode, detailId);
+    return sortByOrderId(rows.map((row, index) => mapColorRule(row, index)));
+  }, [getCachedDetailDecorations, mapColorRule]);
+
+  const fetchAuthoritativeDetailMenus = useCallback(async (targetModuleCode: string, detailId: number) => {
+    const cachedDecorations = getCachedDetailDecorations?.(targetModuleCode, detailId);
+    if (cachedDecorations?.contextMenuItems) {
+      return sortByOrderId(cachedDecorations.contextMenuItems.map((row, index) => mapContextMenuItem(row, index)));
+    }
+
+    const rows = await fetchSingleTableDetailMenus(targetModuleCode, detailId);
+    return sortByOrderId(rows.map((row, index) => mapContextMenuItem(row, index)));
+  }, [getCachedDetailDecorations, mapContextMenuItem]);
 
   const saveCurrentPage = useCallback(async () => {
     const moduleCode = currentModuleCode.trim();
@@ -954,7 +1112,58 @@ export function useSingleTableModuleSettingsSave({
         const baselineTabConfig = baselineRef.current.details.tabConfigs[detailEntry.oldTabId] ?? {};
         const baselineTableConfig = baselineRef.current.details.tableConfigs[detailEntry.oldTabId] ?? {};
         const baselineColumns = baselineRef.current.details.tableColumns[detailEntry.oldTabId] ?? [];
+        const sortedDetailColumns = sortByOrderId(detailEntry.columns);
+        const sortedDetailColors = sortByOrderId(detailEntry.tableConfig?.colorRules ?? []);
+        const sortedDetailMenus = sortByOrderId(detailEntry.tableConfig?.contextMenuItems ?? []);
+        const sortedBaselineColumns = sortByOrderId(baselineColumns);
+        const sortedBaselineColors = sortByOrderId(baselineTableConfig?.colorRules ?? []);
+        const sortedBaselineMenus = sortByOrderId(baselineTableConfig?.contextMenuItems ?? []);
+        const normalizedDetailColors = sortedDetailColors.map((colorRule, index) => mapColorRule(colorRule, index));
+        const normalizedDetailMenus = sortedDetailMenus.map((menu, index) => mapContextMenuItem(menu, index));
+        const normalizedBaselineColors = sortedBaselineColors.map((colorRule, index) => mapColorRule(colorRule, index));
+        const normalizedBaselineMenus = sortedBaselineMenus.map((menu, index) => mapContextMenuItem(menu, index));
         const isGridLike = detailEntry.fillType === '表格' || detailEntry.fillType === '树表格';
+
+        const shouldSyncSharedResources = detailEntry.unionModule && isGridLike && (
+          !areCollectionsEquivalent(
+            sortedBaselineColumns,
+            sortedDetailColumns,
+            getMainFieldIdentityKey,
+            (column, index) => buildMainFieldBody(column, detailEntry.unionModule, index),
+          )
+          || !areCollectionsEquivalent(
+            normalizedBaselineColors,
+            normalizedDetailColors,
+            getColorIdentityKey,
+            (colorRule) => buildColorBody(colorRule, detailEntry.unionModule),
+          )
+          || !areCollectionsEquivalent(
+            normalizedBaselineMenus,
+            normalizedDetailMenus,
+            getMenuIdentityKey,
+            (menu, index) => buildMenuBody(menu, detailEntry.unionModule, index),
+          )
+        );
+        const shouldSyncLocalDetailResources = isGridLike && Number.isFinite(nextDetailId) && (
+          !areCollectionsEquivalent(
+            sortedBaselineColumns,
+            sortedDetailColumns,
+            getGridFieldIdentityKey,
+            (column) => buildGridFieldBody(column),
+          )
+          || !areCollectionsEquivalent(
+            normalizedBaselineColors,
+            normalizedDetailColors,
+            getColorIdentityKey,
+            (colorRule) => buildColorBody(colorRule, moduleCode),
+          )
+          || !areCollectionsEquivalent(
+            normalizedBaselineMenus,
+            normalizedDetailMenus,
+            getMenuIdentityKey,
+            (menu, index) => buildMenuBody(menu, moduleCode, index),
+          )
+        );
 
         nextDetailTabs.push({ id: nextTabId, name: toText(detailEntry.tabConfig?.detailName || detailEntry.tabName) || detailEntry.tabName });
         nextDetailTabConfigs[nextTabId] = cloneValue(detailEntry.tabConfig);
@@ -966,24 +1175,37 @@ export function useSingleTableModuleSettingsSave({
         }
 
         if (detailEntry.unionModule && isGridLike) {
+          if (!shouldSyncSharedResources) {
+            nextDetailTableColumns[nextTabId] = cloneValue(sortedBaselineColumns);
+            nextDetailTableConfigs[nextTabId] = {
+              ...nextDetailTableConfigs[nextTabId],
+              colorRules: cloneValue(normalizedBaselineColors),
+              colorRulesEnabled: normalizedBaselineColors.length > 0,
+              contextMenuItems: cloneValue(normalizedBaselineMenus),
+              contextMenuEnabled: normalizedBaselineMenus.length > 0,
+            };
+            continue;
+          }
+
           const currentShared = sharedModuleResources.get(detailEntry.unionModule);
-          const nextShared: SharedModuleResourceEntry = currentShared ?? {
-            baselineColors: cloneValue(baselineTableConfig?.colorRules ?? []),
-            baselineColumns: cloneValue(baselineColumns),
-            baselineMenus: cloneValue(baselineTableConfig?.contextMenuItems ?? []),
-            colors: cloneValue(detailEntry.tableConfig?.colorRules ?? []),
-            columns: cloneValue(detailEntry.columns),
-            menus: cloneValue(detailEntry.tableConfig?.contextMenuItems ?? []),
+          const candidateShared: SharedModuleResourceEntry = {
+            baselineColors: cloneValue(normalizedBaselineColors),
+            baselineColumns: cloneValue(sortedBaselineColumns),
+            baselineMenus: cloneValue(normalizedBaselineMenus),
+            colors: cloneValue(normalizedDetailColors),
+            columns: cloneValue(sortedDetailColumns),
+            menus: cloneValue(normalizedDetailMenus),
             moduleCode: detailEntry.unionModule,
           };
 
-          if (!currentShared || detailEntry.oldTabId === activeTab || (detailEntry.columns?.length ?? 0) > nextShared.columns.length) {
-            nextShared.columns = cloneValue(detailEntry.columns);
-            nextShared.colors = cloneValue(detailEntry.tableConfig?.colorRules ?? []);
-            nextShared.menus = cloneValue(detailEntry.tableConfig?.contextMenuItems ?? []);
-          }
+          const shouldReplaceSharedBaseline = !currentShared
+            || detailEntry.oldTabId === activeTab
+            || getSharedModuleResourceScore(candidateShared) > getSharedModuleResourceScore(currentShared);
 
-          sharedModuleResources.set(detailEntry.unionModule, nextShared);
+          sharedModuleResources.set(
+            detailEntry.unionModule,
+            shouldReplaceSharedBaseline ? candidateShared : currentShared,
+          );
 
           if (Number.isFinite(nextDetailId) && !toText(baselineTabConfig?.relatedModule)) {
             for (const persistedId of uniquePersistedIds(baselineColumns)) {
@@ -997,32 +1219,97 @@ export function useSingleTableModuleSettingsSave({
             }
           }
         } else if (isGridLike && Number.isFinite(nextDetailId)) {
-          const { rows: nextColumns } = await saveDiffedCollection({
-            baselineRows: baselineColumns,
-            buildBody: (column) => buildGridFieldBody(column),
-            currentRows: sortByOrderId(detailEntry.columns),
-            getIdentityKey: getGridFieldIdentityKey,
-            mapSavedRow: (savedRow, index) => mapDetailGridFieldToColumn(savedRow, index),
-            saveRow: (body) => saveSingleTableDetailGridField(moduleCode, nextDetailId as number, body),
-          });
+          if (!shouldSyncLocalDetailResources) {
+            nextDetailTableColumns[nextTabId] = cloneValue(sortedBaselineColumns);
+            nextDetailTableConfigs[nextTabId] = {
+              ...nextDetailTableConfigs[nextTabId],
+              colorRules: cloneValue(normalizedBaselineColors),
+              colorRulesEnabled: normalizedBaselineColors.length > 0,
+              contextMenuItems: cloneValue(normalizedBaselineMenus),
+              contextMenuEnabled: normalizedBaselineMenus.length > 0,
+            };
+            continue;
+          }
 
-          const { rows: nextColors } = await saveDiffedCollection({
-            baselineRows: baselineTableConfig?.colorRules ?? [],
-            buildBody: (colorRule) => buildColorBody(colorRule, moduleCode),
-            currentRows: sortByOrderId(detailEntry.tableConfig?.colorRules ?? []),
-            getIdentityKey: getColorIdentityKey,
-            mapSavedRow: (savedRow, index) => mapColorRule(savedRow, index),
-            saveRow: (body) => saveSingleTableDetailColor(moduleCode, nextDetailId as number, body),
-          });
+          let effectiveLocalBaselineColors = normalizedBaselineColors;
+          let effectiveLocalBaselineMenus = normalizedBaselineMenus;
+          const localDetailColumnsChanged = !areCollectionsEquivalent(
+            sortedBaselineColumns,
+            sortedDetailColumns,
+            getGridFieldIdentityKey,
+            (column) => buildGridFieldBody(column),
+          );
+          let localDetailColorsChanged = !areCollectionsEquivalent(
+            effectiveLocalBaselineColors,
+            normalizedDetailColors,
+            getColorIdentityKey,
+            (colorRule) => buildColorBody(colorRule, moduleCode),
+          );
+          let localDetailMenusChanged = !areCollectionsEquivalent(
+            effectiveLocalBaselineMenus,
+            normalizedDetailMenus,
+            getMenuIdentityKey,
+            (menu, index) => buildMenuBody(menu, moduleCode, index),
+          );
 
-          const { rows: nextMenus } = await saveDiffedCollection({
-            baselineRows: baselineTableConfig?.contextMenuItems ?? [],
-            buildBody: (menu, index) => buildMenuBody(menu, moduleCode, index),
-            currentRows: sortByOrderId(detailEntry.tableConfig?.contextMenuItems ?? []),
-            getIdentityKey: getMenuIdentityKey,
-            mapSavedRow: (savedRow, index) => mapContextMenuItem(savedRow, index),
-            saveRow: (body) => saveSingleTableDetailMenu(moduleCode, nextDetailId as number, body),
-          });
+          if (localDetailColorsChanged && areAllRowsPersisted(normalizedDetailColors)) {
+            const authoritativeDetailColors = await fetchAuthoritativeDetailColors(moduleCode, nextDetailId as number);
+            if (areCollectionsEquivalent(
+              authoritativeDetailColors,
+              normalizedDetailColors,
+              getColorIdentityKey,
+              (colorRule) => buildColorBody(colorRule, moduleCode),
+            )) {
+              effectiveLocalBaselineColors = authoritativeDetailColors;
+              localDetailColorsChanged = false;
+            }
+          }
+
+          if (localDetailMenusChanged && areAllRowsPersisted(normalizedDetailMenus)) {
+            const authoritativeDetailMenus = await fetchAuthoritativeDetailMenus(moduleCode, nextDetailId as number);
+            if (areCollectionsEquivalent(
+              authoritativeDetailMenus,
+              normalizedDetailMenus,
+              getMenuIdentityKey,
+              (menu, index) => buildMenuBody(menu, moduleCode, index),
+            )) {
+              effectiveLocalBaselineMenus = authoritativeDetailMenus;
+              localDetailMenusChanged = false;
+            }
+          }
+
+          const nextColumns = localDetailColumnsChanged
+            ? (await saveDiffedCollection({
+              baselineRows: sortedBaselineColumns,
+              buildBody: (column) => buildGridFieldBody(column),
+              currentRows: sortedDetailColumns,
+              getIdentityKey: getGridFieldIdentityKey,
+              mapSavedRow: (savedRow, index) => mapDetailGridFieldToColumn(savedRow, index),
+              saveRow: (body) => saveSingleTableDetailGridField(moduleCode, nextDetailId as number, body),
+            })).rows
+            : cloneValue(sortedBaselineColumns);
+
+          const nextColors = localDetailColorsChanged
+            ? (await saveDiffedCollection({
+              baselineRows: effectiveLocalBaselineColors,
+              buildBody: (colorRule) => buildColorBody(colorRule, moduleCode),
+              currentRows: normalizedDetailColors,
+              getIdentityKey: getColorIdentityKey,
+              mapSavedRow: (savedRow, index) => mapColorRule(savedRow, index),
+              saveRow: (body) => saveSingleTableDetailColor(moduleCode, nextDetailId as number, body),
+            })).rows
+            : cloneValue(effectiveLocalBaselineColors);
+
+          const nextMenus = localDetailMenusChanged
+            ? (await saveDiffedCollection({
+              baselineRows: effectiveLocalBaselineMenus,
+              buildBody: (menu, index) => buildMenuBody(menu, moduleCode, index),
+              currentRows: normalizedDetailMenus,
+              getIdentityKey: getMenuIdentityKey,
+              mapSavedRow: (savedRow, index) => mapContextMenuItem(savedRow, index),
+              saveRow: (body) => saveSingleTableDetailMenu(moduleCode, nextDetailId as number, body),
+            })).rows
+            : cloneValue(effectiveLocalBaselineMenus);
 
           nextDetailTableColumns[nextTabId] = nextColumns;
           nextDetailTableConfigs[nextTabId] = {
@@ -1033,24 +1320,30 @@ export function useSingleTableModuleSettingsSave({
             contextMenuEnabled: nextMenus.length > 0,
           };
 
-          const savedDetailColumnIds = new Set(uniquePersistedIds(nextColumns));
-          for (const persistedId of uniquePersistedIds(baselineColumns)) {
-            if (!savedDetailColumnIds.has(persistedId)) {
-              await deleteSingleTableDetailGridField(moduleCode, nextDetailId as number, persistedId);
+          if (localDetailColumnsChanged) {
+            const savedDetailColumnIds = new Set(uniquePersistedIds(nextColumns));
+            for (const persistedId of uniquePersistedIds(baselineColumns)) {
+              if (!savedDetailColumnIds.has(persistedId)) {
+                await deleteSingleTableDetailGridField(moduleCode, nextDetailId as number, persistedId);
+              }
             }
           }
 
-          const savedDetailColorIds = new Set(uniquePersistedIds(nextColors));
-          for (const persistedId of uniquePersistedIds(baselineTableConfig?.colorRules ?? [])) {
-            if (!savedDetailColorIds.has(persistedId)) {
-              await deleteSingleTableDetailColor(moduleCode, nextDetailId as number, persistedId);
+          if (localDetailColorsChanged) {
+            const savedDetailColorIds = new Set(uniquePersistedIds(nextColors));
+            for (const persistedId of uniquePersistedIds(effectiveLocalBaselineColors)) {
+              if (!savedDetailColorIds.has(persistedId)) {
+                await deleteSingleTableDetailColor(moduleCode, nextDetailId as number, persistedId);
+              }
             }
           }
 
-          const savedDetailMenuIds = new Set(uniquePersistedIds(nextMenus));
-          for (const persistedId of uniquePersistedIds(baselineTableConfig?.contextMenuItems ?? [])) {
-            if (!savedDetailMenuIds.has(persistedId)) {
-              await deleteSingleTableDetailMenu(moduleCode, nextDetailId as number, persistedId);
+          if (localDetailMenusChanged) {
+            const savedDetailMenuIds = new Set(uniquePersistedIds(nextMenus));
+            for (const persistedId of uniquePersistedIds(effectiveLocalBaselineMenus)) {
+              if (!savedDetailMenuIds.has(persistedId)) {
+                await deleteSingleTableDetailMenu(moduleCode, nextDetailId as number, persistedId);
+              }
             }
           }
         }
@@ -1083,51 +1376,120 @@ export function useSingleTableModuleSettingsSave({
       }
 
       for (const sharedEntry of sharedModuleResources.values()) {
-        const { rows: nextColumns } = await saveDiffedCollection({
-          baselineRows: sharedEntry.baselineColumns,
-          buildBody: (column, index) => buildMainFieldBody(column, sharedEntry.moduleCode, index),
-          currentRows: sortByOrderId(sharedEntry.columns),
-          getIdentityKey: getMainFieldIdentityKey,
-          mapSavedRow: (savedRow, index) => mapMainFieldRecordToColumn(savedRow, index),
-          saveRow: (body) => saveSingleTableModuleField(sharedEntry.moduleCode, body),
-        });
+        const sortedSharedColumns = sortByOrderId(sharedEntry.columns);
+        const sortedSharedBaselineColumns = sortByOrderId(sharedEntry.baselineColumns);
+        const sortedSharedColors = sortByOrderId(sharedEntry.colors);
+        const sortedSharedBaselineColors = sortByOrderId(sharedEntry.baselineColors);
+        const sortedSharedMenus = sortByOrderId(sharedEntry.menus);
+        const sortedSharedBaselineMenus = sortByOrderId(sharedEntry.baselineMenus);
+        const normalizedSharedColors = sortedSharedColors.map((colorRule, index) => mapColorRule(colorRule, index));
+        const normalizedSharedBaselineColors = sortedSharedBaselineColors.map((colorRule, index) => mapColorRule(colorRule, index));
+        const normalizedSharedMenus = sortedSharedMenus.map((menu, index) => mapContextMenuItem(menu, index));
+        const normalizedSharedBaselineMenus = sortedSharedBaselineMenus.map((menu, index) => mapContextMenuItem(menu, index));
+        let effectiveSharedBaselineColors = normalizedSharedBaselineColors;
+        let effectiveSharedBaselineMenus = normalizedSharedBaselineMenus;
+        const sharedColumnsChanged = !areCollectionsEquivalent(
+          sortedSharedBaselineColumns,
+          sortedSharedColumns,
+          getMainFieldIdentityKey,
+          (column, index) => buildMainFieldBody(column, sharedEntry.moduleCode, index),
+        );
+        let sharedColorsChanged = !areCollectionsEquivalent(
+          effectiveSharedBaselineColors,
+          normalizedSharedColors,
+          getColorIdentityKey,
+          (colorRule) => buildColorBody(colorRule, sharedEntry.moduleCode),
+        );
+        let sharedMenusChanged = !areCollectionsEquivalent(
+          effectiveSharedBaselineMenus,
+          normalizedSharedMenus,
+          getMenuIdentityKey,
+          (menu, index) => buildMenuBody(menu, sharedEntry.moduleCode, index),
+        );
 
-        const { rows: nextColors } = await saveDiffedCollection({
-          baselineRows: sharedEntry.baselineColors,
-          buildBody: (colorRule) => buildColorBody(colorRule, sharedEntry.moduleCode),
-          currentRows: sortByOrderId(sharedEntry.colors),
-          getIdentityKey: getColorIdentityKey,
-          mapSavedRow: (savedRow, index) => mapColorRule(savedRow, index),
-          saveRow: (body) => saveSingleTableModuleColor(sharedEntry.moduleCode, body),
-        });
-
-        const { rows: nextMenus } = await saveDiffedCollection({
-          baselineRows: sharedEntry.baselineMenus,
-          buildBody: (menu, index) => buildMenuBody(menu, sharedEntry.moduleCode, index),
-          currentRows: sortByOrderId(sharedEntry.menus),
-          getIdentityKey: getMenuIdentityKey,
-          mapSavedRow: (savedRow, index) => mapContextMenuItem(savedRow, index),
-          saveRow: (body) => saveSingleTableModuleMenu(sharedEntry.moduleCode, body),
-        });
-
-        const nextColumnIds = new Set(uniquePersistedIds(nextColumns));
-        for (const persistedId of uniquePersistedIds(sharedEntry.baselineColumns)) {
-          if (!nextColumnIds.has(persistedId)) {
-            await deleteSingleTableModuleField(sharedEntry.moduleCode, persistedId);
+        if (sharedColorsChanged && areAllRowsPersisted(normalizedSharedColors)) {
+          const authoritativeSharedColors = await fetchAuthoritativeModuleColors(sharedEntry.moduleCode);
+          if (areCollectionsEquivalent(
+            authoritativeSharedColors,
+            normalizedSharedColors,
+            getColorIdentityKey,
+            (colorRule) => buildColorBody(colorRule, sharedEntry.moduleCode),
+          )) {
+            effectiveSharedBaselineColors = authoritativeSharedColors;
+            sharedColorsChanged = false;
           }
         }
 
-        const nextColorIds = new Set(uniquePersistedIds(nextColors));
-        for (const persistedId of uniquePersistedIds(sharedEntry.baselineColors)) {
-          if (!nextColorIds.has(persistedId)) {
-            await deleteSingleTableModuleColor(sharedEntry.moduleCode, persistedId);
+        if (sharedMenusChanged && areAllRowsPersisted(normalizedSharedMenus)) {
+          const authoritativeSharedMenus = await fetchAuthoritativeModuleMenus(sharedEntry.moduleCode);
+          if (areCollectionsEquivalent(
+            authoritativeSharedMenus,
+            normalizedSharedMenus,
+            getMenuIdentityKey,
+            (menu, index) => buildMenuBody(menu, sharedEntry.moduleCode, index),
+          )) {
+            effectiveSharedBaselineMenus = authoritativeSharedMenus;
+            sharedMenusChanged = false;
           }
         }
 
-        const nextMenuIds = new Set(uniquePersistedIds(nextMenus));
-        for (const persistedId of uniquePersistedIds(sharedEntry.baselineMenus)) {
-          if (!nextMenuIds.has(persistedId)) {
-            await deleteSingleTableModuleMenu(sharedEntry.moduleCode, persistedId);
+        const nextColumns = sharedColumnsChanged
+          ? (await saveDiffedCollection({
+            baselineRows: sortedSharedBaselineColumns,
+            buildBody: (column, index) => buildMainFieldBody(column, sharedEntry.moduleCode, index),
+            currentRows: sortedSharedColumns,
+            getIdentityKey: getMainFieldIdentityKey,
+            mapSavedRow: (savedRow, index) => mapMainFieldRecordToColumn(savedRow, index),
+            saveRow: (body) => saveSingleTableModuleField(sharedEntry.moduleCode, body),
+          })).rows
+          : cloneValue(sortedSharedBaselineColumns);
+
+        const nextColors = sharedColorsChanged
+          ? (await saveDiffedCollection({
+            baselineRows: effectiveSharedBaselineColors,
+            buildBody: (colorRule) => buildColorBody(colorRule, sharedEntry.moduleCode),
+            currentRows: normalizedSharedColors,
+            getIdentityKey: getColorIdentityKey,
+            mapSavedRow: (savedRow, index) => mapColorRule(savedRow, index),
+            saveRow: (body) => saveSingleTableModuleColor(sharedEntry.moduleCode, body),
+          })).rows
+          : cloneValue(effectiveSharedBaselineColors);
+
+        const nextMenus = sharedMenusChanged
+          ? (await saveDiffedCollection({
+            baselineRows: effectiveSharedBaselineMenus,
+            buildBody: (menu, index) => buildMenuBody(menu, sharedEntry.moduleCode, index),
+            currentRows: normalizedSharedMenus,
+            getIdentityKey: getMenuIdentityKey,
+            mapSavedRow: (savedRow, index) => mapContextMenuItem(savedRow, index),
+            saveRow: (body) => saveSingleTableModuleMenu(sharedEntry.moduleCode, body),
+          })).rows
+          : cloneValue(effectiveSharedBaselineMenus);
+
+        if (sharedColumnsChanged) {
+          const nextColumnIds = new Set(uniquePersistedIds(nextColumns));
+          for (const persistedId of uniquePersistedIds(sharedEntry.baselineColumns)) {
+            if (!nextColumnIds.has(persistedId)) {
+              await deleteSingleTableModuleField(sharedEntry.moduleCode, persistedId);
+            }
+          }
+        }
+
+        if (sharedColorsChanged) {
+          const nextColorIds = new Set(uniquePersistedIds(nextColors));
+          for (const persistedId of uniquePersistedIds(effectiveSharedBaselineColors)) {
+            if (!nextColorIds.has(persistedId)) {
+              await deleteSingleTableModuleColor(sharedEntry.moduleCode, persistedId);
+            }
+          }
+        }
+
+        if (sharedMenusChanged) {
+          const nextMenuIds = new Set(uniquePersistedIds(nextMenus));
+          for (const persistedId of uniquePersistedIds(effectiveSharedBaselineMenus)) {
+            if (!nextMenuIds.has(persistedId)) {
+              await deleteSingleTableModuleMenu(sharedEntry.moduleCode, persistedId);
+            }
           }
         }
 

@@ -82,6 +82,7 @@ export type UseInspectorPanelPropsOptions = {
   isTreeRelationFieldColumn: (column: any) => boolean;
   leftFilterFields: any[];
   loadSingleTableDetailResourcesById: (tabId: string, explicitFillType?: string) => Promise<void>;
+  mainTableHiddenColumnsCount: number;
   mainTableColumns: any[];
   mapFieldSqlTagToFieldType: (tagId: string) => string;
   normalizeColumn: (column: any) => any;
@@ -90,6 +91,7 @@ export type UseInspectorPanelPropsOptions = {
   normalizeDetailFillTypeValue: (fillType?: string | null) => string;
   normalizeFieldSqlTagId: (value: unknown, fallback?: number) => number;
   onOpenArchiveLayoutEditor: () => void;
+  onOpenMainHiddenColumnsModal: () => void;
   onOpenDetailBoardPreview: (rowId: number, preferredSortColumnId?: string | null) => void;
   onResetDetailBoardFieldWidth: (event: MouseEvent<HTMLButtonElement>, groupId: string, columnId: string) => void;
   onStartDetailBoardFieldResize: (event: MouseEvent<HTMLButtonElement>, groupId: string, columnId: string, label: string, minWidthOverride?: number) => void;
@@ -210,6 +212,7 @@ export function useInspectorPanelProps({
   isTreeRelationFieldColumn,
   leftFilterFields,
   loadSingleTableDetailResourcesById,
+  mainTableHiddenColumnsCount,
   mainTableColumns,
   mapFieldSqlTagToFieldType,
   normalizeColumn,
@@ -218,6 +221,7 @@ export function useInspectorPanelProps({
   normalizeDetailFillTypeValue,
   normalizeFieldSqlTagId,
   onOpenArchiveLayoutEditor,
+  onOpenMainHiddenColumnsModal,
   onOpenDetailBoardPreview,
   onResetDetailBoardFieldWidth,
   onStartDetailBoardFieldResize,
@@ -473,11 +477,13 @@ export function useInspectorPanelProps({
         isTranslatingIdentifiers,
         leftFilterFields,
         loadSingleTableDetailResourcesById,
+        mainTableHiddenColumnsCount,
         mutedLabelClass,
         normalizeColumn,
         normalizeDetailChartConfig,
         normalizeDetailFillTypeValue,
         onOpenArchiveLayoutEditor,
+        onOpenMainHiddenColumnsModal,
         onOpenColorRules: () => setInspectorPanelTab('color'),
         onOpenContextMenus: () => setInspectorPanelTab('contextmenu'),
         onOpenDetailBoardPreview,

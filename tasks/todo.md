@@ -2294,6 +2294,32 @@
 - `MemoTableBuilder` 内部现在会缓存 `headerColumns`、`colgroup`、标准/紧凑表头节点以及中心画布节点，减少同一轮渲染里的重复列宽计算和节点重建。
 - 几个表头样式 helper 也改成了稳定回调，避免刚做好的 memo 缓存被函数引用变化打穿。
 
+## 2026-03-27 Design Branch Dynamic Import 500 Fix
+
+### Requirement Spec
+- 目标：修复 `/design` 分支启动时 `research-record-word-editor.tsx` 和 `Dashboard.tsx` 懒加载失败导致的动态导入 500。
+- 影响范围：Word 编辑器懒加载模块源码、OnlyOffice 相关依赖安装状态、本地 dev 与 build 验证。
+- 关键约束：
+  - 先定位源码语法问题，再确认是否缺少依赖。
+  - 不改业务流程，只修复导致模块无法被 Vite 解析的问题。
+  - 需要同时验证 `lint`、`build` 和 dev 模块 URL 可访问。
+
+### Checklist
+- [x] 检查 `research-record-word-editor.tsx` 语法与字符串断裂问题。
+- [x] 修复 Word 编辑器模块源码。
+- [x] 补齐缺失的 `@onlyoffice/document-editor-react` 依赖。
+- [x] 验证 `npm run lint`、`npm run build` 和 dev 模块 URL `200`。
+
+### Verification
+- `npm run lint`：通过
+- `npm run build`：通过
+- `http://127.0.0.1:3000/src/features/dashboard/research-record-word-editor.tsx`：返回 `200`
+- `http://127.0.0.1:3000/src/components/Dashboard.tsx`：返回 `200`
+
+### Result Notes
+- 根因是两层叠加：`research-record-word-editor.tsx` 自身字符串断裂导致语法无效，同时本地 `node_modules` 缺少 `@onlyoffice/document-editor-react`。
+- 现在该懒加载模块源码已重写为可编译状态，并且依赖已补齐，Vite 已能正常返回模块内容。
+
 ## 2026-03-25 登录页白屏排查
 
 ### Requirement Spec
@@ -3034,3 +3060,454 @@
 - IIS 生产包报错的根因是 `vite.config.ts` 的 React 分包条件过宽，不是业务代码本身。
 - 现在新的生产包已经移除 `vendor/react-vendor` 循环依赖，浏览器可正常渲染登录页。
 - 当前仍保留一个环境边界：这次是在本机 `vite preview` + Edge headless 下验证通过，尚未在真实 IIS 服务器上做最终回归，但前端生产包本身已经恢复可用。
+
+## 2026-03-26 条件保存字段污染修复
+
+### Requirement Spec
+- 目标：修复单表模块设置中条件保存时把大量前端派生字段一并发到后端的问题，只保留条件表原字段名。
+- 影响范围：`src/features/dashboard/module-settings/use-single-table-module-settings-save.ts` 中主条件、字段级条件的保存 body 构造。
+- 关键约束：
+  - 保持现有条件编辑 UI 不变，只收窄保存映射。
+  - 优先使用后端查询返回的原字段名，不再混发 `name/type/width/backendId/readonly/visible` 这类前端派生字段。
+  - 不破坏现有 diff 保存逻辑。
+- 不做什么：
+  - 本轮不改条件工作台布局。
+  - 本轮不改别的资源（颜色、右键、明细）保存结构。
+- 成功标准：
+  - 条件保存请求体只包含条件表需要的原字段。
+  - 修改条件名时，不再发送 `name` 这类无关字段。
+  - `lint`、`build` 通过。
+
+### Checklist
+- [x] 确认当前条件保存 body 为什么会夹带前端派生字段。
+- [x] 收窄条件保存映射到数据库原字段名。
+- [x] 完成验证并记录结果。
+
+### Progress Notes
+- 根因已确认：`buildConditionBody()` 先执行了 `...cloneValue(record)`，把整个前端条件编辑对象全部铺进了 POST body，然后才补数据库字段。
+- 这会导致诸如 `name`、`type`、`width`、`backendId`、`readonly`、`visible`、`placeholder` 等 UI/派生字段一起被发送给后端。
+- 另外还存在一个映射优先级问题：用户在界面改的是 `name`，但旧实现优先读取 `controlLabel`，所以即使界面名称变了，也不一定会落到真正的条件名字段上。
+- 本轮已将条件保存 body 改为显式映射，只保留条件表原字段：
+  - `sourceId`
+  - `BSColPercent`
+  - `Column_ID`
+  - `orderId`
+  - `defaultValue`
+  - `controlTop`
+  - `controlName`
+  - `resultField`
+  - `id`
+  - `keyField`
+  - `controlWidth`
+  - `formKey`
+  - `edited`
+  - `checkCond`
+  - `BSRowId`
+  - `controlType`
+  - `sourceSql`
+  - `isFix`
+  - `controlLabel`
+  - `controlLeft`
+  - `controlHeight`
+  - `leftNotLinkFlag`
+- 同时把 `controlLabel` 的保存优先级改成 `name -> controlLabel`，保证在界面改条件名时，会真正落到后端条件名字段。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+- 代码级核对：
+  - `buildConditionBody()` 已移除 `...cloneValue(record)`。
+  - 条件保存不再夹带 `name/type/width/backendId/visible/readonly/placeholder` 等前端派生字段。
+  - 条件名称保存现在优先取 UI 编辑态的 `name` 并映射到 `controlLabel`。
+
+### Result Notes
+- 之前条件保存传太多字段，是因为前端把整个条件编辑对象错误地当成了后端保存对象。
+- 现在主条件和字段级条件的保存 body 都已经收窄为后端原字段结构。
+- 当前仍保留一个验证边界：这次完成了类型、构建和代码级核对，但还没有替你在浏览器 Network 面板里手点一次“改条件名后保存本页”；如果你下一步联调时发现某个条件字段还要调整映射，我会继续沿这套显式映射补。 
+
+## 2026-03-26 主字段/明细/右键/图表保存字段对齐
+
+### Requirement Spec
+- 目标：继续收紧单表模块设置“保存本页”里主字段、明细、右键、图表这几组资源的 POST body，只传后端数据库原字段名。
+- 影响范围：`src/features/dashboard/module-settings/use-single-table-module-settings-save.ts` 中主字段、明细、右键、图表相关 body 构造与 diff 保存。
+- 关键约束：
+  - 遵守用户给出的统一规则：`POST body` 无 `id` 视为新增，有 `id` 视为保存。
+  - 对“主字段 / 明细 / 右键 / 图表”优先按数据库原字段名传值，不再夹带前端派生字段。
+  - 保持现有保存编排、差异比对和 `UnionModule` 分流逻辑不变，只收窄字段映射。
+- 不做什么：
+  - 本轮不处理布局编辑器保存。
+  - 本轮不重构 UI 状态结构。
+- 成功标准：
+  - 这几组资源保存 body 不再混入 `name/type/width/backendId/visible/readonly` 一类前端派生字段。
+  - `lint`、`build` 通过。
+
+### Checklist
+- [x] 核对后端单表服务对主字段、明细、右键、图表的原字段结构。
+- [x] 收窄对应保存 body 到显式字段映射。
+- [x] 验证构建通过并记录结果。
+
+### Progress Notes
+- 已核对后端单表服务：
+  - 主字段 `POST /fields` 走 `normalizePersistedValues("p_systemwordbooktab", body, ...)`，适合传数据库原字段名。
+  - 右键 `POST /menus` 走 `normalizePersistedValues("p_systempopupmenu", body, ...)`，适合传数据库原字段名。
+  - 明细 `POST /details` 走 `normalizePersistedValues("p_systemdlltabdetail", body, ...)`，适合传数据库原字段名。
+  - 明细图表 `POST /details/{detailId}/charts` 走 `SingleTableDetailChartCommandService.normalizePersistedValues(...)`，适合传数据库原字段名。
+- 根因已确认：`buildMainFieldBody / buildMenuBody / buildDetailBody / buildDetailChartBody` 之前都在 `POST body` 构造时执行了 `...cloneValue(record)`，会把整份前端编辑态对象铺进后端。
+- 本轮已完成：
+  - 主字段保存 body 去掉整对象铺开，仅保留后端原字段，如 `tab / username1 / fieldname / sysname / fieldkey / fieldsqltag / orderid / isquery / isreadonly / isneed / isvisible / prompttext / defaultdate / dictcode / formula / relationsql / dynamicsql / helptext`。
+  - 顺手把共用列分支 `buildGridFieldBody()` 的整对象铺开也去掉了，避免字段级左表列 / 明细列继续夹带前端派生字段。
+  - 右键保存 body 去掉整对象铺开，仅保留 `tab / menuname / dllname / action / actiontype / orderid / menuid / menucond / beforemsg / menutype`。
+  - 明细保存 body 去掉整对象铺开，并去掉不该由前端合成覆盖的 `tab / tabkey`，保留 `detailname / detailtype / library / unionmodule / unionparentfield / unionvalue / unioncond / detailsql / rightvisible / addvisible / defaultitem / scanmode / menumode / bandheight / bandwidth / displayrows / nocolumnheader / griddetailcheck / unionflag / dragcond / ismrpdrag / mrpdragtag / privilegeoper / fremark / autorefresh / isvisible / visiblecond / orderid`。
+  - 明细图表保存 body 去掉整对象铺开，仅保留图表表原字段，如 `orderid / charttype / charttitle / chartcolor / chartcolordf / chart3d / gridlinevisible / xlabelfield / yvaluefield / xaxistitle / yaxistitle / yaxisshared / markvisible / legendvisible / isvisible / isabsolutely / yscale / yvaluefield1 / yvaluefield2 / valuevisible / labelangle / labelvisible / labelsize / labelspaced / circlejagge / circlehollow`。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+- 代码级核对：
+  - `buildMainFieldBody / buildMenuBody / buildDetailBody / buildDetailChartBody` 不再使用 `...cloneValue(record)`。
+  - 明细保存不再把前端临时 `tab/detail_x` 之类值回写成 `p_systemdlltabdetail.tabkey`。
+  - 这四组资源保存 body 不再夹带 `name/type/width/backendId/visible/readonly/placeholder` 等前端派生字段。
+
+### Result Notes
+- 这轮的重点不是改保存顺序，而是把“主字段 / 右键 / 明细 / 图表”的保存体从“前端状态对象”收紧成“后端数据库字段白名单”。
+- 对于主字段和明细，还顺手修掉了两个危险兜底：
+  - 主字段不再把 `formKey` 兜底写成 `fieldkey`。
+  - 明细不再把前端临时 `id/formKey` 兜底写成 `tabkey`，避免覆盖后端默认关系键。
+- 当前仍有一个范围边界：颜色等分支本轮没有一起全部收口；如果后续联调发现这些分支也有同类字段污染，再沿同样方式继续收窄。
+
+## 2026-03-26 合并整合项目升级分支到 tdxnewtoolscode
+
+### Requirement Spec
+- 目标：把“整合项目升级”分支合并到当前 `tdxnewtoolscode` 分支，并处理可能出现的冲突。
+- 影响范围：当前仓库 Git 历史及冲突涉及的业务代码文件。
+- 关键约束：
+  - 以当前 `tdxnewtoolscode` 的有效功能为基准，吸收目标分支新增能力。
+  - 若出现冲突，优先保留已联调通过的登录、主界面、模块设置与保存链路。
+  - 合并完成前必须做至少 `lint` 和 `build` 验证。
+- 不做什么：
+  - 本轮不额外重构无关代码。
+  - 本轮不处理部署发布。
+- 成功标准：
+  - 合并成功，退出 merge 状态。
+  - 冲突已解决。
+  - `npm run lint`、`npm run build` 通过。
+
+### Checklist
+- [x] 确认当前分支、工作区状态和目标分支引用。
+- [x] 执行合并并处理冲突。
+- [x] 完成验证并记录结果。
+
+### Progress Notes
+- 当前分支：`tdxnewtoolscode`
+- 工作区状态：干净
+- 当前可见目标分支引用：`origin/codex/整合项目升级`
+- 已执行 `git merge --no-ff origin/codex/整合项目升级`。
+- 本次明确冲突点：
+  - `src/features/dashboard/module-settings/use-archive-layout-palette-columns.ts`
+  - `vite.config.ts`
+- 冲突处理策略：
+  - `use-archive-layout-palette-columns.ts` 两边仅有格式层面的 add/add 差异，保留当前分支版本。
+  - `vite.config.ts` 保留当前分支版本，避免丢失前面已修复的 React 精确分包与生产构建稳定性。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+- Git 状态核对：
+  - `All conflicts fixed but you are still merging.`
+  - 待提交内容已收敛为合并后的有效文件集合。
+
+### Result Notes
+- 这次合并已经完成冲突解决，且 `lint/build` 均通过。
+- 当前保留下来的核心行为是：
+  - 当前分支已有的登录、主界面、模块配置链路继续有效。
+  - `整合项目升级` 分支的非冲突更新已被吸收。
+- 当前仍有一个已知但不阻塞本次 merge 的边界：`vite build` 仍会给出大 chunk warning，不过这属于已有构建体积提示，不是本次合并引入的新错误。
+
+## 2026-03-26 AI 请求统一补登录 Token
+
+### Requirement Spec
+- 目标：让当前前端已接入的 AI 接口统一携带登录 token，请求头格式为 `Authorization: Bearer YOUR_TOKEN`。
+- 影响范围：`/api/ai/*` 对应的前端请求封装及其调用链路。
+- 关键约束：
+  - 尽量只改请求层，不扩散改动到 Dashboard 业务 UI。
+  - 使用当前项目已有登录态 token，不新增第二套存储。
+  - 保持现有 AI 请求参数和返回处理不变。
+- 不做什么：
+  - 本轮不改 AI 交互文案与页面结构。
+  - 本轮不新增未使用的 AI 入口。
+- 成功标准：
+  - 当前前端已接入的 AI 请求会带 `Authorization: Bearer <accessToken>`。
+  - `lint`、`build` 通过。
+
+### Checklist
+- [x] 定位当前前端已接入的 AI 请求封装。
+- [x] 在 AI 请求链路中统一补 Bearer token。
+- [x] 完成验证并记录结果。
+
+### Progress Notes
+- 已确认当前前端实际接入的 AI 请求封装都集中在 `src/lib/minimax.ts`。
+- 旧实现里 `requestSurveyPlan()`、`requestSqlDraft()`、`requestIdentifierTranslation()` 混用了原生 `fetch` 与统一请求层，导致一部分 AI 接口不会自动附带当前登录态 `Authorization`。
+- 本轮已改成走统一请求层 `apiRequest(..., { auth: true })`，这样会自动带：
+  - `Authorization: Bearer <accessToken>`
+  - `accessToken: <accessToken>`
+
+### Verification
+- `npm run lint`
+- `npm run build`
+- 代码级核对：
+  - `requestSurveyPlan()` 已从直接 `fetch` 改为 `apiRequest(..., { auth: true })`。
+  - `requestSqlDraft()` 已从直接 `fetch` 改为 `apiRequest(..., { auth: true })`。
+  - `requestIdentifierTranslation()` 已从直接 `fetch` 改为 `apiRequest(..., { auth: true })`。
+  - `requestAiCreateMainTable()` 继续保持 `apiRequest(..., { auth: true })`。
+  - 当前前端已接入的 AI 路径仍保持不变：`/api/ai/survey-plan`、`/api/ai/sql-draft`、`/api/ai/translate-identifiers`、`/api/ai/create-main-table`。
+
+### Result Notes
+- 这次把当前前端已经接入的 AI 请求都统一到了带鉴权的请求层，不再只是一键翻译单点修复。
+- 现在只要当前用户已登录并且本地有 `accessToken`，问卷方案、SQL 草稿、字段翻译、创建主表这几条 AI 请求都会自动带 Bearer token。
+- 当前仍保留一个联调边界：这次完成了类型和构建验证，但还没替你逐条在浏览器 Network 面板里手点确认请求头；按现在代码，相关请求都应该能直接看到 `Authorization: Bearer ...`。
+
+## 2026-03-26 AI 请求 500 排查与代理回切
+
+### Requirement Spec
+- 目标：定位为什么浏览器里的 `/api/ai/translate-identifiers` 会报 500，而用户直连 `9093` 可以正常返回，并修正当前前端代理链路。
+- 影响范围：本地开发代理与 IIS 反向代理中 `/api/ai/*` 的转发目标。
+- 关键约束：
+  - 以用户最新确认的接口归属为准：AI 接口统一属于现有 Java 后端 `/api/ai/*`。
+  - 保持现有业务接口 `/api/* -> 9093` 不变，不额外改动页面调用代码。
+- 不做什么：
+  - 本轮不删除旧的本地 3001 AI 服务代码。
+  - 本轮不新增新的 AI 页面入口。
+- 成功标准：
+  - 开发环境 `http://127.0.0.1:3000/api/ai/*` 不再转发到 `127.0.0.1:3001`。
+  - IIS 产物中的 `/api/ai/*` 不再反代到 `127.0.0.1:3001`。
+  - `lint`、`build` 通过。
+
+### Checklist
+- [x] 对比直连 `9093` 与前端 `3000` 代理行为差异。
+- [x] 修正 Vite 开发代理中的 AI 转发目标。
+- [x] 修正 IIS `web.config` 中的 AI 转发目标。
+- [x] 完成验证并记录结果。
+
+### Progress Notes
+- 已直接复现：
+  - `http://127.0.0.1:3000/api/ai/translate-identifiers` 返回 `500`
+  - `.codex-dev.log` 中连续出现 `http proxy error: /api/ai/translate-identifiers` 与 `connect ECONNREFUSED 127.0.0.1:3001`
+- 已定位根因：
+  - `vite.config.ts` 仍把 `/api/ai/*` 单独代理到旧的 `http://127.0.0.1:3001`
+  - `public/web.config` 也仍把 `/api/ai/*` 单独反代到旧的 `http://127.0.0.1:3001`
+- 本轮已把 `/api/ai/*` 统一并回现有 `/api/* -> 9093` 这一套后端链路。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+- 代码级核对：
+  - `vite.config.ts` 已移除 `/api/ai` 专用代理规则，开发环境改由 `/api` 统一转发。
+  - `public/web.config` 已移除 `ReverseProxyAiApi`，IIS 改由 `ReverseProxyApi` 统一转发。
+
+### Result Notes
+- 这次 `500` 的直接原因不是 token 错误，而是浏览器经由 `3000` 访问时命中了旧的 `3001` AI 代理，而该端口当前拒绝连接。
+- 你给的直连 `9093` curl 能成功，正好说明 AI 接口实际已经在现有后端上可用，前端问题出在代理配置陈旧。
+- 当前还剩一个操作性边界：开发中的 Vite 服务需要重启一次，新的代理规则才会生效。
+
+## 2026-03-26 单表列属性保存与无关右键写入排查
+
+### Requirement Spec
+- 目标：修复“只改列属性时保存会触发多次 `menus` 写请求，而且列属性本身没有保存到后端”的问题。
+- 影响范围：`src/features/dashboard/module-settings/use-single-table-module-settings-save.ts` 的单表保存编排，以及主字段/共享资源的 body 映射与差异判断。
+- 关键约束：
+  - 以当前单表保存契约为准：无变更时不应发 `POST`。
+  - 不允许为了压住 `menus` 噪音而牺牲列属性真实落库。
+  - 继续遵守 Dashboard 模块化规则，不把新分支堆回 `Dashboard.tsx`。
+- 不做什么：
+  - 本轮不扩展新的保存范围。
+  - 本轮不调整布局编辑器保存。
+- 成功标准：
+  - 只改主字段属性时，不再出现与本次修改无关的 `menus` 批量 `POST`。
+  - 主字段名称/标识/宽度/默认值等当前可编辑属性能正确进入主字段保存 body。
+  - `npm run lint`、`npm run build` 通过。
+
+### Checklist
+- [x] 核对主字段保存 body 与当前 UI 编辑字段的映射优先级。
+- [x] 修正主字段读写口径与菜单 identity，降低无关 `menus/colors` 被判定为变更的概率。
+- [x] 完成验证并记录结果。
+
+### Progress Notes
+- 已定位当前主字段保存存在“旧后端字段优先级高于当前 UI 编辑值”的风险，例如 `displayName / fieldName / promptText` 会压过用户刚改的 `name / sourceField / placeholder`。
+- 已定位 `UnionModule` 共享资源保存存在“当前内容来自代表明细，但 baseline 仍取第一条明细”的风险，这会把 unchanged `menus/colors` 误判为整组有改动。
+- 已将主字段保存 body 改成以当前 UI 编辑值优先，例如 `name -> username1`、`sourceField -> fieldname/sysname`、`placeholder -> prompttext`、`defaultValue -> defaultdate`，避免旧后端别名把刚编辑的列属性覆盖回去。
+- 已将 `UnionModule` 共享资源的代表选择改为“优先当前激活明细，否则选择字段/右键/颜色信息最完整的一组”，并同步替换 baseline 与 current，避免只改列属性时把共享右键整组误判成有改动。
+- 用户最新反馈表明上一轮还不够，继续排查后确认主字段读写口径仍未真正对齐 `p_systemwordbooktab`：当前前端还在使用 `isvisible / isreadonly / isquery / prompttext / helptext` 这类别名，而文档里的真实字段是 `vislble / edit / tagid / ifSearch / InputHintText / bak`。
+- 继续排查发现右键资源虽然已经有差异比较，但 `normalizeContextMenuItem()` 仍可能在缺少稳定 `id` 时退回临时前端 id，`getMenuIdentityKey()` 也只用 `tab/menuName/dllName` 组合，过弱时容易把没改动的菜单项错误配对，继而触发无关 `menus` 写入。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+
+### Result Notes
+- 这次修的是两条真正的保存链路根因，而不是只在 `menus` 外层加拦截。
+- 主字段保存现在不会再因为旧别名字段优先级过高而丢掉当前 UI 的列属性修改。
+- `UnionModule` 明细共享资源保存现在会基于同一份代表快照做 current/baseline 比较，能显著降低“只改列属性却批量 POST menus/colors”的误判概率。
+- 这轮又进一步把主字段保存改成了 `p_systemwordbooktab` 原字段口径，例如：
+  - `vislble / edit / tagid / ifSearch / bak / fieldsql / fieldsqlid / fieldsqlname / fieldsqlTag / InputHintText / dataAlign`
+  - 并同步把主字段回填映射切到这些真实列名，避免“界面改的是一套字段，保存发的是另一套别名”。
+- 右键映射和 identity 也补强了：
+  - 菜单项现在会显式保留后端 `id/backendId`
+  - 菜单 identity 不再只看 `tab/menuName/dllName`，还会纳入 `menuid/action/actiontype`
+  - 目标是避免弱主键配对把没改的菜单项误当成新数据整批 `POST`
+- 当前仍有一个联调边界：这次完成了代码级和构建级验证，但还没替你逐条在浏览器 Network 面板里手点确认具体 `fields/menus/colors` 请求数量；建议你刷新后再实际点一次“保存本页”观察是否已经回到只发该发的接口。
+
+## 2026-03-27 单表保存仍误触发明细颜色与右键写入
+
+### Requirement Spec
+- 目标：修复“只改主字段属性时，保存仍触发颜色/右键保存，且右键会调用很多次”的问题，并确保列属性保存继续正常。
+- 影响范围：`src/features/dashboard/module-settings/use-single-table-module-settings-save.ts` 中主资源、明细局部资源、`UnionModule` 共享资源的 diff 与保存分支。
+- 关键约束：
+  - 用户没有改动颜色、右键、明细时，不得产生对应 `POST`。
+  - 不允许回退当前已经修好的主字段保存。
+  - 优先定位误判根因，不用“临时硬拦截所有菜单保存”来掩盖问题。
+- 不做什么：
+  - 本轮不扩展新的保存接口。
+  - 本轮不处理布局编辑器保存。
+- 成功标准：
+  - 只改主字段属性时，只触发必要的 `fields` 保存。
+  - `menus/colors` 不再在无改动时批量触发。
+  - `npm run lint`、`npm run build` 通过。
+
+### Checklist
+- [ ] 复核主资源、明细局部资源、`UnionModule` 共享资源的 diff 输入是否使用了同一份 baseline。
+- [ ] 定位为什么无改动时仍会把 `menus/colors` 判定为 dirty。
+- [ ] 修复误判逻辑并保持主字段保存正常。
+- [ ] 完成验证并记录结果。
+
+### Progress Notes
+- 用户最新反馈表明：主字段保存接口已经能正确触发并落库，但保存时仍会误触发颜色和右键写入，且右键调用很多次。
+- 用户进一步确认，当前误触发的是“下方明细模块”的颜色和右键保存，不是主表颜色/右键分支。
+- 当前高优先级怀疑点：
+  - 明细局部资源与 `UnionModule` 共享资源的 baseline/current 代表不一致。
+  - 颜色 body 或 identity 仍夹带前端派生字段，导致 diff 恒为不等。
+  - 明细聚合时同一个共享模块被多条明细重复保存。
+- 已确认 `buildColorBody()` 还在通过 `...cloneValue(record)` 整包展开前端对象，导致 `label / disabled / textColor / backgroundColor / foregroundToken` 等 UI 派生字段一起进入颜色 diff 与 POST body。
+- 已新增集合级 body 指纹比较：如果一整组列/颜色/右键的后端字段 body 完全一致，就直接复用 baseline，不再逐条进入 `POST` 分支。
+- 已在明细保存循环里增加“明细级短路”：
+  - 对带 `UnionModule` 的明细，先用共享模块口径比较列/颜色/右键是否真的变化；无变化则直接复用 baseline，不再参与共享模块写入。
+  - 对本地明细资源，同样先比较 `grid-fields / colors / menus` 的后端字段 body；无变化则整支跳过，不再进入保存与删除逻辑。
+- 用户再次反馈后确认：即使只改主单表列的 `username1`，保存仍会触发下方明细模块的颜色/右键写入。这说明问题不只是“整支分支误入”，还存在“列变化时颜色/右键被顺带保存”的情况。
+- 已继续把明细保存拆到资源级：
+  - 明细局部资源现在分别计算 `columnsChanged / colorsChanged / menusChanged`，只有对应资源真的变化才调用对应保存接口。
+  - `UnionModule` 共享资源也改成分别计算 `sharedColumnsChanged / sharedColorsChanged / sharedMenusChanged`，避免列变化时顺带触发共享颜色/右键保存。
+- 根据用户贴出的真实 `menus` 请求体与响应继续排查后发现，当前更像是“同一条后端菜单/颜色记录在 baseline 与当前 state 里的对象形态不一致”，而不一定是业务字段真的变了。
+- 已继续把明细与 `UnionModule` 共享资源的颜色/右键，在比较前统一重新走一遍 `mapColorRule / mapContextMenuItem` 规范化，再按后端 body 做差异判断，降低 UI 对象形态差异导致的误判。
+- 用户继续贴出颜色请求后，进一步确认还有一个误判来源：当前代码把“UnionModule 关联关系变化”也算进了共享资源保存条件里。但关联关系本身已经由明细本体保存，不应单独触发共享颜色/右键写入。
+- 已去掉 `shouldSyncSharedResources` 对 `unionModuleChanged` 的依赖，改成只有共享列/颜色/右键自身 body 真变化时，才允许进入共享资源保存。
+- 用户继续贴出一条实际 `menus` 请求后，已确认请求体和后端返回记录在逻辑上是同一条数据，问题更像是集合 diff 仍然只靠 body 指纹，没把带主键 `id` 的稳定记录优先按 identity 对位。
+- 已把集合级比较升级成“先按稳定 identity + backend body 对位，再用原有 body 指纹兜底”，并让明细局部资源与 `UnionModule` 共享资源外层 `changed` 判定也统一走这套规则，避免已有 `id` 的明细颜色/右键因对象形态差异被误判为 changed。
+- 用户再次贴出共享模块 `tab=1000401` 的实际 `menus/colors` 请求后，继续确认当前误判仍然落在 `UnionModule` 共享资源分支，而本地明细分支已经有“后端权威基线回读”保护。
+- 已补齐共享模块分支的同类保护：
+  - 当共享 `colors/menus` 在前端比较里看起来 changed，但当前行都带后端主键时，会先回读共享模块真实后端 `colors/menus`，再用规范化后的后端 body 与当前 state 比较。
+  - 如果当前 state 与权威后端数据等价，就直接把共享分支视为未改动，跳过 `POST /colors`、`POST /menus`。
+- 用户继续反馈后确认：虽然多余的 `POST` 已经不再触发，但保存阶段仍会额外发一轮明细/共享模块 `GET menus/colors`。这轮补成“优先读当前页面加载时已经缓存的装饰快照，只有缓存缺失时才回退网络请求”。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+
+### Result Notes
+- 这轮把颜色保存体改成了纯后端字段白名单，不再把整份前端编辑态对象混进颜色接口请求。
+- 这轮还新增了集合级“整组 body 是否一致”判断，用来兜住 identity 抖动但内容未变的场景；这样无改动的颜色/右键集合会直接复用 baseline，而不是逐条 `POST`。
+- 这轮进一步把明细资源分支前移短路：如果某个明细自身或其 `UnionModule` 共享资源按后端字段完全未变，它不会再被送进颜色/右键保存分支。
+- 这轮又把保存粒度从“整支明细分支”细化到“列 / 颜色 / 右键”三级判定；现在即使某个明细确实需要保存列，也不会默认把颜色和右键一起带去保存。
+- 这轮又把明细与共享资源的颜色/右键比较统一收口到规范化 mapper 后再比；目标是消除“同一条后端记录因为当前 state 形态不同而被误判 changed”的噪音。
+- 这轮还修掉了一个逻辑级误判：明细 `UnionModule` 关系变化不再被当成共享颜色/右键需要保存的理由；共享资源保存现在只由共享资源自身的实际差异驱动。
+- 这轮再往下收了一层：对于已经带后端主键 `id` 的明细颜色/右键，集合是否变化不再只看排序后的 body 指纹，而是先按 identity 对位后再比 backend body。这样即使同一条记录在当前 state 和 baseline 里的对象形态不同，也不会轻易误发 `POST`。
+- 这轮又把同样的“权威后端基线回读”补到了 `UnionModule` 共享资源分支，避免出现“本地明细已被拦住，但共享模块 `menus/colors` 仍按旧 baseline 误判为 changed”的残留情况。
+- 这轮进一步把保存阶段的权威校验改成“先用当前页面加载阶段缓存下来的明细/共享模块装饰快照”，减少用户在点“保存本页”后看到的额外 `GET menus/colors`，只有缓存缺失才会回退到真实接口。
+- 当前仍有一个联调边界：这次完成了代码级和构建级验证，但还没替你逐条在浏览器 Network 面板里手点确认具体 `fields/menus/colors` 请求数量；建议你刷新后再实际点一次“保存本页”观察是否已经回到只发该发的接口。
+
+
+## 2026-03-27 ?????????????????
+
+### Requirement Spec
+- ??????????????????????????????????????? / ???????????????????????? / ??????????????????????
+- ???????????????????????????????????
+- ?????
+  - ????????????????????
+  - ?????????????????????
+  - Dashboard ???????????????????????????
+- ?????
+  - ???????
+  - ???????
+  - ??????????
+- ?????
+  - ??????????????????/????????
+  - ??????????????????????????
+  - `npm run lint`?`npm run build` ???
+
+### Checklist
+- [ ] ??????????????????????
+- [ ] ??????????????????????
+- [ ] ??????????????????
+- [ ] ??????????
+
+### Progress Notes
+- 已完成第一轮纯样式减法，只调整单表模块设置壳层，不改接口、状态和保存逻辑。
+- `ModuleSettingStepShell` 已把单表场景收成更清晰的办公化分区：
+- 整体外壳改成低圆角、浅灰背景、细边框。
+- 左右主区域通过边框和底色拉开层级，右侧属性区增加独立浅色底板。
+- 左侧设计区的上方主表区域、下方明细页签区域、左侧条件/树区域，都统一为白底卡片式分区，标题栏样式统一。
+- 按钮、图标容器和空态卡片的圆角已整体缩小，减少当前过度玻璃化和过圆的问题。
+- 用户进一步要求：除最外层外，内部所有分区不要再使用圆角框，并且去掉它们之间的间隔。
+- 已按这条要求继续收口：
+- 模块设置主壳层改成仅外层保留圆角，内部工作区卡片全部改成直角分区。
+- 左侧设计区上下分区、左右分区之间的 `gap/padding` 已收掉，布局更接近办公软件中的连续工作台。
+- 右侧属性区通用卡片已去圆角，公共分区之间的竖向间距也已改成无缝堆叠。
+- 通用 inspector 样式源 `shadcn-inspector.ts` 已同步改成直角边框，避免后续局部卡片又恢复成圆角。
+- 用户随后进一步要求：最外层圆角也去掉，外层留白继续压平。
+- 已将模块设置最外层工作区圆角去除，当前这页已变成完整直角工作台。
+- 用户继续要求去掉最外层这圈边框。
+- 已将模块设置最外层工作区边框去除，当前外壳只保留背景，不再形成额外描边层。
+- 用户继续指出仍有留白边距。
+- 已定位到真正的外层留白来自 `config-wizard-modal-shell.tsx` 对模块设置步骤统一加的 `p-4`。
+- 已将模块设置步骤在配置向导容器内的 padding 清零，当前这一步内容会直接贴合工作区边缘。
+- 用户继续要求收掉表格区域边距，让表头和下方表格画布组成一个整体。
+- 已在 `table-builder.tsx` 中收掉主表工作台外层 `padding` 与表头下方的 `mt-1` 间隔。
+- 主表表格画布与表头连接方式已改成连续边界，不再形成明显断层。
+- 用户继续指出表格区域边缘仍有窄边距。
+- 已定位到主表工作台外部滚动容器在 `module-setting-step-shell.tsx` 中仍带有 `px-3 / pb-3`。
+- 已将主表滚动容器内边距清零，让主表工作台进一步贴近外层边界。
+- 用户继续反馈主表区域仍有窄边距。
+- 继续排查后确认：主表当前走的是 `table-builder.tsx` 中 `backgroundSelectable` 分支，这一支仍保留了 `rounded-[26px]` 与 `p-1.5 / p-2`。
+- 已将 `backgroundSelectable` 分支外壳的圆角与 padding 一并去掉，主表表格现在会真正贴边。
+- 用户再次反馈仍有窄边距。
+- 继续排查后确认：剩余留白来自表格本体自己的内在宽度和壳层描边，不只是外层容器 padding。
+- 已将表格本体宽度改成 `max(100%, totalTableWidth)`，并去掉主表工作台壳层边框、表格圆角和头部尾列圆角，确保表格区域真正铺满到边。
+- 用户继续要求：上方条件区域增加办公化标题，格式为“模块名字 - 单表设计”，参考给定示意图。
+- 已将当前模块名沿模块设置 shell props 链透传，并在单表上方条件区增加带顶部蓝线的居中标题栏。
+- 用户随即反馈没有看到标题。
+- 复查后确认当前页面走的是 `document` 分支，而上一轮标题栏加在了另一条分支上。
+- 已将同样的标题栏补到 `document` 分支的上方条件区，位置在 `conditionToolbarNode` 下方。
+- 用户继续要求：标题区域高度收矮一点，并且条件区域要放到标题下方。
+- 已将 `document` 分支标题栏高度收紧，并调整顺序为“标题在上，条件区在下”。
+- 用户继续反馈标题和下方内容颜色不协调，希望把内容背景色调得更统一。
+- 已将模块设置页主体背景从偏蓝灰调整到更中性的浅灰白，并同步收敛了左右分区和工作区底色。
+
+### Verification
+- `npm run lint`
+- `npm run build`
+
+### Result Notes
+- 第一轮目标聚焦在“先把区域切开”，不是细改单个控件。
+- 当前界面已经更接近办公软件式的板块布局，方便下一轮继续逐项做减法。
+- 第二轮已进一步把内部卡片感拿掉，版面从“很多圆角悬浮块”转成“外层圆角容器 + 内部直角分区”。
+- 第三轮已把最外层圆角也拿掉，当前模块设置页整体是连续直角分栏布局。
+- 第四轮已把最外层描边拿掉，模块设置页外壳更接近纯背景承托的办公工作台。
+- 第五轮已把模块设置步骤在配置向导中的真实外层 padding 清零，外围留白已从容器层移除。
+- 第六轮已把主表表头与下方表格画布之间的壳层间距收掉，表格区域更接近一个连续整体。
+- 第七轮已把主表滚动容器本身的内边距清零，主表工作台进一步贴边。
+- 第八轮进一步处理了主表 `backgroundSelectable` 分支遗留的内边距与圆角，这一支的窄边距来源已被清掉。
+- 第九轮继续把表格本体的壳层边框、圆角和内在宽度策略一起收掉，避免即使外层贴边后，内部表格自己仍保留一圈窄边距。
+- 第十轮在单表上方条件区加了独立标题栏，当前会按“模块名 - 单表设计”显示，更接近办公系统表单页头。
+- 第十一轮修正了标题栏落点，确保当前实际使用的 `document` 分支也显示这条标题。
+- 第十二轮进一步压缩了标题栏高度，并把条件工作区放到标题栏下方，更接近正式办公页头布局。
+- 第十三轮进一步统一了标题下方工作区底色，让页头与内容区的色温更接近，减少割裂感。
+- 第十四轮把“详细列”入口从左侧主表头部移走，并迁到右侧主表设置区，只在点击主表后显示。
+- 仍保留一个非阻塞风险：`Dashboard` 产物 chunk 仍偏大，但和本次样式调整无关。

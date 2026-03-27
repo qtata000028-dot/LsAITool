@@ -4,6 +4,10 @@ export function normalizePopupMenuNumber(value: any, fallback = 0) {
 }
 
 export function normalizeContextMenuItem(item: Record<string, any> = {}, index = 1) {
+  const rawPersistedId = item.id ?? item.backendId ?? null;
+  const persistedId = typeof rawPersistedId === 'number'
+    ? rawPersistedId
+    : (typeof rawPersistedId === 'string' && /^\d+$/.test(rawPersistedId.trim()) ? Number(rawPersistedId.trim()) : null);
   const menuName = item.menuname ?? item.menuName ?? item.label ?? `右键功能 ${index}`;
   const templateName = item.dllname ?? item.dllName ?? item.actionKey ?? `action_${index}`;
   const conditionValue = item.menuCond ?? item.menuCondition ?? item.disabledCondition ?? '';
@@ -14,7 +18,8 @@ export function normalizeContextMenuItem(item: Record<string, any> = {}, index =
   const beforeMessageValue = item.beforeMsg ?? item.beforeMessage ?? '';
 
   return {
-    id: item.id ?? `ctx_${Date.now()}_${index}`,
+    id: rawPersistedId ?? `ctx_${Date.now()}_${index}`,
+    backendId: persistedId,
     tab: item.tab ?? '',
     label: menuName,
     menuname: menuName,
