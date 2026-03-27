@@ -3660,3 +3660,32 @@
 - 当前分支已不存在未解决冲突文件。
 - `.vscode/launch.json` 现在同时支持完整开发栈启动与 Windows 本机 Edge 调试。
 - 当前仓库仍有普通修改文件，但它们不再属于 git 冲突状态。
+
+## 2026-03-27 当前分支启动链路巡检
+
+### Requirement Spec
+- 目标：
+  - 重新运行当前分支项目，并确认本地开发地址能正常打开。
+- 影响范围：
+  - Vite 开发服务启动链路。
+  - `research-record-word-editor` 相关模块解析。
+- 关键约束：
+  - 只修启动阻塞，不顺带改业务逻辑。
+  - 修复后必须实际访问本地地址确认。
+- 不做什么：
+  - 不处理生产构建的历史环境崩溃问题。
+- 验证标准：
+  - `npm run lint` 通过。
+  - `http://127.0.0.1:3000/` 返回 200。
+
+### Checklist
+- [x] 复查 lessons 并确认当前任务规格
+- [x] 重启 Vite 开发服务
+- [x] 定位当前启动阻塞
+- [x] 修复 `research-record-word-editor` 编译问题
+- [x] 实测首页与关键模块入口返回 200
+
+### Progress Notes
+- 重启开发服务后，最初访问 `3000` 失败，日志里出现 `research-record-word-editor.tsx` 相关预处理错误。
+- 实际检查发现该文件存在编码损坏与断裂字符串，已重写为可编译的 UTF-8 版本。
+- 重新验证后，`http://127.0.0.1:3000/`、`/src/components/Dashboard.tsx` 与 `/src/features/dashboard/research-record-word-editor.tsx` 均返回 `200`。
