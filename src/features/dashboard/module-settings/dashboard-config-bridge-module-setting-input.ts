@@ -31,6 +31,7 @@ type BuildDashboardConfigBridgeModuleSettingInput = {
     onActivateDetailTab: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['onActivateDetailTab'];
     onActivateTableConfig: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['onActivateTableConfig'];
     onOpenMainHiddenColumnsModal: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['onOpenMainHiddenColumnsModal'];
+    onToggleFullscreen: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['onToggleFullscreen'];
     setBuilderSelectionContextMenu: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['setBuilderSelectionContextMenu'];
     setInspectorPanelTab: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['setInspectorPanelTab'];
     setSelectedArchiveNodeId: BuildDashboardConfigBridgeNodesInput['moduleSetting']['shell']['common']['setSelectedArchiveNodeId'];

@@ -96,7 +96,6 @@ type DetailTabsWorkspaceProps = {
   onAddTab: () => void;
   onAddField: () => void;
   onDeleteSelectedColumns: () => void;
-  onDeleteTab: (tabId: string, event: React.MouseEvent) => void;
   onOpenWebConfig: () => void;
   onPasteTableColumns: React.ClipboardEventHandler<HTMLDivElement>;
   selectedDetailForDelete: string[];
@@ -115,7 +114,6 @@ export function DetailTabsWorkspace({
   onAddTab,
   onAddField,
   onDeleteSelectedColumns,
-  onDeleteTab,
   onOpenWebConfig,
   onPasteTableColumns,
   selectedDetailForDelete,
@@ -132,7 +130,6 @@ export function DetailTabsWorkspace({
           activeTab={activeTab}
           currentDetailFillType={currentDetailFillType}
           onActivateTab={onActivateTab}
-          onDeleteTab={onDeleteTab}
           onAddTab={onAddTab}
           addLabel="新增页签"
           showModeBadge={false}

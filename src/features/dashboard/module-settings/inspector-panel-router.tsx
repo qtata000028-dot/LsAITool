@@ -98,9 +98,10 @@ export function InspectorPanelRouter({
   const isCommonPanelTab = currentInspectorTab === 'common';
   const isContextMenuPanelTab = currentInspectorTab === 'contextmenu';
   const isColorPanelTab = currentInspectorTab === 'color';
-  const inspectorCountBadgeClass = 'absolute right-2 top-1.5 inline-flex min-w-[16px] items-center justify-center rounded-full bg-[#e04f5f] px-1.5 py-0.5 text-[9px] font-black leading-none text-white shadow-[0_10px_18px_-14px_rgba(224,79,95,0.78)]';
+  const useIconOnlyInspectorTabs = isDocumentScopedGridInspector;
+  const inspectorCountBadgeClass = 'absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border border-white bg-[#e04f5f] px-1 text-[9px] font-black leading-none text-white shadow-[0_10px_18px_-14px_rgba(224,79,95,0.78)] dark:border-slate-950';
   const inspectorTabsNode = (
-    <div className={shadcnTabListClass}>
+    <div className={useIconOnlyInspectorTabs ? 'mt-2 inline-flex items-center gap-1 rounded-md border border-slate-200/80 bg-slate-100/90 p-0.5 dark:border-slate-800 dark:bg-slate-900' : shadcnTabListClass}>
       {inspectorTabs.map((tab) => {
         const isActive = currentInspectorTab === tab.id;
         const hasCountBadge = typeof tab.count === 'number' && tab.count > 0;
@@ -110,10 +111,18 @@ export function InspectorPanelRouter({
             key={tab.id}
             type="button"
             onClick={() => onSelectInspectorTab(tab.id)}
-            className={getShadcnTabTriggerClass(isActive)}
+            title={tab.label}
+            aria-label={tab.label}
+            className={useIconOnlyInspectorTabs
+              ? (
+                  isActive
+                    ? 'relative flex size-9 items-center justify-center rounded-[8px] border border-slate-200/80 bg-white text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-50'
+                    : 'relative flex size-9 items-center justify-center rounded-[8px] text-slate-500 transition-colors hover:bg-white hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-950 dark:hover:text-slate-100'
+                )
+              : getShadcnTabTriggerClass(isActive)}
           >
-            <span className={`material-symbols-outlined text-[16px] ${isActive ? 'text-[#1686e3]' : 'text-slate-400 dark:text-slate-500'}`}>{tab.icon}</span>
-            <span className="truncate">{tab.label}</span>
+            <span className={`material-symbols-outlined text-[18px] ${isActive ? 'text-[#1686e3]' : 'text-slate-400 dark:text-slate-500'}`}>{tab.icon}</span>
+            {useIconOnlyInspectorTabs ? <span className="sr-only">{tab.label}</span> : <span className="truncate">{tab.label}</span>}
             {hasCountBadge ? (
               <span className={inspectorCountBadgeClass}>
                 {tab.count! > 9 ? '9+' : tab.count}

@@ -13,6 +13,7 @@ export type ModuleSettingStepShellProps = {
   isConfigFullscreenActive: boolean;
   moduleSettingStageHeightClass: string;
   moduleSettingStageStyle: React.CSSProperties;
+  onToggleFullscreen: () => void;
   workspaceTheme?: string;
   workspaceThemeStyles: {
     tableSurface: string;
@@ -101,6 +102,7 @@ export function ModuleSettingStepShell({
   isConfigFullscreenActive,
   moduleSettingStageHeightClass,
   moduleSettingStageStyle,
+  onToggleFullscreen,
   workspaceThemeStyles,
   document,
   tree,
@@ -114,6 +116,7 @@ export function ModuleSettingStepShell({
   const primaryActionButtonClass = 'inline-flex items-center gap-1 rounded-[10px] bg-[color:var(--workspace-accent)] px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_10px_18px_-16px_rgba(15,23,42,0.2)] transition-all hover:bg-[color:var(--workspace-accent-strong)]';
   const rightPaneShellClass = 'flex min-h-0 shrink-0 flex-col border-l border-[#e2e8f0] bg-[#f7f9fc]';
   const singleTableDesignTitle = `${String(currentModuleName || '当前模块').trim() || '当前模块'} - 单表设计`;
+  const documentInspectorPaneWidth = Math.min(inspectorPaneWidth, isConfigFullscreenActive ? 392 : 360);
 
   if (businessType === 'document') {
     return (
@@ -121,13 +124,17 @@ export function ModuleSettingStepShell({
         <div style={moduleSettingStageStyle} className={`${stageShellClass} ${moduleSettingStageHeightClass}`}>
           <div className="min-h-0 min-w-0 flex flex-1 flex-col">
             <div className="border-b border-[#e6edf5] bg-[#fbfcfe]">
-              <div className="border-t-[4px] border-[color:var(--workspace-accent)] px-6 py-3 text-center">
+              <div
+                className="cursor-pointer select-none border-t-[4px] border-[color:var(--workspace-accent)] px-6 py-3 text-center transition-colors hover:bg-[#f8fbff]"
+                onDoubleClick={onToggleFullscreen}
+                title="双击切换全屏"
+              >
                 <div className="text-[22px] font-bold tracking-[0.06em] text-slate-700">
                   {singleTableDesignTitle}
                 </div>
               </div>
             </div>
-            <div className="min-h-0 min-w-0 flex flex-1 overflow-hidden p-2.5">
+            <div className="min-h-0 min-w-0 flex flex-1 overflow-hidden">
               {document.isTreePaneVisible ? (
                 <>
                   <div className="flex min-h-0 shrink-0 flex-col" style={{ width: document.documentLeftPaneWidth }}>
@@ -149,7 +156,7 @@ export function ModuleSettingStepShell({
               ) : null}
 
               <div className="min-h-0 min-w-0 flex-1">
-                <div className={`grid h-full min-h-0 gap-2.5 overflow-hidden ${hasDocumentDetails ? 'grid-rows-2' : 'grid-rows-[minmax(0,1fr)_auto]'}`}>
+                <div className={`grid h-full min-h-0 gap-0 overflow-hidden ${hasDocumentDetails ? 'grid-rows-2' : 'grid-rows-[minmax(0,1fr)_auto]'}`}>
                   <div className="flex min-h-0 flex-col overflow-hidden">
                     <div
                       className="scrollbar-none min-h-0 flex-1 overflow-auto outline-none dark:bg-slate-900/90"
@@ -171,7 +178,6 @@ export function ModuleSettingStepShell({
                             activeTab={document.activeTab}
                             currentDetailFillType={document.currentDetailFillType}
                             onActivateTab={document.onActivateDetailTab}
-                            onDeleteTab={document.onDeleteDetailTab}
                             onAddTab={document.onAddDetailTab}
                             addLabel="新增明细"
                             showModeBadge={false}
@@ -214,7 +220,7 @@ export function ModuleSettingStepShell({
             </div>
           </div>
 
-          <div className={rightPaneShellClass} style={{ width: inspectorPaneWidth, minWidth: inspectorPaneWidth }}>
+          <div className={rightPaneShellClass} style={{ width: documentInspectorPaneWidth, minWidth: documentInspectorPaneWidth }}>
             {columnOperationPanel}
           </div>
         </div>
@@ -333,7 +339,11 @@ export function ModuleSettingStepShell({
               </div>
             </div>
             <div className="border-b border-slate-200 bg-white">
-              <div className="border-t-[4px] border-[color:var(--workspace-accent)] px-6 py-5 text-center">
+              <div
+                className="cursor-pointer select-none border-t-[4px] border-[color:var(--workspace-accent)] px-6 py-5 text-center transition-colors hover:bg-[#f8fbff]"
+                onDoubleClick={onToggleFullscreen}
+                title="双击切换全屏"
+              >
                 <div className="text-[28px] font-bold tracking-[0.08em] text-slate-700">
                   {singleTableDesignTitle}
                 </div>
@@ -404,7 +414,6 @@ export function ModuleSettingStepShell({
               isDetailViewSelected={tree.isDetailViewSelected}
               onActivateCurrentView={tree.onActivateCurrentDetailView}
               onActivateTab={tree.onActivateDetailTab}
-              onDeleteTab={tree.onDeleteDetailTab}
               onAddTab={tree.onAddDetailTab}
               onDeleteSelectedColumns={tree.onDeleteSelectedDetailColumns}
               onAddField={tree.onAddDetailColumn}

@@ -34,6 +34,7 @@ type DetailTabInspectorProps = {
   inspectorTabsNode: React.ReactNode;
   isCommonPanelTab: boolean;
   normalizedDetailType: string;
+  onDeleteTab: () => void;
   relationSectionProps?: Record<string, any> | null;
   onUpdateTabConfig: (patch: Record<string, any>) => void;
   onUpdateTabType: (nextType: string) => void;
@@ -59,6 +60,7 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
   inspectorTabsNode,
   isCommonPanelTab,
   normalizedDetailType,
+  onDeleteTab,
   relationSectionProps,
   onUpdateTabConfig,
   onUpdateTabType,
@@ -77,21 +79,31 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
   return (
     <div className={panelShellClass}>
       <div className={panelHeaderClass}>
-        <div className="flex items-start gap-3">
-          <div className={`${panelIconShellClass} ${context.iconClass}`}>
-            <span className="material-symbols-outlined text-[18px]">{context.icon}</span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className={panelTitleClass}>{context.title}</h3>
-              <span className={panelBadgeClass}>明细页签</span>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className={`${panelIconShellClass} ${context.iconClass}`}>
+              <span className="material-symbols-outlined text-[18px]">{context.icon}</span>
             </div>
-            {inspectorTabsNode}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className={panelTitleClass}>{context.title}</h3>
+                <span className={panelBadgeClass}>明细页签</span>
+              </div>
+              {inspectorTabsNode}
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={onDeleteTab}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-rose-200/80 bg-rose-50/85 px-3 text-[11px] font-semibold text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-100/80 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/20"
+          >
+            <span className="material-symbols-outlined text-[15px]">delete</span>
+            删除明细
+          </button>
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
         {isCommonPanelTab ? (
           <>
             <section className={compactCardClass}>
@@ -99,8 +111,8 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
                 <span className="material-symbols-outlined text-[15px] text-slate-400">table_rows</span>
                 <span>明细列表</span>
               </div>
-              <div className="grid gap-4">
-                <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+              <div className="grid gap-3">
+                <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
                   <div>
                     <label className={mutedLabelClass}>所属模块编号</label>
                     <input
@@ -110,6 +122,14 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
                     />
                   </div>
                   <div>
+                    <label className={mutedLabelClass}>tabKey</label>
+                    <input
+                      value={currentTabConfig.tabKey ?? currentTabId}
+                      onChange={(event) => onUpdateTabConfig({ tabKey: event.target.value })}
+                      className={fieldClass}
+                    />
+                  </div>
+                  <div className="col-span-full">
                     <label className={mutedLabelClass}>列表名称</label>
                     <input
                       value={currentTabConfig.detailName ?? currentTabName}
@@ -129,15 +149,7 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className={mutedLabelClass}>tabKey</label>
-                    <input
-                      value={currentTabConfig.tabKey ?? currentTabId}
-                      onChange={(event) => onUpdateTabConfig({ tabKey: event.target.value })}
-                      className={fieldClass}
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
+                  <div className="col-span-full">
                     <label className={mutedLabelClass}>DLL 模板</label>
                     <input
                       value={currentTabConfig.dllTemplate ?? ''}
@@ -146,11 +158,11 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
                     />
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 rounded-[16px] border border-slate-200/80 bg-slate-50/78 px-3.5 py-3 text-[12px] text-slate-500 dark:border-slate-700 dark:bg-slate-900/54 dark:text-slate-300">
-                  <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 font-semibold text-slate-700 shadow-sm dark:bg-slate-950 dark:text-slate-100">
+                <div className="flex flex-wrap items-center gap-1.5 rounded-[12px] border border-slate-200/80 bg-slate-50/78 px-3 py-2 text-[11px] text-slate-500 dark:border-slate-700 dark:bg-slate-900/54 dark:text-slate-300">
+                  <span className="inline-flex items-center rounded-full bg-white px-2 py-0.5 font-semibold text-slate-700 shadow-sm dark:bg-slate-950 dark:text-slate-100">
                     当前明细：{currentTabName}
                   </span>
-                  <span className="inline-flex items-center rounded-full border border-slate-200/80 px-2.5 py-1 font-semibold dark:border-slate-700">
+                  <span className="inline-flex items-center rounded-full border border-slate-200/80 px-2 py-0.5 font-semibold dark:border-slate-700">
                     tabKey：{currentTabConfig.tabKey ?? currentTabId}
                   </span>
                 </div>
@@ -166,11 +178,11 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
                 <span className="material-symbols-outlined text-[15px] text-slate-400">toggle_on</span>
                 <span>开关与权限</span>
               </div>
-              <div className="grid gap-3 xl:grid-cols-3">
+              <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(132px,1fr))]">
                 {DETAIL_TAB_SWITCHES.map(([key, label]) => (
                   <label
                     key={key}
-                    className="flex items-center justify-between rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-[12px] font-medium text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-100"
+                    className="flex items-center justify-between rounded-lg border border-slate-200/80 bg-slate-50/70 px-2.5 py-2 text-[11px] font-medium text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-100"
                   >
                     <span>{label}</span>
                     <input
@@ -182,7 +194,7 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
                   </label>
                 ))}
               </div>
-              <div className="mt-4 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
+              <div className="mt-3 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
                 <div>
                   <label className={mutedLabelClass}>权限</label>
                   <input
@@ -191,7 +203,7 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
                     className={fieldClass}
                   />
                 </div>
-                <div>
+                <div className="col-span-full">
                   <label className={mutedLabelClass}>禁用条件</label>
                   <textarea
                     rows={4}
@@ -210,7 +222,7 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
                 <span className="material-symbols-outlined text-[15px] text-slate-400">view_agenda</span>
                 <span>扩展配置</span>
               </div>
-              <div className="grid gap-4 xl:grid-cols-2">
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]">
                 <div>
                   <label className={mutedLabelClass}>显示行数</label>
                   <input
@@ -237,7 +249,7 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
                     className={fieldClass}
                   />
                 </div>
-                <div>
+                <div className="col-span-full">
                   <label className={mutedLabelClass}>拖拽条件</label>
                   <textarea
                     rows={4}
