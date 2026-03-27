@@ -99,6 +99,7 @@ export function useDashboardTableBuilderOptions({
     renderableColumns: mainRenderableColumns,
     onCanvasDoubleClick: handleArchiveMainTablePreview,
     canvasLabel: '点击配置基础档案主表',
+    surfaceVariant: 'solid',
   }), [
     handleArchiveMainTablePreview,
     handleArchiveMainTableSelect,
@@ -114,6 +115,7 @@ export function useDashboardTableBuilderOptions({
     tableSelected: selectedTableConfigScope === 'left',
     onSelectTable: handleArchiveLeftTableSelect,
     canvasLabel: '点击配置左侧树表',
+    surfaceVariant: 'solid',
   }), [handleArchiveLeftTableSelect, selectedTableConfigScope]);
 
   const builderMainTableBuilderOptions = useMemo<TableBuilderOptions>(() => ({
@@ -125,6 +127,7 @@ export function useDashboardTableBuilderOptions({
     renderableColumns: mainRenderableColumns,
     onCanvasDoubleClick: handleBuilderMainTablePreview,
     canvasLabel: '点击配置主表属性',
+    surfaceVariant: 'solid',
   }), [
     handleBuilderMainTablePreview,
     handleBuilderMainTableSelect,
@@ -147,6 +150,7 @@ export function useDashboardTableBuilderOptions({
     renderableColumns: activeDetailTableColumns,
     canvasLabel: '点击配置明细表属性',
     density: 'compact',
+    surfaceVariant: 'solid',
   }), [
     activeDetailTableColumns,
     activeDetailTableConfig?.contextMenuEnabled,

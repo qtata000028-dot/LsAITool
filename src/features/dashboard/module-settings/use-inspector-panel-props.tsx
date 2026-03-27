@@ -91,6 +91,7 @@ export type UseInspectorPanelPropsOptions = {
   normalizeDetailFillTypeValue: (fillType?: string | null) => string;
   normalizeFieldSqlTagId: (value: unknown, fallback?: number) => number;
   onOpenArchiveLayoutEditor: () => void;
+  onOpenConditionWorkbench: (scope: 'left' | 'main') => void;
   onOpenMainHiddenColumnsModal: () => void;
   onOpenDetailBoardPreview: (rowId: number, preferredSortColumnId?: string | null) => void;
   onResetDetailBoardFieldWidth: (event: MouseEvent<HTMLButtonElement>, groupId: string, columnId: string) => void;
@@ -221,6 +222,7 @@ export function useInspectorPanelProps({
   normalizeDetailFillTypeValue,
   normalizeFieldSqlTagId,
   onOpenArchiveLayoutEditor,
+  onOpenConditionWorkbench,
   onOpenMainHiddenColumnsModal,
   onOpenDetailBoardPreview,
   onResetDetailBoardFieldWidth,
@@ -483,6 +485,7 @@ export function useInspectorPanelProps({
         normalizeDetailChartConfig,
         normalizeDetailFillTypeValue,
         onOpenArchiveLayoutEditor,
+        onOpenConditionWorkbench,
         onOpenMainHiddenColumnsModal,
         onOpenColorRules: () => setInspectorPanelTab('color'),
         onOpenContextMenus: () => setInspectorPanelTab('contextmenu'),
@@ -633,6 +636,7 @@ export function useInspectorPanelProps({
     normalizeDetailFillTypeValue,
     normalizeFieldSqlTagId,
     onOpenArchiveLayoutEditor,
+    onOpenConditionWorkbench,
     onOpenDetailBoardPreview,
     onResetDetailBoardFieldWidth,
     onStartDetailBoardFieldResize,

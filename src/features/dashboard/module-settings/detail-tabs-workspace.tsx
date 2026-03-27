@@ -121,12 +121,12 @@ export function DetailTabsWorkspace({
   selectedDetailForDelete,
   tableBuilderNode,
 }: DetailTabsWorkspaceProps) {
-  const contentPadding = isConfigFullscreenActive ? 'p-4' : 'p-5';
+  const contentPadding = isConfigFullscreenActive ? 'p-3' : 'p-4';
   const activeTabLabel = detailTabs.find((tab) => tab.id === activeTab)?.name || '当前明细';
 
   return (
     <div className={`flex h-full min-h-0 flex-col ${contentPadding}`}>
-      <div className={cn('mb-3 flex flex-wrap items-center justify-between gap-2 px-1', isConfigFullscreenActive ? 'mb-3' : 'mb-4')}>
+      <div className={cn('mb-2.5 flex flex-wrap items-center justify-between gap-2', isConfigFullscreenActive ? 'mb-2.5' : 'mb-3')}>
         <MemoDetailTabStrip
           detailTabs={detailTabs}
           activeTab={activeTab}
@@ -142,10 +142,12 @@ export function DetailTabsWorkspace({
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
         {currentDetailFillType === '表格' ? (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex items-center justify-between px-4 py-2">
+            <div className="flex items-center justify-between gap-2 border-b border-[#e6edf5] bg-white px-3 py-2">
               <div className="flex items-center gap-2">
-                <Table2 className="size-4 text-primary" />
-                <div className="text-[12px] font-medium text-foreground">明细字段</div>
+                <div className="flex size-7 items-center justify-center rounded-[9px] border border-[#dbe5ef] bg-[#f8fbfe] text-[color:var(--workspace-accent-strong)]">
+                  <Table2 className="size-3.5" />
+                </div>
+                <div className="text-[12px] font-medium text-slate-700">明细字段</div>
               </div>
               <div className="flex items-center gap-2">
                 {selectedDetailForDelete.length > 0 ? (
@@ -153,18 +155,18 @@ export function DetailTabsWorkspace({
                     variant="outline"
                     size="sm"
                     onClick={onDeleteSelectedColumns}
-                    className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    className="h-8 gap-1 rounded-[10px] border-[#ead7d7] px-2.5 text-[11px] font-semibold text-rose-500 hover:bg-rose-50 hover:text-rose-600"
                   >
-                    <Trash2 className="size-4" />
+                    <Trash2 className="size-3.5" />
                     删除 ({selectedDetailForDelete.length})
                   </Button>
                 ) : null}
                 <Button
                   size="sm"
                   onClick={onAddField}
-                  className="gap-1"
+                  className="h-8 gap-1 rounded-[10px] bg-[color:var(--workspace-accent)] px-2.5 text-[11px] font-semibold text-white shadow-none hover:bg-[color:var(--workspace-accent-strong)]"
                 >
-                  <Plus className="size-4" />
+                  <Plus className="size-3.5" />
                   新增字段
                 </Button>
               </div>
@@ -178,11 +180,11 @@ export function DetailTabsWorkspace({
             </div>
           </div>
         ) : currentDetailFillType === '网页' ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 bg-background/80 px-3 py-2">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[#dbe5ef] bg-white px-3 py-2">
               <div className="min-w-0 flex-1">
-                <div className="text-[12px] font-medium text-foreground">网页明细预览</div>
-                <div className="mt-1 truncate text-[11px] text-muted-foreground">
+                <div className="text-[12px] font-medium text-slate-700">网页明细预览</div>
+                <div className="mt-1 truncate text-[11px] text-slate-400">
                   {detailWebUrl || '当前明细还没有可用的网页地址'}
                 </div>
               </div>
@@ -190,12 +192,13 @@ export function DetailTabsWorkspace({
                 variant="outline"
                 size="sm"
                 onClick={onOpenWebConfig}
+                className="h-8 rounded-[10px] border-[#dbe5ef] px-2.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
               >
                 配置网页
               </Button>
             </div>
             {detailWebUrl ? (
-              <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border/70 bg-background shadow-sm">
+              <div className="min-h-0 flex-1 overflow-hidden rounded-[14px] border border-[#dbe5ef] bg-white">
                 <iframe
                   title={`${activeTabLabel} 网页预览`}
                   src={detailWebUrl}
@@ -203,7 +206,7 @@ export function DetailTabsWorkspace({
                 />
               </div>
             ) : (
-              <div className="min-h-0 flex-1 p-0">
+              <div className="min-h-0 flex-1">
                 <DetailFillPlaceholder
                   currentDetailFillType={currentDetailFillType}
                   isSelected={isDetailViewSelected}

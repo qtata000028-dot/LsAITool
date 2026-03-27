@@ -4,14 +4,14 @@ import {
   BuilderSelectionContextMenuOverlay,
   PreviewContextMenuOverlay,
 } from './context-menus';
-import { DocumentConditionToolbarBridge } from './document-workspace-panels';
+import { DocumentConditionWorkbenchModalBridge } from './document-workspace-panels';
 import { LongTextEditorModal } from './long-text-editor-modal';
 import { ModuleSettingStepShell } from './module-setting-step-shell';
 
 export type BuildDashboardWorkspaceBridgeNodesInput = {
   archiveLayoutCanvasProps: React.ComponentProps<typeof ArchiveLayoutCanvasModalContainer>;
   builderSelectionContextMenu: React.ComponentProps<typeof BuilderSelectionContextMenuOverlay>['menu'];
-  documentConditionToolbarProps: React.ComponentProps<typeof DocumentConditionToolbarBridge>;
+  documentConditionToolbarProps: React.ComponentProps<typeof DocumentConditionWorkbenchModalBridge>;
   longTextEditorModalProps: React.ComponentProps<typeof LongTextEditorModal>;
   onCloseBuilderSelectionContextMenu: () => void;
   onClosePreviewContextMenu: () => void;
@@ -38,7 +38,7 @@ export function buildDashboardWorkspaceBridgeNodes(input: BuildDashboardWorkspac
       />
     ),
     documentConditionToolbarNode: (
-      <DocumentConditionToolbarBridge {...input.documentConditionToolbarProps} />
+      <DocumentConditionWorkbenchModalBridge {...input.documentConditionToolbarProps} />
     ),
     longTextEditorNode: (
       <LongTextEditorModal {...input.longTextEditorModalProps} />

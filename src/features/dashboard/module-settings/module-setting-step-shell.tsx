@@ -1,6 +1,5 @@
 import React from 'react';
 
-import { getDetailBoardTheme } from './detail-board-config';
 import { MemoDetailTabStrip, MemoDocumentDetailWorkbench } from './detail-workbench';
 import { DetailFillPlaceholder, DetailTabsWorkspace } from './detail-tabs-workspace';
 import { DocumentGridToolbarBridge, DocumentTreePanel } from './document-workspace-panels';
@@ -102,96 +101,70 @@ export function ModuleSettingStepShell({
   isConfigFullscreenActive,
   moduleSettingStageHeightClass,
   moduleSettingStageStyle,
-  workspaceTheme,
   workspaceThemeStyles,
   document,
   tree,
 }: ModuleSettingStepShellProps) {
-  const detailBoardTheme = getDetailBoardTheme(workspaceTheme);
   const hasDocumentDetails = document.detailTabs.length > 0;
-  const stageShellClass = `flex min-h-0 overflow-hidden bg-[#f6f8fb] ${workspaceThemeStyles.tableSurface}`;
-  const workspacePanelClass = 'flex min-h-0 flex-col overflow-hidden border border-slate-200/80 bg-[#fbfcfe] shadow-none';
-  const workspacePanelHeaderClass = 'flex items-center justify-between border-b border-slate-200 bg-[#f8fafc] px-4 py-3';
-  const workspacePanelBodyClass = 'min-h-0 flex-1 overflow-hidden bg-[#fcfdff]';
-  const sectionIconClass = 'flex size-8 items-center justify-center rounded-[10px] border border-slate-200 bg-[#eef4ff] text-[color:var(--workspace-accent-strong)]';
-  const sectionActionButtonClass = 'inline-flex items-center gap-1 rounded-[10px] border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800';
+  const stageShellClass = `flex min-h-0 overflow-hidden bg-[#f3f6fa] ${workspaceThemeStyles.tableSurface}`;
+  const workspacePanelClass = 'flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#d9e2ec] bg-white shadow-none';
+  const workspacePanelHeaderClass = 'flex items-center justify-between border-b border-[#e6edf5] bg-[#f8fafc] px-4 py-3';
+  const sectionIconClass = 'flex size-8 items-center justify-center rounded-[10px] border border-[#dbe5ef] bg-[#f6f9fc] text-[color:var(--workspace-accent-strong)]';
+  const sectionActionButtonClass = 'inline-flex items-center gap-1 rounded-[10px] border border-[#dbe5ef] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800';
   const primaryActionButtonClass = 'inline-flex items-center gap-1 rounded-[10px] bg-[color:var(--workspace-accent)] px-2.5 py-1 text-[11px] font-semibold text-white shadow-[0_10px_18px_-16px_rgba(15,23,42,0.2)] transition-all hover:bg-[color:var(--workspace-accent-strong)]';
-  const rightPaneShellClass = 'flex min-h-0 shrink-0 flex-col border-l border-slate-200/80 bg-[#f7f9fc]';
+  const rightPaneShellClass = 'flex min-h-0 shrink-0 flex-col border-l border-[#e2e8f0] bg-[#f7f9fc]';
   const singleTableDesignTitle = `${String(currentModuleName || '当前模块').trim() || '当前模块'} - 单表设计`;
 
   if (businessType === 'document') {
     return (
-      <div style={moduleSettingStageStyle} className={`${stageShellClass} ${moduleSettingStageHeightClass}`}>
-        <div className="min-h-0 min-w-0 flex flex-1 flex-col">
-          <div className="border-b border-slate-200 bg-[#fbfcfe]">
-            <div className="border-t-[4px] border-[color:var(--workspace-accent)] px-6 py-3 text-center">
-              <div className="text-[22px] font-bold tracking-[0.06em] text-slate-700">
-                {singleTableDesignTitle}
+      <>
+        <div style={moduleSettingStageStyle} className={`${stageShellClass} ${moduleSettingStageHeightClass}`}>
+          <div className="min-h-0 min-w-0 flex flex-1 flex-col">
+            <div className="border-b border-[#e6edf5] bg-[#fbfcfe]">
+              <div className="border-t-[4px] border-[color:var(--workspace-accent)] px-6 py-3 text-center">
+                <div className="text-[22px] font-bold tracking-[0.06em] text-slate-700">
+                  {singleTableDesignTitle}
+                </div>
               </div>
             </div>
-          </div>
-          {document.conditionToolbarNode}
-          <div className="min-h-0 min-w-0 flex flex-1 overflow-hidden">
-            {document.isTreePaneVisible ? (
-              <>
-                <div className="flex min-h-0 shrink-0 flex-col" style={{ width: document.documentLeftPaneWidth }}>
-                  <DocumentTreePanel
-                    treeRelationColumn={document.treeRelationColumn}
-                    workspaceThemeVars={document.workspaceThemeVars}
-                    documentTreeTableBuilderNode={document.documentTreeTableBuilderNode}
-                    onPaste={document.onPasteTreePanel}
-                  />
-                </div>
-
-                <div
-                  className="group flex w-3 shrink-0 cursor-col-resize items-center justify-center"
-                  onMouseDown={document.onStartLeftResize}
-                >
-                  <div className="cloudy-divider h-28 w-[4px] rounded-full transition-colors group-hover:bg-[color:var(--workspace-accent)] dark:bg-slate-700" />
-                </div>
-              </>
-            ) : null}
-
-            <div className="min-h-0 min-w-0 flex-1">
-              <div className={`grid h-full min-h-0 gap-0 overflow-hidden ${hasDocumentDetails ? 'grid-rows-2' : 'grid-rows-[minmax(0,1fr)_auto]'}`}>
-                <div className={workspacePanelClass}>
-                  <div className={workspacePanelHeaderClass}>
-                    <div className="flex items-center gap-2">
-                      <div className={sectionIconClass}>
-                        <span className="material-symbols-outlined text-[16px]">table_view</span>
-                      </div>
-                      <div>
-                        <h4 className="text-[12px] font-semibold text-slate-800 dark:text-slate-200">主表字段配置</h4>
-                        <p className="mt-0.5 text-[11px] text-slate-400">隐藏列与 0 宽列会集中收纳在详细列里</p>
-                      </div>
-                    </div>
-                    <button hidden
-                      type="button"
-                      onClick={document.onOpenMainHiddenColumnsModal}
-                      disabled={document.mainTableHiddenColumnsCount === 0}
-                      className={`${sectionActionButtonClass} disabled:cursor-not-allowed disabled:opacity-50`}
-                    >
-                      <span className="material-symbols-outlined text-[14px]">view_column</span>
-                      详细列 {document.mainTableHiddenColumnsCount > 0 ? `(${document.mainTableHiddenColumnsCount})` : ''}
-                    </button>
+            <div className="min-h-0 min-w-0 flex flex-1 overflow-hidden p-2.5">
+              {document.isTreePaneVisible ? (
+                <>
+                  <div className="flex min-h-0 shrink-0 flex-col" style={{ width: document.documentLeftPaneWidth }}>
+                    <DocumentTreePanel
+                      treeRelationColumn={document.treeRelationColumn}
+                      workspaceThemeVars={document.workspaceThemeVars}
+                      documentTreeTableBuilderNode={document.documentTreeTableBuilderNode}
+                      onPaste={document.onPasteTreePanel}
+                    />
                   </div>
-                  <div className={`${workspacePanelBodyClass} flex h-full min-h-0 flex-col`}>
+
+                  <div
+                    className="group flex w-3 shrink-0 cursor-col-resize items-center justify-center"
+                    onMouseDown={document.onStartLeftResize}
+                  >
+                    <div className="h-28 w-px rounded-full bg-[#dbe4ee] transition-colors group-hover:bg-[color:var(--workspace-accent-border-strong)] dark:bg-slate-700" />
+                  </div>
+                </>
+              ) : null}
+
+              <div className="min-h-0 min-w-0 flex-1">
+                <div className={`grid h-full min-h-0 gap-2.5 overflow-hidden ${hasDocumentDetails ? 'grid-rows-2' : 'grid-rows-[minmax(0,1fr)_auto]'}`}>
+                  <div className="flex min-h-0 flex-col overflow-hidden">
                     <div
-                      className="scrollbar-none min-h-0 flex-1 overflow-auto px-3 py-3 outline-none dark:bg-slate-900/90"
+                      className="scrollbar-none min-h-0 flex-1 overflow-auto outline-none dark:bg-slate-900/90"
                       tabIndex={0}
                       onPaste={document.onPasteMainTable}
-                      style={{ backgroundColor: '#fcfdff' }}
+                      style={{ backgroundColor: '#ffffff' }}
                     >
                       {document.archiveMainTableBuilderNode}
                     </div>
                   </div>
-                </div>
 
-                {hasDocumentDetails ? (
-                  <div className={workspacePanelClass}>
-                    <div className="flex h-full min-h-0 overflow-hidden">
+                  {hasDocumentDetails ? (
+                    <div className="flex min-h-0 flex-col overflow-hidden">
                       <MemoDocumentDetailWorkbench
-                        tableSurfaceClass={detailBoardTheme.tableSurface}
+                        tableSurfaceClass=""
                         detailTabStripNode={(
                           <MemoDetailTabStrip
                             detailTabs={document.detailTabs}
@@ -216,36 +189,37 @@ export function ModuleSettingStepShell({
                         )}
                       />
                     </div>
-                  </div>
-                ) : (
-                  <div className="border border-dashed border-[color:var(--workspace-accent-border)] bg-white px-4 py-4 dark:bg-slate-900/75">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <div className="min-w-0">
-                        <div className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">当前未创建明细</div>
-                        <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-300">
-                          点击创建明细后，再展开下方工作台，按现在的上下等分方式继续配置。
-                        </p>
+                  ) : (
+                    <div className="rounded-[20px] border border-dashed border-[color:var(--workspace-accent-border)] bg-white px-4 py-4 dark:bg-slate-900/75">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="min-w-0">
+                          <div className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">当前未创建明细</div>
+                          <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-300">
+                            点击创建明细后，再展开下方工作台，按现在的上下等分方式继续配置。
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={document.onAddDetailTab}
+                          className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-[color:var(--workspace-accent)] px-4 text-[12px] font-semibold text-white shadow-[0_12px_24px_-22px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">add</span>
+                          创建明细
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={document.onAddDetailTab}
-                        className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-[color:var(--workspace-accent)] px-4 text-[12px] font-semibold text-white shadow-[0_12px_24px_-22px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">add</span>
-                        创建明细
-                      </button>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div className={rightPaneShellClass} style={{ width: inspectorPaneWidth, minWidth: inspectorPaneWidth }}>
-          {columnOperationPanel}
+          <div className={rightPaneShellClass} style={{ width: inspectorPaneWidth, minWidth: inspectorPaneWidth }}>
+            {columnOperationPanel}
+          </div>
         </div>
-      </div>
+        {document.conditionToolbarNode}
+      </>
     );
   }
 

@@ -19,12 +19,14 @@ type BuildDashboardConfigBridgeWorkspaceInput = {
   conditionWorkbenchState: {
     activeScope: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['activeScope'];
     canSwitchScope: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['canSwitchScope'];
+    isOpen: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['isOpen'];
     mainConfig: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['mainConfig'];
     leftConfig: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['leftConfig'];
   };
   conditionWorkbenchActions: {
     onScopeSwitch: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['onScopeSwitch'];
     onActivatePanel: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['onActivatePanel'];
+    onClose: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['onClose'];
   };
   conditionWorkbenchRuntime: {
     renderFieldPreview: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['renderFieldPreview'];

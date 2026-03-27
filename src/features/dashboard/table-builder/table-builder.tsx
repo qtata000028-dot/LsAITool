@@ -22,6 +22,7 @@ export type TableBuilderOptions = {
   renderableColumns?: any[];
   onCanvasDoubleClick?: () => void;
   density?: 'default' | 'compact';
+  surfaceVariant?: 'glass' | 'solid';
 };
 
 export type TableBuilderHelpers = {
@@ -110,6 +111,8 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const detailBoardConfig = options?.normalizedDetailBoardConfig ?? helpers.normalizeDetailBoardConfig(options?.detailBoardConfig, cols);
   const renderableCols = options?.renderableColumns ?? cols.filter((column) => helpers.isRenderableColumn(column));
   const density = options?.density ?? 'default';
+  const surfaceVariant = options?.surfaceVariant ?? 'glass';
+  const useSolidSurface = surfaceVariant === 'solid';
   const isCompactCanvas = density === 'compact';
   const detailBoardTheme = helpers.getDetailBoardTheme(workspaceTheme);
   const hasDetailBoardFeature = detailBoardConfig.enabled && detailBoardConfig.groups.some((group: any) => group.columnIds.length > 0);
@@ -289,22 +292,38 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   ]);
 
   const addColumnWidth = isCompactModuleSetting ? 58 : 74;
-  const tableSurfaceClass = tableSelected
-    ? 'cloudy-glass-panel bg-[color:var(--workspace-accent-surface)] shadow-none'
-    : 'cloudy-glass-panel';
-  const headerDividerClass = tableSelected ? 'border-[color:var(--workspace-accent-border)]' : 'border-slate-200/70 dark:border-slate-700/80';
+  const tableSurfaceClass = useSolidSurface
+    ? (
+        tableSelected
+          ? 'rounded-[20px] border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-surface)] shadow-none'
+          : 'rounded-[20px] border border-[#d9e3ef] bg-white shadow-none'
+      )
+    : (
+        tableSelected
+          ? 'cloudy-glass-panel bg-[color:var(--workspace-accent-surface)] shadow-none'
+          : 'cloudy-glass-panel'
+      );
+  const headerDividerClass = tableSelected
+    ? 'border-[color:var(--workspace-accent-border)]'
+    : useSolidSurface
+      ? 'border-[#e6edf5] dark:border-slate-700/80'
+      : 'border-slate-200/70 dark:border-slate-700/80';
 
   const getHeaderButtonClass = useCallback((isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => (
     isActive
-      ? 'bg-[linear-gradient(180deg,rgba(255,252,253,0.98),rgba(255,247,250,1))] shadow-[inset_0_0_0_1px_var(--workspace-accent-border-strong)] dark:bg-[linear-gradient(180deg,rgba(80,7,36,0.26),rgba(59,7,30,0.18))]'
+      ? useSolidSurface
+        ? 'bg-[color:var(--workspace-accent-soft)] shadow-[inset_0_0_0_1px_var(--workspace-accent-border)] dark:bg-[color:var(--workspace-accent-soft)]'
+        : 'bg-[linear-gradient(180deg,rgba(255,252,253,0.98),rgba(255,247,250,1))] shadow-[inset_0_0_0_1px_var(--workspace-accent-border-strong)] dark:bg-[linear-gradient(180deg,rgba(80,7,36,0.26),rgba(59,7,30,0.18))]'
       : isMarkedForDelete
         ? 'bg-[linear-gradient(180deg,rgba(255,248,250,0.98),rgba(255,251,252,1))] shadow-[inset_0_0_0_1px_rgba(191,90,112,0.18)]'
         : isTreeRelation
           ? 'bg-[linear-gradient(180deg,rgba(237,247,255,0.98),rgba(245,250,255,1))] shadow-[inset_0_0_0_1px_rgba(125,176,255,0.46)]'
           : tableSelected
-            ? 'bg-slate-50 hover:bg-white dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
+            ? useSolidSurface
+              ? 'bg-white hover:bg-[#f8fafc] dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
+              : 'bg-slate-50 hover:bg-white dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
             : 'bg-white hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
-  ), [tableSelected]);
+  ), [tableSelected, useSolidSurface]);
 
   const getHeaderLabelClass = useCallback((isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => {
     if (isActive) {
@@ -317,9 +336,11 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       return 'rounded-md bg-[#eaf4ff] px-1.5 py-[3px] text-[#2563eb] shadow-[0_12px_20px_-18px_rgba(59,130,246,0.7)] dark:bg-sky-500/16 dark:text-sky-200';
     }
     return tableSelected
-      ? 'px-0 py-0 text-[#ba566d] dark:text-[#f4b5c1]'
+      ? useSolidSurface
+        ? 'px-0 py-0 text-slate-700 dark:text-slate-100'
+        : 'px-0 py-0 text-[#ba566d] dark:text-[#f4b5c1]'
       : 'bg-transparent px-0 py-0 text-slate-700 dark:text-slate-100';
-  }, [tableSelected]);
+  }, [tableSelected, useSolidSurface]);
 
   const getHeaderRequiredMarkClass = useCallback((isActive: boolean, isMarkedForDelete: boolean, isRequired: boolean, isTreeRelation: boolean) => {
     if (!isRequired) return 'hidden';
@@ -332,29 +353,71 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     isActive
       ? 'bg-[color:var(--workspace-accent-soft)]'
       : tableSelected
-        ? 'bg-transparent group-hover:bg-white/30 dark:group-hover:bg-white/6'
+        ? useSolidSurface
+          ? 'bg-transparent group-hover:bg-slate-200 dark:group-hover:bg-white/6'
+          : 'bg-transparent group-hover:bg-white/30 dark:group-hover:bg-white/6'
         : ''
-  ), [tableSelected]);
+  ), [tableSelected, useSolidSurface]);
 
-  const tableCanvasClass = tableSelected
-    ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] text-[color:var(--workspace-accent-strong)]'
-    : 'border-slate-200/80 bg-white text-slate-400 hover:border-slate-200/90 hover:bg-white dark:text-slate-500';
-  const tableCanvasIconClass = tableSelected
-    ? 'cloudy-glass-orb border-[color:var(--workspace-accent-border)] bg-white/96 text-[color:var(--workspace-accent-strong)]'
-    : 'cloudy-glass-orb text-[color:var(--workspace-accent)]';
+  const tableCanvasClass = useSolidSurface
+    ? (
+        tableSelected
+          ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] text-[color:var(--workspace-accent-strong)]'
+          : 'border-[#e6edf5] bg-[#f8fafc] text-slate-400 hover:border-[#dbe5ef] hover:bg-[#f5f8fb] dark:text-slate-500'
+      )
+    : (
+        tableSelected
+          ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] text-[color:var(--workspace-accent-strong)]'
+          : 'border-slate-200/80 bg-white text-slate-400 hover:border-slate-200/90 hover:bg-white dark:text-slate-500'
+      );
+  const tableCanvasIconClass = useSolidSurface
+    ? (
+        tableSelected
+          ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]'
+          : 'border-[#dbe5ef] bg-[#f7fafc] text-[color:var(--workspace-accent)]'
+      )
+    : (
+        tableSelected
+          ? 'cloudy-glass-orb border-[color:var(--workspace-accent-border)] bg-white/96 text-[color:var(--workspace-accent-strong)]'
+          : 'cloudy-glass-orb text-[color:var(--workspace-accent)]'
+      );
   const tableCanvasTitleClass = tableSelected
     ? 'text-[color:var(--workspace-accent-strong)]'
     : 'text-slate-500 dark:text-slate-300';
-  const tableCanvasPanelShellClass = tableSelected
-    ? 'border-[color:var(--workspace-accent-border)] bg-white/96 shadow-[0_24px_56px_-36px_rgba(192,107,125,0.5)] dark:bg-slate-950/86'
-    : 'border-white/85 bg-white/94 shadow-[0_24px_48px_-36px_rgba(15,23,42,0.24)] dark:border-slate-800/90 dark:bg-slate-950/84';
+  const tableCanvasPanelShellClass = useSolidSurface
+    ? (
+        tableSelected
+          ? 'border-[color:var(--workspace-accent-border)] bg-white shadow-[0_20px_40px_-34px_var(--workspace-accent-shadow)] dark:bg-slate-950/92'
+          : 'border-[#dbe5ef] bg-white shadow-[0_18px_30px_-28px_rgba(15,23,42,0.16)] dark:border-slate-700/90 dark:bg-slate-950/92'
+      )
+    : (
+        tableSelected
+          ? 'border-[color:var(--workspace-accent-border)] bg-white/96 shadow-[0_24px_56px_-36px_rgba(192,107,125,0.5)] dark:bg-slate-950/86'
+          : 'border-white/85 bg-white/94 shadow-[0_24px_48px_-36px_rgba(15,23,42,0.24)] dark:border-slate-800/90 dark:bg-slate-950/84'
+      );
   const getHeaderCornerClass = useCallback(() => '', []);
-  const addColumnHeaderShellClass = tableSelected
-    ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] dark:bg-white/6'
-    : 'border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(246,249,252,0.6))]';
-  const addColumnButtonClass = tableSelected
-    ? 'cloudy-glass-orb border-[color:var(--workspace-accent-border)] text-[color:var(--workspace-accent-strong)]'
-    : 'cloudy-glass-orb text-[color:var(--workspace-accent)]';
+  const addColumnHeaderShellClass = useSolidSurface
+    ? (
+        tableSelected
+          ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] dark:bg-white/6'
+          : 'border-[#e6edf5] bg-[#f8fafc]'
+      )
+    : (
+        tableSelected
+          ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] dark:bg-white/6'
+          : 'border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(246,249,252,0.6))]'
+      );
+  const addColumnButtonClass = useSolidSurface
+    ? (
+        tableSelected
+          ? 'border-[color:var(--workspace-accent-border)] bg-white text-[color:var(--workspace-accent-strong)]'
+          : 'border-[#dbe5ef] bg-white text-[color:var(--workspace-accent)]'
+      )
+    : (
+        tableSelected
+          ? 'cloudy-glass-orb border-[color:var(--workspace-accent-border)] text-[color:var(--workspace-accent-strong)]'
+          : 'cloudy-glass-orb text-[color:var(--workspace-accent)]'
+      );
 
   const headerColumns = useMemo(() => renderableCols.map((col, index) => {
     const normalizedCol = helpers.normalizeColumn(col);
@@ -408,7 +471,17 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
         className={`pointer-events-none relative z-10 flex w-full flex-col items-center gap-2 rounded-[18px] border text-center backdrop-blur-sm ${tableCanvasPanelShellClass} ${isCompactCanvas ? 'max-w-[320px] px-4 py-3' : 'max-w-[420px] px-5 py-4'}`}
       >
         <div className={`flex items-center justify-center rounded-md border ${isCompactModuleSetting ? 'size-10' : 'size-12'} ${tableCanvasIconClass}`}>
-          <span className={`material-symbols-outlined ${isCompactModuleSetting ? 'text-[16px]' : 'text-[20px]'} ${tableSelected ? 'text-[#c06b7d]' : 'text-slate-300 dark:text-slate-500'}`}>table_view</span>
+          <span
+            className={`material-symbols-outlined ${isCompactModuleSetting ? 'text-[16px]' : 'text-[20px]'} ${
+              tableSelected
+                ? useSolidSurface
+                  ? 'text-[color:var(--workspace-accent-strong)]'
+                  : 'text-[#c06b7d]'
+                : 'text-slate-300 dark:text-slate-500'
+            }`}
+          >
+            table_view
+          </span>
         </div>
         {detailBoardFeatureLabel && (
           <div className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${detailBoardTheme.badge}`}>
@@ -434,6 +507,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     tableCanvasPanelShellClass,
     tableCanvasTitleClass,
     tableSelected,
+    useSolidSurface,
   ]);
   const centeredCanvasOverlayNode = useMemo(() => (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4">

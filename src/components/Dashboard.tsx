@@ -1385,6 +1385,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
 
   const closeConfigWizard = useCallback(() => {
     setIsConfigOpen(false);
+    setIsDocumentConditionWorkbenchOpen(false);
     updateCurrentDesignSearch({
       config: null,
       module: null,
@@ -2148,6 +2149,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   const [selectedDetailForDelete, setSelectedDetailForDelete] = useState<string[]>([]);
   const [selectedDetailFiltersForDelete, setSelectedDetailFiltersForDelete] = useState<string[]>([]);
   const [selectedArchiveNodeId, setSelectedArchiveNodeId] = useState('archive-main');
+  const [isDocumentConditionWorkbenchOpen, setIsDocumentConditionWorkbenchOpen] = useState(false);
   const [billSources, setBillSources] = useState<BillSourceEntry[]>([]);
   const [activeBillSourceId, setActiveBillSourceId] = useState('');
   const [billSourceDraft, setBillSourceDraft] = useState<BillSourceEntry>({
@@ -3340,6 +3342,11 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   const openArchiveLayoutEditor = () => {
     setIsArchiveLayoutEditorOpen(true);
   };
+
+  const openDocumentConditionWorkbench = useCallback((scope: 'left' | 'main' = 'main') => {
+    setDocumentConditionScope((prev) => (prev === scope ? prev : scope));
+    setIsDocumentConditionWorkbenchOpen(true);
+  }, []);
 
   const startDetailBoardFieldResize = (
     event: React.MouseEvent<HTMLButtonElement>,
@@ -5790,6 +5797,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     normalizeDetailFillTypeValue,
     normalizeFieldSqlTagId,
     onOpenArchiveLayoutEditor: openArchiveLayoutEditor,
+    onOpenConditionWorkbench: openDocumentConditionWorkbench,
     onOpenMainHiddenColumnsModal: openMainHiddenColumnsModal,
     onOpenDetailBoardPreview: openDetailBoardPreview,
     onResetDetailBoardFieldWidth: resetDetailBoardFieldWidth,
@@ -5865,10 +5873,12 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
       conditionWorkbenchState: {
         activeScope: activeDocumentConditionScope,
         canSwitchScope: Boolean(leftDocumentConditionConfig),
+        isOpen: isDocumentConditionWorkbenchOpen,
         mainConfig: mainDocumentConditionConfig,
         leftConfig: leftDocumentConditionConfig,
       },
       conditionWorkbenchActions: {
+        onClose: () => setIsDocumentConditionWorkbenchOpen(false),
         onScopeSwitch: handleDocumentConditionScopeSwitch,
         onActivatePanel: activateConditionPanelSelection,
       },

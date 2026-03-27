@@ -87,6 +87,7 @@ type GridInspectorControllerProps = {
   normalizeDetailChartConfig: (config: any) => any;
   normalizeDetailFillTypeValue: (fillType?: string) => string;
   onOpenArchiveLayoutEditor: () => void;
+  onOpenConditionWorkbench: (scope: 'left' | 'main') => void;
   onOpenMainHiddenColumnsModal: () => void;
   onOpenDetailBoardPreview: (previewRows?: number, sortColumnId?: string | null) => void;
   onOpenColorRules: () => void;
@@ -186,6 +187,7 @@ export function GridInspectorController({
   normalizeDetailChartConfig,
   normalizeDetailFillTypeValue,
   onOpenArchiveLayoutEditor,
+  onOpenConditionWorkbench,
   onOpenMainHiddenColumnsModal,
   onOpenColorRules,
   onOpenContextMenus,
@@ -606,6 +608,16 @@ export function GridInspectorController({
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <div className="flex flex-wrap items-center gap-2">
+            {isDocumentArchiveGrid ? (
+              <button
+                type="button"
+                onClick={() => onOpenConditionWorkbench(isLeftGridConfig ? 'left' : 'main')}
+                className={useQuietDocumentInspector ? quietDocumentInspectorActionClass : 'inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-slate-200/80 bg-white/92 px-3 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200'}
+              >
+                <span className="material-symbols-outlined text-[16px]">filter_alt</span>
+                条件配置
+              </button>
+            ) : null}
             {!isBillHeadGridConfig && !isBillDetailGridConfig && !isLeftGridConfig && !isDetailChartInspector && !isMainGridConfig ? (
               <button
                 type="button"
