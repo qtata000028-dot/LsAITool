@@ -35,7 +35,7 @@
       "name": "Run Full App",
       "type": "node",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/dev-with-api.mjs",
+      "program": "${workspaceFolder}/scripts/dev-with-simple-designer.mjs",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "outputCapture": "std",
@@ -53,7 +53,7 @@
       "runtimeExecutable": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
       "url": "http://127.0.0.1:3000",
       "webRoot": "${workspaceFolder}",
-      "preLaunchTask": "ensure-client-dev-server"
+      "preLaunchTask": "ensure-dev-server"
     },
     {
       "name": "Start Vite Dev Server Only",
