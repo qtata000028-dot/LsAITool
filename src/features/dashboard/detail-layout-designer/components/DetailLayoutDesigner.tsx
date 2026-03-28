@@ -152,7 +152,7 @@ export function DetailLayoutDesigner({
       sensors={detailDnD.sensors}
     >
       <section className={clsx('flex h-full min-h-0 flex-col', className)}>
-        <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[240px_minmax(0,1fr)_300px]">
+        <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[220px_minmax(0,1fr)_340px] 2xl:grid-cols-[240px_minmax(0,1fr)_360px]">
           <DetailPalette
             className="min-h-0 overflow-auto"
             description={paletteDescription}
@@ -174,7 +174,7 @@ export function DetailLayoutDesigner({
                     ? `正在拖入：${DETAIL_LAYOUT_REGISTRY[detailDnD.activePaletteType].label}`
                     : layoutState.ui.draggingId || layoutState.ui.resizingId
                       ? '正在编辑控件位置或尺寸'
-                      : '点击、拖入、移动或缩放控件'}
+                      : '点击控件后，在右侧统一调整标题、绑定和尺寸'}
                 </div>
                 {mode === 'design' ? (
                   <div className="mt-1 text-[11px] text-slate-400">
@@ -231,6 +231,7 @@ export function DetailLayoutDesigner({
           <DetailPropertyPanel
             allowFieldEdit={allowFieldEdit}
             allowParentIdEdit={allowParentIdEdit}
+            className="min-h-0"
             fieldOptions={fieldOptions}
             item={layoutState.selectedItem}
             mode={layoutState.ui.mode}

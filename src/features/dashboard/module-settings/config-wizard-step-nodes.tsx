@@ -17,12 +17,14 @@ export type BuildConfigWizardStepNodesInput = {
   businessType: 'document' | 'table' | 'tree';
   commonFilledMenuFieldCount: number;
   commonFuncs: string[];
+  currentModuleCode: string;
   currentAdvancedMenuKeys: string[];
   currentAdvancedMenuSections: any[];
   currentMenuDraft: Record<string, string | boolean>;
   currentMenuFieldEntriesCount: number;
   currentMenuFieldMap: Map<string, any>;
   currentModuleGuideLabel: string;
+  currentModuleName: string;
   currentPinnedMenuKeys: string[];
   currentPinnedMenuKeySet: Set<string>;
   currentCommonMenuSections: any[];
@@ -109,7 +111,12 @@ export function buildConfigWizardStepNodes(input: BuildConfigWizardStepNodesInpu
     ),
     processDesignNode: input.processDesignNode,
     modulePreviewNode: (
-      <ModulePreviewStep title={input.previewTitle} />
+      <ModulePreviewStep
+        businessType={input.businessType}
+        currentModuleCode={input.currentModuleCode}
+        currentModuleName={input.currentModuleName}
+        title={input.previewTitle}
+      />
     ),
     moduleTypeSelectionNode: (
       <ModuleTypeSelectionStep

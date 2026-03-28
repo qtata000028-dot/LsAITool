@@ -2,10 +2,40 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "日常启动（推荐）",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/restart-client-with-api.mjs",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "outputCapture": "std",
+      "skipFiles": ["<node_internals>/**"],
+      "serverReadyAction": {
+        "pattern": "ready at (http://\\S+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
+    },
+    {
+      "name": "首次启动（前端+本地代理）",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/ensure-dev-server.mjs",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "outputCapture": "std",
+      "skipFiles": ["<node_internals>/**"],
+      "serverReadyAction": {
+        "pattern": "ready at (http://\\S+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
+    },
+    {
       "name": "Run Full App",
       "type": "node",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/dev-with-api.mjs",
+      "program": "${workspaceFolder}/scripts/dev-with-simple-designer.mjs",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "outputCapture": "std",
@@ -23,13 +53,19 @@
       "runtimeExecutable": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
       "url": "http://127.0.0.1:3000",
       "webRoot": "${workspaceFolder}",
-      "preLaunchTask": "ensure-client-dev-server"
+      "preLaunchTask": "ensure-dev-server"
     },
     {
       "name": "Start Vite Dev Server Only",
       "type": "node-terminal",
       "request": "launch",
       "command": "npm run dev:client"
+    },
+    {
+      "name": "仅重启前端（终端）",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev:vscode"
     },
     {
       "name": "Start Full Dev Stack Only",

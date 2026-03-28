@@ -1,5 +1,25 @@
 # 任务教训
 
+## 2026-03-28 AI Batch Actions Should Reuse The Real Page Save Instead Of Inventing Narrow Follow-Up Saves
+- When the user says an AI-assisted batch action like “一键翻译” should “save this page”, wire that action into the existing page-level save orchestration instead of inventing a special-case save that only persists one field such as the table name.
+- In this single-table module-settings flow, the authoritative save entry is `saveSingleTableModuleSettingsPage`; any follow-up save from the grid inspector should call that shared page save so master config, columns, conditions, menus, and related state stay consistent.
+- Treat translation and save as two distinct outcomes. If translation succeeds but page save fails, surface that partial-success state explicitly instead of showing a generic full-success toast.
+- Do not short-circuit the page save just because the AI translation step found zero acceptable replacements. If the product says “clicking the button should also save this page”, the save path still needs to run for “no translatable fields” and “all results filtered out” branches, or the user will see no save request at all.
+
+## 2026-03-28 Follow-Up Saves After AI Create Must Respect The Exact Persistence Scope
+- When the user narrows a follow-up save rule from “save the generated config” to “save only the table name”, do not keep posting the broader payload through a shared adapter by accident. Re-check both the caller payload and the adapter’s fallback rules.
+- In this single-table flow, AI one-click table creation may still update local `mainSql`, but its follow-up module-config save should omit SQL entirely when the requirement is “only persist the table name”.
+- If the user still sees the generated SQL after the follow-up save payload is already narrowed, inspect local state writes next. In this screen, `updateGridConfig({ mainSql: response.result.mainSql })` was enough to make the UI and the later normal save path keep treating the AI result as persisted SQL.
+
+## 2026-03-28 Single-Table Main Config Screens Must Load And Save The Master Config Row Explicitly
+- If a module-settings screen shows main-table metadata like table name or main SQL, do not assume loading the field list, conditions, menus, and colors is enough. The master row still lives in `p_systemdlltab`, and the screen must explicitly fetch/save that row as part of its own lifecycle.
+- For this single-table flow, normalize the legacy `p_systemdlltab` field names at the adapter boundary, not in scattered UI code: `DllCoid -> dllCoId`, `ToolsName -> moduleName`, `SQL -> querySql/mainSql`, `SQLDT1 -> mainTable/tableName`, and `condKey -> conditionKey`.
+- Do not invent mappings for UI fields that have no confirmed backend column. `defaultQuery`, `sqlPrompt`, and `tableType` should stay on their real contracts instead of being force-fit onto unrelated legacy fields like `condKey`.
+
+## 2026-03-28 Server-Side Create Flows Must Persist Their Authoritative Module Config In The Same Success Path
+- If a button creates backend resources that define the canonical module config, like AI one-click table creation producing the final `tableName` and `mainSql`, do not stop at updating local React state. Persist the matching module-config row in the same success branch or the next reload will drift back to stale backend values.
+- Keep the follow-up save aligned with the existing read contract. In this single-table module flow, the authoritative config keys are `mainTable` and `querySql`, so the post-create save should write those exact keys instead of inventing UI-only names such as `tableName`.
+
 ## 2026-03-23 Document Split, Resize Smoothness And Archive Group Layout
 - 文档工作台里主表和明细如果都是高频操作区，就不要继续保留可拖分隔条；默认应按稳定比例甚至等分高度展示，避免用户一点击下半区就感觉布局在缩动。
 - 对高频拖宽控件，不能一处用直接 setState 每帧刷新、另一处再单独实现临时预览；应统一成同一套 live preview + rAF 提交链路，否则体感会明显不一致。
@@ -482,6 +502,43 @@
 - When the user corrects the survey first-load query rule multiple times, do not keep layering new filters (`departmentId`, then entry `id`) onto the list request. Step back and align to the actual current contract.
 - In this module, the current requirement is simpler: `GET /api/survey/mains` with no query parameters, then take the first row. `departmentId` still belongs to create/save defaults, but not to the initial list query.
 - If a feature prop is introduced only to satisfy a guessed query filter and the user later removes that filter, delete the prop chain instead of leaving dead context threaded through the workbench.
+
+## 2026-03-28 Survey Main Schema Changes Must Update Read And Save Mappers Together
+- When the backend adds canonical main-table fields for research records, such as `title` or `project`, do not patch only the query side or only the save side. The main DTO, load mapper, save mapper, and save-success rehydration must be updated together.
+- For this workbench, backend `title/project` should be wired directly into the existing overview fields that users edit, rather than leaving the UI on old defaults and silently dropping the new values on save.
+
+## 2026-03-28 Loaded Survey Records Must Preserve Persisted IDs Across List And Detail Reads
+- If the page first discovers a survey record from `GET /api/survey/mains` and then fetches the full row from `GET /api/survey/mains/{id}`, do not assume the second payload always repeats the same `id` field. Preserve the persisted id from the list row as a fallback, or the editor can display existing data but still save as a create.
+- Apply the same rule to detail ids and to mixed `number/string` legacy ids. Diff, hydrate, and delete logic should compare ids by normalized identity, not by a narrow numeric-only filter.
+- When a legacy API may serialize the primary key as `ID` or `Id`, normalize that casing at the API adapter boundary instead of hoping each page remembers to read all variants. Otherwise the same persisted row can look like “loaded but no id” in one screen and “has id” in another.
+
+## 2026-03-28 Explicitly Added Child Rows Must Not Be Dropped Just Because They Are Still Blank
+- In editors where users can manually add child rows, do not reuse a pure “has meaningful content” filter as the only save gate. A user-added blank row is still an intentional row and should usually be persisted, or at minimum preserved through save.
+- Keep a small explicit-persist flag on newly added rows when the product expects “新增明细” to create real child records under the parent, even before the user fills every field.
+
+## 2026-03-28 After Batch-Saving Child Rows, Reload The Whole Child Collection
+- When a parent page can save multiple child rows in one action, do not stop at stitching together the per-row save responses. The authoritative post-save state is the full child list under that parent, so reload it and rehydrate from the collection endpoint.
+- This is especially important when the backend may assign defaults, reorder rows, merge payloads, or return partial DTOs from save endpoints. A collection re-read after save is more reliable than guessing from local optimistic state.
+
+## 2026-03-28 Legacy Detail DTOs Need Full Field-Name Normalization, Not Just ID Normalization
+- When a legacy detail API returns database-style column names like `billno`, `mid`, `modulename`, `moduleid`, `Position1`, or `Working_rate1`, normalizing only the primary key is not enough. The adapter must map the whole row into the front-end field vocabulary or the form will save successfully but re-render blank.
+- Put that mapping in the shared API adapter layer so list read, single-row read, and save-response hydration all agree on the same canonical detail shape.
+
+## 2026-03-28 Legacy Main DTOs Need The Same Full Field-Name Normalization And Semantic Mapping
+- For research-record main rows, do not stop after wiring `title/project`. Legacy responses can still use column names like `departid`, `surveydate`, `Address`, `ordernum`, `empnames`, `Positionsbak`, `operatedate`, and `operatorname`.
+- Normalize those names in the shared survey adapter, and keep the UI-to-backend semantic mapping explicit: `surveyUsers` belongs to the “调研工程师” field, while `operatorName/operateDate` belong to the output-confirmation signer/date fields.
+
+## 2026-03-28 Survey Main Form Fields Must Follow Backend Semantics, Not Convenient Fallbacks
+- When a main form shows both “调研工程师” and “输出确认签字人”, do not fill both from the same `surveyUsers` source just because it makes old records look less empty. That creates silent write-back drift.
+- In this workbench, `surveyUsers` should own the overview engineer field, while `operatorName/operateDate` should own the output-confirmation signer/date. Any fallback between them must stay clearly secondary and only for backward compatibility during read.
+
+## 2026-03-28 Department Pickers Must Persist Backend IDs, Not Just Display Names
+- If the backend contract says a department field stores `Departmentid`, do not keep the UI on a plain text box that only edits `departmentName`. A page that displays the right label but drops the foreign key will drift on save and reload.
+- For this research-record workbench, treat the department search result as a pair: show `departmentname`, persist `Departmentid`, and when the main row reloads with only `departid`, resolve the label from the department source before rendering.
+
+## 2026-03-28 Search-Backed Department Fields Must Not Sneak In Login Defaults
+- Once a department field is changed to a real search picker, do not keep preselecting the login department id or the current menu name as a silent default. That makes the screen look filled even when the user never chose a department.
+- In this research-record workbench, a new record should leave “调研部门” empty until the user selects one, while existing records may still hydrate from the saved `departid`.
 
 ## 2026-03-27 Preview And Export Should Share One Research Word Template Source
 - When the user asks for Word export to match the right-side preview “一比一”, do not keep two separately maintained template trees and try to visually sync them by hand. That always drifts.

@@ -54,7 +54,7 @@ type LegacyDefinitionLayoutWorkbenchProps = {
   title?: string;
 };
 
-const STAGE_WIDTH = 860;
+const STAGE_WIDTH = 760;
 const STAGE_OFFSET_X = 24;
 const STAGE_TOP_PADDING = 24;
 const GROUP_GAP = 22;
@@ -94,6 +94,10 @@ function clampValue(value: number, min: number, max: number) {
 
 function getPresetDefinition(presetKey: LayoutPresetKey) {
   return LAYOUT_PRESET_OPTIONS.find((item) => item.key === presetKey) ?? LAYOUT_PRESET_OPTIONS[0];
+}
+
+function resolveGroupNameValue(value: unknown, fallback = '') {
+  return typeof value === 'string' ? value : fallback;
 }
 
 function inferFieldType(column: Record<string, any>) {
@@ -143,7 +147,9 @@ function inferFieldHeight(column: Record<string, any>, fieldType: FieldPreviewTy
     return clampValue(Math.round(explicitHeight), FIELD_HEIGHT_MIN, FIELD_HEIGHT_MAX);
   }
 
-  return fieldType === 'textarea' ? 106 : 68;
+  return fieldType === 'textarea'
+    ? FIELD_HEIGHT_PRESETS[0]?.value ?? 68
+    : 68;
 }
 
 function normalizeCandidateText(value: unknown) {
@@ -287,7 +293,7 @@ function buildPreviewGroups(
       fields: fieldLayouts,
       height: groupHeight,
       id: String(group?.id || `group_${groupIndex + 1}`),
-      name: String(group?.name || `信息分组 ${groupIndex + 1}`),
+      name: resolveGroupNameValue(group?.name, `信息分组 ${groupIndex + 1}`),
       rowSpace: normalizedRowSpace,
       width: stageWidth,
       x: STAGE_OFFSET_X,
@@ -317,8 +323,8 @@ function renderControlShell(field: PreviewFieldLayout) {
       );
     case 'textarea':
       return (
-        <div className="bill-designer-control-shell flex h-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-[12px] leading-5 text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
-          <span className="overflow-hidden">{field.defaultValue || '请输入内容'}</span>
+        <div className="bill-designer-control-shell flex h-full items-start rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-[12px] leading-5 text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+          <span className="line-clamp-3 overflow-hidden break-all">{field.defaultValue || '请输入内容'}</span>
         </div>
       );
     default:
@@ -327,6 +333,19 @@ function renderControlShell(field: PreviewFieldLayout) {
           <span>{field.defaultValue || '请输入内容'}</span>
         </div>
       );
+  }
+}
+
+function getFieldTypeLabel(type: FieldPreviewType) {
+  switch (type) {
+    case 'number':
+      return '数字控件';
+    case 'select':
+      return '下拉控件';
+    case 'textarea':
+      return '备注控件';
+    default:
+      return '文本控件';
   }
 }
 
@@ -346,7 +365,7 @@ function buildFlowRows(columnIds: string[], columnsPerRow: number) {
 }
 
 function useStackedFieldPreview(field: PreviewFieldLayout) {
-  return field.type === 'textarea' || field.height >= 96;
+  return field.height >= (FIELD_HEIGHT_PRESETS[2]?.value ?? 132);
 }
 
 function matchesFieldSearch(field: NormalizedLayoutField, keyword: string) {
@@ -727,6 +746,24 @@ export function LegacyDefinitionLayoutWorkbench({
     FIELD_HEIGHT_MIN,
     FIELD_HEIGHT_MAX,
   );
+  const selectedFieldHeight = selectedField ? getSelectedFieldHeight(selectedField.id) : FIELD_HEIGHT_PRESETS[0]?.value ?? 68;
+  const selectedFieldPreview = selectedField
+    ? (previewSelectedField ?? {
+        ...selectedField,
+        height: selectedFieldHeight,
+        width: 0,
+        x: 0,
+        y: 0,
+      })
+    : null;
+  const selectedFieldPreviewStacked = selectedFieldPreview ? useStackedFieldPreview(selectedFieldPreview) : false;
+  const selectedFieldControlHeight = selectedFieldPreview
+    ? (
+        selectedFieldPreviewStacked
+          ? Math.max(52, selectedFieldPreview.height - 40)
+          : Math.max(40, selectedFieldPreview.height - 16)
+      )
+    : 0;
 
   const handleUpdateFieldHeight = (fieldId: string, nextHeight: number) => {
     if (!selectedGroup) {
@@ -1045,15 +1082,23 @@ export function LegacyDefinitionLayoutWorkbench({
   };
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
+    <div className="grid gap-5 xl:grid-cols-[332px_minmax(0,1fr)_320px] xl:items-start xl:justify-center">
       <aside className="min-w-0">
         <section className="flex max-h-[calc(100vh-164px)] min-h-[600px] flex-col overflow-hidden rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(245,248,252,0.95))] shadow-[0_28px_60px_-40px_rgba(15,23,42,0.28)]">
           <div className="sticky top-0 z-20 border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,248,252,0.94))] px-4 pb-4 pt-4">
             <div className="rounded-[22px] border border-slate-200/80 bg-white/92 p-3 shadow-[0_16px_32px_-30px_rgba(15,23,42,0.22)]">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-slate-950 px-3 py-1 text-[11px] font-semibold text-white">
-                  {selectedGroup ? selectedGroup.name || '当前分组' : '未选择分组'}
-                </span>
+                {selectedGroup ? (
+                  resolveGroupNameValue(selectedGroup.name).length > 0 ? (
+                    <span className="rounded-full bg-slate-950 px-3 py-1 text-[11px] font-semibold text-white">
+                      {selectedGroup.name}
+                    </span>
+                  ) : null
+                ) : (
+                  <span className="rounded-full bg-slate-950 px-3 py-1 text-[11px] font-semibold text-white">
+                    未选择分组
+                  </span>
+                )}
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
                   已放入 {selectedGroupFields.length}
                 </span>
@@ -1116,7 +1161,7 @@ export function LegacyDefinitionLayoutWorkbench({
                       >
                         <span className={`inline-flex size-2.5 shrink-0 rounded-full ${isActive ? 'bg-primary' : 'bg-slate-300'}`} />
                         <input
-                          value={String(group?.name || `信息分组 ${index + 1}`)}
+                          value={resolveGroupNameValue(group?.name, `信息分组 ${index + 1}`)}
                           onFocus={() => selectGroup(group.id)}
                           onClick={(event) => event.stopPropagation()}
                           onChange={(event) => {
@@ -1219,51 +1264,6 @@ export function LegacyDefinitionLayoutWorkbench({
                 </div>
               </div>
 
-              {selectedField ? (
-                <div className="rounded-[22px] border border-slate-200/80 bg-white/92 p-4 shadow-[0_20px_34px_-32px_rgba(15,23,42,0.22)]">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[12px] font-semibold text-slate-900">{selectedField.label}</span>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                      {getSelectedFieldHeight(selectedField.id)}px
-                    </span>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    {FIELD_HEIGHT_PRESETS.map((preset) => (
-                      <button
-                        key={preset.value}
-                        type="button"
-                        onClick={() => handleUpdateFieldHeight(selectedField.id, preset.value)}
-                        className={`rounded-[14px] border px-3 py-2 text-[12px] font-semibold transition-all ${
-                          getSelectedFieldHeight(selectedField.id) === preset.value
-                            ? 'border-primary/20 bg-primary/10 text-primary'
-                            : 'border-slate-200/80 bg-white text-slate-600 hover:border-slate-300'
-                        }`}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="mt-3">
-                    <RangeField
-                      label="控件高度"
-                      min={FIELD_HEIGHT_MIN}
-                      max={FIELD_HEIGHT_MAX}
-                      step={2}
-                      value={getSelectedFieldHeight(selectedField.id)}
-                      valueLabel={`${getSelectedFieldHeight(selectedField.id)}px`}
-                      onChange={(nextValue) => handleUpdateFieldHeight(selectedField.id, nextValue)}
-                      marks={[
-                        { label: `${FIELD_HEIGHT_MIN}`, value: FIELD_HEIGHT_MIN },
-                        { label: '标准', value: 96 },
-                        { label: `${FIELD_HEIGHT_MAX}`, value: FIELD_HEIGHT_MAX },
-                      ]}
-                    />
-                  </div>
-                </div>
-              ) : null}
-
               <div className="rounded-[22px] border border-slate-200/80 bg-white/92 p-4 shadow-[0_20px_34px_-32px_rgba(15,23,42,0.22)]">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -1324,14 +1324,16 @@ export function LegacyDefinitionLayoutWorkbench({
         </section>
       </aside>
 
-      <section className="rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,252,0.92))] p-5 shadow-[0_32px_68px_-44px_rgba(15,23,42,0.32)]">
+      <section className="w-full rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,252,0.92))] p-5 shadow-[0_32px_68px_-44px_rgba(15,23,42,0.32)]">
         <div className="flex flex-col gap-4">
           <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 shadow-[0_20px_36px_-34px_rgba(15,23,42,0.24)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-slate-950 px-3 py-1 text-[11px] font-semibold text-white">
-                  {previewSelectedGroup?.name || '页面效果'}
-                </span>
+                {previewSelectedGroup && resolveGroupNameValue(previewSelectedGroup.name).length > 0 ? (
+                  <span className="rounded-full bg-slate-950 px-3 py-1 text-[11px] font-semibold text-white">
+                    {previewSelectedGroup.name}
+                  </span>
+                ) : null}
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
                   分组 {previewGroups.length}
                 </span>
@@ -1493,7 +1495,7 @@ export function LegacyDefinitionLayoutWorkbench({
                         const isActiveField = activeFieldId === field.id && isActive;
                         const isCheckedField = isActive && checkedFieldIdSet.has(field.id);
                         const controlHeight = isStacked
-                          ? Math.max(field.type === 'textarea' ? 64 : 44, field.height - 40)
+                          ? Math.max(52, field.height - 40)
                           : Math.max(40, field.height - 16);
 
                         return (
@@ -1523,7 +1525,7 @@ export function LegacyDefinitionLayoutWorkbench({
                               }`}
                             >
                               <div className={`flex h-full min-h-0 ${isStacked ? 'flex-col gap-2' : 'items-center gap-3'}`}>
-                                <div className={`${isStacked ? 'min-w-0 text-[12px]' : 'w-[38%] max-w-[132px] min-w-0 text-[13px]'} truncate font-semibold text-slate-700`}>
+                                <div className={`${isStacked ? 'min-w-0 text-[12px]' : 'w-[34%] max-w-[118px] min-w-0 text-[13px]'} truncate font-semibold text-slate-700`}>
                                   {field.label}
                                 </div>
 
@@ -1574,6 +1576,120 @@ export function LegacyDefinitionLayoutWorkbench({
           </div>
         </div>
       </section>
+
+      <aside className="min-w-0">
+        <section className="flex max-h-[calc(100vh-164px)] min-h-[600px] flex-col overflow-hidden rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(245,248,252,0.95))] shadow-[0_28px_60px_-40px_rgba(15,23,42,0.28)]">
+          <div className="sticky top-0 z-20 border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,248,252,0.94))] px-4 pb-4 pt-4">
+            <div className="rounded-[22px] border border-slate-200/80 bg-white/92 p-4 shadow-[0_16px_32px_-30px_rgba(15,23,42,0.22)]">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Control Inspector</div>
+              <div className="mt-2 text-[18px] font-semibold text-slate-900">右侧控件设置</div>
+              <p className="mt-1 text-[12px] leading-5 text-slate-500">
+                点击画布里的控件或左侧字段标签，这里只展示当前控件的样式和高度设置。
+              </p>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4">
+            {selectedField && selectedFieldPreview ? (
+              <div className="space-y-4">
+                <div className="rounded-[24px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,252,0.94))] p-4 shadow-[0_20px_34px_-32px_rgba(15,23,42,0.22)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">当前控件</div>
+                      <div className="mt-2 truncate text-[20px] font-semibold text-slate-900">{selectedField.label}</div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {selectedGroup ? (
+                          resolveGroupNameValue(selectedGroup.name).length > 0 ? (
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                              {selectedGroup.name}
+                            </span>
+                          ) : null
+                        ) : (
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                            未选择分组
+                          </span>
+                        )}
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                          {getFieldTypeLabel(selectedField.type)}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold text-slate-700">
+                      {selectedFieldHeight}px
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    {FIELD_HEIGHT_PRESETS.map((preset) => (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => handleUpdateFieldHeight(selectedField.id, preset.value)}
+                        className={`rounded-[16px] border px-3 py-2.5 text-[12px] font-semibold transition-all ${
+                          selectedFieldHeight === preset.value
+                            ? 'border-primary/20 bg-primary/10 text-primary shadow-[0_16px_28px_-24px_rgba(37,99,235,0.26)]'
+                            : 'border-slate-200/80 bg-white text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 rounded-[22px] border border-slate-200/80 bg-white/94 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[12px] font-semibold text-slate-800">控件预览</div>
+                      <div className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-500">
+                        {selectedFieldPreviewStacked ? '大块展示' : '标准展示'}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded-[20px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(247,250,252,0.96))] p-3">
+                      <div className={`flex min-h-0 ${selectedFieldPreviewStacked ? 'flex-col gap-2' : 'items-center gap-3'}`}>
+                        <div className={`${selectedFieldPreviewStacked ? 'min-w-0 text-[12px]' : 'w-[34%] max-w-[110px] min-w-0 text-[13px]'} truncate font-semibold text-slate-700`}>
+                          {selectedField.label}
+                        </div>
+
+                        <div
+                          className={`${selectedFieldPreviewStacked ? 'min-h-0 flex-1' : 'min-w-0 flex-1 self-stretch'}`}
+                          style={{ height: selectedFieldPreviewStacked ? undefined : selectedFieldControlHeight }}
+                        >
+                          <div style={{ height: selectedFieldControlHeight }}>
+                            {renderControlShell(selectedFieldPreview)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <RangeField
+                  label="控件高度"
+                  min={FIELD_HEIGHT_MIN}
+                  max={FIELD_HEIGHT_MAX}
+                  step={2}
+                  value={selectedFieldHeight}
+                  valueLabel={`${selectedFieldHeight}px`}
+                  onChange={(nextValue) => handleUpdateFieldHeight(selectedField.id, nextValue)}
+                  marks={[
+                    { label: `${FIELD_HEIGHT_MIN}`, value: FIELD_HEIGHT_MIN },
+                    { label: '标准', value: FIELD_HEIGHT_PRESETS[0]?.value ?? 68 },
+                    { label: `${FIELD_HEIGHT_MAX}`, value: FIELD_HEIGHT_MAX },
+                  ]}
+                />
+
+                <div className="rounded-[22px] border border-dashed border-slate-200/80 bg-slate-50/85 px-4 py-4 text-[12px] leading-6 text-slate-500">
+                  备注控件现在和其他控件走同一套展示逻辑，不再单独做特殊排布。右侧只跟随当前选中的控件切换，方便集中调样式和高度。
+                </div>
+              </div>
+            ) : (
+              <div className="flex min-h-[280px] items-center justify-center rounded-[24px] border border-dashed border-slate-200/80 bg-slate-50/70 px-6 text-center text-[13px] leading-6 text-slate-500">
+                先点击画布里的控件，右侧再展示当前控件的样式和高度设置。
+              </div>
+            )}
+          </div>
+        </section>
+      </aside>
     </div>
   );
 }

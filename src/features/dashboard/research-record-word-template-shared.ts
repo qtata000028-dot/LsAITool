@@ -112,6 +112,21 @@ function renderNumberedLinesHtml(value: string, lineColors: ResearchLineColorMap
     .join('');
 }
 
+function renderInlineDelimitedLinesHtml(value: string, lineColors: ResearchLineColorMap = {}) {
+  const lines = buildMultilineDisplayLines(value, lineColors);
+  if (lines.length === 0) {
+    return `<span>${EMPTY_CELL}</span>`;
+  }
+
+  return lines
+    .map((line, index) => {
+      const className = line.color === 'red' ? 'research-word-line-emphasis' : '';
+      const separator = index > 0 ? '<span class="research-word-inline-separator">、</span>' : '';
+      return `${separator}<span class="${className}">${escapeHtml(line.text)}</span>`;
+    })
+    .join('');
+}
+
 function getContentItemDisplayName(item: ResearchWordContentItem, index: number) {
   return item.businessTheme.trim() || item.sceneName.trim() || `调研明细 ${index + 1}`;
 }
@@ -239,6 +254,15 @@ export const RESEARCH_RECORD_WORD_PAGE_CSS = `
 
   .research-word-line-stack > div + div {
     margin-top: 2px;
+  }
+
+  .research-word-inline-flow {
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .research-word-inline-separator {
+    display: inline;
   }
 
   .research-word-line-emphasis {
@@ -534,8 +558,8 @@ export function buildResearchRecordWordPageHtml(
               </tr>
               <tr>
                 <td class="research-word-section-row-value">
-                  <div class="research-word-line-stack">
-                    ${renderNumberedLinesHtml(draft.workTools, draft.lineColors.workTools)}
+                  <div class="research-word-inline-flow">
+                    ${renderInlineDelimitedLinesHtml(draft.workTools, draft.lineColors.workTools)}
                   </div>
                 </td>
               </tr>

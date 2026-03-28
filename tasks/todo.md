@@ -3689,3 +3689,437 @@
 - 重启开发服务后，最初访问 `3000` 失败，日志里出现 `research-record-word-editor.tsx` 相关预处理错误。
 - 实际检查发现该文件存在编码损坏与断裂字符串，已重写为可编译的 UTF-8 版本。
 - 重新验证后，`http://127.0.0.1:3000/`、`/src/components/Dashboard.tsx` 与 `/src/features/dashboard/research-record-word-editor.tsx` 均返回 `200`。
+
+## 2026-03-28 调研记录主表/明细接口归属与调研内容联动修正
+
+### Requirement Spec
+- 目标：
+  - 调整调研记录界面的数据归属，让“调研信息 / 部门情况 / 输出确认”只使用主表接口 `GET /api/survey/mains`、`GET /api/survey/mains/{id}` 返回的数据。
+  - 让“调研内容”只使用明细接口 `GET /api/survey/mains/{mainId}/details`、`GET /api/survey/mains/{mainId}/details/{id}` 返回的数据。
+  - 重构“调研内容”界面为“左侧明细列表 + 右侧当前明细详情”的联动模式：左侧按明细列表结果展示，点击某条后右侧展示该明细的数据。
+- 影响范围：
+  - `src/features/dashboard/research-record-workbench.tsx`
+  - `src/lib/backend-survey.ts`（若当前 dto 字段不够表达界面所需数据）
+- 关键约束：
+  - 不改调研记录其它步骤的整体布局和右侧预览能力。
+  - 主表步骤不得再混入明细接口字段；明细步骤不得继续把主表字段当成内容项的一部分来源。
+  - 左侧明细列表优先使用明细列表接口结果；若需要补全右侧字段，再按选中项调用单条明细接口。
+  - 保存链路要与新的主表/明细状态边界保持一致，避免因界面拆分导致误删或漏存明细。
+- 不做什么：
+  - 本轮不新增主记录切换器。
+  - 本轮不重做 Word 预览模板。
+  - 本轮不扩展新的 survey 后端接口。
+- 验证标准：
+  - 首次加载时，主表步骤展示主表接口数据，调研内容左侧展示明细接口列表。
+  - 点击左侧任一调研内容项后，右侧同步显示对应明细数据。
+  - 保存后主表字段仍走主表保存，明细字段仍走明细保存。
+  - `npm run lint` 通过。
+
+### Checklist
+- [x] 梳理当前调研记录主表与明细字段映射，找出仍然混用的状态
+- [x] 调整 dto / mapper，使主表步骤只消费 main 数据、调研内容只消费 details 数据
+- [x] 重构调研内容左侧列表与右侧详情联动，必要时接入单条 detail 查询
+- [x] 校正保存逻辑，确保主表与明细按新的状态边界提交
+- [x] 运行 `npm run lint` 并记录结果
+
+### Risks / Assumptions
+- 假设 `GET /api/survey/mains/{mainId}/details` 已能返回左侧列表展示所需的标识信息；若字段不完整，则在选中后通过 `GET /api/survey/mains/{mainId}/details/{id}` 补齐右侧详情。
+- 假设当前界面中的“业务主题 / 子标题 / 岗位 / 工时 / 做法 / 痛点 / 建议”仍可继续映射到明细 dto，不需要这一轮新增后端字段。
+- 假设“部门名称”当前仍以工作台上下文一级菜单名作为展示值，因为主表 dto 里仍只有 `departId`。
+
+### Progress Notes
+- 已回顾 `tasks/lessons.md`，确认本轮要避免再次把主表与明细的数据职责混写到同一条状态链里。
+- 已确认当前实现虽然接入了 `fetchSurveyMain*` / `fetchSurveyDetails*`，但 `draft.contentItems` 仍承担了“列表 + 当前详情 + 保存源”的全部责任，容易把接口边界抹平。
+- 已确认当前首屏加载逻辑是“主表取首条，再一次性取全部明细”，但“调研内容”右侧仍直接消费本地映射对象，而不是以左侧明细查询结果驱动右侧展示。
+- 已将调研记录加载拆成两条 mapper：
+  - 主表接口只负责回填“调研信息 / 部门情况 / 输出确认”所需字段。
+  - 明细接口单独负责生成 `contentItems`，不再通过 `mapSurveyMainAndDetailsToDraft` 把两类数据揉在一起。
+- 已给明细项补上稳定的后端型 client id 规则（优先使用 `survey-detail-{backendId}`），避免左侧明细列表在重新加载后失去明确的后端对应关系。
+- 已接入选中态明细补齐逻辑：
+  - 左侧列表仍先按 `GET /api/survey/mains/{mainId}/details` 结果展示。
+  - 点击左侧项后，若该项带后端 `detailId` 且尚未补齐，会进一步调用 `GET /api/survey/mains/{mainId}/details/{id}`，再把返回值合并到右侧当前明细详情。
+- 已把保存回写逻辑同步到新的边界上：
+  - 主表继续走 `saveSurveyMain`。
+  - 明细继续逐条走 `saveSurveyDetail`。
+  - 保存成功后，右侧明细回填统一复用明细 mapper，避免保存后只更新 `backendId` / `billNo` 而漏掉其它明细字段。
+- 用户随后修正主表契约：后端已新增 `title` / `project` 字段，要求查询和保存都与界面里的“标题 / 项目”输入位对上。
+- 本轮继续补齐：
+  - `SurveyMainDto` / `SaveSurveyMainPayload` 需要显式纳入 `title`、`project`。
+  - 主表加载 mapper 需要把这两个字段回填到现有 overview 文本框。
+  - 主表保存 mapper 与保存成功后的本地回填也要同步写回这两个字段，避免“能显示但保存丢失”。
+- 已完成主表 `title` / `project` 接线：
+  - 按当前界面语义，先将 `title` 映射到现有 `companyName` 输入位，将 `project` 映射到现有 `projectName` 输入位。
+  - 查询时主表返回的 `title` / `project` 会直接回填 overview。
+  - 保存时会把当前 overview 中的这两个值写回主表 payload。
+  - 保存成功后，本地 draft 也会优先采用后端返回的 `title` / `project`，保持前后端一致。
+- 用户继续反馈保存异常：虽然页面已经加载到了首条调研记录，但点击保存时主表请求仍未带 `id`，实际走成新增逻辑。
+- 这轮排查重点切到 persisted id 链路：
+  - 确认首屏是先通过 `GET /api/survey/mains` 拿到首条，再通过 `GET /api/survey/mains/{id}` 读全量。
+  - 若单条主表接口未重复返回 `id`，当前代码会把 `recordBinding.mainId` 置空，导致保存体丢失 `id`。
+  - 同时现有明细删除链路只保留 numeric id，也有潜在丢失 string 型 legacy id 的风险。
+- 已完成 persisted id 修复：
+  - `SurveyMainDto` / `SurveyDetailDto` 的 `id` 改为兼容 `number | string`。
+  - 首屏加载主表时，若 `GET /api/survey/mains/{id}` 未带回 `id`，会回退使用列表首条的 `id` 作为 `recordBinding.mainId`。
+  - 主表保存体不再只靠 truthy 判断是否带 `id`，而是统一通过 persisted id 判断，确保已加载记录走修改。
+  - 明细保存、删除和详情补齐也改为按归一化 id key 比较，避免 string / number 混合时把已有明细误判成新增或删除。
+- 用户进一步怀疑后端主键字段可能存在 `ID/Id/id` 大小写差异。
+- 已在 `src/lib/backend-survey.ts` 里把 survey 主表/明细的读接口统一加上主键规范化：
+  - 主表列表、主表单条、明细列表、明细单条、保存返回都会优先从 `id / ID / Id` 里解析 persisted id。
+  - 页面层不再需要各自猜测大小写，能统一拿到规范化后的 `dto.id`。
+- 用户继续反馈明细保存异常：点击“新增明细”后新增了 3 条，但保存请求里仍只有原有那一条带 `id=1` 的明细。
+- 排查后确认当前前端保存前有一层 `hasMeaningfulContentItem` 过滤：
+  - 旧明细因为带 `backendId`，会被保留并发送。
+  - 新增但暂时空白的明细会被视为“无效行”直接过滤掉，因此根本不会发请求。
+- 本轮将把“显式新增的明细”与“默认空白占位行”区分开：
+  - 显式通过“新增明细”创建的行，即使暂时空白，也要进入明细保存循环。
+  - 默认占位行仍不应在用户未操作时自动落库。
+- 用户继续指出保存后刷新策略也不对：
+  - 前端虽然连续调用了多次明细保存接口，但保存完成后并没有重新获取当前主表下的全部明细。
+  - 仅靠单条保存返回值在本地拼状态，不足以反映后端最终保存后的完整明细集合。
+- 本轮继续补齐：
+  - 主表与明细保存完成后，重新调用 `GET /api/survey/mains/{mainId}` 与 `GET /api/survey/mains/{mainId}/details`。
+  - 以前端当前选择项为锚点，尽量保留当前选中的明细，再用最新明细列表整体刷新左侧与右侧状态。
+- 已完成保存后整组回读：
+  - 主表保存、多条明细保存、删除旧明细完成后，会重新获取当前主表与全部明细。
+  - 本地状态不再只依赖 `savedDetailPairs` 拼装，而是以最新 `details` 列表整体刷新。
+  - 选中项会尽量按照保存前/保存返回后的 persisted id 保持在同一条明细上。
+- 用户继续补充了明细表真实字段口径：
+  - `ID / billno / mid / modulename / moduleid / Position1 / Working_rate1 / Position2 / Working_rate2 / Position3 / Working_rate3 / workingbak / painsbak / Suggestionbak`
+- 这轮继续修正明细字段适配：
+  - `backend-survey.ts` 需要把这些数据库字段统一映射到前端当前使用的 `id / billNo / mainId / moduleName / moduleId / position1 / workingRate1 ... / suggestionBak`。
+  - 否则即使保存后重新拉了整组明细，控件仍会因为字段名对不上而显示为空。
+- 用户继续补充了主表真实字段口径：
+  - `ID / departid / surveydate / fileNo / Address / scope / ordernum / empnames / surveyUsers / Positionsbak / toolsbak / painsbak / specialbak / otherbak / operatedate / operatorname`
+- 这轮继续修正主表字段适配：
+  - `backend-survey.ts` 需要把这批数据库字段统一归一化到前端当前使用的 `departId / surveyDate / fileNo / address / scope / orderNum / empNames / surveyUsers / positionsBak / toolsBak / painsBak / specialBak / otherBak / operateDate / operatorName`。
+  - `research-record-workbench.tsx` 需要把“调研信息 / 部门情况 / 输出确认”三块控件的查询回填与保存语义对齐：
+    - `surveyUsers` 对应调研工程师。
+    - `operatorName / operateDate` 对应输出确认里的签字人 / 日期。
+    - 其余部门情况与输出确认字段继续显式映射，避免保存后重新加载显示为空。
+- 已完成主表 adapter 归一化补齐：
+  - `normalizeSurveyMainDto` 现在会统一兼容 `departid / surveydate / fileNo / Address / scope / ordernum / empnames / surveyUsers / Positionsbak / toolsbak / painsbak / specialbak / otherbak / operatedate / operatorname`。
+  - 主表列表、主表单条和主表保存返回值都会先被折算成统一前端字段，再进入页面 mapper。
+- 已完成三块界面字段语义收口：
+  - 调研信息：`surveyDate / fileNo / Address / scope / ordernum / empnames / surveyUsers` 已与时间、文件号、地点、范围、次数、受访人、调研工程师对应。
+  - 部门情况：`Positionsbak / toolsbak` 已与部门岗位描述、工作工具描述对应。
+  - 输出确认：`painsbak / specialbak / otherbak / operatorname / operatedate` 已与整体痛点、专项讨论、补充说明、签字人、日期对应。
+- 顺手修正了本地草稿中的 legacy 字符串型 `backendId` 保留，避免已加载记录写入本地后再次保存时把 string 型 persisted id 丢掉。
+- 用户继续修正“调研部门”字段规则：
+  - 调研信息里的“调研部门”不再允许仅靠当前一级菜单名或手工文本输入。
+  - 需要改为搜索框，数据源来自 `GET /api/system/departments`，展示 `departmentname`，保存 `Departmentid`。
+- 这轮继续补齐调研部门能力：
+  - 增加部门 service / adapter，统一规范化 `Departmentid / departmentname`。
+  - workbench 中的“调研部门”改成搜索选择控件，查询回填名称，保存时提交选中的 `Departmentid`。
+  - 已加载主表如果只有 `departid`，需要在部门列表到位后回填成对应的 `departmentname`，避免保存后重新加载仍只显示旧兜底值。
+- 已完成部门数据源接线：
+  - 新增 `GET /api/system/departments` service，统一把 `Departmentid / departmentname` 归一化成前端搜索选项。
+  - 调研信息里的“调研部门”已改成搜索选择控件，输入关键字时按部门名称或 ID 过滤，选中后展示 `departmentname`。
+- 已完成调研部门保存/回填收口：
+  - 主表保存时优先提交当前选中的 `Departmentid`，不再只靠 `departmentName` 文本或旧的默认部门兜底。
+  - 主表重新加载后，如果接口只返回 `departid`，会在部门列表加载完成后解析并回填成对应的部门名称。
+  - 概览步骤完成态也改成同时要求存在真实 `Departmentid`，避免只有显示名称却没有外键时误判完成。
+- 用户继续修正调研部门默认值：
+  - “调研部门”不应默认成当前登录部门或一级菜单里的“基本设置”。
+  - 新建记录必须保持空白，只有用户主动选择部门后才写入 `Departmentid`。
+- 已完成默认部门移除：
+  - 新建草稿不再用一级菜单名预填 `departmentName`。
+  - 新建记录的 `recordBinding.departId` 不再从登录信息自动带入。
+  - 无已保存主表时，页面不会再默认显示或提交“基本设置”这类兜底部门。
+
+### Verification
+- `npm run lint`：通过
+- `npm run build`：未通过，仍停在 `transforming... ✓ 2243 modules transformed.` 后退出；延续仓库当前已知的 Vite 构建异常，未见本轮新增的 TypeScript 报错
+
+### Result Notes
+- 本轮把调研记录的数据职责重新拆清了：主表步骤只吃主表接口，调研内容只吃明细接口。
+- 调研内容界面现在是明确的“左侧明细列表 + 右侧当前明细详情”模式，且右侧详情可以按选中项从单条明细接口补齐。
+- 保存链路没有重新发明一套状态，而是在现有 workbench 上把主表保存和明细保存继续按接口边界分开执行。
+- 这轮进一步修掉了“明明加载了首条记录，但保存仍按新增走”的问题，核心是把主表/明细的 persisted id 从加载、保存到删除全链路保留下来。
+- 当前残留风险不是类型错误，而是仓库原有的生产构建异常仍在，后续若需要发版还要继续排查 `vite build` 在 transform 结束后的退出问题。
+
+## 2026-03-28 当前分支开发服务启动复核
+
+### Requirement Spec
+- 目标：
+  - 重新确认当前仓库开发服务能否正常启动，并给出可访问地址。
+- 影响范围：
+  - 本地 Vite 开发服务启动链路。
+- 关键约束：
+  - 不顺带改业务功能。
+  - 若遇到启动阻塞，优先先确认是真实当前错误还是旧日志残留。
+- 验证标准：
+  - `3000` 端口处于监听状态。
+  - `http://127.0.0.1:3000/` 返回 `200`。
+
+### Checklist
+- [x] 检查 3000 端口与 node 进程状态
+- [x] 复查最近 dev 日志，区分旧错误与当前阻塞
+- [x] 重新启动前端开发服务
+- [x] 验证本地地址返回 `200`
+
+### Progress Notes
+- 先检查到当前没有稳定的 `3000` 监听。
+- 历史 `.codex-dev.err.log` 中保留了一条 `src/pages/UiLibraryPreview.tsx` 的旧 JSX 解析错误，但当前仓库里已不存在该文件，初步判断这条日志不能直接当作本次启动失败的唯一依据。
+- 重新以最小链路启动前端开发服务后，`3000` 端口恢复监听。
+
+### Verification
+- `netstat -ano | findstr :3000`：显示 `0.0.0.0:3000 LISTENING`
+- `Invoke-WebRequest http://127.0.0.1:3000/`：返回 `200`
+
+### Result Notes
+- 当前前端开发服务已经可用，可通过 `http://127.0.0.1:3000/` 访问。
+- 旧日志里的 `UiLibraryPreview.tsx` 报错暂未在这次实际启动复现为当前阻塞；若后续再次出现，需要结合实时终端输出再定位，而不是只看旧日志。
+
+## 2026-03-28 当前分支同步远端并处理冲突
+
+### Requirement Spec
+- 目标：
+  - 将当前分支同步到远端最新提交，并解决因为本地未提交改动与他人提交叠加造成的冲突。
+- 影响范围：
+  - 当前工作分支 `codex/整合项目升级` 的 git 历史与工作区状态。
+- 关键约束：
+  - 不丢失本地未提交改动。
+  - 不使用破坏性 git 命令回退他人或本地工作。
+- 验证标准：
+  - 当前分支不再落后远端。
+  - 本地改动成功恢复到工作区。
+  - 若存在冲突，冲突文件已解决并处于可继续开发状态。
+
+### Checklist
+- [x] 检查当前分支、远端跟踪与工作区状态
+- [x] 临时保存本地未提交改动，拉取远端最新提交
+- [x] 恢复本地改动并解决冲突
+- [x] 复核 git 状态并记录结果
+
+### Progress Notes
+- 已确认当前分支 `codex/整合项目升级` 相对 `origin/codex/整合项目升级` 落后 6 个提交。
+- 已确认工作区存在未提交改动，需要先保护本地修改再同步远端。
+- 已先用 `git stash push -u` 临时保存本地工作区，再执行 `git pull --rebase origin codex/整合项目升级` 同步远端。
+- 远端更新完成后已执行 `git stash pop` 恢复本地改动，本次未出现未合并冲突，`research-record` 相关改动已自动合入当前工作区。
+- 验证过程中发现远端新增依赖 `@xmldom/xmldom` 已写入 `package.json` / `package-lock.json`，本地缺少安装会导致 `npm run lint` 初次失败；补装依赖后已恢复通过。
+- 依赖安装带出的 `package-lock.json` 本地噪音已回退，避免把纯环境差异混进本轮业务改动。
+
+### Verification
+- `git rev-list --left-right --count HEAD...origin/codex/整合项目升级`：`0 0`，当前分支已与远端对齐
+- `git diff --check`：通过
+- 冲突标记扫描：未发现 `<<<<<<< / ======= / >>>>>>>`
+- `npm run lint`：通过
+
+### Result Notes
+- 当前分支已经更新到远端最新提交，本地未提交改动也已经恢复回工作区。
+- 这次同步没有留下 git 未合并冲突；当前工作区剩余改动是本地尚未提交的业务修改，而不是分支更新残留。
+- 2026-03-28 再次执行 `git remote update` 后，`git rev-list --left-right --count HEAD...origin/codex/整合项目升级` 仍为 `0 0`，说明当前分支与远端依然对齐，没有新的远端提交需要额外合并。
+
+## 2026-03-28 当前分支打包交付
+
+### Requirement Spec
+- 目标：
+  - 产出当前前端项目可部署的构建包，供用户部署验证。
+- 影响范围：
+  - 当前仓库的前端构建链路与 `dist` 产物。
+- 关键约束：
+  - 优先复用现有 `npm run build` / `prebuild` 链路，不另造临时打包脚本。
+  - 若构建失败，需要继续定位并修复阻塞，而不是只复述历史已知问题。
+- 验证标准：
+  - 构建命令成功退出。
+  - `dist` 目录生成可部署产物。
+
+### Checklist
+- [x] 复核当前 build 脚本与工作区状态
+- [x] 执行构建并定位失败点
+- [x] 修复构建阻塞并重新打包
+- [x] 确认产物目录并记录验证结果
+
+### Progress Notes
+- 已确认当前项目使用 `prebuild -> node scripts/build-simple-designer-bundle.mjs` 加 `vite build` 的标准打包链路。
+- 已确认工作区仍有未提交的本地业务改动，打包时需要基于当前工作区状态直接验证。
+- 首次 `npm run build` 的真实阻塞点不是主应用 Vite，而是 `prebuild` 阶段的子应用 `subapps/simple-process-designer` 缺少本地依赖，导致找不到 `subapps/simple-process-designer/node_modules/vite/bin/vite.js`。
+- 已在 `subapps/simple-process-designer` 下补装依赖，再次执行完整打包链路后：
+  - 子应用成功构建并同步到 `public/simple-process-designer`。
+  - 主应用 `vite build` 已成功生成 `dist` 产物；控制台仅剩大 chunk 警告，不影响当前部署。
+- 已额外将 `dist` 压缩为部署包 `build-artifacts/LsAITool-dist-20260328.zip`，便于直接交付部署。
+
+### Verification
+- `npm run build`：通过
+- `dist/index.html`：存在
+- `public/simple-process-designer/index.html`：存在
+- `build-artifacts/LsAITool-dist-20260328.zip`：存在
+
+### Result Notes
+- 当前仓库已经产出可部署前端包，主应用静态资源位于 `dist`，子应用 bundle 已包含在构建链路要求的位置。
+- 当前残留仅是 Vite 的 chunk 体积告警，未阻塞这次打包交付；若后续关注首屏性能，再继续做分包优化即可。
+- 2026-03-28 已按当前工作区再次重新生成部署包；通过 `cmd /c "npm run build & echo EXITCODE:%ERRORLEVEL%"` 复核，构建退出码为 `0`。
+- 最新压缩包已刷新为 `build-artifacts/LsAITool-dist-20260328.zip`，时间戳为 2026-03-28 14:46:56。
+
+## 2026-03-28 一键建表后联动保存模块主表配置
+
+### Requirement Spec
+- 目标：
+  - 在模块设置里点击“一键建表”后，后端创建物理表成功时，继续调用对应模块配置保存接口，把最新表名配置同步写回后端。
+- 影响范围：
+  - `src/features/dashboard/module-settings/grid-inspector-controller.tsx`
+  - 单表模块配置保存接口调用链。
+- 关键约束：
+  - 不改动 `Dashboard.tsx` 主入口结构。
+  - 保存字段必须与现有模块配置读取字段保持一致，避免写进错误键名后仍然无法回显。
+  - 若建表成功但配置保存失败，需要明确提示，不得伪装成全成功。
+- 不做什么：
+  - 不顺手重构整个模块设置保存体系。
+  - 不扩展到与本需求无关的字段批量保存逻辑。
+- 验证标准：
+  - 一键建表成功后会额外触发模块配置保存请求。
+  - 保存请求携带的字段名与当前读取逻辑一致。
+  - `npm run lint` 通过。
+  - `npm run build` 通过。
+
+### Checklist
+- [x] 复核模块配置读取/保存字段约定
+- [x] 在一键建表成功链路中补上模块配置保存接口
+- [x] 调整成功/失败提示，区分建表成功与配置保存失败
+- [x] 执行 lint 校验并记录结果
+
+### Progress Notes
+- 已定位一键建表入口在 `grid-inspector-controller.tsx` 的 `createMainTableWithAi`。
+- 已确认当前流程只会调用 AI 建表接口并更新本地 `tableName/mainSql/defaultQuery`，不会继续调用 `saveSingleTableModuleConfig`。
+- 已确认模块配置读取侧当前优先读取 `querySql/querysql` 和 `mainTable/maintable`，因此联动保存时需要对齐这两个后端字段名。
+- 已在一键建表成功分支里补上 `saveSingleTableModuleConfig(currentModuleCode, { mainTable, querySql, moduleName, dllCoId })`，让建表后立即把主表配置同步写回模块配置接口。
+- 已把提示文案改成同时覆盖 AI 接口持久化状态和表名配置联动保存结果，避免出现“建表成功但配置保存失败”仍然提示全成功的情况。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 一键建表现在不再只停留在本地 `tableName/mainSql` 状态更新；接口返回成功后会继续调用模块配置保存接口，把 `mainTable/querySql` 与当前模块编码同步持久化。
+- 本轮改动保持在 `module-settings/grid-inspector-controller.tsx` 内完成，没有把额外逻辑堆回 `Dashboard.tsx`。
+- 构建链路仍会输出大 chunk 警告，但本轮改动未引入新的构建阻塞。
+
+## 2026-03-28 主表配置查询保存与单表主模块接口字段对齐
+
+### Requirement Spec
+- 目标：
+  - 修正模块设置里“主表配置”与单表主模块接口的字段映射，让主表名、主 SQL 等后端已有配置能正确回填，并在常规保存时同步写回。
+- 影响范围：
+  - `src/lib/backend-module-config.ts`
+  - `src/components/Dashboard.tsx`
+  - `src/features/dashboard/module-settings/use-single-table-module-settings-save.ts`
+  - `src/features/dashboard/module-settings/grid-inspector-controller.tsx`
+- 关键约束：
+  - 兼容 `p_systemdlltab` 的旧字段口径，如 `SQL`、`SQLDT1`、`DllCoid`、`ToolsName`、`condKey`。
+  - 不把没有明确后端语义的 UI 字段硬映射到错误接口字段。
+  - 查询与保存必须共用同一套字段归一化/回写规则，避免一边能读一边不能存。
+- 不做什么：
+  - 不顺手重构整个模块设置加载架构。
+  - 不扩展到与当前主表配置无关的明细、右键、颜色接口。
+- 验证标准：
+  - 打开模块设置时，主表配置能从单表主模块接口正确回填。
+  - 点击常规保存时，会同步调用主模块配置保存接口。
+  - `npm run lint` 与 `npm run build` 通过。
+
+### Checklist
+- [x] 确认 `p_systemdlltab` 真实字段与当前 UI 配置项的对应关系
+- [x] 补充单表主模块接口的字段归一化与保存体构造
+- [x] 接入主表配置的查询回填与常规保存
+- [x] 执行 lint/build 校验并记录结果
+
+### Progress Notes
+- 已确认当前主表配置面板并没有针对当前模块调用 `fetchSingleTableModuleConfig(activeConfigModuleKey)` 回填 `mainTableConfig`，导致主表名、主 SQL 等配置不会显示。
+- 已确认常规保存链路 `use-single-table-module-settings-save.ts` 虽然导入了 `saveSingleTableModuleConfig`，但实际上从未调用，因此主表配置不会随“保存模块设置”一起落库。
+- 已从仓库内文档提取到 `p_systemdlltab` 的真实字段定义：`DllCoid`、`ToolsName`、`SQL`、`SQLDT1`、`formKey`、`condKey` 等，当前前端确实缺少这批旧字段的 adapter 归一化。
+- 已在 `backend-module-config.ts` 增加单表主模块配置的 shared adapter，把 `SQL/SQLDT1/DllCoid/ToolsName/condKey` 统一归一化到 `querySql/mainTable/dllCoId/moduleName/conditionKey`，并用同一套规则构造保存体。
+- 已在 `Dashboard.tsx` 增加当前模块主配置加载 effect，打开模块设置时会把主表名、主 SQL 以及 `formKey/condKey` 等主配置元数据回填到 `mainTableConfig`。
+- 已在 `use-single-table-module-settings-save.ts` 补上常规保存时的主模块配置保存，并在保存成功后用返回值重新同步 `mainTableConfig`。
+- 已同步收紧一键建表后的保存体，让它复用当前主配置里的关联键而不是只提交最小四字段。
+- 已明确保留 `defaultQuery/sqlPrompt/tableType` 的现状，不再把它们硬映射到 `condKey` 等无明确语义的旧字段。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 主表配置现在会显式读取单表主模块接口，不再只依赖字段/条件/菜单/颜色几个子表接口，因此后端已有的主表名和主 SQL 可以正确回填到界面。
+- 常规“保存模块设置”和“一键建表”现在都会写回单表主模块配置，并通过 shared adapter 兼容 `p_systemdlltab` 的旧字段名。
+- 当前仍未把 `defaultQuery/sqlPrompt/tableType` 强行落到无确认后端字段上；这是刻意保守处理，避免为了“看起来有值”而把数据写进错误列。
+
+## 2026-03-28 一键建表联动保存只写表名
+
+### Requirement Spec
+- 目标：
+  - 收紧“一键建表”后的联动保存范围，建表成功后只同步保存主表名，不把 AI 返回的主 SQL 一起写回主模块配置。
+- 影响范围：
+  - `src/features/dashboard/module-settings/grid-inspector-controller.tsx`
+  - `src/lib/backend-module-config.ts`
+- 关键约束：
+  - 常规“保存模块设置”仍然保留主 SQL 的正常保存能力。
+  - 一键建表联动保存仍需保留 `formKey/condKey` 等已有主模块关联字段，不能因为只保存表名而把这些值冲掉。
+- 验证标准：
+  - 一键建表后的配置保存请求不再携带 AI 返回主 SQL。
+  - `npm run lint` 与 `npm run build` 通过。
+
+### Checklist
+- [x] 调整一键建表联动保存体，只保留表名相关字段
+- [x] 确认 shared adapter 不会因为缺少 SQL 字段而自动写空 SQL
+- [x] 执行 lint/build 校验并记录结果
+
+### Progress Notes
+- 用户已明确修正：一键建表后返回的 SQL 不需要写入主模块配置，只需要保存表名。
+- 当前 `createMainTableWithAi` 仍然显式传了 `querySql: response.result.mainSql`，shared adapter 也会把 `mainSql/querySql/SQL` 自动折算进保存体，因此需要一起收口。
+- 已将一键建表后的联动保存体收紧为只保留主模块主键/关联键与 `mainTable`，不再把 `response.result.mainSql` 带入 `saveSingleTableModuleConfig`。
+- 已同步调整 `buildSingleTableModuleConfigBody`：只有调用方显式传入 `querySql/mainSql/SQL` 相关字段时才回写 SQL，避免共享 adapter 在“只想保存表名”时自动写空或写回旧 SQL。
+- 用户进一步反馈界面里仍会出现生成 SQL；已定位到根因不是保存体，而是 `createMainTableWithAi` 成功后仍然执行了 `updateGridConfig({ mainSql: response.result.mainSql })`，把 AI 返回 SQL 写进了页面状态。
+- 已移除一键建表成功后的 `mainSql` 本地状态写入，现在只保留 `createTableSql/defaultQuery/tableName` 更新。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 一键建表后的联动保存现在只会同步保存主表名，不再把 AI 返回的主 SQL 一起写回主模块配置。
+- 常规“保存模块设置”仍然会按显式传入的 `querySql/mainSql` 保存主 SQL，这次收口没有影响那条正常保存链路。
+- 一键建表后右侧“主 SQL”输入框也不再自动灌入 AI 生成 SQL，避免用户不点常规保存也误以为这条 SQL 已经成为当前主配置。
+
+## 2026-03-28 一键翻译后自动保存本页
+
+### Requirement Spec
+- 目标：
+  - 调整单表模块设置里的“一键翻译”行为，翻译成功后直接执行当前页面既有的“保存本页”链路，而不是额外拼一条只保存表名或局部配置的单独请求。
+- 影响范围：
+  - `src/features/dashboard/module-settings/grid-inspector-controller.tsx`
+  - `src/features/dashboard/module-settings/use-inspector-panel-props.tsx`
+  - `src/components/Dashboard.tsx`
+- 关键约束：
+  - 继续复用现有 `saveSingleTableModuleSettingsPage`，避免在翻译按钮里复制新的保存编排。
+  - 翻译成功但保存失败时，要明确提示“翻译已应用、本页保存失败”，不能伪装成全成功。
+  - 不把实现重新堆回 `Dashboard.tsx`，只允许在那里做必要的页面级桥接。
+- 不做什么：
+  - 不改动一键建表后的保存规则。
+  - 不重构 inspector router 的整体结构。
+- 验证标准：
+  - 点击“一键翻译”后，字段标识更新完成，并继续触发当前页保存。
+  - 如果保存成功，提示文案体现“已翻译并保存本页”。
+  - `npm run lint` 与 `npm run build` 通过。
+
+### Checklist
+- [x] 记录现有翻译按钮与保存本页链路的桥接点
+- [x] 透传保存本页回调到 grid inspector
+- [x] 翻译成功后串行执行保存本页，并补齐提示分支
+- [x] 执行 lint/build 校验并记录结果
+
+### Progress Notes
+- 用户已明确修正：一键翻译点击后要直接执行“保存本页”，不再单独保存表名。
+- 已确认“一键翻译”逻辑集中在 `grid-inspector-controller.tsx` 的 `translateGridIdentifiers`，而“保存本页”能力来自 `Dashboard.tsx` 中 `useSingleTableModuleSettingsSave` 返回的 `saveSingleTableModuleSettingsPage`。
+- 已通过 `use-inspector-panel-props.tsx -> GridInspectorController` 透传页面级 `saveCurrentPage` 回调，保持保存编排仍由单表模块设置的既有 hook 统一负责。
+- 已给 `saveCurrentPage` 增加静默调用与列快照 override 能力，避免一键翻译刚更新列状态就立即保存时，闭包里仍然读到翻译前的旧列数据。
+- 已把一键翻译成功后的提示改成区分“翻译成功并已保存本页”与“翻译成功但保存失败”，不再额外弹出单独的模块设置保存提示。
+- 用户最新反馈：实际点击后一键翻译没有看到保存接口调用，需要回到分支逻辑核对是否存在“无可翻译项/翻译结果被过滤后提前 return，导致根本不触发保存”的情况。
+- 已补上保存触发收口：现在即便“没有待翻译中文字段”或“翻译结果全部被低质量过滤”，也会继续执行保存本页，并把“未接入保存本页 / 保存失败 / 保存成功”区分提示出来。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 一键翻译现在会直接复用现有“保存本页”链路，不再走单独的表名保存逻辑。
+- 翻译后的列快照会直接传入保存函数，因此即便 React 状态尚未完成下一轮渲染，这次翻译得到的字段标识也会被当前次保存正确落库。
+- 一键翻译不再只在“有有效翻译结果”时才保存；零待翻译和零可用结果分支也会触发保存，因此浏览器 Network 面板里能看到对应保存请求。
+- 构建仍有原来的大 chunk 警告，但本轮没有新增 lint/build 阻塞。

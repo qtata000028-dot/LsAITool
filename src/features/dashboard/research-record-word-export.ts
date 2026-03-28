@@ -13,6 +13,15 @@ const EXPORT_TEMPLATE_URL = '/research-record-export-template.docx';
 const WORD_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const XML_NAMESPACE = 'http://www.w3.org/XML/1998/namespace';
 const ELEMENT_NODE = 1;
+const BODY_TEXT_TYPOGRAPHY = {
+  ascii: 'Times',
+  cs: '仿宋',
+  eastAsia: '仿宋',
+  hAnsi: 'Times',
+  size: '21',
+};
+
+type RunTypography = typeof BODY_TEXT_TYPOGRAPHY;
 
 function getElementChildren(parent: Element, localName: string) {
   return Array.from(parent.childNodes).filter(
@@ -83,7 +92,35 @@ function cloneElement<T extends Element>(element: T) {
   return element.cloneNode(true) as T;
 }
 
-function setParagraphText(paragraph: Element, text: string) {
+function applyRunTypography(runProps: Element, typography: RunTypography) {
+  const document = runProps.ownerDocument;
+  const rFonts = getElementChildren(runProps, 'rFonts')[0]
+    ?? document.createElementNS(WORD_NAMESPACE, 'w:rFonts');
+
+  rFonts.setAttributeNS(WORD_NAMESPACE, 'w:ascii', typography.ascii);
+  rFonts.setAttributeNS(WORD_NAMESPACE, 'w:hAnsi', typography.hAnsi);
+  rFonts.setAttributeNS(WORD_NAMESPACE, 'w:eastAsia', typography.eastAsia);
+  rFonts.setAttributeNS(WORD_NAMESPACE, 'w:cs', typography.cs);
+  if (!rFonts.parentNode) {
+    runProps.appendChild(rFonts);
+  }
+
+  const size = getElementChildren(runProps, 'sz')[0]
+    ?? document.createElementNS(WORD_NAMESPACE, 'w:sz');
+  size.setAttributeNS(WORD_NAMESPACE, 'w:val', typography.size);
+  if (!size.parentNode) {
+    runProps.appendChild(size);
+  }
+
+  const sizeCs = getElementChildren(runProps, 'szCs')[0]
+    ?? document.createElementNS(WORD_NAMESPACE, 'w:szCs');
+  sizeCs.setAttributeNS(WORD_NAMESPACE, 'w:val', typography.size);
+  if (!sizeCs.parentNode) {
+    runProps.appendChild(sizeCs);
+  }
+}
+
+function setParagraphText(paragraph: Element, text: string, typography?: RunTypography) {
   const paragraphProperties = getElementChildren(paragraph, 'pPr')[0] ?? null;
   const sourceRun = paragraph.getElementsByTagNameNS(WORD_NAMESPACE, 'r')[0];
   const sourceRunProps = sourceRun ? getElementChildren(sourceRun, 'rPr')[0] ?? null : null;
@@ -104,8 +141,14 @@ function setParagraphText(paragraph: Element, text: string) {
   }
 
   const run = paragraph.ownerDocument.createElementNS(WORD_NAMESPACE, 'w:r');
-  if (sourceRunProps) {
-    run.appendChild(cloneElement(sourceRunProps));
+  if (sourceRunProps || typography) {
+    const runProps = sourceRunProps
+      ? cloneElement(sourceRunProps)
+      : paragraph.ownerDocument.createElementNS(WORD_NAMESPACE, 'w:rPr');
+    if (typography) {
+      applyRunTypography(runProps, typography);
+    }
+    run.appendChild(runProps);
   }
 
   const textNode = paragraph.ownerDocument.createElementNS(WORD_NAMESPACE, 'w:t');
@@ -118,7 +161,7 @@ function setParagraphText(paragraph: Element, text: string) {
   return paragraph;
 }
 
-function setCellParagraphs(cell: Element, lines: string[]) {
+function setCellParagraphs(cell: Element, lines: string[], typography?: RunTypography) {
   const cellProperties = getElementChildren(cell, 'tcPr')[0] ?? null;
   const paragraphPrototypes = getElementChildren(cell, 'p');
   const fallbackPrototype = paragraphPrototypes[paragraphPrototypes.length - 1]
@@ -137,12 +180,34 @@ function setCellParagraphs(cell: Element, lines: string[]) {
   Array.from({ length: lineCount }).forEach((_, index) => {
     const line = nextLines[index] ?? '';
     const prototype = paragraphPrototypes[index] ?? fallbackPrototype;
-    cell.appendChild(setParagraphText(cloneElement(prototype), line));
+    cell.appendChild(setParagraphText(cloneElement(prototype), line, typography));
   });
 }
 
-function setCellText(cell: Element, text: string) {
-  setCellParagraphs(cell, [text]);
+function setCellText(cell: Element, text: string, typography?: RunTypography) {
+  setCellParagraphs(cell, [text], typography);
+}
+
+function setCellVerticalMerge(cell: Element, mode: 'restart' | 'continue' | null) {
+  let cellProperties = getElementChildren(cell, 'tcPr')[0] ?? null;
+  if (!cellProperties) {
+    cellProperties = cell.ownerDocument.createElementNS(WORD_NAMESPACE, 'w:tcPr');
+    cell.insertBefore(cellProperties, cell.firstChild ?? null);
+  }
+
+  const currentMerge = getElementChildren(cellProperties, 'vMerge')[0] ?? null;
+  if (!mode) {
+    if (currentMerge) {
+      cellProperties.removeChild(currentMerge);
+    }
+    return;
+  }
+
+  const nextMerge = currentMerge ?? cell.ownerDocument.createElementNS(WORD_NAMESPACE, 'w:vMerge');
+  nextMerge.setAttributeNS(WORD_NAMESPACE, 'w:val', mode);
+  if (!currentMerge) {
+    cellProperties.appendChild(nextMerge);
+  }
 }
 
 function getBody(xmlDocument: XMLDocument) {
@@ -176,39 +241,51 @@ function buildContentRows(rowPrototypes: Element[], item: ResearchExportContentI
   const workDescriptionLines = buildPlainLines(item.workDescription, item.lineColors.workDescription);
   const painLines = buildPlainLines(item.painPoints, item.lineColors.painPoints);
   const suggestionLines = buildPlainLines(item.suggestions, item.lineColors.suggestions);
-  const [firstPainLine = '', ...restPainLines] = painLines;
 
-  const [topRowPrototype, formsRowPrototype, workRowPrototype, suggestionRowPrototype] = rowPrototypes;
+  const [
+    jobRoleRowPrototype,
+    listRowPrototype,
+    textRowPrototype,
+    suggestionRowPrototype,
+  ] = rowPrototypes;
 
-  const topRow = cloneElement(topRowPrototype);
-  const topCells = getCells(topRow);
-  setCellParagraphs(topCells[0], [displayName, subheading]);
-  setCellParagraphs(topCells[1], [
-    `工作岗位：${item.jobRole.trim()}`,
-    `工时占比：${item.timeShare.trim()}`,
-  ]);
+  const jobRoleRow = cloneElement(jobRoleRowPrototype);
+  const jobRoleCells = getCells(jobRoleRow);
+  setCellVerticalMerge(jobRoleCells[0], 'restart');
+  setCellParagraphs(jobRoleCells[0], [displayName, subheading], BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(jobRoleCells[1], [`工作岗位：${item.jobRole.trim()}`], BODY_TEXT_TYPOGRAPHY);
 
-  const formsRow = cloneElement(formsRowPrototype);
+  const timeShareRow = cloneElement(listRowPrototype);
+  const timeShareCells = getCells(timeShareRow);
+  setCellVerticalMerge(timeShareCells[0], 'continue');
+  setCellText(timeShareCells[0], '', BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(timeShareCells[1], [`工时占比：${item.timeShare.trim()}`], BODY_TEXT_TYPOGRAPHY);
+
+  const formsRow = cloneElement(listRowPrototype);
   const formsCells = getCells(formsRow);
-  setCellText(formsCells[0], '');
-  setCellParagraphs(formsCells[1], ['表单提供：', ...formsLines]);
+  setCellVerticalMerge(formsCells[0], 'continue');
+  setCellText(formsCells[0], '', BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(formsCells[1], ['表单提供：', ...formsLines], BODY_TEXT_TYPOGRAPHY);
 
-  const workRow = cloneElement(workRowPrototype);
-  const workCells = getCells(workRow);
-  setCellText(workCells[0], '');
-  setCellParagraphs(workCells[1], [
-    '工作描述：',
-    ...workDescriptionLines,
-    firstPainLine ? `痛点说明： ${firstPainLine}` : '痛点说明：',
-    ...restPainLines,
-  ]);
+  const workDescriptionRow = cloneElement(textRowPrototype);
+  const workDescriptionCells = getCells(workDescriptionRow);
+  setCellVerticalMerge(workDescriptionCells[0], 'continue');
+  setCellText(workDescriptionCells[0], '', BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(workDescriptionCells[1], ['工作描述：', ...workDescriptionLines], BODY_TEXT_TYPOGRAPHY);
+
+  const painPointsRow = cloneElement(textRowPrototype);
+  const painPointsCells = getCells(painPointsRow);
+  setCellVerticalMerge(painPointsCells[0], 'continue');
+  setCellText(painPointsCells[0], '', BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(painPointsCells[1], ['痛点说明：', ...painLines], BODY_TEXT_TYPOGRAPHY);
 
   const suggestionRow = cloneElement(suggestionRowPrototype);
   const suggestionCells = getCells(suggestionRow);
-  setCellText(suggestionCells[0], '');
-  setCellParagraphs(suggestionCells[1], ['朗速建议：', ...suggestionLines]);
+  setCellVerticalMerge(suggestionCells[0], 'continue');
+  setCellText(suggestionCells[0], '', BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(suggestionCells[1], ['朗速建议：', ...suggestionLines], BODY_TEXT_TYPOGRAPHY);
 
-  return [topRow, formsRow, workRow, suggestionRow];
+  return [jobRoleRow, timeShareRow, formsRow, workDescriptionRow, painPointsRow, suggestionRow];
 }
 
 async function rebuildTemplateXml(templateXml: string, draft: ResearchExportDraft) {
@@ -253,8 +330,8 @@ async function rebuildTemplateXml(templateXml: string, draft: ResearchExportDraf
   const departmentPostLines = buildPlainLines(draft.departmentPosts, draft.lineColors.departmentPosts);
   const workToolLines = buildPlainLines(draft.workTools, draft.lineColors.workTools);
 
-  setCellParagraphs(getCells(staticRowPrefix[1])[0], departmentPostLines);
-  setCellParagraphs(getCells(staticRowPrefix[3])[0], workToolLines);
+  setCellParagraphs(getCells(staticRowPrefix[1])[0], departmentPostLines, BODY_TEXT_TYPOGRAPHY);
+  setCellText(getCells(staticRowPrefix[3])[0], workToolLines.join('、'), BODY_TEXT_TYPOGRAPHY);
 
   while (contentTable.firstChild) {
     contentTable.removeChild(contentTable.firstChild);
@@ -284,11 +361,11 @@ async function rebuildTemplateXml(templateXml: string, draft: ResearchExportDraf
   });
 
   const outputRows = staticRowSuffix;
-  setCellParagraphs(getCells(outputRows[1])[0], buildPlainLines(draft.overallPainPoints, draft.lineColors.overallPainPoints));
-  setCellParagraphs(getCells(outputRows[3])[0], buildPlainLines(draft.specialDiscussion, draft.lineColors.specialDiscussion));
-  setCellParagraphs(getCells(outputRows[5])[0], buildPlainLines(draft.extraNotes, draft.lineColors.extraNotes));
-  setCellText(getCells(outputRows[6])[1], draft.signer.trim());
-  setCellText(getCells(outputRows[7])[0], formatChineseDate(draft.signerDate));
+  setCellParagraphs(getCells(outputRows[1])[0], buildPlainLines(draft.overallPainPoints, draft.lineColors.overallPainPoints), BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(getCells(outputRows[3])[0], buildPlainLines(draft.specialDiscussion, draft.lineColors.specialDiscussion), BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(getCells(outputRows[5])[0], buildPlainLines(draft.extraNotes, draft.lineColors.extraNotes), BODY_TEXT_TYPOGRAPHY);
+  setCellText(getCells(outputRows[6])[1], draft.signer.trim(), BODY_TEXT_TYPOGRAPHY);
+  setCellText(getCells(outputRows[7])[0], formatChineseDate(draft.signerDate), BODY_TEXT_TYPOGRAPHY);
 
   outputRows.forEach((row) => contentTable.appendChild(row));
 

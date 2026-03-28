@@ -5,6 +5,7 @@ type ConfigWizardModalShellProps = {
   bodyNode: React.ReactNode;
   footerNode: React.ReactNode;
   isFullscreenConfigActive: boolean;
+  isModulePreviewStep: boolean;
   isModuleSettingStep: boolean;
   onClose: () => void;
   open: boolean;
@@ -17,6 +18,7 @@ export function ConfigWizardModalShell({
   bodyNode,
   footerNode,
   isFullscreenConfigActive,
+  isModulePreviewStep,
   isModuleSettingStep,
   onClose,
   open,
@@ -64,7 +66,13 @@ export function ConfigWizardModalShell({
             ) : null}
 
             <div className={`relative z-10 flex flex-1 flex-col ${
-              isFullscreenConfigActive ? 'overflow-hidden p-3 lg:p-4' : isModuleSettingStep ? 'overflow-hidden p-0' : 'overflow-y-auto p-6 lg:p-8'
+              isFullscreenConfigActive
+                ? isModulePreviewStep
+                  ? 'overflow-hidden p-0'
+                  : 'overflow-hidden p-3 lg:p-4'
+                : isModuleSettingStep
+                  ? 'overflow-hidden p-0'
+                  : 'overflow-y-auto p-6 lg:p-8'
             }`}>
               {bodyNode}
             </div>

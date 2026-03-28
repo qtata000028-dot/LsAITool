@@ -79,27 +79,31 @@ export const DetailTabInspector = React.memo(function DetailTabInspector({
   return (
     <div className={panelShellClass}>
       <div className={panelHeaderClass}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className={`${panelIconShellClass} ${context.iconClass}`}>
-              <span className="material-symbols-outlined text-[18px]">{context.icon}</span>
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className={panelTitleClass}>{context.title}</h3>
-                <span className={panelBadgeClass}>明细页签</span>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className={`${panelIconShellClass} ${context.iconClass}`}>
+                <span className="material-symbols-outlined text-[18px]">{context.icon}</span>
               </div>
-              {inspectorTabsNode}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className={panelTitleClass}>{context.title}</h3>
+                  <span className={panelBadgeClass}>明细页签</span>
+                </div>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={onDeleteTab}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-rose-200/80 bg-rose-50/85 px-3 text-[11px] font-semibold text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-100/80 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/20"
+            >
+              <span className="material-symbols-outlined text-[15px]">delete</span>
+              删除明细
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onDeleteTab}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-rose-200/80 bg-rose-50/85 px-3 text-[11px] font-semibold text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-100/80 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/20"
-          >
-            <span className="material-symbols-outlined text-[15px]">delete</span>
-            删除明细
-          </button>
+          <div className="min-w-0">
+            {inspectorTabsNode}
+          </div>
         </div>
       </div>
 

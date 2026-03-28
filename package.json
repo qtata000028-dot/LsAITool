@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev-with-simple-designer.mjs",
+    "dev:vscode": "node scripts/restart-client-with-api.mjs",
     "dev:host": "node scripts/dev-with-api.mjs",
     "dev:simple-designer": "node scripts/dev-with-simple-designer.mjs",
     "dev:client": "vite --port=3000 --host=0.0.0.0 --strictPort",

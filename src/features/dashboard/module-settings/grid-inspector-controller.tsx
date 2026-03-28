@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { saveSingleTableModuleConfig } from '../../../lib/backend-module-config';
 import {
   requestAiCreateMainTable,
   requestIdentifierTranslation,
@@ -133,6 +134,14 @@ type GridInspectorControllerProps = {
   setSelectedMainContextMenuId: React.Dispatch<React.SetStateAction<string | null>>;
   setSelectedPopupMenuParamKey: React.Dispatch<React.SetStateAction<string>>;
   showToast: (message: string) => void;
+  onSaveCurrentPage?: (options?: {
+    gridColumnsOverride?: {
+      rows: any[];
+      scope: 'left-grid' | 'main-grid' | 'detail-grid';
+      tabId?: string;
+    };
+    silent?: boolean;
+  }) => Promise<boolean>;
   setInspectorPanelTab: React.Dispatch<React.SetStateAction<'common' | 'contextmenu' | 'color'>>;
   syncDetailColumnsFromSqlById: (tabId: string, sql: string, options?: Record<string, any>) => void;
   tableTypeOptions: string[];
@@ -234,6 +243,7 @@ export function GridInspectorController({
   setSelectedPopupMenuParamKey,
   setInspectorPanelTab,
   showToast,
+  onSaveCurrentPage,
   syncDetailColumnsFromSqlById,
   tableTypeOptions,
   treeRelationColumn,
@@ -488,7 +498,6 @@ export function GridInspectorController({
       updateGridConfig({
         createTableSql: response.result.createTableSql,
         defaultQuery: response.result.defaultQuery,
-        mainSql: response.result.mainSql,
         tableName: response.result.tableName,
       });
       onUpdateGridColumns(context.scope, (prev) => prev.map((column: any) => {
@@ -502,15 +511,48 @@ export function GridInspectorController({
         console.info('[AI一键建表]', response.result);
       }
 
-      const persistenceMessage = response.result.persistence.message ? `，${response.result.persistence.message}` : '';
+      const normalizedModuleCode = String(currentModuleCode || '').trim();
+      const normalizedModuleName = String(currentModuleName || '').trim();
+      let moduleConfigPersistenceSuffix = '，但当前模块编码为空，未同步保存表名配置';
+
+      if (normalizedModuleCode) {
+        try {
+          await saveSingleTableModuleConfig(normalizedModuleCode, {
+            id: currentGridConfig.backendId ?? currentGridConfig.id,
+            addDllName: currentGridConfig.addDllName,
+            conditionKey: currentGridConfig.conditionKey,
+            deleteCond: currentGridConfig.deleteCond,
+            dllCoId: normalizedModuleCode,
+            dllType: currentGridConfig.dllType,
+            formKey: currentGridConfig.formKey,
+            isReport: currentGridConfig.isReport,
+            mainTable: response.result.tableName,
+            modifyCond: currentGridConfig.modifyCond,
+            moduleName: normalizedModuleName,
+            overbackKey: currentGridConfig.overbackKey,
+          });
+          moduleConfigPersistenceSuffix = '，表名配置已同步保存';
+        } catch (moduleConfigError) {
+          const moduleConfigErrorMessage = moduleConfigError instanceof Error ? moduleConfigError.message : '';
+          moduleConfigPersistenceSuffix = moduleConfigErrorMessage
+            ? `，但表名配置保存失败：${moduleConfigErrorMessage}`
+            : '，但表名配置保存失败';
+
+          if (import.meta.env.DEV) {
+            console.error('[AI一键建表] 模块配置联动保存失败', moduleConfigError);
+          }
+        }
+      }
+
+      const persistenceMessage = response.result.persistence.message ? `（${response.result.persistence.message}）` : '';
       if (response.result.persistence.status === 'saved') {
-        showToast(`AI一键建表完成，主表 SQL 已更新并提交后端保存${persistenceMessage}`);
+        showToast(`AI一键建表完成，主表 SQL 已更新并提交后端保存${persistenceMessage}${moduleConfigPersistenceSuffix}`);
       } else if (response.result.persistence.status === 'failed') {
-        showToast(`AI一键建表完成，但后端保存失败${persistenceMessage}`);
+        showToast(`AI一键建表完成，但后端保存失败${persistenceMessage}${moduleConfigPersistenceSuffix}`);
       } else if (response.result.persistence.status === 'pending') {
-        showToast(`AI一键建表完成，界面已更新，后端保存口待接入${persistenceMessage}`);
+        showToast(`AI一键建表完成，界面已更新，后端保存口待接入${persistenceMessage}${moduleConfigPersistenceSuffix}`);
       } else {
-        showToast('AI一键建表完成，主表字段与 SQL 已更新');
+        showToast(`AI一键建表完成，主表字段与 SQL 已更新${moduleConfigPersistenceSuffix}`);
       }
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'AI一键建表失败');
@@ -519,9 +561,31 @@ export function GridInspectorController({
     }
   };
 
+  const savePageAfterTranslation = async (message: string, nextGridColumns?: any[]) => {
+    if (!onSaveCurrentPage) {
+      showToast(`${message}，当前版本未接入保存本页`);
+      return;
+    }
+
+    const saved = await onSaveCurrentPage({
+      gridColumnsOverride: nextGridColumns
+        ? {
+          rows: nextGridColumns,
+          scope: context.scope,
+          tabId: context.scope === 'detail-grid' ? activeTab : undefined,
+        }
+        : undefined,
+      silent: true,
+    });
+
+    showToast(saved
+      ? `${message}，并已保存本页`
+      : `${message}，但保存本页失败，请手动保存`);
+  };
+
   const translateGridIdentifiers = async () => {
     if (translatableColumns.length === 0) {
-      showToast('当前表格没有需要翻译的中文字段');
+      await savePageAfterTranslation('当前表格没有需要翻译的中文字段');
       return;
     }
 
@@ -541,15 +605,25 @@ export function GridInspectorController({
       const acceptedItems = response.items.filter((item) => !isLowQualityTranslatedIdentifier(item.identifier));
       const identifierMap = new Map(acceptedItems.map((item) => [item.id, item.identifier]));
       const skippedCount = response.items.length - acceptedItems.length;
+      if (acceptedItems.length === 0) {
+        await savePageAfterTranslation(skippedCount > 0
+          ? `未找到可用翻译结果，${skippedCount} 个低质量结果已忽略`
+          : '未找到可用翻译结果');
+        return;
+      }
 
-      onUpdateGridColumns(context.scope, (prev) => prev.map((column) => (
+      const nextGridColumns = availableGridColumns.map((column) => (
         identifierMap.has(column.id)
           ? { ...column, sourceField: identifierMap.get(column.id) }
           : column
-      )));
-      showToast(skippedCount > 0
+      ));
+
+      onUpdateGridColumns(context.scope, nextGridColumns);
+
+      const translationMessage = skippedCount > 0
         ? `已翻译 ${acceptedItems.length} 个字段标识，${skippedCount} 个低质量结果已忽略`
-        : `已翻译 ${acceptedItems.length} 个字段标识`);
+        : `已翻译 ${acceptedItems.length} 个字段标识`;
+      await savePageAfterTranslation(translationMessage, nextGridColumns);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'MiniMax 翻译字段标识失败');
     } finally {

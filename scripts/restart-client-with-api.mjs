@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, openSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+
 import { cleanupDevPorts } from './dev-stack-utils.mjs';
 import { ensureSimpleDesignerDependencies, simpleDesignerDevCommand } from './simple-designer-utils.mjs';
 
@@ -39,17 +40,11 @@ async function isUrlReady(url) {
   }
 }
 
-async function waitForServices(timeoutMs = 60000) {
+async function waitForUrl(url, timeoutMs = 60000) {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
-    const [clientReady, apiReady, simpleDesignerReady] = await Promise.all([
-      isUrlReady(clientUrl),
-      isUrlReady(apiUrl),
-      isUrlReady(simpleDesignerUrl),
-    ]);
-
-    if (clientReady && apiReady && simpleDesignerReady) {
+    if (await isUrlReady(url)) {
       return true;
     }
 
@@ -57,18 +52,6 @@ async function waitForServices(timeoutMs = 60000) {
   }
 
   return false;
-}
-
-function clearPidFile(pidFilePath) {
-  if (!existsSync(pidFilePath)) {
-    return;
-  }
-
-  try {
-    unlinkSync(pidFilePath);
-  } catch {
-    // Ignore pid file cleanup failures.
-  }
 }
 
 function startDetached(scriptCommand, stdoutPath, stderrPath, pidFilePath) {
@@ -87,48 +70,52 @@ function startDetached(scriptCommand, stdoutPath, stderrPath, pidFilePath) {
 }
 
 async function main() {
-  const stoppedProcesses = cleanupDevPorts(projectRoot, [3000, 3001, 5174]);
-  if (stoppedProcesses.length > 0) {
-    clearPidFile(clientPidFile);
-    clearPidFile(apiPidFile);
-    clearPidFile(simpleDesignerPidFile);
-    await sleep(1000);
+  console.log('Restarting front-end dev server on port 3000...');
+  cleanupDevPorts(projectRoot, [3000]);
+  await sleep(1000);
+
+  const apiReady = await isUrlReady(apiUrl);
+  if (!apiReady) {
+    console.log('Local API proxy on port 3001 is not ready. Starting it now...');
+    startDetached('npm run dev:api', apiStdoutLog, apiStderrLog, apiPidFile);
+  } else {
+    console.log('Local API proxy on port 3001 is already running.');
   }
 
-  let [clientReady, apiReady, simpleDesignerReady] = await Promise.all([
-    isUrlReady(clientUrl),
-    isUrlReady(apiUrl),
-    isUrlReady(simpleDesignerUrl),
-  ]);
-
-  if (clientReady && apiReady && simpleDesignerReady) {
-    console.log(`Dev stack is already running at ${clientUrl}`);
-    return;
+  const simpleDesignerReady = await isUrlReady(simpleDesignerUrl);
+  if (!simpleDesignerReady) {
+    ensureSimpleDesignerDependencies(projectRoot);
+    console.log('Simple process designer on port 5174 is not ready. Starting it now...');
+    startDetached(simpleDesignerDevCommand, simpleDesignerStdoutLog, simpleDesignerStderrLog, simpleDesignerPidFile);
+  } else {
+    console.log('Simple process designer on port 5174 is already running.');
   }
 
+  startDetached('npm run dev:client', clientStdoutLog, clientStderrLog, clientPidFile);
+
+  const clientReady = await waitForUrl(clientUrl);
   if (!clientReady) {
-    console.log('Starting Vite dev server...');
-    startDetached('npm run dev:client', clientStdoutLog, clientStderrLog, clientPidFile);
+    console.error(`Front-end dev server did not start within 60 seconds. Check ${clientStdoutLog} and ${clientStderrLog}.`);
+    process.exit(1);
   }
 
   if (!apiReady) {
-    console.log('Starting MiniMax API server...');
-    startDetached('npm run dev:api', apiStdoutLog, apiStderrLog, apiPidFile);
+    const apiStarted = await waitForUrl(apiUrl);
+    if (!apiStarted) {
+      console.error(`Local API proxy did not start within 60 seconds. Check ${apiStdoutLog} and ${apiStderrLog}.`);
+      process.exit(1);
+    }
   }
 
   if (!simpleDesignerReady) {
-    ensureSimpleDesignerDependencies(projectRoot);
-    console.log('Starting simple process designer...');
-    startDetached(simpleDesignerDevCommand, simpleDesignerStdoutLog, simpleDesignerStderrLog, simpleDesignerPidFile);
+    const simpleDesignerStarted = await waitForUrl(simpleDesignerUrl);
+    if (!simpleDesignerStarted) {
+      console.error(`Simple process designer did not start within 60 seconds. Check ${simpleDesignerStdoutLog} and ${simpleDesignerStderrLog}.`);
+      process.exit(1);
+    }
   }
 
-  if (await waitForServices()) {
-    console.log(`Dev stack is ready at ${clientUrl}`);
-    return;
-  }
-
-  console.error(`Dev stack did not start within 60 seconds. Check ${clientStdoutLog}, ${clientStderrLog}, ${apiStdoutLog}, ${apiStderrLog}, ${simpleDesignerStdoutLog}, and ${simpleDesignerStderrLog}.`);
-  process.exit(1);
+  console.log(`VS Code daily dev is ready at ${clientUrl}`);
 }
 
 main();
