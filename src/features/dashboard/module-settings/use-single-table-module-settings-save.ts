@@ -128,6 +128,15 @@ type UseSingleTableModuleSettingsSaveOptions = {
   setMainTableConfig: Dispatch<SetStateAction<any>>;
 };
 
+type SaveCurrentPageOptions = {
+  gridColumnsOverride?: {
+    rows: any[];
+    scope: 'left-grid' | 'main-grid' | 'detail-grid';
+    tabId?: string;
+  };
+  silent?: boolean;
+};
+
 function createEmptyDetailSnapshot(): DetailSnapshot {
   return {
     tabConfigs: {},
@@ -906,23 +915,47 @@ export function useSingleTableModuleSettingsSave({
     return sortByOrderId(rows.map((row, index) => mapContextMenuItem(row, index)));
   }, [getCachedDetailDecorations, mapContextMenuItem]);
 
-  const saveCurrentPage = useCallback(async () => {
+  const saveCurrentPage = useCallback(async (options?: SaveCurrentPageOptions) => {
+    const shouldShowToast = !options?.silent;
+    const gridColumnsOverride = options?.gridColumnsOverride;
+    const effectiveMainTableColumns = gridColumnsOverride?.scope === 'main-grid'
+      ? gridColumnsOverride.rows
+      : mainTableColumns;
+    const effectiveLeftTableColumns = gridColumnsOverride?.scope === 'left-grid'
+      ? gridColumnsOverride.rows
+      : leftTableColumns;
+    const effectiveDetailTableColumns = gridColumnsOverride?.scope === 'detail-grid'
+      ? {
+        ...detailTableColumns,
+        [gridColumnsOverride.tabId || activeTab]: gridColumnsOverride.rows,
+      }
+      : detailTableColumns;
     const moduleCode = currentModuleCode.trim();
     if (!isActive || !moduleCode) {
-      onShowToast('请先保存菜单信息，再保存模块设置。');
+      if (shouldShowToast) {
+        onShowToast('请先保存菜单信息，再保存模块设置。');
+      }
       return false;
     }
 
     setIsSaving(true);
 
     try {
+      const savedModuleConfig = await saveSingleTableModuleConfig(moduleCode, {
+        ...mainTableConfig,
+        dllCoId: moduleCode,
+        mainTable: toText(mainTableConfig?.mainTable ?? mainTableConfig?.tableName),
+        moduleName: toText(mainTableConfig?.moduleName || currentModuleName),
+        querySql: toText(mainTableConfig?.querySql ?? mainTableConfig?.mainSql),
+      });
+
       const {
         rows: savedMainFields,
         pairs: mainFieldPairs,
       } = await saveDiffedCollection({
         baselineRows: baselineRef.current.mainFields,
         buildBody: (field, index) => buildMainFieldBody(field, moduleCode, index),
-        currentRows: sortByOrderId(mainTableColumns),
+        currentRows: sortByOrderId(effectiveMainTableColumns),
         getIdentityKey: getMainFieldIdentityKey,
         mapSavedRow: (savedRow, index) => mapMainFieldRecordToColumn(savedRow, index),
         saveRow: (body) => saveSingleTableModuleField(moduleCode, body),
@@ -974,7 +1007,7 @@ export function useSingleTableModuleSettingsSave({
       });
 
       let savedLeftConditions = cloneValue(leftFilterFields);
-      let savedLeftColumns = cloneValue(leftTableColumns);
+      let savedLeftColumns = cloneValue(effectiveLeftTableColumns);
       let savedLeftColors = cloneValue(leftTableConfig?.colorRules ?? []);
 
       if (currentOwnerFieldId != null && currentOwnerFieldId > 0) {
@@ -993,7 +1026,7 @@ export function useSingleTableModuleSettingsSave({
         const { rows: nextLeftColumns } = await saveDiffedCollection({
           baselineRows: baselineRef.current.fieldGridFieldsByFieldId[currentOwnerFieldId] ?? [],
           buildBody: (column) => buildGridFieldBody(column, currentOwnerFieldId),
-          currentRows: sortByOrderId(leftTableColumns),
+          currentRows: sortByOrderId(effectiveLeftTableColumns),
           getIdentityKey: getGridFieldIdentityKey,
           mapSavedRow: (savedRow, index, column) => mapFieldGridFieldToColumn(savedRow, index, column),
           saveRow: (body) => saveSingleTableFieldGridField(moduleCode, currentOwnerFieldId, body),
@@ -1052,7 +1085,7 @@ export function useSingleTableModuleSettingsSave({
         savedLeftColors = nextLeftColors;
       }
 
-      const detailEntries = buildDetailEntries(detailTabs, detailTabConfigs, detailTableColumns, detailTableConfigs);
+      const detailEntries = buildDetailEntries(detailTabs, detailTabConfigs, effectiveDetailTableColumns, detailTableConfigs);
       const savedDetailEntries: DetailSaveEntry[] = [];
 
       for (const [index, detailEntry] of detailEntries.entries()) {
@@ -1548,10 +1581,23 @@ export function useSingleTableModuleSettingsSave({
       setMainFilterFields(savedMainConditions);
       setMainTableConfig((prev) => ({
         ...prev,
+        addDllName: toText(savedModuleConfig?.addDllName || prev?.addDllName),
+        backendId: savedModuleConfig?.id ?? prev?.backendId,
         colorRules: savedMainColors,
         colorRulesEnabled: savedMainColors.length > 0,
+        conditionKey: toText(savedModuleConfig?.conditionKey || prev?.conditionKey),
         contextMenuItems: savedMainMenus,
         contextMenuEnabled: savedMainMenus.length > 0,
+        deleteCond: toText(savedModuleConfig?.deleteCond || prev?.deleteCond),
+        dllCoId: toText(savedModuleConfig?.dllCoId || moduleCode),
+        dllType: savedModuleConfig?.dllType ?? prev?.dllType,
+        formKey: toText(savedModuleConfig?.formKey || prev?.formKey),
+        isReport: savedModuleConfig?.isReport ?? prev?.isReport,
+        mainSql: toText(savedModuleConfig?.querySql || prev?.mainSql),
+        modifyCond: toText(savedModuleConfig?.modifyCond || prev?.modifyCond),
+        moduleName: toText(savedModuleConfig?.moduleName || currentModuleName),
+        overbackKey: toText(savedModuleConfig?.overbackKey || prev?.overbackKey),
+        tableName: toText(savedModuleConfig?.mainTable || prev?.tableName),
       }));
       setLeftFilterFields(savedLeftConditions);
       setLeftTableColumns(savedLeftColumns);
@@ -1589,11 +1635,15 @@ export function useSingleTableModuleSettingsSave({
         mainMenus: cloneValue(savedMainMenus),
       };
 
-      onShowToast('单表模块设置已保存。');
+      if (shouldShowToast) {
+        onShowToast('单表模块设置已保存。');
+      }
       return true;
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : '单表模块设置保存失败。';
-      onShowToast(message);
+      if (shouldShowToast) {
+        onShowToast(message);
+      }
       return false;
     } finally {
       setIsSaving(false);

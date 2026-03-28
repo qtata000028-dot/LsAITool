@@ -3948,3 +3948,178 @@
 ### Result Notes
 - 当前仓库已经产出可部署前端包，主应用静态资源位于 `dist`，子应用 bundle 已包含在构建链路要求的位置。
 - 当前残留仅是 Vite 的 chunk 体积告警，未阻塞这次打包交付；若后续关注首屏性能，再继续做分包优化即可。
+- 2026-03-28 已按当前工作区再次重新生成部署包；通过 `cmd /c "npm run build & echo EXITCODE:%ERRORLEVEL%"` 复核，构建退出码为 `0`。
+- 最新压缩包已刷新为 `build-artifacts/LsAITool-dist-20260328.zip`，时间戳为 2026-03-28 14:46:56。
+
+## 2026-03-28 一键建表后联动保存模块主表配置
+
+### Requirement Spec
+- 目标：
+  - 在模块设置里点击“一键建表”后，后端创建物理表成功时，继续调用对应模块配置保存接口，把最新表名配置同步写回后端。
+- 影响范围：
+  - `src/features/dashboard/module-settings/grid-inspector-controller.tsx`
+  - 单表模块配置保存接口调用链。
+- 关键约束：
+  - 不改动 `Dashboard.tsx` 主入口结构。
+  - 保存字段必须与现有模块配置读取字段保持一致，避免写进错误键名后仍然无法回显。
+  - 若建表成功但配置保存失败，需要明确提示，不得伪装成全成功。
+- 不做什么：
+  - 不顺手重构整个模块设置保存体系。
+  - 不扩展到与本需求无关的字段批量保存逻辑。
+- 验证标准：
+  - 一键建表成功后会额外触发模块配置保存请求。
+  - 保存请求携带的字段名与当前读取逻辑一致。
+  - `npm run lint` 通过。
+  - `npm run build` 通过。
+
+### Checklist
+- [x] 复核模块配置读取/保存字段约定
+- [x] 在一键建表成功链路中补上模块配置保存接口
+- [x] 调整成功/失败提示，区分建表成功与配置保存失败
+- [x] 执行 lint 校验并记录结果
+
+### Progress Notes
+- 已定位一键建表入口在 `grid-inspector-controller.tsx` 的 `createMainTableWithAi`。
+- 已确认当前流程只会调用 AI 建表接口并更新本地 `tableName/mainSql/defaultQuery`，不会继续调用 `saveSingleTableModuleConfig`。
+- 已确认模块配置读取侧当前优先读取 `querySql/querysql` 和 `mainTable/maintable`，因此联动保存时需要对齐这两个后端字段名。
+- 已在一键建表成功分支里补上 `saveSingleTableModuleConfig(currentModuleCode, { mainTable, querySql, moduleName, dllCoId })`，让建表后立即把主表配置同步写回模块配置接口。
+- 已把提示文案改成同时覆盖 AI 接口持久化状态和表名配置联动保存结果，避免出现“建表成功但配置保存失败”仍然提示全成功的情况。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 一键建表现在不再只停留在本地 `tableName/mainSql` 状态更新；接口返回成功后会继续调用模块配置保存接口，把 `mainTable/querySql` 与当前模块编码同步持久化。
+- 本轮改动保持在 `module-settings/grid-inspector-controller.tsx` 内完成，没有把额外逻辑堆回 `Dashboard.tsx`。
+- 构建链路仍会输出大 chunk 警告，但本轮改动未引入新的构建阻塞。
+
+## 2026-03-28 主表配置查询保存与单表主模块接口字段对齐
+
+### Requirement Spec
+- 目标：
+  - 修正模块设置里“主表配置”与单表主模块接口的字段映射，让主表名、主 SQL 等后端已有配置能正确回填，并在常规保存时同步写回。
+- 影响范围：
+  - `src/lib/backend-module-config.ts`
+  - `src/components/Dashboard.tsx`
+  - `src/features/dashboard/module-settings/use-single-table-module-settings-save.ts`
+  - `src/features/dashboard/module-settings/grid-inspector-controller.tsx`
+- 关键约束：
+  - 兼容 `p_systemdlltab` 的旧字段口径，如 `SQL`、`SQLDT1`、`DllCoid`、`ToolsName`、`condKey`。
+  - 不把没有明确后端语义的 UI 字段硬映射到错误接口字段。
+  - 查询与保存必须共用同一套字段归一化/回写规则，避免一边能读一边不能存。
+- 不做什么：
+  - 不顺手重构整个模块设置加载架构。
+  - 不扩展到与当前主表配置无关的明细、右键、颜色接口。
+- 验证标准：
+  - 打开模块设置时，主表配置能从单表主模块接口正确回填。
+  - 点击常规保存时，会同步调用主模块配置保存接口。
+  - `npm run lint` 与 `npm run build` 通过。
+
+### Checklist
+- [x] 确认 `p_systemdlltab` 真实字段与当前 UI 配置项的对应关系
+- [x] 补充单表主模块接口的字段归一化与保存体构造
+- [x] 接入主表配置的查询回填与常规保存
+- [x] 执行 lint/build 校验并记录结果
+
+### Progress Notes
+- 已确认当前主表配置面板并没有针对当前模块调用 `fetchSingleTableModuleConfig(activeConfigModuleKey)` 回填 `mainTableConfig`，导致主表名、主 SQL 等配置不会显示。
+- 已确认常规保存链路 `use-single-table-module-settings-save.ts` 虽然导入了 `saveSingleTableModuleConfig`，但实际上从未调用，因此主表配置不会随“保存模块设置”一起落库。
+- 已从仓库内文档提取到 `p_systemdlltab` 的真实字段定义：`DllCoid`、`ToolsName`、`SQL`、`SQLDT1`、`formKey`、`condKey` 等，当前前端确实缺少这批旧字段的 adapter 归一化。
+- 已在 `backend-module-config.ts` 增加单表主模块配置的 shared adapter，把 `SQL/SQLDT1/DllCoid/ToolsName/condKey` 统一归一化到 `querySql/mainTable/dllCoId/moduleName/conditionKey`，并用同一套规则构造保存体。
+- 已在 `Dashboard.tsx` 增加当前模块主配置加载 effect，打开模块设置时会把主表名、主 SQL 以及 `formKey/condKey` 等主配置元数据回填到 `mainTableConfig`。
+- 已在 `use-single-table-module-settings-save.ts` 补上常规保存时的主模块配置保存，并在保存成功后用返回值重新同步 `mainTableConfig`。
+- 已同步收紧一键建表后的保存体，让它复用当前主配置里的关联键而不是只提交最小四字段。
+- 已明确保留 `defaultQuery/sqlPrompt/tableType` 的现状，不再把它们硬映射到 `condKey` 等无明确语义的旧字段。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 主表配置现在会显式读取单表主模块接口，不再只依赖字段/条件/菜单/颜色几个子表接口，因此后端已有的主表名和主 SQL 可以正确回填到界面。
+- 常规“保存模块设置”和“一键建表”现在都会写回单表主模块配置，并通过 shared adapter 兼容 `p_systemdlltab` 的旧字段名。
+- 当前仍未把 `defaultQuery/sqlPrompt/tableType` 强行落到无确认后端字段上；这是刻意保守处理，避免为了“看起来有值”而把数据写进错误列。
+
+## 2026-03-28 一键建表联动保存只写表名
+
+### Requirement Spec
+- 目标：
+  - 收紧“一键建表”后的联动保存范围，建表成功后只同步保存主表名，不把 AI 返回的主 SQL 一起写回主模块配置。
+- 影响范围：
+  - `src/features/dashboard/module-settings/grid-inspector-controller.tsx`
+  - `src/lib/backend-module-config.ts`
+- 关键约束：
+  - 常规“保存模块设置”仍然保留主 SQL 的正常保存能力。
+  - 一键建表联动保存仍需保留 `formKey/condKey` 等已有主模块关联字段，不能因为只保存表名而把这些值冲掉。
+- 验证标准：
+  - 一键建表后的配置保存请求不再携带 AI 返回主 SQL。
+  - `npm run lint` 与 `npm run build` 通过。
+
+### Checklist
+- [x] 调整一键建表联动保存体，只保留表名相关字段
+- [x] 确认 shared adapter 不会因为缺少 SQL 字段而自动写空 SQL
+- [x] 执行 lint/build 校验并记录结果
+
+### Progress Notes
+- 用户已明确修正：一键建表后返回的 SQL 不需要写入主模块配置，只需要保存表名。
+- 当前 `createMainTableWithAi` 仍然显式传了 `querySql: response.result.mainSql`，shared adapter 也会把 `mainSql/querySql/SQL` 自动折算进保存体，因此需要一起收口。
+- 已将一键建表后的联动保存体收紧为只保留主模块主键/关联键与 `mainTable`，不再把 `response.result.mainSql` 带入 `saveSingleTableModuleConfig`。
+- 已同步调整 `buildSingleTableModuleConfigBody`：只有调用方显式传入 `querySql/mainSql/SQL` 相关字段时才回写 SQL，避免共享 adapter 在“只想保存表名”时自动写空或写回旧 SQL。
+- 用户进一步反馈界面里仍会出现生成 SQL；已定位到根因不是保存体，而是 `createMainTableWithAi` 成功后仍然执行了 `updateGridConfig({ mainSql: response.result.mainSql })`，把 AI 返回 SQL 写进了页面状态。
+- 已移除一键建表成功后的 `mainSql` 本地状态写入，现在只保留 `createTableSql/defaultQuery/tableName` 更新。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 一键建表后的联动保存现在只会同步保存主表名，不再把 AI 返回的主 SQL 一起写回主模块配置。
+- 常规“保存模块设置”仍然会按显式传入的 `querySql/mainSql` 保存主 SQL，这次收口没有影响那条正常保存链路。
+- 一键建表后右侧“主 SQL”输入框也不再自动灌入 AI 生成 SQL，避免用户不点常规保存也误以为这条 SQL 已经成为当前主配置。
+
+## 2026-03-28 一键翻译后自动保存本页
+
+### Requirement Spec
+- 目标：
+  - 调整单表模块设置里的“一键翻译”行为，翻译成功后直接执行当前页面既有的“保存本页”链路，而不是额外拼一条只保存表名或局部配置的单独请求。
+- 影响范围：
+  - `src/features/dashboard/module-settings/grid-inspector-controller.tsx`
+  - `src/features/dashboard/module-settings/use-inspector-panel-props.tsx`
+  - `src/components/Dashboard.tsx`
+- 关键约束：
+  - 继续复用现有 `saveSingleTableModuleSettingsPage`，避免在翻译按钮里复制新的保存编排。
+  - 翻译成功但保存失败时，要明确提示“翻译已应用、本页保存失败”，不能伪装成全成功。
+  - 不把实现重新堆回 `Dashboard.tsx`，只允许在那里做必要的页面级桥接。
+- 不做什么：
+  - 不改动一键建表后的保存规则。
+  - 不重构 inspector router 的整体结构。
+- 验证标准：
+  - 点击“一键翻译”后，字段标识更新完成，并继续触发当前页保存。
+  - 如果保存成功，提示文案体现“已翻译并保存本页”。
+  - `npm run lint` 与 `npm run build` 通过。
+
+### Checklist
+- [x] 记录现有翻译按钮与保存本页链路的桥接点
+- [x] 透传保存本页回调到 grid inspector
+- [x] 翻译成功后串行执行保存本页，并补齐提示分支
+- [x] 执行 lint/build 校验并记录结果
+
+### Progress Notes
+- 用户已明确修正：一键翻译点击后要直接执行“保存本页”，不再单独保存表名。
+- 已确认“一键翻译”逻辑集中在 `grid-inspector-controller.tsx` 的 `translateGridIdentifiers`，而“保存本页”能力来自 `Dashboard.tsx` 中 `useSingleTableModuleSettingsSave` 返回的 `saveSingleTableModuleSettingsPage`。
+- 已通过 `use-inspector-panel-props.tsx -> GridInspectorController` 透传页面级 `saveCurrentPage` 回调，保持保存编排仍由单表模块设置的既有 hook 统一负责。
+- 已给 `saveCurrentPage` 增加静默调用与列快照 override 能力，避免一键翻译刚更新列状态就立即保存时，闭包里仍然读到翻译前的旧列数据。
+- 已把一键翻译成功后的提示改成区分“翻译成功并已保存本页”与“翻译成功但保存失败”，不再额外弹出单独的模块设置保存提示。
+- 用户最新反馈：实际点击后一键翻译没有看到保存接口调用，需要回到分支逻辑核对是否存在“无可翻译项/翻译结果被过滤后提前 return，导致根本不触发保存”的情况。
+- 已补上保存触发收口：现在即便“没有待翻译中文字段”或“翻译结果全部被低质量过滤”，也会继续执行保存本页，并把“未接入保存本页 / 保存失败 / 保存成功”区分提示出来。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 一键翻译现在会直接复用现有“保存本页”链路，不再走单独的表名保存逻辑。
+- 翻译后的列快照会直接传入保存函数，因此即便 React 状态尚未完成下一轮渲染，这次翻译得到的字段标识也会被当前次保存正确落库。
+- 一键翻译不再只在“有有效翻译结果”时才保存；零待翻译和零可用结果分支也会触发保存，因此浏览器 Network 面板里能看到对应保存请求。
+- 构建仍有原来的大 chunk 警告，但本轮没有新增 lint/build 阻塞。

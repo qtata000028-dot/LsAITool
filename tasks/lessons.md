@@ -1,5 +1,25 @@
 # 任务教训
 
+## 2026-03-28 AI Batch Actions Should Reuse The Real Page Save Instead Of Inventing Narrow Follow-Up Saves
+- When the user says an AI-assisted batch action like “一键翻译” should “save this page”, wire that action into the existing page-level save orchestration instead of inventing a special-case save that only persists one field such as the table name.
+- In this single-table module-settings flow, the authoritative save entry is `saveSingleTableModuleSettingsPage`; any follow-up save from the grid inspector should call that shared page save so master config, columns, conditions, menus, and related state stay consistent.
+- Treat translation and save as two distinct outcomes. If translation succeeds but page save fails, surface that partial-success state explicitly instead of showing a generic full-success toast.
+- Do not short-circuit the page save just because the AI translation step found zero acceptable replacements. If the product says “clicking the button should also save this page”, the save path still needs to run for “no translatable fields” and “all results filtered out” branches, or the user will see no save request at all.
+
+## 2026-03-28 Follow-Up Saves After AI Create Must Respect The Exact Persistence Scope
+- When the user narrows a follow-up save rule from “save the generated config” to “save only the table name”, do not keep posting the broader payload through a shared adapter by accident. Re-check both the caller payload and the adapter’s fallback rules.
+- In this single-table flow, AI one-click table creation may still update local `mainSql`, but its follow-up module-config save should omit SQL entirely when the requirement is “only persist the table name”.
+- If the user still sees the generated SQL after the follow-up save payload is already narrowed, inspect local state writes next. In this screen, `updateGridConfig({ mainSql: response.result.mainSql })` was enough to make the UI and the later normal save path keep treating the AI result as persisted SQL.
+
+## 2026-03-28 Single-Table Main Config Screens Must Load And Save The Master Config Row Explicitly
+- If a module-settings screen shows main-table metadata like table name or main SQL, do not assume loading the field list, conditions, menus, and colors is enough. The master row still lives in `p_systemdlltab`, and the screen must explicitly fetch/save that row as part of its own lifecycle.
+- For this single-table flow, normalize the legacy `p_systemdlltab` field names at the adapter boundary, not in scattered UI code: `DllCoid -> dllCoId`, `ToolsName -> moduleName`, `SQL -> querySql/mainSql`, `SQLDT1 -> mainTable/tableName`, and `condKey -> conditionKey`.
+- Do not invent mappings for UI fields that have no confirmed backend column. `defaultQuery`, `sqlPrompt`, and `tableType` should stay on their real contracts instead of being force-fit onto unrelated legacy fields like `condKey`.
+
+## 2026-03-28 Server-Side Create Flows Must Persist Their Authoritative Module Config In The Same Success Path
+- If a button creates backend resources that define the canonical module config, like AI one-click table creation producing the final `tableName` and `mainSql`, do not stop at updating local React state. Persist the matching module-config row in the same success branch or the next reload will drift back to stale backend values.
+- Keep the follow-up save aligned with the existing read contract. In this single-table module flow, the authoritative config keys are `mainTable` and `querySql`, so the post-create save should write those exact keys instead of inventing UI-only names such as `tableName`.
+
 ## 2026-03-23 Document Split, Resize Smoothness And Archive Group Layout
 - 文档工作台里主表和明细如果都是高频操作区，就不要继续保留可拖分隔条；默认应按稳定比例甚至等分高度展示，避免用户一点击下半区就感觉布局在缩动。
 - 对高频拖宽控件，不能一处用直接 setState 每帧刷新、另一处再单独实现临时预览；应统一成同一套 live preview + rAF 提交链路，否则体感会明显不一致。

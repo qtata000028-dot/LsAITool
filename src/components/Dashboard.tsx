@@ -4962,6 +4962,57 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
 
   useEffect(() => {
     if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
+      return;
+    }
+
+    if (!canLoadSingleTableModuleResources) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadSingleTableModuleConfigRecord = async () => {
+      try {
+        const moduleConfig = await fetchSingleTableModuleConfig(activeConfigModuleKey);
+
+        if (!isActive) {
+          return;
+        }
+
+        setMainTableConfig((prev) => ({
+          ...prev,
+          addDllName: toRecordText(getRecordFieldValue(moduleConfig, 'addDllName')),
+          backendId: getRecordFieldValue(moduleConfig, 'id'),
+          conditionKey: toRecordText(getRecordFieldValue(moduleConfig, 'conditionKey', 'condKey')),
+          deleteCond: toRecordText(getRecordFieldValue(moduleConfig, 'deleteCond')),
+          dllCoId: toRecordText(getRecordFieldValue(moduleConfig, 'dllCoId')) || activeConfigModuleKey,
+          dllType: getRecordFieldValue(moduleConfig, 'dllType') ?? prev.dllType,
+          formKey: toRecordText(getRecordFieldValue(moduleConfig, 'formKey')),
+          isReport: getRecordFieldValue(moduleConfig, 'isReport') ?? prev.isReport,
+          mainSql: toRecordText(getRecordFieldValue(moduleConfig, 'querySql', 'mainSql')),
+          modifyCond: toRecordText(getRecordFieldValue(moduleConfig, 'modifyCond')),
+          moduleName: toRecordText(getRecordFieldValue(moduleConfig, 'moduleName')),
+          overbackKey: toRecordText(getRecordFieldValue(moduleConfig, 'overbackKey')),
+          tableName: toRecordText(getRecordFieldValue(moduleConfig, 'mainTable')),
+        }));
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        showToast(getDashboardErrorMessage(error));
+      }
+    };
+
+    void loadSingleTableModuleConfigRecord();
+
+    return () => {
+      isActive = false;
+    };
+  }, [activeConfigMenu?.moduleType, activeConfigModuleKey, canLoadSingleTableModuleResources, configStep, isConfigOpen]);
+
+  useEffect(() => {
+    if (!isConfigOpen || configStep !== MODULE_SETTING_STEP) {
       setIsSingleTableFieldsLoading(false);
       return;
     }
@@ -6020,6 +6071,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     setSelectedPopupMenuParamKey,
     setWorkspaceTheme,
     showToast,
+    saveCurrentPage: saveSingleTableModuleSettingsPage,
     syncDetailColumnsFromSqlById,
     tableColumnResizeMinWidth: TABLE_COLUMN_RESIZE_MIN_WIDTH,
     tableTypeOptions: TABLE_TYPE_OPTIONS,

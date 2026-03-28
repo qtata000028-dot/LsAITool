@@ -1,12 +1,16 @@
 import { apiRequest } from './http';
 
-export interface SingleTableModuleConfigDto {
+export interface SingleTableModuleConfigDto extends Record<string, unknown> {
+  addDllName?: unknown;
   conditionKey?: unknown;
+  deleteCond?: unknown;
   dllCoId?: unknown;
+  dllType?: unknown;
   formKey?: unknown;
   id?: unknown;
   isReport?: unknown;
   mainTable?: unknown;
+  modifyCond?: unknown;
   moduleName?: unknown;
   overbackKey?: unknown;
   querySql?: unknown;
@@ -41,11 +45,125 @@ function encodePathParam(value: string) {
   return encodeURIComponent(value.trim());
 }
 
+function getFirstDefinedValue(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+    const value = record[key];
+    if (value !== undefined && value !== null) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function toText(value: unknown) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  return String(value).trim();
+}
+
+function toOptionalNumber(value: unknown) {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function stripUndefinedEntries<T extends Record<string, unknown>>(record: T) {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined),
+  ) as T;
+}
+
+export function normalizeSingleTableModuleConfig(record?: SingleTableModuleConfigDto | null) {
+  const source = record && typeof record === 'object'
+    ? record as Record<string, unknown>
+    : {};
+  const normalized: SingleTableModuleConfigDto = {
+    ...source,
+    addDllName: toText(getFirstDefinedValue(source, ['addDllName', 'adddllname', 'AddDllName'])),
+    conditionKey: toText(getFirstDefinedValue(source, ['conditionKey', 'conditionkey', 'condKey', 'condkey'])),
+    deleteCond: toText(getFirstDefinedValue(source, ['deleteCond', 'deletecond'])),
+    dllCoId: toText(getFirstDefinedValue(source, ['dllCoId', 'dllcoid', 'DllCoid'])),
+    formKey: toText(getFirstDefinedValue(source, ['formKey', 'formkey'])),
+    id: getFirstDefinedValue(source, ['id', 'ID', 'Id', 'dllid', 'DllID']),
+    mainTable: toText(getFirstDefinedValue(source, ['mainTable', 'maintable', 'tableName', 'tablename', 'SQLDT1', 'sqldt1'])),
+    modifyCond: toText(getFirstDefinedValue(source, ['modifyCond', 'modifycond'])),
+    moduleName: toText(getFirstDefinedValue(source, ['moduleName', 'modulename', 'ToolsName', 'toolsname'])),
+    overbackKey: toText(getFirstDefinedValue(source, ['overbackKey', 'overbackkey'])),
+    querySql: toText(getFirstDefinedValue(source, ['querySql', 'querysql', 'mainSql', 'mainsql', 'SQL', 'sql'])),
+  };
+  const dllType = toOptionalNumber(getFirstDefinedValue(source, ['dllType', 'dlltype']));
+  const isReport = toOptionalNumber(getFirstDefinedValue(source, ['isReport', 'isreport']));
+
+  if (dllType !== undefined) {
+    normalized.dllType = dllType;
+  }
+
+  if (isReport !== undefined) {
+    normalized.isReport = isReport;
+  }
+
+  return normalized;
+}
+
+export function buildSingleTableModuleConfigBody(record: Record<string, unknown>) {
+  const source = record && typeof record === 'object'
+    ? record
+    : {};
+  const normalized = normalizeSingleTableModuleConfig(record as SingleTableModuleConfigDto);
+  const id = getFirstDefinedValue(normalized as Record<string, unknown>, ['id', 'ID', 'Id', 'dllid', 'DllID']);
+  const dllCoId = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['dllCoId', 'dllcoid', 'DllCoid']));
+  const moduleName = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['moduleName', 'modulename', 'ToolsName', 'toolsname']));
+  const hasQuerySql = getFirstDefinedValue(source, ['querySql', 'querysql', 'mainSql', 'mainsql', 'SQL', 'sql']) !== undefined;
+  const querySql = hasQuerySql
+    ? toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['querySql', 'querysql', 'mainSql', 'mainsql', 'SQL', 'sql']))
+    : undefined;
+  const mainTable = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['mainTable', 'maintable', 'tableName', 'tablename', 'SQLDT1', 'sqldt1']));
+  const formKey = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['formKey', 'formkey']));
+  const conditionKey = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['conditionKey', 'conditionkey', 'condKey', 'condkey']));
+  const overbackKey = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['overbackKey', 'overbackkey']));
+  const addDllName = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['addDllName', 'adddllname', 'AddDllName']));
+  const modifyCond = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['modifyCond', 'modifycond']));
+  const deleteCond = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['deleteCond', 'deletecond']));
+  const isReport = toOptionalNumber(getFirstDefinedValue(normalized as Record<string, unknown>, ['isReport', 'isreport']));
+  const dllType = toOptionalNumber(getFirstDefinedValue(normalized as Record<string, unknown>, ['dllType', 'dlltype']));
+
+  return stripUndefinedEntries({
+    id,
+    dllCoId,
+    DllCoid: dllCoId,
+    moduleName,
+    ToolsName: moduleName,
+    querySql,
+    querysql: querySql,
+    SQL: querySql,
+    mainTable,
+    maintable: mainTable,
+    SQLDT1: mainTable,
+    formKey,
+    condKey: conditionKey,
+    conditionKey,
+    overbackKey,
+    addDllName,
+    isReport,
+    dllType,
+    modifyCond,
+    deleteCond,
+  });
+}
+
 export async function fetchSingleTableModuleConfig(dllCoId: string) {
-  return apiRequest<SingleTableModuleConfigDto>(`/api/single-table/modules/${encodePathParam(dllCoId)}`, {
+  const response = await apiRequest<SingleTableModuleConfigDto>(`/api/single-table/modules/${encodePathParam(dllCoId)}`, {
     auth: true,
     method: 'GET',
   });
+  return normalizeSingleTableModuleConfig(response);
 }
 
 export async function fetchSingleTableModuleFields(dllCoId: string) {
@@ -334,11 +452,12 @@ export async function deleteSingleTableModuleField(dllCoId: string, id: number) 
 }
 
 export async function saveSingleTableModuleConfig(dllCoId: string, body: Record<string, unknown>) {
-  return apiRequest<SingleTableModuleConfigDto>(`/api/single-table/modules/${encodePathParam(dllCoId)}`, {
+  const response = await apiRequest<SingleTableModuleConfigDto>(`/api/single-table/modules/${encodePathParam(dllCoId)}`, {
     auth: true,
-    body,
+    body: buildSingleTableModuleConfigBody(body),
     method: 'POST',
   });
+  return normalizeSingleTableModuleConfig(response);
 }
 
 export async function createSingleTableModuleConfig(body: Record<string, unknown>) {

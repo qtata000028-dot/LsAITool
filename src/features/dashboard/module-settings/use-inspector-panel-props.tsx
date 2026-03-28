@@ -132,6 +132,14 @@ export type UseInspectorPanelPropsOptions = {
   setSelectedPopupMenuParamKey: Dispatch<SetStateAction<string | null>>;
   setWorkspaceTheme: Dispatch<SetStateAction<string>>;
   showToast: (message: string) => void;
+  saveCurrentPage: (options?: {
+    gridColumnsOverride?: {
+      rows: any[];
+      scope: 'left-grid' | 'main-grid' | 'detail-grid';
+      tabId?: string;
+    };
+    silent?: boolean;
+  }) => Promise<boolean>;
   createBillSourceDraft: () => void;
   saveBillSourceDraft: () => void;
   selectBillSourceDraft: (source: any) => void;
@@ -263,6 +271,7 @@ export function useInspectorPanelProps({
   setSelectedPopupMenuParamKey,
   setWorkspaceTheme,
   showToast,
+  saveCurrentPage,
   createBillSourceDraft,
   saveBillSourceDraft,
   selectBillSourceDraft,
@@ -534,6 +543,7 @@ export function useInspectorPanelProps({
         setSelectedMainForDelete,
         setSelectedPopupMenuParamKey,
         showToast,
+        onSaveCurrentPage: saveCurrentPage,
         syncDetailColumnsFromSqlById,
         tableTypeOptions,
         treeRelationColumn,
@@ -673,6 +683,7 @@ export function useInspectorPanelProps({
     setSelectedPopupMenuParamKey,
     setWorkspaceTheme,
     showToast,
+    saveCurrentPage,
     createBillSourceDraft,
     saveBillSourceDraft,
     selectBillSourceDraft,
