@@ -31,6 +31,10 @@ import {
   saveSingleTableModuleField,
   saveSingleTableModuleMenu,
 } from '../../../lib/backend-module-config';
+import {
+  areGridOperationConfigsEqual,
+  buildGridOperationConfigSnapshot,
+} from './grid-operation-config';
 
 type DetailSnapshot = {
   tabConfigs: Record<string, any>;
@@ -68,8 +72,10 @@ type DetailSaveEntry = DetailEntry & {
 type SharedModuleResourceEntry = {
   baselineColors: any[];
   baselineColumns: any[];
+  baselineConfig: Record<string, any>;
   baselineMenus: any[];
   colors: any[];
+  config: Record<string, any>;
   columns: any[];
   menus: any[];
   moduleCode: string;
@@ -204,6 +210,10 @@ function toBooleanNumber(value: unknown, truthyFallback = false) {
   }
 
   return truthyFallback ? 1 : 0;
+}
+
+function buildModuleOperationPatch(record: Record<string, any> | null | undefined) {
+  return buildGridOperationConfigSnapshot(record);
 }
 
 function getPersistedId(record: any) {
@@ -1141,8 +1151,9 @@ export function useSingleTableModuleSettingsSave({
           newTabId: mapped.tab.id,
           tabConfig: { ...detailEntry.tabConfig, ...mapped.config },
           tableConfig: {
-            ...detailEntry.tableConfig,
             ...mapped.gridConfig,
+            ...detailEntry.tableConfig,
+            ...buildModuleOperationPatch(detailEntry.tableConfig),
             chartConfig: detailEntry.tableConfig?.chartConfig ?? mapped.gridConfig?.chartConfig,
             colorRules: detailEntry.tableConfig?.colorRules ?? [],
             contextMenuItems: detailEntry.tableConfig?.contextMenuItems ?? [],
@@ -1216,6 +1227,11 @@ export function useSingleTableModuleSettingsSave({
             (menu, index) => buildMenuBody(menu, moduleCode, index),
           )
         );
+        const shouldSyncSharedModuleConfig = Boolean(
+          detailEntry.unionModule
+          && isGridLike
+          && !areGridOperationConfigsEqual(baselineTableConfig, detailEntry.tableConfig)
+        );
 
         nextDetailTabs.push({ id: nextTabId, name: toText(detailEntry.tabConfig?.detailName || detailEntry.tabName) || detailEntry.tabName });
         nextDetailTabConfigs[nextTabId] = cloneValue(detailEntry.tabConfig);
@@ -1227,10 +1243,11 @@ export function useSingleTableModuleSettingsSave({
         }
 
         if (detailEntry.unionModule && isGridLike) {
-          if (!shouldSyncSharedResources) {
+          if (!shouldSyncSharedResources && !shouldSyncSharedModuleConfig) {
             nextDetailTableColumns[nextTabId] = cloneValue(sortedBaselineColumns);
             nextDetailTableConfigs[nextTabId] = {
               ...nextDetailTableConfigs[nextTabId],
+              ...buildModuleOperationPatch(baselineTableConfig),
               colorRules: cloneValue(normalizedBaselineColors),
               colorRulesEnabled: normalizedBaselineColors.length > 0,
               contextMenuItems: cloneValue(normalizedBaselineMenus),
@@ -1243,8 +1260,10 @@ export function useSingleTableModuleSettingsSave({
           const candidateShared: SharedModuleResourceEntry = {
             baselineColors: cloneValue(normalizedBaselineColors),
             baselineColumns: cloneValue(sortedBaselineColumns),
+            baselineConfig: cloneValue(baselineTableConfig),
             baselineMenus: cloneValue(normalizedBaselineMenus),
             colors: cloneValue(normalizedDetailColors),
+            config: cloneValue(detailEntry.tableConfig),
             columns: cloneValue(sortedDetailColumns),
             menus: cloneValue(normalizedDetailMenus),
             moduleCode: detailEntry.unionModule,
@@ -1458,6 +1477,7 @@ export function useSingleTableModuleSettingsSave({
           getMenuIdentityKey,
           (menu, index) => buildMenuBody(menu, sharedEntry.moduleCode, index),
         );
+        const sharedConfigChanged = !areGridOperationConfigsEqual(sharedEntry.baselineConfig, sharedEntry.config);
 
         if (sharedColorsChanged && areAllRowsPersisted(normalizedSharedColors)) {
           const authoritativeSharedColors = await fetchAuthoritativeModuleColors(sharedEntry.moduleCode);
@@ -1517,6 +1537,13 @@ export function useSingleTableModuleSettingsSave({
             saveRow: (body) => saveSingleTableModuleMenu(sharedEntry.moduleCode, body),
           })).rows
           : cloneValue(effectiveSharedBaselineMenus);
+        const savedSharedModuleConfig = sharedConfigChanged
+          ? await saveSingleTableModuleConfig(sharedEntry.moduleCode, {
+            ...sharedEntry.config,
+            dllCoId: sharedEntry.moduleCode,
+            ...buildModuleOperationPatch(sharedEntry.config),
+          })
+          : sharedEntry.baselineConfig;
 
         if (sharedColumnsChanged) {
           const nextColumnIds = new Set(uniquePersistedIds(nextColumns));
@@ -1551,6 +1578,7 @@ export function useSingleTableModuleSettingsSave({
             nextDetailTableColumns[entry.newTabId] = cloneValue(nextColumns);
             nextDetailTableConfigs[entry.newTabId] = {
               ...nextDetailTableConfigs[entry.newTabId],
+              ...buildModuleOperationPatch(savedSharedModuleConfig),
               colorRules: cloneValue(nextColors),
               colorRulesEnabled: nextColors.length > 0,
               contextMenuItems: cloneValue(nextMenus),
@@ -1606,12 +1634,14 @@ export function useSingleTableModuleSettingsSave({
         return {
           ...prev,
           addDllName: toText(savedModuleConfig?.addDllName || prev?.addDllName),
+          addEnable: buildModuleOperationPatch(savedModuleConfig).addEnable,
           backendId: savedModuleConfig?.id ?? prev?.backendId,
           colorRules: savedMainColors,
           colorRulesEnabled: savedMainColors.length > 0,
           conditionKey: toText(savedModuleConfig?.conditionKey || prev?.conditionKey),
           contextMenuItems: savedMainMenus,
           contextMenuEnabled: savedMainMenus.length > 0,
+          deleteEnable: buildModuleOperationPatch(savedModuleConfig).deleteEnable,
           deleteCond: toText(savedModuleConfig?.deleteCond || prev?.deleteCond),
           detailBoard: currentDetailBoard && typeof currentDetailBoard === 'object' ? currentDetailBoard : prev?.detailBoard,
           dllCoId: toText(savedModuleConfig?.dllCoId || moduleCode),
@@ -1619,6 +1649,7 @@ export function useSingleTableModuleSettingsSave({
           formKey: toText(savedModuleConfig?.formKey || prev?.formKey),
           isReport: savedModuleConfig?.isReport ?? prev?.isReport,
           mainSql: toText(savedModuleConfig?.querySql || prev?.mainSql),
+          modifyEnable: buildModuleOperationPatch(savedModuleConfig).modifyEnable,
           modifyCond: toText(savedModuleConfig?.modifyCond || prev?.modifyCond),
           moduleName: toText(savedModuleConfig?.moduleName || currentModuleName),
           overbackKey: toText(savedModuleConfig?.overbackKey || prev?.overbackKey),

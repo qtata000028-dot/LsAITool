@@ -117,6 +117,10 @@ import {
   useLayoutFieldWorkbenchMeta,
 } from '../features/dashboard/module-settings/layout-field-workbench-meta';
 import { buildModuleSettingStepShellProps } from '../features/dashboard/module-settings/module-setting-step-shell-props';
+import {
+  isGridOperationActionKey,
+  type GridOperationActionKey,
+} from '../features/dashboard/module-settings/grid-operation-config';
 import { useModuleIntroEditor } from '../features/dashboard/module-settings/use-module-intro-editor';
 import { useEnsureSingleTableModule } from '../features/dashboard/module-settings/use-ensure-single-table-module';
 import { useSingleTableModuleSettingsSave } from '../features/dashboard/module-settings/use-single-table-module-settings-save';
@@ -1642,13 +1646,16 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   const buildGridConfig = (mainSql: string, defaultQuery: string, overrides: Record<string, any> = {}) => ({
     mainSql,
     defaultQuery,
+    addEnable: 1,
     createTableSql: '',
+    deleteEnable: 1,
     tableName: '',
     sqlPrompt: '',
     sourceMode: 'sql',
     sourceModuleCode: '',
     sourceCondition: '',
     tableType: '普通表格',
+    modifyEnable: 1,
     contextMenuEnabled: false,
     contextMenuItems: [],
     colorRulesEnabled: false,
@@ -2148,6 +2155,8 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
       | 'left-grid'
       | 'main-grid'
       | 'detail-grid'
+      | 'main-grid-action'
+      | 'detail-grid-action'
       | 'source-grid'
       | 'workspace-theme'
       | 'main-context'
@@ -2659,6 +2668,12 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   const selectedMainFilterId = inspectorTarget.kind === 'main-filter' ? inspectorTarget.id ?? null : null;
   const selectedDetailFilterId = inspectorTarget.kind === 'detail-filter' ? inspectorTarget.id ?? null : null;
   const selectedDetailTabId = inspectorTarget.kind === 'detail-tab' ? inspectorTarget.id ?? null : null;
+  const selectedMainGridAction = inspectorTarget.kind === 'main-grid-action' && isGridOperationActionKey(inspectorTarget.id)
+    ? inspectorTarget.id
+    : null;
+  const selectedDetailGridAction = inspectorTarget.kind === 'detail-grid-action' && isGridOperationActionKey(inspectorTarget.id)
+    ? inspectorTarget.id
+    : null;
   const selectedTableConfigScope = inspectorTarget.kind === 'left-grid'
     ? 'left'
     : inspectorTarget.kind === 'main-grid'
@@ -3498,9 +3513,27 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         : {
             kind: nextKind,
             ...(resolvedDetailId ? { id: resolvedDetailId } : {}),
-          };
+        };
     });
   }, [activeTab, detailTabConfigs]);
+
+  const activateGridActionSelection = useCallback((
+    scope: 'main' | 'detail',
+    actionKey: GridOperationActionKey,
+  ) => {
+    setBuilderSelectionContextMenu(null);
+    setInspectorPanelTab('common');
+    setSelectedArchiveNodeId(scope === 'main' ? 'archive-main' : `detail-${activeTab}`);
+    const nextKind = scope === 'main' ? 'main-grid-action' : 'detail-grid-action';
+    setInspectorTarget((prev) => (
+      prev.kind === nextKind && prev.id === actionKey
+        ? prev
+        : {
+            kind: nextKind,
+            id: actionKey,
+          }
+    ));
+  }, [activeTab]);
 
   const activateContextMenuSelection = (scope: 'main' | 'detail') => {
     setBuilderSelectionContextMenu(null);
@@ -4551,8 +4584,13 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   const activeDetailBackendId = toRecordNumber(detailTabConfigs[activeTab]?.backendId, Number.NaN);
   const activeDetailRelatedModuleCode = getDetailRelatedModuleCodeByTabId(activeTab);
   const activeDetailSql = String(detailTableConfigs[activeTab]?.mainSql || '').trim();
+  const activeDetailGridConfig = detailTableConfigs[activeTab] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' });
   const activeDetailContextMenuItems = detailTableConfigs[activeTab]?.contextMenuItems ?? [];
   const activeDetailColorRules = detailTableConfigs[activeTab]?.colorRules ?? [];
+  const showDetailGridActionBar = (
+    (currentDetailFillType === '表格' || currentDetailFillType === '树表格')
+    && Boolean(activeDetailRelatedModuleCode)
+  );
   const isTreeMainTableSyncing = isSingleTableFieldsLoading && normalizeModuleType(activeConfigMenu?.moduleType) === 'single-table';
   const treeRelationColumn = mainTableColumns.find((column) => isTreeRelationFieldColumn(column)) ?? null;
   const parsedTreeSourceFields = useMemo(
@@ -4822,6 +4860,9 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
       mainTableColumns.length > 0
       || String(mainTableConfig.mainSql || '').trim().length > 0
       || String(mainTableConfig.tableName || '').trim().length > 0
+      || Number(mainTableConfig.addEnable ?? 1) !== 1
+      || Number(mainTableConfig.deleteEnable ?? 1) !== 1
+      || Number(mainTableConfig.modifyEnable ?? 1) !== 1
       || (mainTableConfig.contextMenuItems ?? []).length > 0
       || (mainTableConfig.colorRules ?? []).length > 0
     );
@@ -4875,6 +4916,10 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         resolvedMainSql || (resolvedTableName ? `SELECT * FROM ${resolvedTableName}` : ''),
         '',
         {
+          ...normalizedModuleConfig,
+          addEnable: toRecordNumber(getRecordFieldValue(normalizedModuleConfig, 'addEnable'), 1),
+          deleteEnable: toRecordNumber(getRecordFieldValue(normalizedModuleConfig, 'deleteEnable'), 1),
+          modifyEnable: toRecordNumber(getRecordFieldValue(normalizedModuleConfig, 'modifyEnable'), 1),
           tableName: resolvedTableName,
           sourceMode: 'module',
           sourceModuleCode: normalizedModuleCode,
@@ -4998,14 +5043,17 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         setMainTableConfig((prev) => ({
           ...prev,
           addDllName: toRecordText(getRecordFieldValue(moduleConfig, 'addDllName')),
+          addEnable: toRecordNumber(getRecordFieldValue(moduleConfig, 'addEnable'), prev.addEnable ?? 1),
           backendId: getRecordFieldValue(moduleConfig, 'id'),
           conditionKey: toRecordText(getRecordFieldValue(moduleConfig, 'conditionKey', 'condKey')),
+          deleteEnable: toRecordNumber(getRecordFieldValue(moduleConfig, 'deleteEnable'), prev.deleteEnable ?? 1),
           deleteCond: toRecordText(getRecordFieldValue(moduleConfig, 'deleteCond')),
           dllCoId: toRecordText(getRecordFieldValue(moduleConfig, 'dllCoId')) || activeConfigModuleKey,
           dllType: getRecordFieldValue(moduleConfig, 'dllType') ?? prev.dllType,
           formKey: toRecordText(getRecordFieldValue(moduleConfig, 'formKey')),
           isReport: getRecordFieldValue(moduleConfig, 'isReport') ?? prev.isReport,
           mainSql: toRecordText(getRecordFieldValue(moduleConfig, 'querySql', 'mainSql')),
+          modifyEnable: toRecordNumber(getRecordFieldValue(moduleConfig, 'modifyEnable'), prev.modifyEnable ?? 1),
           modifyCond: toRecordText(getRecordFieldValue(moduleConfig, 'modifyCond')),
           moduleName: toRecordText(getRecordFieldValue(moduleConfig, 'moduleName')),
           overbackKey: toRecordText(getRecordFieldValue(moduleConfig, 'overbackKey')),
@@ -6194,15 +6242,22 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         renderFieldPreview,
       },
       document: {
+        detailGridActionConfig: showDetailGridActionBar ? activeDetailGridConfig : null,
         documentDetailTableBuilderNode,
         documentLeftPaneWidth,
         documentTreeTableBuilderNode,
         handlePasteColumns,
+        mainGridActionConfig: mainTableConfig,
         mainTableHiddenColumnsCount: mainTableHiddenColumns.length,
+        onSelectDetailGridAction: (actionKey: GridOperationActionKey) => activateGridActionSelection('detail', actionKey),
+        onSelectMainGridAction: (actionKey: GridOperationActionKey) => activateGridActionSelection('main', actionKey),
         onStartDocumentLeftResize: startDocumentLeftResize,
+        selectedDetailGridAction,
+        selectedMainGridAction,
         setDetailTableColumns,
         setLeftTableColumns,
         setMainTableColumns,
+        showDetailGridActionBar,
       },
       tree: {
         autoFitColumnWidth,

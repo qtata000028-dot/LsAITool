@@ -22,6 +22,10 @@ const pidDirectory = path.join(os.tmpdir(), 'codex-dev-pids', path.basename(proj
 const clientPidFile = path.join(pidDirectory, 'vite-dev.pid');
 const apiPidFile = path.join(pidDirectory, 'minimax-api.pid');
 const simpleDesignerPidFile = path.join(pidDirectory, 'simple-process-designer.pid');
+const simpleDesignerClientEnv = {
+  ...process.env,
+  VITE_SIMPLE_PROCESS_DESIGNER_URL: simpleDesignerUrl,
+};
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -71,13 +75,14 @@ function clearPidFile(pidFilePath) {
   }
 }
 
-function startDetached(scriptCommand, stdoutPath, stderrPath, pidFilePath) {
+function startDetached(scriptCommand, stdoutPath, stderrPath, pidFilePath, env = process.env) {
   const stdout = openSync(stdoutPath, 'a');
   const stderr = openSync(stderrPath, 'a');
 
   const child = spawn(process.platform === 'win32' ? 'cmd.exe' : 'sh', process.platform === 'win32' ? ['/d', '/c', scriptCommand] : ['-lc', scriptCommand], {
     cwd: projectRoot,
     detached: true,
+    env,
     stdio: ['ignore', stdout, stderr],
   });
 
@@ -108,7 +113,7 @@ async function main() {
 
   if (!clientReady) {
     console.log('Starting Vite dev server...');
-    startDetached('npm run dev:client', clientStdoutLog, clientStderrLog, clientPidFile);
+    startDetached('npm run dev:client', clientStdoutLog, clientStderrLog, clientPidFile, simpleDesignerClientEnv);
   }
 
   if (!apiReady) {

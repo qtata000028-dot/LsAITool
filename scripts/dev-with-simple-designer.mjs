@@ -8,11 +8,15 @@ const isWin = process.platform === 'win32';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
+const simpleDesignerClientEnv = {
+  ...process.env,
+  VITE_SIMPLE_PROCESS_DESIGNER_URL: 'http://127.0.0.1:5174',
+};
 
-function run(command) {
+function run(command, env = process.env) {
   const child = spawn(isWin ? 'cmd.exe' : 'sh', isWin ? ['/d', '/c', command] : ['-lc', command], {
     stdio: 'inherit',
-    env: process.env,
+    env,
     cwd: projectRoot,
   });
 
@@ -30,7 +34,7 @@ ensureSimpleDesignerDependencies(projectRoot);
 
 const children = [
   run('npm run dev:api'),
-  run('npm run dev:client'),
+  run('npm run dev:client', simpleDesignerClientEnv),
   run(simpleDesignerDevCommand),
 ];
 

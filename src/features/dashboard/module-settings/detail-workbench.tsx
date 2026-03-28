@@ -19,6 +19,7 @@ type DetailTabStripProps = {
 };
 
 type DocumentDetailWorkbenchProps = {
+  footerNode?: React.ReactNode;
   tableSurfaceClass: string;
   detailTabStripNode: React.ReactNode;
   currentDetailFillType: string;
@@ -113,6 +114,7 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
 });
 
 export const MemoDocumentDetailWorkbench = React.memo(function DocumentDetailWorkbench({
+  footerNode,
   tableSurfaceClass,
   detailTabStripNode,
   currentDetailFillType,
@@ -146,6 +148,7 @@ export const MemoDocumentDetailWorkbench = React.memo(function DocumentDetailWor
           </div>
         )}
       </div>
+      {footerNode ? footerNode : null}
     </div>
   );
 });

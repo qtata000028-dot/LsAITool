@@ -37,15 +37,22 @@ type BuildDashboardModuleSettingStepShellPropsInput = {
   >;
   document: Pick<
     BuildModuleSettingStepShellPropsInput,
+    | 'detailGridActionConfig'
     | 'documentDetailTableBuilderNode'
     | 'documentLeftPaneWidth'
     | 'documentTreeTableBuilderNode'
     | 'handlePasteColumns'
+    | 'mainGridActionConfig'
     | 'mainTableHiddenColumnsCount'
+    | 'onSelectDetailGridAction'
+    | 'onSelectMainGridAction'
     | 'onStartDocumentLeftResize'
+    | 'selectedDetailGridAction'
+    | 'selectedMainGridAction'
     | 'setDetailTableColumns'
     | 'setLeftTableColumns'
     | 'setMainTableColumns'
+    | 'showDetailGridActionBar'
   >;
   tree: Pick<
     BuildModuleSettingStepShellPropsInput,

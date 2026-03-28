@@ -1,5 +1,6 @@
 import type React from 'react';
 import type { ModuleSettingStepShellProps } from './module-setting-step-shell';
+import type { GridOperationActionKey } from './grid-operation-config';
 
 export type BuildModuleSettingStepShellPropsInput = {
   activeResize: any;
@@ -38,8 +39,10 @@ export type BuildModuleSettingStepShellPropsInput = {
   isDetailViewSelected: boolean;
   isSingleTableSyncing: boolean;
   isTreePaneVisible: boolean;
+  detailGridActionConfig: Record<string, any> | null;
   mainDocumentFilterRuntimeRules?: string;
   mainFilterFields: any[];
+  mainGridActionConfig: Record<string, any>;
   mainTableColumns: any[];
   mainTableHiddenColumnsCount: number;
   moduleSettingStageHeightClass: string;
@@ -49,12 +52,16 @@ export type BuildModuleSettingStepShellPropsInput = {
   onActivateTableConfig: (scope: 'detail', targetId?: string | null) => void;
   onOpenMainHiddenColumnsModal: () => void;
   onToggleFullscreen: () => void;
+  onSelectDetailGridAction: (actionKey: GridOperationActionKey) => void;
+  onSelectMainGridAction: (actionKey: GridOperationActionKey) => void;
   onStartDocumentLeftResize: (event: React.MouseEvent<HTMLDivElement>) => void;
   renderFieldPreview: ModuleSettingStepShellProps['tree']['renderFieldPreview'];
+  selectedDetailGridAction: GridOperationActionKey | null;
   selectedDetailForDelete: string[];
   selectedLeftForDelete: string[];
   selectedMainFilterId: string | null;
   selectedMainFiltersForDelete: string[];
+  selectedMainGridAction: GridOperationActionKey | null;
   selectedMainForDelete: string[];
   setBuilderSelectionContextMenu: (menu: any) => void;
   setDetailTableColumns: React.Dispatch<React.SetStateAction<Record<string, any[]>>>;
@@ -69,6 +76,7 @@ export type BuildModuleSettingStepShellPropsInput = {
   workspaceTheme: string;
   workspaceThemeStyles: ModuleSettingStepShellProps['workspaceThemeStyles'];
   workspaceThemeVars: React.CSSProperties;
+  showDetailGridActionBar: boolean;
 };
 
 function getPastedText(event: React.ClipboardEvent<HTMLDivElement>) {
@@ -99,12 +107,14 @@ export function buildModuleSettingStepShellProps(
       archiveMainTableBuilderNode: input.archiveMainTableBuilderNode,
       conditionToolbarNode: input.conditionToolbarNode,
       currentDetailFillType: input.currentDetailFillType,
+      detailGridActionConfig: input.detailGridActionConfig,
       detailTabs: input.detailTabs,
       documentDetailTableBuilderNode: input.documentDetailTableBuilderNode,
       documentLeftPaneWidth: input.documentLeftPaneWidth,
       documentTreeTableBuilderNode: input.documentTreeTableBuilderNode,
       isDetailFillSelected: input.isDetailFillSelected,
       isTreePaneVisible: input.isTreePaneVisible,
+      mainGridActionConfig: input.mainGridActionConfig,
       mainTableHiddenColumnsCount: input.mainTableHiddenColumnsCount,
       onActivateDetailFill: () => {
         input.setSelectedArchiveNodeId(`detail-${input.activeTab}`);
@@ -133,7 +143,12 @@ export function buildModuleSettingStepShellProps(
       },
       onPasteMainTable: (event) => input.handlePasteColumns(event, input.setMainTableColumns),
       onPasteTreePanel: (event) => input.handlePasteColumns(event, input.setLeftTableColumns),
+      onSelectDetailGridAction: input.onSelectDetailGridAction,
+      onSelectMainGridAction: input.onSelectMainGridAction,
       onStartLeftResize: input.onStartDocumentLeftResize,
+      selectedDetailGridAction: input.selectedDetailGridAction,
+      selectedMainGridAction: input.selectedMainGridAction,
+      showDetailGridActionBar: input.showDetailGridActionBar,
       treeRelationColumn: input.treeRelationColumn,
       workspaceThemeVars: input.workspaceThemeVars,
     },

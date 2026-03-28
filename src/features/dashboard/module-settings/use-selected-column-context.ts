@@ -1,4 +1,9 @@
 import { useMemo, type Dispatch, type SetStateAction } from 'react';
+import {
+  getGridOperationDefinition,
+  getGridOperationEnabled,
+  isGridOperationActionKey,
+} from './grid-operation-config';
 
 type UseSelectedColumnContextOptions = {
   activeTab: string;
@@ -101,6 +106,8 @@ export function useSelectedColumnContext({
     const selectedMainFilterId = inspectorTarget.kind === 'main-filter' ? inspectorTarget.id ?? null : null;
     const selectedDetailFilterId = inspectorTarget.kind === 'detail-filter' ? inspectorTarget.id ?? null : null;
     const selectedDetailTabId = inspectorTarget.kind === 'detail-tab' ? inspectorTarget.id ?? null : null;
+    const selectedMainGridActionId = inspectorTarget.kind === 'main-grid-action' ? inspectorTarget.id ?? null : null;
+    const selectedDetailGridActionId = inspectorTarget.kind === 'detail-grid-action' ? inspectorTarget.id ?? null : null;
     const selectedConditionPanelScope = inspectorTarget.kind === 'left-filter-panel'
       ? 'left'
       : inspectorTarget.kind === 'main-filter-panel'
@@ -119,6 +126,38 @@ export function useSelectedColumnContext({
         ...prev,
         [panelTabId]: typeof updater === 'function' ? updater(prev[panelTabId] || []) : updater,
       }));
+    };
+    const buildGridActionContext = (
+      scope: 'main-grid-action' | 'detail-grid-action',
+      actionKey: string | null,
+      title: string,
+      description: string,
+      iconClass: string,
+      config: Record<string, any>,
+      setCols: Dispatch<SetStateAction<any>>,
+    ) => {
+      if (!isGridOperationActionKey(actionKey)) {
+        return null;
+      }
+
+      const definition = getGridOperationDefinition(actionKey);
+
+      return {
+        kind: 'grid-action' as const,
+        scope,
+        title,
+        description,
+        icon: definition.icon,
+        iconClass,
+        actionEnabled: getGridOperationEnabled(config, actionKey),
+        actionKey,
+        actionLabel: definition.label,
+        column: config,
+        fieldKey: definition.fieldKey ?? null,
+        locked: definition.locked ?? false,
+        setCols,
+        removeLabel: '',
+      };
     };
 
     if (selectedMainFilterId) {
@@ -240,6 +279,78 @@ export function useSelectedColumnContext({
         },
         removeLabel: '',
       };
+    }
+
+    if (selectedMainGridActionId) {
+      return buildGridActionContext(
+        'main-grid-action',
+        selectedMainGridActionId,
+        '涓昏〃鎿嶄綔鎸夐挳',
+        '閰嶇疆涓昏〃鍖哄煙鐨勫鍔犮€佸垹闄ゃ€佷慨鏀广€佷繚瀛樻寜閽€?',
+        'bg-cyan-500/12 text-cyan-500',
+        mainTableConfig,
+        setMainTableConfig,
+      );
+    }
+
+    if (selectedDetailGridActionId && hasDetailTabContext) {
+      const detailGridConfig = detailTableConfigs[panelTabId] ?? buildGridConfig('', '');
+      const relatedModuleCode = String(detailTabConfigs[panelTabId]?.relatedModule || '').trim();
+      if (relatedModuleCode) {
+        return buildGridActionContext(
+          'detail-grid-action',
+          selectedDetailGridActionId,
+          `鏄庣粏鎿嶄綔鎸夐挳 路 ${activeDetailTabName}`,
+          '閰嶇疆褰撳墠鏄庣粏鎵€缁ф壙妯″潡鐨勫鍔犮€佸垹闄ゃ€佷慨鏀广€佷繚瀛樻寜閽€?',
+          'bg-sky-500/12 text-sky-500',
+          detailGridConfig,
+          (updater: SetStateAction<any>) => {
+            setDetailTableConfigs((prev) => ({
+              ...prev,
+              [panelTabId]: typeof updater === 'function' ? updater(prev[panelTabId] ?? buildGridConfig('', '')) : updater,
+            }));
+          },
+        );
+      }
+    }
+
+    if (selectedMainGridActionId) {
+      return {
+        kind: 'grid-action' as const,
+        scope: 'main-grid-action' as const,
+        title: '主表操作按钮',
+        description: '配置主表区域的增加、删除、修改、保存按钮。',
+        icon: 'smart_button',
+        iconClass: 'bg-cyan-500/12 text-cyan-500',
+        actionKey: selectedMainGridActionId,
+        column: mainTableConfig,
+        setCols: setMainTableConfig,
+        removeLabel: '',
+      };
+    }
+
+    if (selectedDetailGridActionId && hasDetailTabContext) {
+      const detailGridConfig = detailTableConfigs[panelTabId] ?? buildGridConfig('', '');
+      const relatedModuleCode = String(detailTabConfigs[panelTabId]?.relatedModule || '').trim();
+      if (relatedModuleCode) {
+        return {
+          kind: 'grid-action' as const,
+          scope: 'detail-grid-action' as const,
+          title: `明细操作按钮 · ${activeDetailTabName}`,
+          description: '配置当前明细所继承模块的增加、删除、修改、保存按钮。',
+          icon: 'smart_button',
+          iconClass: 'bg-sky-500/12 text-sky-500',
+          actionKey: selectedDetailGridActionId,
+          column: detailGridConfig,
+          setCols: (updater: SetStateAction<any>) => {
+            setDetailTableConfigs((prev) => ({
+              ...prev,
+              [panelTabId]: typeof updater === 'function' ? updater(prev[panelTabId] ?? buildGridConfig('', '')) : updater,
+            }));
+          },
+          removeLabel: '',
+        };
+      }
     }
 
     if (inspectorTarget.kind === 'workspace-theme') {

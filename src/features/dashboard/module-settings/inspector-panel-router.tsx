@@ -8,6 +8,7 @@ import { ConditionPanelInspector } from './condition-panel-inspector';
 import { ContextMenuInspector } from './context-menu-inspector';
 import { DetailTabInspector } from './detail-tab-inspector';
 import { FieldInspectorController } from './field-inspector-controller';
+import { GridActionInspector } from './grid-action-inspector';
 import { GridInspectorController } from './grid-inspector-controller';
 import {
   EmptyInspectorPanel,
@@ -83,17 +84,21 @@ export function InspectorPanelRouter({
     : selectedColumnContext.scope === 'detail-grid'
       ? '明细表'
       : '主表';
-  const inspectorTabs: Array<{ count?: number; icon: string; id: InspectorTabId; label: string }> = isDocumentScopedGridInspector
+  const inspectorTabs: Array<{ count?: number; icon: string; id: InspectorTabId; label: string }> = selectedColumnContext.kind === 'grid-action'
     ? [
-        { id: 'common', label: documentScopedGridLabel, icon: 'dashboard_customize' },
-        { id: 'advanced', label: '布局', icon: 'view_stream' },
-        { id: 'contextmenu', label: '右键', icon: 'right_click', count: documentScopedGridContextMenuCount },
-        { id: 'color', label: '颜色', icon: 'palette', count: documentScopedGridColorRuleCount },
-      ]
-    : [
         { id: 'common', label: '核心配置', icon: 'dashboard_customize' },
-        { id: 'advanced', label: '扩展配置', icon: 'network_node' },
-      ];
+      ]
+    : isDocumentScopedGridInspector
+      ? [
+          { id: 'common', label: documentScopedGridLabel, icon: 'dashboard_customize' },
+          { id: 'advanced', label: '布局', icon: 'view_stream' },
+          { id: 'contextmenu', label: '右键', icon: 'right_click', count: documentScopedGridContextMenuCount },
+          { id: 'color', label: '颜色', icon: 'palette', count: documentScopedGridColorRuleCount },
+        ]
+      : [
+          { id: 'common', label: '核心配置', icon: 'dashboard_customize' },
+          { id: 'advanced', label: '扩展配置', icon: 'network_node' },
+        ];
   const currentInspectorTab = inspectorTabs.some((tab) => tab.id === inspectorPanelTab) ? inspectorPanelTab : 'common';
   const isCommonPanelTab = currentInspectorTab === 'common';
   const isContextMenuPanelTab = currentInspectorTab === 'contextmenu';
@@ -172,6 +177,10 @@ export function InspectorPanelRouter({
         isContextMenuPanelTab={isContextMenuPanelTab}
       />
     );
+  }
+
+  if (selectedColumnContext.kind === 'grid-action') {
+    return <GridActionInspector context={selectedColumnContext} />;
   }
 
   if (selectedColumnContext.kind === 'condition-panel') {

@@ -39,8 +39,10 @@ export type SimpleProcessDesignerChildMessage = {
   };
 };
 
-const DEFAULT_SIMPLE_PROCESS_DESIGNER_DEV_URL = 'http://127.0.0.1:5174';
-const DEFAULT_SIMPLE_PROCESS_DESIGNER_PROD_URL = '/simple-process-designer/';
+// In local Vite dev, `/simple-process-designer/` can fall back to the host SPA
+// index.html. Point directly at the child app entry to avoid recursively
+// loading the main workbench inside the iframe.
+const DEFAULT_SIMPLE_PROCESS_DESIGNER_URL = '/simple-process-designer/index.html';
 
 export function resolveSimpleProcessDesignerBaseUrl() {
   const envValue = import.meta.env.VITE_SIMPLE_PROCESS_DESIGNER_URL;
@@ -48,13 +50,14 @@ export function resolveSimpleProcessDesignerBaseUrl() {
     return String(envValue).trim();
   }
 
-  return import.meta.env.DEV
-    ? DEFAULT_SIMPLE_PROCESS_DESIGNER_DEV_URL
-    : DEFAULT_SIMPLE_PROCESS_DESIGNER_PROD_URL;
+  return DEFAULT_SIMPLE_PROCESS_DESIGNER_URL;
 }
 
 export function buildSimpleProcessDesignerUrl(payload: SimpleProcessDesignerBootstrapPayload) {
-  const url = new URL(resolveSimpleProcessDesignerBaseUrl());
+  const baseUrl = resolveSimpleProcessDesignerBaseUrl();
+  const url = /^https?:\/\//i.test(baseUrl)
+    ? new URL(baseUrl)
+    : new URL(baseUrl, typeof window === 'undefined' ? 'http://127.0.0.1' : window.location.origin);
 
   Object.entries(payload).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') {

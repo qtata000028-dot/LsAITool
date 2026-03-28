@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8080';
+const DEFAULT_DEV_API_BASE_URL = 'http://127.0.0.1:8080';
 
 function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, '');
@@ -27,19 +27,22 @@ function resolveEmbeddedHostOrigin() {
 
 const rawConfiguredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || '';
 const hasExplicitApiBaseUrl = rawConfiguredApiBaseUrl.length > 0;
-const configuredApiBaseUrl = trimTrailingSlash(rawConfiguredApiBaseUrl || DEFAULT_API_BASE_URL);
+const configuredApiBaseUrl = trimTrailingSlash(
+  rawConfiguredApiBaseUrl || (import.meta.env.DEV ? DEFAULT_DEV_API_BASE_URL : ''),
+);
 const embeddedHostOrigin = resolveEmbeddedHostOrigin();
 const preferEmbeddedHostProxy = import.meta.env.VITE_SIMPLE_DESIGNER_USE_PARENT_PROXY === 'true';
 const useSameOriginApi = import.meta.env.VITE_API_SAME_ORIGIN === 'true';
+const shouldUseSameOriginApi = useSameOriginApi || (import.meta.env.PROD && !hasExplicitApiBaseUrl);
 
-export const API_BASE_URL = useSameOriginApi
+export const API_BASE_URL = shouldUseSameOriginApi
   ? ''
   : hasExplicitApiBaseUrl
     ? configuredApiBaseUrl
     : preferEmbeddedHostProxy && embeddedHostOrigin
       ? embeddedHostOrigin
-    : import.meta.env.DEV
-      ? ''
-      : configuredApiBaseUrl;
+      : import.meta.env.DEV
+        ? ''
+        : configuredApiBaseUrl;
 export const CONFIGURED_API_BASE_URL = configuredApiBaseUrl;
 export const EMBEDDED_HOST_ORIGIN = embeddedHostOrigin;

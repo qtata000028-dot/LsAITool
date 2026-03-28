@@ -2,7 +2,9 @@ import { apiRequest } from './http';
 
 export interface SingleTableModuleConfigDto extends Record<string, unknown> {
   addDllName?: unknown;
+  addEnable?: unknown;
   conditionKey?: unknown;
+  deleteEnable?: unknown;
   deleteCond?: unknown;
   dllCoId?: unknown;
   dllType?: unknown;
@@ -10,6 +12,7 @@ export interface SingleTableModuleConfigDto extends Record<string, unknown> {
   id?: unknown;
   isReport?: unknown;
   mainTable?: unknown;
+  modifyEnable?: unknown;
   modifyCond?: unknown;
   moduleName?: unknown;
   overbackKey?: unknown;
@@ -74,6 +77,18 @@ function toOptionalNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function toEnableNumber(value: unknown, fallback = 1): 0 | 1 {
+  if (value === true || value === 1 || value === '1') {
+    return 1;
+  }
+
+  if (value === false || value === 0 || value === '0') {
+    return 0;
+  }
+
+  return fallback === 0 ? 0 : 1;
+}
+
 function stripUndefinedEntries<T extends Record<string, unknown>>(record: T) {
   return Object.fromEntries(
     Object.entries(record).filter(([, value]) => value !== undefined),
@@ -87,12 +102,15 @@ export function normalizeSingleTableModuleConfig(record?: SingleTableModuleConfi
   const normalized: SingleTableModuleConfigDto = {
     ...source,
     addDllName: toText(getFirstDefinedValue(source, ['addDllName', 'adddllname', 'AddDllName'])),
+    addEnable: toEnableNumber(getFirstDefinedValue(source, ['addEnable', 'addenable', 'AddEnable']), 1),
     conditionKey: toText(getFirstDefinedValue(source, ['conditionKey', 'conditionkey', 'condKey', 'condkey'])),
+    deleteEnable: toEnableNumber(getFirstDefinedValue(source, ['deleteEnable', 'deleteenable', 'DeleteEnable']), 1),
     deleteCond: toText(getFirstDefinedValue(source, ['deleteCond', 'deletecond'])),
     dllCoId: toText(getFirstDefinedValue(source, ['dllCoId', 'dllcoid', 'DllCoid'])),
     formKey: toText(getFirstDefinedValue(source, ['formKey', 'formkey'])),
     id: getFirstDefinedValue(source, ['id', 'ID', 'Id', 'dllid', 'DllID']),
     mainTable: toText(getFirstDefinedValue(source, ['mainTable', 'maintable', 'tableName', 'tablename', 'SQLDT1', 'sqldt1'])),
+    modifyEnable: toEnableNumber(getFirstDefinedValue(source, ['modifyEnable', 'modifyenable', 'ModifyEnable']), 1),
     modifyCond: toText(getFirstDefinedValue(source, ['modifyCond', 'modifycond'])),
     moduleName: toText(getFirstDefinedValue(source, ['moduleName', 'modulename', 'ToolsName', 'toolsname'])),
     overbackKey: toText(getFirstDefinedValue(source, ['overbackKey', 'overbackkey'])),
@@ -129,7 +147,10 @@ export function buildSingleTableModuleConfigBody(record: Record<string, unknown>
   const conditionKey = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['conditionKey', 'conditionkey', 'condKey', 'condkey']));
   const overbackKey = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['overbackKey', 'overbackkey']));
   const addDllName = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['addDllName', 'adddllname', 'AddDllName']));
+  const addEnable = toEnableNumber(getFirstDefinedValue(normalized as Record<string, unknown>, ['addEnable', 'addenable', 'AddEnable']), 1);
+  const deleteEnable = toEnableNumber(getFirstDefinedValue(normalized as Record<string, unknown>, ['deleteEnable', 'deleteenable', 'DeleteEnable']), 1);
   const modifyCond = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['modifyCond', 'modifycond']));
+  const modifyEnable = toEnableNumber(getFirstDefinedValue(normalized as Record<string, unknown>, ['modifyEnable', 'modifyenable', 'ModifyEnable']), 1);
   const deleteCond = toText(getFirstDefinedValue(normalized as Record<string, unknown>, ['deleteCond', 'deletecond']));
   const isReport = toOptionalNumber(getFirstDefinedValue(normalized as Record<string, unknown>, ['isReport', 'isreport']));
   const dllType = toOptionalNumber(getFirstDefinedValue(normalized as Record<string, unknown>, ['dllType', 'dlltype']));
@@ -151,8 +172,11 @@ export function buildSingleTableModuleConfigBody(record: Record<string, unknown>
     conditionKey,
     overbackKey,
     addDllName,
+    addEnable,
+    deleteEnable,
     isReport,
     dllType,
+    modifyEnable,
     modifyCond,
     deleteCond,
   });

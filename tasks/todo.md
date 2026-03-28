@@ -4425,5 +4425,152 @@
 ### Result Notes
 - 当前可部署包应以 fresh outDir 版本为准，不能再继续使用 `LsAITool-dist-20260328-2000.zip` 那类直接从陈旧 `dist` 压出的包。
 - 这轮没有做真实服务器部署回归，但包内容已经与用户指出的问题一一对上：新版根资源已更新，设计子应用目录也已带上。
+- 用户最新反馈：部署后“流程设计”仍是白板，并提示 `127.0.0.1` 拒绝连接，需要继续核对子应用发布态地址与 API 基址。
+
+## 2026-03-28 流程设计发布态回落本地地址修复
+
+### Requirement Spec
+- 目标：
+  - 修复发布后“流程设计”页面白板，并出现 `127.0.0.1` 拒绝连接的问题。
+  - 确保流程设计宿主和 `simple-process-designer` 子应用在发布态都走当前站点同源地址。
+- 影响范围：
+  - `src/lib/simple-process-designer-host.ts`
+  - `subapps/simple-process-designer/src/lib/api-config.ts`
+  - fresh outDir 发布包
+- 关键约束：
+  - 宿主 iframe 不能再依赖开发态 `127.0.0.1:5174`。
+  - 子应用发布态没有显式 API 地址时，必须默认走同源 `/api`，不能回落到 `127.0.0.1:8080`。
+- 验证标准：
+  - 新根 bundle 不再包含 `127.0.0.1:5174`，且会按当前站点 origin 拼 `/simple-process-designer/`。
+  - 新子应用 bundle 不再包含 `127.0.0.1:8080`，且保留同源 `/api` 请求。
+  - 新发布包包含修复后的 `simple-process-designer` 资源。
+
+### Checklist
+- [x] 定位流程设计宿主地址和子应用 API 基址的来源
+- [x] 修复宿主相对地址构造方式
+- [x] 修复子应用发布态 API 默认值逻辑
+- [x] fresh outDir 重建并校验 bundle 中不再包含本地地址
+- [x] 重新生成带流程设计修复的发布包
+
+### Progress Notes
+- 已确认宿主默认发布地址原本就是 `/simple-process-designer/`，但 URL 构造对相对地址不够稳健。
+- 已确认白板的真正根因在子应用：旧发布 bundle 中仍含 `127.0.0.1:8080`，上线后子应用内部请求回落到本地地址，导致 iframe 打开后空白。
+- 已在宿主侧改成“相对地址显式挂到 `window.location.origin`”，避免发布态再被相对 URL 构造坑到。
+- 已在子应用 `api-config.ts` 收紧规则：发布态没有显式 `VITE_API_BASE_URL` 时，默认使用同源 `/api`，不再回落到本地 `127.0.0.1:8080`。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build -- --outDir dist-release-process-fix & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+- bundle 核对：
+  - `public/simple-process-designer/assets/index-Hk8a_Al9.js` 中已不包含 `127.0.0.1:8080`
+  - `dist-release-process-fix/assets/Dashboard-DyCL6o0b.js` 中已不包含 `127.0.0.1:5174`
+  - 新 zip 已包含修复后的 `simple-process-designer` 目录
+
+### Result Notes
+- 流程设计发布态白板的根因不是“没有带设计目录”，而是子应用自己的发布 API 地址回落到了本地回环地址。
+- 当前可部署包应使用流程设计修复版 fresh outDir 包，而不是上一轮的 `fresh-outdir` 包。
+- 这轮没有做真实服务器上的流程设计点击回归，剩余风险只在这一点：部署后建议直接点一次“流程设计”，看 iframe Network 是否改为站点同源 `/api/*`。
+- 用户最新反馈补充了另一个场景：本地 `3000` 开发环境下流程设计仍然请求 `127.0.0.1:5174`，说明开发态默认地址策略也需要一起修。
 
 - 用户最新反馈：新生成的发布包部署后不是新版界面，且缺少 design 文件夹，需要核对真实构建输出和打包范围。
+
+- 用户最新反馈：发布后流程设计是白板，并提示 127.0.0.1 拒绝连接，需要排查发布态流程设计入口是否仍指向本地开发地址。
+
+- 用户最新反馈：本地页面里流程设计仍然请求 127.0.0.1:5174，导致白板，需要修正当前环境下的地址策略。
+
+
+## 2026-03-28 ???????????????????
+
+### Requirement Spec
+- ???
+  - ???? `3000` ???????????????iframe ????????????????????????????
+- ?????
+  - `src/lib/simple-process-designer-host.ts`
+  - fresh outDir ??????
+- ?????
+  - ????????? `127.0.0.1:5174` ????
+  - ??????????????????????????
+- ?????
+  - ??????????????
+  - ???????? schema ? API ???
+- ?????
+  - ?? iframe ??????? `/simple-process-designer/index.html`?
+  - ?? `npm run dev:client` ?????????? `index.html`?
+  - `npm run lint` ? fresh outDir `npm run build` ???
+
+### Checklist
+- [ ] ???????????
+- [ ] ???????????
+- [ ] ?? lint/build ?????
+- [ ] ?????????
+
+### Progress Notes
+- ????????????????? iframe ??????????????????????? `5174`???????????????
+- ????????????? `/simple-process-designer/`???? Vite SPA fallback ???????? `index.html`??? iframe ?????????
+
+### Verification
+- `Invoke-WebRequest http://127.0.0.1:3000/simple-process-designer/`：返回主应用 `Ls AI Platform` 页面，证实目录路径误命中宿主入口。
+- `Invoke-WebRequest http://127.0.0.1:3000/simple-process-designer/index.html`：返回真正的 `Lserp Simple Process Designer` 子应用页面。
+- `npm run lint`：通过
+- `cmd /d /c "npm run build -- --outDir dist-release-dev-index-fix & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+- fresh outDir 核对：`dist-release-dev-index-fix/simple-process-designer/index.html` 已生成。
+
+### Result Notes
+- 本轮问题不是“流程设计内容被覆盖”，而是 iframe 默认入口在本地开发态命中了主应用 `index.html`，于是递归加载出整个工作台。
+- 已把默认入口改为显式 `/simple-process-designer/index.html`，同时保留 `VITE_SIMPLE_PROCESS_DESIGNER_URL` 的覆盖能力，完整联调脚本仍可继续指向 `5174`。
+- 剩余风险：如果浏览器里仍是旧表现，需要让当前 `dev:client` 进程重新拾取最新代码；Vite 通常会热更新，但个别 iframe 场景可能需要手动刷新页面或重启前端服务。
+
+## 2026-03-28 模块设置界面增加主表/明细操作按钮配置区
+
+### Requirement Spec
+- 目标：
+  - 在模块设置界面的主表格下方新增一个操作按钮配置区，展示“增加、删除、修改、保存”4 个按钮。
+  - 对有模块的明细区域也展示同样的 4 个按钮配置区。
+  - 点击这些按钮后，右侧属性面板可以编辑其属性；当前仅支持“是否启用”。
+  - 其中“保存”按钮固定启用，不允许关闭，也不提供对应设置项。
+  - 主模块数据接口中的 `addEnable`、`deleteEnable`、`modifyEnable` 需要正确读取、展示并保存。
+- 影响范围：
+  - `src/features/dashboard/module-settings/**`
+  - 相关主模块配置 service / save hook
+- 关键约束：
+  - 不新造另一套详情布局编辑器，沿用现有 module-settings / detail-board / inspector 结构。
+  - 不把新逻辑继续堆回 `Dashboard.tsx`。
+  - 只对主表和“有模块”的明细展示按钮配置区。
+- 不做什么：
+  - 暂不扩展除“是否启用”之外的按钮属性。
+  - 暂不让“保存”按钮可配置或可禁用。
+- 验证标准：
+  - 主表下方会展示 4 个操作按钮。
+  - 有模块的明细区域也会展示 4 个操作按钮，无模块的明细不展示。
+  - 点击“增加/删除/修改”后，右侧可编辑启用状态；“保存”仅展示固定启用状态或说明，不可编辑。
+  - 页面加载会回填 `addEnable/deleteEnable/modifyEnable`，保存后会正确写回。
+
+### Checklist
+- [x] 定位主表/明细配置区和现有右侧属性面板扩展点
+- [x] 定义按钮配置的前端状态与选择模型
+- [x] 渲染主表与有模块明细的按钮配置区
+- [x] 接入右侧“是否启用”属性编辑
+- [x] 把 `addEnable/deleteEnable/modifyEnable` 接入加载与保存
+- [x] 跑 lint/build 并记录结果
+
+### Progress Notes
+- 用户希望在主表和有模块的明细区域下方增加一组固定操作按钮，作为模块配置的一部分进行读取和保存。
+- 当前约束很明确：只有增加/删除/修改可配置启用状态，保存默认启用且不可关闭，所以这更适合做成现有 inspector 体系中的一个轻量属性面板扩展，而不是新增复杂配置器。
+- 已复用现有 module-settings shell + inspector 结构，为主表和“有模块”的明细表格增加统一的操作按钮条，并把按钮选择态接入右侧属性面板。
+- 已把 `addEnable/deleteEnable/modifyEnable` 接到主模块配置读取与保存；对于继承模块的明细，会跟随共享模块配置一起保存，避免只改当前页本地态。
+- 用户补充了启用位的精确定义：`1=启用`、`0=禁用`、接口查出来为空时默认按启用处理，保存时必须显式落成 `1/0`，不能再透传空值或其他数字。
+- 用户进一步调整了按钮条呈现：按钮整体右对齐，去掉“已启用/已禁用”文字徽标，禁用态仅通过灰色样式表达。
+- 用户实际联调时发现一个关键缺陷：明细按钮在右侧改成“关闭”后，最终请求体仍然是 `1`。根因是明细保存时把本地 `tableConfig` 先和 `mapped.gridConfig` 合并，后者会把刚修改的启用位覆盖回默认值。
+- 用户继续收紧了交互细节：右侧按钮 inspector 顶部不允许再出现乱码；按钮卡片里的第二段说明文案要去掉；底部操作按钮条的按钮高度需要再压低一档。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+- 已把主模块配置 adapter 收紧为启用位专用归一化：空值默认 `1`，保存时强制输出 `0/1`
+
+### Result Notes
+- 主表下方现在固定展示“增加 / 删除 / 修改 / 保存”4 个操作按钮。
+- 明细区域只有在当前明细是“表格/树表格”且配置了关联模块时，才会展示同样的 4 个按钮。
+- 点击“增加 / 删除 / 修改”会在右侧进入按钮属性面板，目前可设置“是否启用”；“保存”按钮固定启用，仅展示说明，不提供关闭能力。
+- 明细按钮启用位现在会以右侧最新编辑值为准，不再在明细保存后被 `mapped.gridConfig` 覆盖回 `1`。
+- 这轮没有代替用户做浏览器里的真实点击回归，剩余风险主要在这一点：建议现场验证主表按钮开关保存，以及继承模块明细的按钮开关保存是否都按预期回显。

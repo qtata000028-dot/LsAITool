@@ -1,8 +1,10 @@
 import React from 'react';
 
+import { GridOperationConfigBar } from './grid-operation-config-bar';
 import { MemoDetailTabStrip, MemoDocumentDetailWorkbench } from './detail-workbench';
 import { DetailFillPlaceholder, DetailTabsWorkspace } from './detail-tabs-workspace';
 import { DocumentGridToolbarBridge, DocumentTreePanel } from './document-workspace-panels';
+import { type GridOperationActionKey } from './grid-operation-config';
 
 export type ModuleSettingStepShellProps = {
   billDocumentWorkbenchNode: React.ReactNode;
@@ -23,12 +25,14 @@ export type ModuleSettingStepShellProps = {
     archiveMainTableBuilderNode: React.ReactNode;
     conditionToolbarNode: React.ReactNode;
     currentDetailFillType: string;
+    detailGridActionConfig: Record<string, any> | null;
     detailTabs: any[];
     documentDetailTableBuilderNode: React.ReactNode;
     documentLeftPaneWidth: number;
     documentTreeTableBuilderNode: React.ReactNode;
     isDetailFillSelected: boolean;
     isTreePaneVisible: boolean;
+    mainGridActionConfig: Record<string, any>;
     mainTableHiddenColumnsCount: number;
     onActivateDetailFill: () => void;
     onActivateDetailTab: (tabId: string) => void;
@@ -38,7 +42,12 @@ export type ModuleSettingStepShellProps = {
     onPasteDetailTableColumns: React.ClipboardEventHandler<HTMLDivElement>;
     onPasteMainTable: React.ClipboardEventHandler<HTMLDivElement>;
     onPasteTreePanel: React.ClipboardEventHandler<HTMLDivElement>;
+    onSelectDetailGridAction: (actionKey: GridOperationActionKey) => void;
+    onSelectMainGridAction: (actionKey: GridOperationActionKey) => void;
     onStartLeftResize: (event: React.MouseEvent<HTMLDivElement>) => void;
+    selectedDetailGridAction: GridOperationActionKey | null;
+    selectedMainGridAction: GridOperationActionKey | null;
+    showDetailGridActionBar: boolean;
     treeRelationColumn: any;
     workspaceThemeVars: React.CSSProperties;
   };
@@ -173,6 +182,11 @@ export function ModuleSettingStepShell({
                       >
                         {document.archiveMainTableBuilderNode}
                       </div>
+                      <GridOperationConfigBar
+                        config={document.mainGridActionConfig}
+                        selectedActionKey={document.selectedMainGridAction}
+                        onSelectAction={document.onSelectMainGridAction}
+                      />
                     </div>
 
                     {hasDocumentDetails ? (
@@ -191,6 +205,13 @@ export function ModuleSettingStepShell({
                             />
                           )}
                           currentDetailFillType={document.currentDetailFillType}
+                          footerNode={document.showDetailGridActionBar ? (
+                            <GridOperationConfigBar
+                              config={document.detailGridActionConfig}
+                              selectedActionKey={document.selectedDetailGridAction}
+                              onSelectAction={document.onSelectDetailGridAction}
+                            />
+                          ) : null}
                           onPasteTableColumns={document.onPasteDetailTableColumns}
                           tableBuilderNode={document.documentDetailTableBuilderNode}
                           fillPlaceholderNode={(

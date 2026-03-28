@@ -23,6 +23,10 @@ const pidDirectory = path.join(os.tmpdir(), 'codex-dev-pids', path.basename(proj
 const clientPidFile = path.join(pidDirectory, 'vite-dev.pid');
 const apiPidFile = path.join(pidDirectory, 'minimax-api.pid');
 const simpleDesignerPidFile = path.join(pidDirectory, 'simple-process-designer.pid');
+const simpleDesignerClientEnv = {
+  ...process.env,
+  VITE_SIMPLE_PROCESS_DESIGNER_URL: simpleDesignerUrl,
+};
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -54,13 +58,14 @@ async function waitForUrl(url, timeoutMs = 60000) {
   return false;
 }
 
-function startDetached(scriptCommand, stdoutPath, stderrPath, pidFilePath) {
+function startDetached(scriptCommand, stdoutPath, stderrPath, pidFilePath, env = process.env) {
   const stdout = openSync(stdoutPath, 'a');
   const stderr = openSync(stderrPath, 'a');
 
   const child = spawn(process.platform === 'win32' ? 'cmd.exe' : 'sh', process.platform === 'win32' ? ['/d', '/c', scriptCommand] : ['-lc', scriptCommand], {
     cwd: projectRoot,
     detached: true,
+    env,
     stdio: ['ignore', stdout, stderr],
   });
 
@@ -91,7 +96,7 @@ async function main() {
     console.log('Simple process designer on port 5174 is already running.');
   }
 
-  startDetached('npm run dev:client', clientStdoutLog, clientStderrLog, clientPidFile);
+  startDetached('npm run dev:client', clientStdoutLog, clientStderrLog, clientPidFile, simpleDesignerClientEnv);
 
   const clientReady = await waitForUrl(clientUrl);
   if (!clientReady) {
