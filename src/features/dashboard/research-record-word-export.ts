@@ -331,7 +331,7 @@ async function rebuildTemplateXml(templateXml: string, draft: ResearchExportDraf
   const workToolLines = buildPlainLines(draft.workTools, draft.lineColors.workTools);
 
   setCellParagraphs(getCells(staticRowPrefix[1])[0], departmentPostLines, BODY_TEXT_TYPOGRAPHY);
-  setCellParagraphs(getCells(staticRowPrefix[3])[0], workToolLines, BODY_TEXT_TYPOGRAPHY);
+  setCellText(getCells(staticRowPrefix[3])[0], workToolLines.join('、'), BODY_TEXT_TYPOGRAPHY);
 
   while (contentTable.firstChild) {
     contentTable.removeChild(contentTable.firstChild);
