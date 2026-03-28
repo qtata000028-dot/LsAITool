@@ -623,7 +623,7 @@ function mapSingleTableFieldRecordToColumn(field: SingleTableModuleFieldDto, ind
     fieldSqlTag,
     fieldSqlTagName,
     name: displayName || fieldName || systemName || fieldKey || `字段 ${index + 1}`,
-    sourceField: systemName || fieldName || fieldKey || `field_${index + 1}`,
+    sourceField: fieldName,
     type: resolveSingleTableFieldType(field),
     width: toRecordNumber(
       getRecordFieldValue(field, 'width', 'controlwidth', 'controlWidth', 'mobilewidth', 'mobileWidth'),
@@ -647,14 +647,16 @@ function mapSingleTableFieldRecordToColumn(field: SingleTableModuleFieldDto, ind
 function mapSingleTableDetailGridFieldToColumn(field: SingleTableGridFieldDto, index: number) {
   const mappedColumn = mapSingleTableFieldRecordToColumn(field, index) as Record<string, any>;
   const { id: _ignoredId, ...rest } = mappedColumn;
+  const displayName = toRecordText(getRecordFieldValue(field, 'username', 'userName', 'displayName', 'displayname'));
+  const fieldName = toRecordText(getRecordFieldValue(field, 'fieldName', 'fieldname'));
 
   return {
     ...rest,
     id: `d_col_${Date.now()}_${index + 1}`,
     backendId: getRecordFieldValue(field, 'id'),
     orderId: toRecordNumber(getRecordFieldValue(field, 'orderid', 'orderId'), index + 1),
-    name: mappedColumn.name || `明细字段 ${index + 1}`,
-    sourceField: mappedColumn.sourceField || toRecordText(getRecordFieldValue(field, 'fieldname', 'fieldName')),
+    name: displayName || mappedColumn.name || `明细字段 ${index + 1}`,
+    sourceField: fieldName,
   };
 }
 const DETAIL_BOARD_CLIPBOARD_PREFIX = '__LS_DETAIL_BOARD_COLUMNS__';
@@ -3512,7 +3514,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     setIsDetailBoardOpen(true);
   }, [mainTableColumns, selectedMainColId]);
 
-  const updateMainDetailBoard = (patch: Record<string, any> | ((current: any) => any)) => {
+  const updateMainDetailBoard = useCallback((patch: Record<string, any> | ((current: any) => any)) => {
     setMainTableConfig((prev) => {
       const current = normalizeDetailBoardConfig(prev.detailBoard, mainTableColumns);
       return {
@@ -3525,7 +3527,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         },
       };
     });
-  };
+  }, [mainTableColumns]);
 
   const openArchiveLayoutEditor = () => {
     setIsArchiveLayoutEditorOpen(true);

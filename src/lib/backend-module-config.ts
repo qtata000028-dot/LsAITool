@@ -194,6 +194,14 @@ export async function fetchSingleTableDesignerLayout(dllCoId: string) {
   });
 }
 
+export async function saveSingleTableDesignerLayout(dllCoId: string, body: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/api/single-table/modules/${encodePathParam(dllCoId)}/designer-layout`, {
+    auth: true,
+    body,
+    method: 'POST',
+  });
+}
+
 export async function fetchSingleTableModuleConditions(dllCoId: string) {
   return apiRequest<SingleTableConditionDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/conditions`, {
     auth: true,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+﻿import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 
 import {
   fetchSingleTableDetailColors,
@@ -555,8 +555,11 @@ async function saveDiffedCollection({
 
 function buildMainFieldBody(record: any, dllCoId: string, index: number) {
   const sourceField = toText(record?.sourceField);
-  const fieldName = sourceField || toText(record?.fieldname || record?.fieldName || record?.sysname || record?.systemName);
-  const systemName = sourceField || toText(record?.sysname || record?.systemName || record?.fieldname || record?.fieldName);
+  const hasSourceField = Object.prototype.hasOwnProperty.call(record ?? {}, 'sourceField');
+  const fieldName = hasSourceField
+    ? sourceField
+    : toText(record?.fieldname || record?.fieldName);
+  const systemName = toText(record?.sysname || record?.systemName) || fieldName;
   const fieldKey = toText(record?.fieldkey || record?.fieldKey || record?.backendFieldKey);
   const displayName = toText(record?.name || record?.username1 || record?.displayName);
   const width = toInteger(record?.width, 0);
@@ -615,11 +618,27 @@ function buildConditionBody(record: any, index: number, sourceId?: number | null
 }
 
 function buildGridFieldBody(record: any, fieldId?: number | null) {
+  const hasSourceField = Object.prototype.hasOwnProperty.call(record ?? {}, 'sourceField');
+  const fieldName = hasSourceField
+    ? toText(record?.sourceField)
+    : toText(record?.fieldName || record?.fieldname);
+  const displayName = toText(
+    record?.name
+    || record?.username
+    || record?.userName
+    || record?.displayName
+    || record?.displayname,
+  );
+
   return ensureOptionalId(stripUndefinedEntries({
     ...(fieldId != null ? { fieldId } : {}),
-    fieldKey: toText(record?.fieldKey || record?.fieldkey || record?.backendFieldKey),
-    fieldName: toText(record?.fieldName || record?.fieldname || record?.sourceField),
-    displayName: toText(record?.displayName || record?.displayname || record?.name),
+    fieldKey: toText(record?.backendFieldKey || record?.fieldKey || record?.fieldkey),
+    fieldName,
+    fieldname: fieldName,
+    displayName,
+    displayname: displayName,
+    username: displayName,
+    userName: displayName,
     orderId: toInteger(record?.orderId ?? record?.orderid, 1),
     width: toInteger(record?.width, 120),
     mobileWidth: toInteger(record?.mobileWidth ?? record?.mobilewidth, toInteger(record?.width, 120)),
@@ -670,15 +689,15 @@ function normalizeDetailTypeCode(fillType: string, rawValue: unknown) {
     return directValue === '3' ? '2' : directValue;
   }
 
-  if (fillType === '图表') return '1';
-  if (fillType === '网页') return '2';
+  if (fillType === '鍥捐〃') return '1';
+  if (fillType === '缃戦〉') return '2';
   return '0';
 }
 
 function buildDetailBody(record: any, gridConfig: any, _moduleCode: string, fillType: string, index: number) {
   const detailTypeCode = normalizeDetailTypeCode(fillType, record?.detailTypeCode);
   return ensureOptionalId(stripUndefinedEntries({
-    detailname: toText(record?.detailname || record?.detailName || record?.name || `明细 ${index + 1}`),
+    detailname: toText(record?.detailname || record?.detailName || record?.name || `鏄庣粏 ${index + 1}`),
     detailtype: detailTypeCode,
     library: toText(record?.library || record?.dllTemplate),
     unionmodule: toText(record?.unionmodule || record?.relatedModule),
@@ -933,7 +952,7 @@ export function useSingleTableModuleSettingsSave({
     const moduleCode = currentModuleCode.trim();
     if (!isActive || !moduleCode) {
       if (shouldShowToast) {
-        onShowToast('请先保存菜单信息，再保存模块设置。');
+        onShowToast('\u8bf7\u5148\u4fdd\u5b58\u83dc\u5355\u4fe1\u606f\uff0c\u518d\u4fdd\u5b58\u6a21\u5757\u8bbe\u7f6e\u3002');
       }
       return false;
     }
@@ -949,20 +968,20 @@ export function useSingleTableModuleSettingsSave({
         querySql: toText(mainTableConfig?.querySql ?? mainTableConfig?.mainSql),
       });
 
-      const {
-        rows: savedMainFields,
-        pairs: mainFieldPairs,
-      } = await saveDiffedCollection({
-        baselineRows: baselineRef.current.mainFields,
+        const {
+          rows: savedMainFields,
+          pairs: mainFieldPairs,
+        } = await saveDiffedCollection({
+          baselineRows: baselineRef.current.mainFields,
         buildBody: (field, index) => buildMainFieldBody(field, moduleCode, index),
         currentRows: sortByOrderId(effectiveMainTableColumns),
         getIdentityKey: getMainFieldIdentityKey,
-        mapSavedRow: (savedRow, index) => mapMainFieldRecordToColumn(savedRow, index),
-        saveRow: (body) => saveSingleTableModuleField(moduleCode, body),
-      });
+          mapSavedRow: (savedRow, index) => mapMainFieldRecordToColumn(savedRow, index),
+          saveRow: (body) => saveSingleTableModuleField(moduleCode, body),
+        });
 
-      const ownerKey = normalizeLookupKey(stripBraces(documentConditionOwnerFieldKey));
-      const ownerSourceId = normalizeLookupKey(documentConditionOwnerSourceId);
+        const ownerKey = normalizeLookupKey(stripBraces(documentConditionOwnerFieldKey));
+        const ownerSourceId = normalizeLookupKey(documentConditionOwnerSourceId);
       const ownerFieldPair = mainFieldPairs.find(({ current, saved }) => {
         const currentIdKey = normalizeLookupKey(current?.id ?? current?.backendId);
         const savedIdKey = normalizeLookupKey(saved?.backendId ?? saved?.id);
@@ -1089,7 +1108,7 @@ export function useSingleTableModuleSettingsSave({
       const savedDetailEntries: DetailSaveEntry[] = [];
 
       for (const [index, detailEntry] of detailEntries.entries()) {
-        const fillType = toText(detailEntry.tabConfig?.detailType || '表格');
+        const fillType = toText(detailEntry.tabConfig?.detailType || '琛ㄦ牸');
         const baselineTabConfig = baselineRef.current.details.tabConfigs[detailEntry.oldTabId] ?? {};
         const baselineTableConfig = baselineRef.current.details.tableConfigs[detailEntry.oldTabId] ?? {};
         const currentDetailBody = buildDetailBody(detailEntry.tabConfig, detailEntry.tableConfig, moduleCode, fillType, index);
@@ -1155,7 +1174,7 @@ export function useSingleTableModuleSettingsSave({
         const normalizedDetailMenus = sortedDetailMenus.map((menu, index) => mapContextMenuItem(menu, index));
         const normalizedBaselineColors = sortedBaselineColors.map((colorRule, index) => mapColorRule(colorRule, index));
         const normalizedBaselineMenus = sortedBaselineMenus.map((menu, index) => mapContextMenuItem(menu, index));
-        const isGridLike = detailEntry.fillType === '表格' || detailEntry.fillType === '树表格';
+        const isGridLike = detailEntry.fillType === '\u8868\u683c' || detailEntry.fillType === '\u6811\u8868\u683c';
 
         const shouldSyncSharedResources = detailEntry.unionModule && isGridLike && (
           !areCollectionsEquivalent(
@@ -1381,7 +1400,7 @@ export function useSingleTableModuleSettingsSave({
           }
         }
 
-        if (detailEntry.fillType === '图表' && Number.isFinite(nextDetailId)) {
+        if (detailEntry.fillType === '鍥捐〃' && Number.isFinite(nextDetailId)) {
           const currentChartConfig = detailEntry.tableConfig?.chartConfig ?? {};
           const baselineChartConfig = baselineTableConfig?.chartConfig ?? {};
           const currentChartBody = buildDetailChartBody(currentChartConfig, 0);
@@ -1579,26 +1598,33 @@ export function useSingleTableModuleSettingsSave({
 
       setMainTableColumns(savedMainFields);
       setMainFilterFields(savedMainConditions);
-      setMainTableConfig((prev) => ({
-        ...prev,
-        addDllName: toText(savedModuleConfig?.addDllName || prev?.addDllName),
-        backendId: savedModuleConfig?.id ?? prev?.backendId,
-        colorRules: savedMainColors,
-        colorRulesEnabled: savedMainColors.length > 0,
-        conditionKey: toText(savedModuleConfig?.conditionKey || prev?.conditionKey),
-        contextMenuItems: savedMainMenus,
-        contextMenuEnabled: savedMainMenus.length > 0,
-        deleteCond: toText(savedModuleConfig?.deleteCond || prev?.deleteCond),
-        dllCoId: toText(savedModuleConfig?.dllCoId || moduleCode),
-        dllType: savedModuleConfig?.dllType ?? prev?.dllType,
-        formKey: toText(savedModuleConfig?.formKey || prev?.formKey),
-        isReport: savedModuleConfig?.isReport ?? prev?.isReport,
-        mainSql: toText(savedModuleConfig?.querySql || prev?.mainSql),
-        modifyCond: toText(savedModuleConfig?.modifyCond || prev?.modifyCond),
-        moduleName: toText(savedModuleConfig?.moduleName || currentModuleName),
-        overbackKey: toText(savedModuleConfig?.overbackKey || prev?.overbackKey),
-        tableName: toText(savedModuleConfig?.mainTable || prev?.tableName),
-      }));
+      setMainTableConfig((prev) => {
+        const currentDetailBoard = mainTableConfig?.detailBoard && typeof mainTableConfig.detailBoard === 'object'
+          ? mainTableConfig.detailBoard
+          : prev?.detailBoard;
+
+        return {
+          ...prev,
+          addDllName: toText(savedModuleConfig?.addDllName || prev?.addDllName),
+          backendId: savedModuleConfig?.id ?? prev?.backendId,
+          colorRules: savedMainColors,
+          colorRulesEnabled: savedMainColors.length > 0,
+          conditionKey: toText(savedModuleConfig?.conditionKey || prev?.conditionKey),
+          contextMenuItems: savedMainMenus,
+          contextMenuEnabled: savedMainMenus.length > 0,
+          deleteCond: toText(savedModuleConfig?.deleteCond || prev?.deleteCond),
+          detailBoard: currentDetailBoard && typeof currentDetailBoard === 'object' ? currentDetailBoard : prev?.detailBoard,
+          dllCoId: toText(savedModuleConfig?.dllCoId || moduleCode),
+          dllType: savedModuleConfig?.dllType ?? prev?.dllType,
+          formKey: toText(savedModuleConfig?.formKey || prev?.formKey),
+          isReport: savedModuleConfig?.isReport ?? prev?.isReport,
+          mainSql: toText(savedModuleConfig?.querySql || prev?.mainSql),
+          modifyCond: toText(savedModuleConfig?.modifyCond || prev?.modifyCond),
+          moduleName: toText(savedModuleConfig?.moduleName || currentModuleName),
+          overbackKey: toText(savedModuleConfig?.overbackKey || prev?.overbackKey),
+          tableName: toText(savedModuleConfig?.mainTable || prev?.tableName),
+        };
+      });
       setLeftFilterFields(savedLeftConditions);
       setLeftTableColumns(savedLeftColumns);
       setLeftTableConfig((prev) => ({
@@ -1636,11 +1662,13 @@ export function useSingleTableModuleSettingsSave({
       };
 
       if (shouldShowToast) {
-        onShowToast('单表模块设置已保存。');
+        onShowToast('\u5355\u8868\u6a21\u5757\u8bbe\u7f6e\u5df2\u4fdd\u5b58\u3002');
       }
       return true;
     } catch (error) {
-      const message = error instanceof Error && error.message ? error.message : '单表模块设置保存失败。';
+      const message = error instanceof Error && error.message
+        ? error.message
+        : '\u5355\u8868\u6a21\u5757\u8bbe\u7f6e\u4fdd\u5b58\u5931\u8d25\u3002';
       if (shouldShowToast) {
         onShowToast(message);
       }

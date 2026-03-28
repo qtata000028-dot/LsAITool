@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { ArchiveLayoutDesignerBridge } from './archive-layout-designer-bridge';
+import { useArchiveLayoutDesignerSave } from './use-archive-layout-designer-save';
 import { useArchiveLayoutPaletteColumns } from './use-archive-layout-palette-columns';
 
 type ArchiveLayoutCanvasModalContainerProps = {
@@ -32,15 +33,29 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
     onUpdateDetailBoard,
     onShowToast,
   });
+  const {
+    isDirty,
+    isSaving,
+    saveArchiveLayout,
+  } = useArchiveLayoutDesignerSave({
+    currentDetailBoard,
+    currentModuleCode,
+    layoutColumns: layoutPaletteColumns,
+    onShowToast,
+    onUpdateDetailBoard,
+  });
 
   return (
     <ArchiveLayoutDesignerBridge
       currentDetailBoard={currentDetailBoard}
       currentModuleCode={currentModuleCode}
+      isDirty={isDirty}
       isOpen={isOpen}
+      isSaving={isSaving}
       mainTableColumns={layoutPaletteColumns}
       normalizeColumn={normalizeColumn}
       onClose={onClose}
+      onSave={saveArchiveLayout}
       onUpdateDetailBoard={onUpdateDetailBoard}
     />
   );

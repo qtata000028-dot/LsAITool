@@ -4113,6 +4113,9 @@
 - 已把一键翻译成功后的提示改成区分“翻译成功并已保存本页”与“翻译成功但保存失败”，不再额外弹出单独的模块设置保存提示。
 - 用户最新反馈：实际点击后一键翻译没有看到保存接口调用，需要回到分支逻辑核对是否存在“无可翻译项/翻译结果被过滤后提前 return，导致根本不触发保存”的情况。
 - 已补上保存触发收口：现在即便“没有待翻译中文字段”或“翻译结果全部被低质量过滤”，也会继续执行保存本页，并把“未接入保存本页 / 保存失败 / 保存成功”区分提示出来。
+- 用户继续反馈：明细列变动后没有真正保存列数据，需要回到明细列保存体核对是否仍然优先取了旧的镜像字段，导致请求体没有带上当前编辑后的列值。
+- 已定位到根因在 `buildGridFieldBody`：明细列保存体此前优先读取 `fieldName/displayName`，而界面实际编辑的是 `sourceField/name`，导致请求体持续带旧值，明细列刷新后看起来像“没保存”。
+- 已把明细/左侧 grid field 保存体改成优先使用当前 UI 的 `sourceField/name` 与 `backendFieldKey`，这样列标识和列标题改动会真正进保存请求体。
 
 ### Verification
 - `npm run lint`：通过
@@ -4122,4 +4125,145 @@
 - 一键翻译现在会直接复用现有“保存本页”链路，不再走单独的表名保存逻辑。
 - 翻译后的列快照会直接传入保存函数，因此即便 React 状态尚未完成下一轮渲染，这次翻译得到的字段标识也会被当前次保存正确落库。
 - 一键翻译不再只在“有有效翻译结果”时才保存；零待翻译和零可用结果分支也会触发保存，因此浏览器 Network 面板里能看到对应保存请求。
+- 明细列保存体现在会优先取当前编辑后的 `sourceField/name`，不再被旧的 `fieldName/displayName` 镜像字段覆盖。
 - 构建仍有原来的大 chunk 警告，但本轮没有新增 lint/build 阻塞。
+
+## 2026-03-28 基础档案详情布局接入 designer-* 接口
+
+### Requirement Spec
+- 目标：
+  - 调整“基础档案详情布局”弹窗的数据源，让定义按钮打开后的控件、分组和已保存布局分别走 `GET /api/single-table/modules/{dllCoId}/designer-controls`、`GET /designer-groups`、`GET /designer-layout`。
+  - 已布局控件需要按位置落在分组矩形范围内的规则，计算其属于哪个分组，而不是继续沿用本地建议分组。
+  - 在定义设计弹窗头部提供专用保存按钮，把当前基础档案详情布局通过 `POST /api/single-table/modules/{dllCoId}/designer-layout` 回写到 `p_systemControlLocation`。
+- 影响范围：
+  - `src/features/dashboard/module-settings/use-archive-layout-palette-columns.ts`
+  - `src/features/dashboard/module-settings/archive-layout-*`
+  - `src/features/dashboard/module-settings/use-single-table-module-settings-save.ts`
+  - `src/lib/backend-module-config.ts`
+- 关键约束：
+  - 不把新逻辑继续堆回 `Dashboard.tsx`，优先落在 module-settings feature 自己的 adapter / hook 中。
+  - 保留当前 archive layout workbench 的主界面交互，不顺手重写整套弹窗。
+  - `designer-groups` 当前只给了加载接口，没有新增/删除/改名接口，本轮不额外发明分组保存协议。
+- 不做什么：
+  - 不改动主表字段、明细字段、颜色规则、右键菜单等与当前 archive layout 无关的保存链路。
+  - 不重写成另一套新的详情布局设计器。
+- 验证标准：
+  - 打开基础档案详情布局时，左侧分组与中间画布能按 designer 接口真实数据回显。
+  - 已保存控件会依据坐标范围归属到正确分组。
+  - 点击定义设计弹窗里的保存按钮时，会触发 designer-layout 保存请求；点击页面常规保存时，不会再夹带 designer-layout 保存。
+  - `npm run lint` 与 `npm run build` 通过。
+
+### Checklist
+- [x] 核对 archive layout 弹窗现有加载与保存链路
+- [x] 补齐 designer 数据到 workbench 状态的权威映射
+- [x] 修正已布局控件按分组范围归属的规则
+- [x] 在定义设计弹窗中接入 designer-layout 专用保存
+- [x] 执行 lint/build 校验并记录结果
+
+### Progress Notes
+- 已确认 archive layout 弹窗当前已经并行请求 `designer-controls`、`designer-groups`、`designer-layout`，但加载成功后又被 `currentDetailBoard.enabled` 短路，导致后端 designer 数据没有真正覆盖到画布分组。
+- 已确认基础档案详情布局 workbench 目前只会修改 `currentDetailBoard.groups` 等本地状态，没有任何 `designer-layout` 的专属保存出口，因此 `p_systemControlLocation` 不会随着定义设计编辑及时更新。
+- 已确认当前 workbench 的分组归属是用分组矩形包围盒计算的，这条规则与用户给出的 Delphi 说明一致，可以继续沿用并补齐保存侧的坐标序列化。
+- 已新增 `archive-layout-designer-backend.ts`，把 designer 控件/分组/布局的查询归一化、分组归属计算和保存序列化收口到同一层，避免这批 Delphi 口径继续散落在 hook 和保存函数里。
+- 已移除 `use-archive-layout-palette-columns.ts` 里对 `currentDetailBoard.enabled` 的短路，改为“同模块且存在未保存本地改动时才保留当前状态”，否则 designer 接口数据会作为权威初始态回填到弹窗。
+- 已在 archive layout bridge 侧为 workbench 编辑动作统一打上 `archiveLayoutDirty`，并新增弹窗头部保存按钮，通过专用 hook 逐条调用 `POST /designer-layout` 回写控件坐标，保存成功后再把本地 `archiveLayoutDirty` 清零。
+- 已从 `saveCurrentPage` 中移除 designer-layout 自动保存，避免页面保存和定义设计保存边界重叠、产生双重请求。
+- 已将未分配到任何分组的控件在保存时统一停放到所有分组矩形下方的非重叠区域，避免因为后端没有 delete 接口而在下次加载时又被错误归入旧分组。
+- 用户进一步修正：designer-layout 的保存不该继续挂在页面“保存本页”上，而要在定义设计弹窗里提供单独保存按钮，让定义设计改动走这条专用保存链路。
+- 用户再次反馈：定义设计弹窗打开后出现 `designer-controls / designer-groups / designer-layout` 疯狂重复请求，同时弹窗标题等可见文案出现乱码，需要一起修复。
+- 已确认重复请求的直接触发点是 `use-archive-layout-palette-columns.ts` 的加载 effect 同时依赖 `mainTableColumns` 和未 memo 的 `onUpdateDetailBoard`；effect 成功后又会回写 `detailBoard`，导致父层重渲染后再次触发同一轮 designer 请求。
+- 已将 designer 接口请求改成“打开弹窗后仅拉取一次原始 payload，后续只在本地把 payload 映射到当前列元数据”，并把 `onShowToast/onUpdateDetailBoard` 改为 ref 读取，避免 UI 回调抖动把网络请求重新打出去。
+- 已把 archive layout 弹窗头部和 fallback title 的乱码文案改成稳定常量，避免 PowerShell/文件编码再次把可见中文写坏。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+- `git diff --check`：通过（仅有现存 CRLF 提示，无新的 diff 格式错误）
+
+### Result Notes
+- 基础档案详情布局弹窗现在会真正按 `designer-controls / designer-groups / designer-layout` 的组合结果回显，已布局控件通过分组矩形包围关系计算归属，不再被旧的本地 enabled 状态挡掉。
+- 基础档案详情布局弹窗头部现在有单独的保存按钮，定义设计改动会沿这条专用链路调用 `POST /designer-layout`，把当前 workbench 的分组结果序列化为 `controlLeft/controlTop/controlWidth/controlHeight` 并回写到 `p_systemControlLocation`。
+- 页面常规保存已不再夹带 designer-layout 自动保存，请求边界改为“页面配置走页面保存，定义设计走弹窗保存”。
+- designer 加载链路现在不会再因为 `detailBoard` 回写或父层回调重建而重新发起 `designer-controls / designer-groups / designer-layout`，网络请求边界收口为“弹窗打开或模块切换时加载一次原始数据”。
+- 弹窗顶部标题、入口标签和模块 fallback 文案的乱码已修复，不会再显示成 mojibake。
+- 当前仍保留了 workbench 里“新增/删除/改名分组”的本地交互，但后端尚未提供对应分组保存接口，因此这类分组结构改动不会跨刷新持久化；本轮只保证已有分组上的控件布局和归属能正确读写。
+
+## 2026-03-28 列配置页字段标识应显示 fieldname
+
+### Requirement Spec
+- 目标：
+  - 修正列配置页面中“字段标识”属性的取值，让它对应后端字段 `fieldname`，不再显示 `fieldKey`/UUID 一类的内部标识。
+- 影响范围：
+  - `src/features/dashboard/module-settings/field-inspector-controller.tsx`
+  - 若展示值来自共享列映射，则同步检查对应列归一化或保存映射文件。
+- 关键约束：
+  - 保持现有列配置编辑和保存链路不变，只修正“字段标识”的展示/编辑绑定。
+  - 若当前页面同时区分“字段主键”和“字段标识”，两者语义不能再混用。
+- 不做什么：
+  - 不顺手重构整个列配置面板。
+  - 不扩展到与本次问题无关的详情布局、菜单、颜色等功能。
+- 验证标准：
+  - 打开列配置页面时，“字段标识”显示为 `fieldname` 对应值，而不是 UUID。
+  - 编辑后保存链路仍然使用当前列的字段标识，不出现回写错列或显示回退。
+  - `npm run build` 通过。
+
+### Checklist
+- [x] 定位列配置页“字段标识”的展示/编辑绑定来源
+- [x] 修正为优先使用 `fieldname` 对应值，并核对是否影响保存映射
+- [x] 执行构建校验并记录结果
+
+### Progress Notes
+- 已结合 `tasks/lessons.md` 回顾到同类问题：当前 UI 可编辑字段应优先使用 `sourceField/name` 这类界面主字段，避免被 `fieldKey` 或旧镜像字段覆盖。
+- 已从截图判断当前问题发生在列配置页字段面板，“字段标识”位置实际展示了 UUID，说明该面板仍把内部主键当成业务字段标识。
+- 用户进一步修正：这更像纯展示语义问题；当后端 `fieldname` 为空时，界面应直接显示空，而不是回退显示 `fieldKey`。
+- 已确认 `field-inspector-controller.tsx` 只是展示 `currentColumn.sourceField`，真正的问题在 `mapSingleTableFieldRecordToColumn`：主字段加载时 `sourceField` 仍然会回退到 `sysname/fieldKey`。
+- 已将主字段归一化改成 `sourceField` 只承载 `fieldname`，因此 `fieldname` 为空时列配置页“字段标识”会保持空值，不再显示 UUID 一类的内部键。
+- 已同步调整 `buildMainFieldBody`：当界面上的 `sourceField` 被清空时，保存体会保留这个空值作为 `fieldname`，不再从旧的 `fieldname/sysname` 再次回填。
+
+### Verification
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 列配置页“字段标识”现在直接对应后端 `fieldname`；如果 `fieldname` 本身为空，界面就显示空，不再拿 `fieldKey` 补位。
+- 保存侧也会尊重这个空值，避免出现“页面看着空了，但保存或刷新后又被旧标识补回来”的回退。
+
+## 2026-03-28 明细 grid-fields 的 username / fieldName 对应修正
+
+### Requirement Spec
+- 目标：
+  - 修正单表明细 `GET /api/single-table/modules/{dllCoId}/details/{detailId}/grid-fields` 的前端读写映射，让“字段名称”对应后端 `username`，“字段标识”对应后端 `fieldName`。
+- 影响范围：
+  - `src/components/Dashboard.tsx`
+  - `src/features/dashboard/module-settings/use-single-table-module-settings-save.ts`
+- 关键约束：
+  - 不只修展示；读取映射、编辑态字段、保存体和保存后回填必须保持同一语义。
+  - 仅收紧明细 `grid-fields` 相关映射，不顺手改动无关主字段或其他接口。
+- 不做什么：
+  - 不改动明细 SQL 自动解析生成字段的整体流程。
+  - 不重构整个 Dashboard 字段建模结构。
+- 验证标准：
+  - 打开明细列配置时，“字段名称”显示后端 `username`，“字段标识”显示后端 `fieldName`。
+  - 编辑后保存，提交体与保存后回填仍保持这组对应关系，不会再次错位。
+  - `npm run build` 通过。
+
+### Checklist
+- [x] 定位明细 grid-fields 读取映射与保存体错位点
+- [x] 修正 `username / fieldName` 在展示、编辑和保存中的统一映射
+- [x] 执行构建校验并记录结果
+
+### Progress Notes
+- 已结合 `tasks/lessons.md` 回顾到相邻问题：字段编辑界面的 canonical 字段必须直接对应当前接口的真实业务列，不能再套用主字段那套“最佳努力 fallback”。
+- 用户已明确指出问题集中在明细接口 `GET /api/single-table/modules/test000001/details/14079/grid-fields`，最关键的是 `username` 和 `fieldName` 没有对应到界面的“字段名称 / 字段标识”。
+- 初步排查发现 `mapSingleTableDetailGridFieldToColumn` 先复用了主字段 mapper，而主字段 mapper 并不会优先读取明细接口里的 `username`；如果后续覆盖不完整，就会把字段名称错误显示成 `fieldName` 或其他回退值。
+- 已确认根因在两端同时存在：
+  - 读取端 `mapSingleTableDetailGridFieldToColumn` 没有把 `username` 提升为明细“字段名称”的首选来源。
+  - 保存端 `buildGridFieldBody` 只稳定写 `displayName / fieldName`，没有把当前编辑值同步写成明细接口更关键的 `username` 别名。
+- 已将明细 grid-field 读取映射改成 `name <- username/userName/displayName/displayname`、`sourceField <- fieldName/fieldname`，避免主字段 mapper 的 fallback 把两者混淆。
+- 已同步调整 `buildGridFieldBody`：当前编辑态会同时回写 `fieldName + fieldname` 和 `username + userName + displayName + displayname`，让明细与左侧 grid-field 这类旧接口都能收到一致的标题/标识值。
+
+### Verification
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 通过明细 SQL 查询得到的 `grid-fields` 现在会把后端 `username` 正确显示到“字段名称”，把 `fieldName` 正确显示到“字段标识”，不再互相串位。
+- 保存时会把当前编辑后的名称和标识按多套兼容别名一起带回去，因此保存成功后的回填和下次重载会继续保持同一组对应关系。
