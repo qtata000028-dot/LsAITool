@@ -129,7 +129,7 @@ export function useDocumentConditionWorkbench({
     ((currentLength % Math.max(minRows, getConditionWorkbenchRowCount(scope))) + 1)
   ), [getConditionWorkbenchRowCount, minRows]);
 
-  const mainDocumentConditionActivate = useCallback((id: string) => {
+  const mainDocumentConditionActivate = useCallback((id: string | null) => {
     setSelectedArchiveNodeId('archive-filter');
     activateConditionSelection('main', id);
   }, [activateConditionSelection, setSelectedArchiveNodeId]);
@@ -180,7 +180,7 @@ export function useDocumentConditionWorkbench({
     setSelectedMainFiltersForDelete,
   ]);
 
-  const leftDocumentConditionActivate = useCallback((id: string) => {
+  const leftDocumentConditionActivate = useCallback((id: string | null) => {
     setSelectedArchiveNodeId('archive-left-filter');
     activateConditionSelection('left', id);
   }, [activateConditionSelection, setSelectedArchiveNodeId]);

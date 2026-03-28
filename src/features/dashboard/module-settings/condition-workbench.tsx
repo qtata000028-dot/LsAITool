@@ -50,7 +50,7 @@ export type DocumentConditionWorkbenchConfig = {
   setFields: React.Dispatch<React.SetStateAction<any[]>>;
   scope: ConditionWorkbenchScope;
   rowCount: number;
-  onActivate: (id: string) => void;
+  onActivate: (id: string | null) => void;
   onAdd: () => void;
   onDelete: () => void;
 };
