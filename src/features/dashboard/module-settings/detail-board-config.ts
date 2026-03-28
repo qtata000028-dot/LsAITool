@@ -141,6 +141,8 @@ export function createSuggestedDetailBoardGroups(columns: any[]) {
 
 export function buildDetailBoardConfig(columns: any[] = [], overrides: Record<string, any> = {}) {
   return {
+    archiveLayoutDirty: false,
+    archiveLayoutSource: null,
     enabled: false,
     designerLayout: null,
     hiddenColumnIds: [],
@@ -152,17 +154,18 @@ export function buildDetailBoardConfig(columns: any[] = [], overrides: Record<st
 }
 
 export function normalizeDetailBoardConfig(config: any, columns: any[] = []) {
+  const rawConfig = config && typeof config === 'object' ? config : {};
   const availableColumnIds = new Set(columns.map((column) => column.id));
   const hiddenColumnIds = Array.from(new Set(
-    (Array.isArray(config?.hiddenColumnIds) ? config.hiddenColumnIds : [])
+    (Array.isArray(rawConfig?.hiddenColumnIds) ? rawConfig.hiddenColumnIds : [])
       .map(String)
       .filter((columnId: string) => availableColumnIds.has(columnId)),
   ));
   const hiddenColumnIdSet = new Set(hiddenColumnIds);
   const assignedColumnIdSet = new Set<string>();
   const suggestedGroups = createSuggestedDetailBoardGroups(columns);
-  const hasCustomGroups = Array.isArray(config?.groups);
-  const rawGroups = hasCustomGroups ? config.groups : suggestedGroups;
+  const hasCustomGroups = Array.isArray(rawConfig?.groups);
+  const rawGroups = hasCustomGroups ? rawConfig.groups : suggestedGroups;
   const normalizedGroups = rawGroups.map((group: any, index: number) => (
     (() => {
       const columnIds = Array.from(new Set(
@@ -216,13 +219,18 @@ export function normalizeDetailBoardConfig(config: any, columns: any[] = []) {
   ));
 
   return {
-    enabled: Boolean(config?.enabled),
-    designerLayout: config?.designerLayout && typeof config.designerLayout === 'object'
-      ? config.designerLayout
+    ...rawConfig,
+    archiveLayoutDirty: Boolean(rawConfig?.archiveLayoutDirty),
+    archiveLayoutSource: rawConfig?.archiveLayoutSource && typeof rawConfig.archiveLayoutSource === 'object'
+      ? rawConfig.archiveLayoutSource
+      : null,
+    enabled: Boolean(rawConfig?.enabled),
+    designerLayout: rawConfig?.designerLayout && typeof rawConfig.designerLayout === 'object'
+      ? rawConfig.designerLayout
       : null,
     hiddenColumnIds,
-    theme: DETAIL_BOARD_THEME_OPTIONS.some((option) => option.value === config?.theme) ? config.theme : DETAIL_BOARD_DEFAULT_THEME,
-    sortColumnId: availableColumnIds.has(config?.sortColumnId) ? config.sortColumnId : columns[0]?.id ?? null,
+    theme: DETAIL_BOARD_THEME_OPTIONS.some((option) => option.value === rawConfig?.theme) ? rawConfig.theme : DETAIL_BOARD_DEFAULT_THEME,
+    sortColumnId: availableColumnIds.has(rawConfig?.sortColumnId) ? rawConfig.sortColumnId : columns[0]?.id ?? null,
     groups: hasCustomGroups ? normalizedGroups : suggestedGroups,
   };
 }
