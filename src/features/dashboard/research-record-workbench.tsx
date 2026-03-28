@@ -1,11 +1,16 @@
 ﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  fetchSystemDepartments,
+  type SystemDepartmentOption,
+} from '../../lib/backend-departments';
+import {
   fetchSingleTableModuleConfig,
   fetchSingleTableModuleDetails,
   fetchSingleTableModuleFields,
 } from '../../lib/backend-module-config';
 import {
   deleteSurveyDetail,
+  fetchSurveyDetail,
   fetchSurveyDetails,
   fetchSurveyMain,
   fetchSurveyMainList,
@@ -14,6 +19,7 @@ import {
   type SaveSurveyDetailPayload,
   type SaveSurveyMainPayload,
   type SurveyDetailDto,
+  type SurveyPersistedId,
   type SurveyMainDto,
 } from '../../lib/backend-survey';
 import { getStoredAuthSession } from '../../lib/auth-session';
@@ -60,7 +66,7 @@ type ResearchDraftLineColors = Partial<Record<ResearchDraftMultilineFieldKey, Re
 
 type ResearchContentItem = {
   backendBillNo: string;
-  backendId: number | null;
+  backendId: SurveyPersistedId | null;
   businessTheme: string;
   capturedDetailNames: string[];
   capturedFieldNames: string[];
@@ -74,6 +80,7 @@ type ResearchContentItem = {
   linkedModuleTable: string;
   painPoints: string;
   sceneName: string;
+  shouldPersistEvenIfBlank: boolean;
   suggestions: string;
   timeShare: string;
   workDescription: string;
@@ -113,9 +120,9 @@ type ResearchRecordWorkbenchProps = {
 };
 
 type ResearchSurveyRecordBinding = {
-  detailIds: number[];
+  detailIds: SurveyPersistedId[];
   departId: number | null;
-  mainId: number | null;
+  mainId: SurveyPersistedId | null;
 };
 
 type CapturedModuleSnapshot = {
@@ -350,15 +357,25 @@ function createResearchContentMaster(defaultTitle: string): ResearchContentMaste
   };
 }
 
-function createResearchContentItem(index: number): ResearchContentItem {
+function buildResearchContentItemId(index: number, backendId?: SurveyPersistedId | null) {
+  if (hasPersistedId(backendId)) {
+    return `survey-detail-${backendId}`;
+  }
+  return `research-content-${Date.now()}-${index}`;
+}
+
+function createResearchContentItem(
+  index: number,
+  options?: { backendId?: SurveyPersistedId | null; shouldPersistEvenIfBlank?: boolean },
+): ResearchContentItem {
   return {
     backendBillNo: '',
-    backendId: null,
+    backendId: options?.backendId ?? null,
     businessTheme: '',
     capturedDetailNames: [],
     capturedFieldNames: [],
     formsProvided: '',
-    id: `research-content-${Date.now()}-${index}`,
+    id: buildResearchContentItemId(index, options?.backendId),
     jobRole: '',
     lineColors: {},
     linkedModuleCode: '',
@@ -367,6 +384,7 @@ function createResearchContentItem(index: number): ResearchContentItem {
     linkedModuleTable: '',
     painPoints: '',
     sceneName: '',
+    shouldPersistEvenIfBlank: options?.shouldPersistEvenIfBlank ?? false,
     suggestions: '',
     timeShare: '',
     workDescription: '',
@@ -429,6 +447,31 @@ function normalizeDateInputValue(value: unknown) {
   return matched ? matched[1] : text;
 }
 
+function parseDepartmentId(value: unknown) {
+  const text = toText(value).trim();
+  if (!text) {
+    return null;
+  }
+  const parsed = Number.parseInt(text, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function hasPersistedId(value: unknown): value is SurveyPersistedId {
+  if (typeof value === 'number') {
+    return Number.isFinite(value);
+  }
+
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+
+  return false;
+}
+
+function toPersistedIdKey(value: SurveyPersistedId) {
+  return String(value).trim();
+}
+
 function splitDelimitedValues(value: string) {
   return value
     .split(/[、,，\n]+/)
@@ -466,7 +509,7 @@ function buildRateDisplay(detail: SurveyDetailDto) {
 }
 
 function mapSurveyDetailToContentItem(detail: SurveyDetailDto, index: number): ResearchContentItem {
-  const fallback = createResearchContentItem(index + 1);
+  const fallback = createResearchContentItem(index + 1, { backendId: detail.id });
   return {
     ...fallback,
     backendBillNo: toText(detail.billNo),
@@ -483,36 +526,60 @@ function mapSurveyDetailToContentItem(detail: SurveyDetailDto, index: number): R
   };
 }
 
-function mapSurveyMainAndDetailsToDraft(input: {
-  defaultDraft: ResearchRecordDraft;
-  details: SurveyDetailDto[];
-  firstLevelMenuName: string;
-  main: SurveyMainDto;
-}): ResearchRecordDraft {
-  const contentItems = input.details.length > 0
-    ? input.details.map((item, index) => mapSurveyDetailToContentItem(item, index))
-    : [createResearchContentItem(1)];
+function mergeSurveyDetailIntoContentItem(input: {
+  detail: SurveyDetailDto;
+  existing?: ResearchContentItem | null;
+  index: number;
+}): ResearchContentItem {
+  const mapped = mapSurveyDetailToContentItem(input.detail, input.index);
+
+  if (!input.existing) {
+    return mapped;
+  }
 
   return {
+    ...input.existing,
+    ...mapped,
+    capturedDetailNames: input.existing.capturedDetailNames,
+    capturedFieldNames: input.existing.capturedFieldNames,
+    id: input.existing.id || mapped.id,
+    lineColors: input.existing.lineColors,
+    linkedModuleQuerySql: input.existing.linkedModuleQuerySql,
+    linkedModuleTable: input.existing.linkedModuleTable,
+    sceneName: input.existing.sceneName,
+    shouldPersistEvenIfBlank: input.existing.shouldPersistEvenIfBlank,
+  };
+}
+
+function mapSurveyMainToDraft(input: {
+  defaultDraft: ResearchRecordDraft;
+  main: SurveyMainDto;
+}): ResearchRecordDraft {
+  return {
     ...input.defaultDraft,
-    companyName: input.defaultDraft.companyName,
-    contentItems,
-    departmentName: normalizeWorkspaceLabel(input.firstLevelMenuName) || input.defaultDraft.departmentName,
+    companyName: toText(input.main.title).trim() || input.defaultDraft.companyName,
+    contentItems: input.defaultDraft.contentItems,
+    departmentName: input.defaultDraft.departmentName,
     departmentPosts: normalizeMultilineValue(toText(input.main.positionsBak), /[；;\n]+/),
     documentNo: toText(input.main.fileNo).trim() || input.defaultDraft.documentNo,
-    engineers: normalizeMultilineValue(toText(input.main.surveyUsers || input.main.operatorName), /[、,，\n]+/) || input.defaultDraft.engineers,
+    engineers: normalizeMultilineValue(toText(input.main.surveyUsers), /[、,，\n]+/) || input.defaultDraft.engineers,
     extraNotes: normalizeMultilineValue(toText(input.main.otherBak)),
     overallPainPoints: normalizeMultilineValue(toText(input.main.painsBak)),
     respondents: normalizeMultilineValue(toText(input.main.empNames), /[、,，\n]+/),
-    signer: toText(input.main.surveyUsers || input.main.operatorName).trim(),
+    signer: toText(input.main.operatorName).trim() || toText(input.main.surveyUsers).trim() || input.defaultDraft.signer,
     signerDate: normalizeDateInputValue(input.main.operateDate ?? input.main.surveyDate) || input.defaultDraft.signerDate,
     specialDiscussion: normalizeMultilineValue(toText(input.main.specialBak)),
+    projectName: toText(input.main.project).trim() || input.defaultDraft.projectName,
     surveyCount: toText(input.main.orderNum).trim() || input.defaultDraft.surveyCount,
     surveyDate: normalizeDateInputValue(input.main.surveyDate) || input.defaultDraft.surveyDate,
-    surveyLocation: toText(input.main.address).trim(),
+    surveyLocation: toText(input.main.address).trim() || input.defaultDraft.surveyLocation,
     surveyScope: normalizeResearchScope(input.main.scope),
     workTools: normalizeMultilineValue(toText(input.main.toolsBak), /[、,，\n]+/),
   };
+}
+
+function mapSurveyDetailsToContentItems(details: SurveyDetailDto[]) {
+  return details.map((item, index) => mapSurveyDetailToContentItem(item, index));
 }
 
 function hasMeaningfulContentItem(item: ResearchContentItem) {
@@ -528,16 +595,23 @@ function hasMeaningfulContentItem(item: ResearchContentItem) {
   );
 }
 
+function shouldPersistContentItem(item: ResearchContentItem) {
+  return item.shouldPersistEvenIfBlank || hasMeaningfulContentItem(item);
+}
+
 function buildSurveyMainPayload(input: {
-  defaultDepartId: number | null;
   draft: ResearchRecordDraft;
-  existingId: number | null;
+  existingId: SurveyPersistedId | null;
   existingMain: SurveyMainDto | null;
+  selectedDepartId: number | null;
 }): SaveSurveyMainPayload {
-  const departId = input.existingMain?.departId ?? input.defaultDepartId;
+  const departId = input.selectedDepartId ?? parseDepartmentId(input.existingMain?.departId);
+  const existingMainId = hasPersistedId(input.existingMain?.id) ? input.existingMain.id : input.existingId;
   const payload: SaveSurveyMainPayload = {
     address: input.draft.surveyLocation.trim(),
     empNames: normalizeMultilineValue(input.draft.respondents, /[、,，\n]+/),
+    operateDate: input.draft.signerDate.trim(),
+    operatorName: input.draft.signer.trim(),
     otherBak: normalizeMultilineValue(input.draft.extraNotes),
     painsBak: normalizeMultilineValue(input.draft.overallPainPoints),
     positionsBak: normalizeMultilineValue(input.draft.departmentPosts, /[；;\n]+/),
@@ -545,6 +619,8 @@ function buildSurveyMainPayload(input: {
     specialBak: normalizeMultilineValue(input.draft.specialDiscussion),
     surveyDate: input.draft.surveyDate.trim(),
     surveyUsers: normalizeMultilineValue(input.draft.engineers, /[、,，\n]+/),
+    title: input.draft.companyName.trim(),
+    project: input.draft.projectName.trim(),
     toolsBak: normalizeMultilineValue(input.draft.workTools, /[、,，\n]+/),
   };
 
@@ -552,17 +628,17 @@ function buildSurveyMainPayload(input: {
     payload.departId = departId as number | string;
   }
 
-  if (input.existingId) {
-    payload.id = input.existingId;
+  if (hasPersistedId(existingMainId)) {
+    payload.id = existingMainId;
   }
 
   const documentNo = input.draft.documentNo.trim();
-  if (documentNo || input.existingId) {
+  if (documentNo || hasPersistedId(existingMainId)) {
     payload.fileNo = documentNo;
   }
 
   const surveyCount = input.draft.surveyCount.trim();
-  if (surveyCount || input.existingId) {
+  if (surveyCount || hasPersistedId(existingMainId)) {
     payload.orderNum = surveyCount ? Number.parseInt(surveyCount, 10) || surveyCount : '';
   }
 
@@ -586,7 +662,7 @@ function buildSurveyDetailPayload(item: ResearchContentItem): SaveSurveyDetailPa
     workingRate3: rates[2] ?? '',
   };
 
-  if (item.backendId) {
+  if (hasPersistedId(item.backendId)) {
     payload.id = item.backendId;
   }
 
@@ -606,7 +682,7 @@ function buildDefaultDraft(input: {
     companyName: normalizeWorkspaceLabel(input.companyTitle),
     contentItems: [createResearchContentItem(1)],
     contentMaster: createResearchContentMaster(firstLevelMenuName || '主业务主题'),
-    departmentName: firstLevelMenuName || '',
+    departmentName: '',
     departmentPosts: '',
     documentNo: '',
     engineers: input.currentUserName || '',
@@ -615,7 +691,7 @@ function buildDefaultDraft(input: {
     overallPainPoints: '',
     projectName: subsystemName ? `${subsystemName}数字一体化平台项目` : '',
     respondents: '',
-    signer: '',
+    signer: input.currentUserName || '',
     signerDate: getTodayDate(),
     specialDiscussion: '',
     surveyCount: '1',
@@ -676,7 +752,7 @@ function normalizeContentItem(raw: unknown, index: number): ResearchContentItem 
   const record = raw as Partial<ResearchContentItem>;
   return {
     backendBillNo: toText(record.backendBillNo),
-    backendId: typeof record.backendId === 'number' ? record.backendId : null,
+    backendId: hasPersistedId(record.backendId) ? record.backendId : null,
     businessTheme: toText(record.businessTheme),
     capturedDetailNames: Array.isArray(record.capturedDetailNames) ? record.capturedDetailNames.map((item) => toText(item)).filter(Boolean) : [],
     capturedFieldNames: Array.isArray(record.capturedFieldNames) ? record.capturedFieldNames.map((item) => toText(item)).filter(Boolean) : [],
@@ -690,6 +766,7 @@ function normalizeContentItem(raw: unknown, index: number): ResearchContentItem 
     linkedModuleTable: toText(record.linkedModuleTable),
     painPoints: normalizeMultilineValue(toText(record.painPoints)),
     sceneName: toText(record.sceneName),
+    shouldPersistEvenIfBlank: Boolean(record.shouldPersistEvenIfBlank),
     suggestions: normalizeMultilineValue(toText(record.suggestions)),
     timeShare: toText(record.timeShare),
     workDescription: normalizeMultilineValue(toText(record.workDescription)),
@@ -1110,10 +1187,6 @@ export function ResearchRecordWorkbench({
   storageKey: _storageKey,
 }: ResearchRecordWorkbenchProps) {
   const authSession = useMemo(() => getStoredAuthSession(), []);
-  const defaultDepartId = useMemo(() => {
-    const parsed = Number.parseInt(toText(authSession?.departmentId).trim(), 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  }, [authSession?.departmentId]);
   const defaultDraft = useMemo(
     () => buildDefaultDraft({
       activeFirstLevelMenuName,
@@ -1129,13 +1202,19 @@ export function ResearchRecordWorkbench({
   const [isRecordSaving, setIsRecordSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [draft, setDraft] = useState<ResearchRecordDraft>(defaultDraft);
+  const [departmentOptions, setDepartmentOptions] = useState<SystemDepartmentOption[]>([]);
+  const [departmentSearchKeyword, setDepartmentSearchKeyword] = useState('');
+  const [isDepartmentOptionsLoading, setIsDepartmentOptionsLoading] = useState(false);
+  const [isDepartmentSearchOpen, setIsDepartmentSearchOpen] = useState(false);
   const [loadedMainRecord, setLoadedMainRecord] = useState<SurveyMainDto | null>(null);
   const [previewFocusKey, setPreviewFocusKey] = useState<string>('overview');
   const [recordBinding, setRecordBinding] = useState<ResearchSurveyRecordBinding>({
     detailIds: [],
-    departId: defaultDepartId,
+    departId: null,
     mainId: null,
   });
+  const [hydratedDetailIds, setHydratedDetailIds] = useState<string[]>([]);
+  const [isSelectedDetailLoading, setIsSelectedDetailLoading] = useState(false);
   const [selectedContentItemId, setSelectedContentItemId] = useState<string | null>(defaultDraft.contentItems[0]?.id ?? null);
   const [activeOverviewQuickTarget, setActiveOverviewQuickTarget] = useState<ResearchOverviewQuickTarget>('surveyDate');
   const [activeEnvironmentQuickTarget, setActiveEnvironmentQuickTarget] = useState<ResearchEnvironmentQuickTarget>('departmentPosts');
@@ -1148,6 +1227,70 @@ export function ResearchRecordWorkbench({
     [availableModules],
   );
   const wordEditorRuntime = useMemo(() => getResearchRecordWordEditorRuntime(), []);
+  const selectedDepartmentOption = useMemo(
+    () => departmentOptions.find((item) => item.id === recordBinding.departId) ?? null,
+    [departmentOptions, recordBinding.departId],
+  );
+  const filteredDepartmentOptions = useMemo(() => {
+    const keyword = departmentSearchKeyword.trim().toLocaleLowerCase('zh-Hans-CN');
+    if (!keyword) {
+      return departmentOptions.slice(0, 12);
+    }
+
+    return departmentOptions
+      .filter((item) => item.name.toLocaleLowerCase('zh-Hans-CN').includes(keyword) || String(item.id).includes(keyword))
+      .slice(0, 12);
+  }, [departmentOptions, departmentSearchKeyword]);
+
+  useEffect(() => {
+    let disposed = false;
+    setIsDepartmentOptionsLoading(true);
+
+    async function loadDepartments() {
+      try {
+        const options = await fetchSystemDepartments();
+        if (disposed) {
+          return;
+        }
+        setDepartmentOptions(options);
+      } catch (error) {
+        if (disposed) {
+          return;
+        }
+        const nextMessage = error instanceof Error ? error.message : '部门列表加载失败';
+        onShowToast?.(nextMessage);
+      } finally {
+        if (!disposed) {
+          setIsDepartmentOptionsLoading(false);
+        }
+      }
+    }
+
+    void loadDepartments();
+
+    return () => {
+      disposed = true;
+    };
+  }, [onShowToast]);
+
+  useEffect(() => {
+    if (!selectedDepartmentOption) {
+      return;
+    }
+
+    setDraft((current) => (
+      current.departmentName === selectedDepartmentOption.name
+        ? current
+        : {
+            ...current,
+            departmentName: selectedDepartmentOption.name,
+          }
+    ));
+
+    if (!isDepartmentSearchOpen) {
+      setDepartmentSearchKeyword(selectedDepartmentOption.name);
+    }
+  }, [isDepartmentSearchOpen, selectedDepartmentOption]);
 
   useEffect(() => {
     let disposed = false;
@@ -1159,14 +1302,15 @@ export function ResearchRecordWorkbench({
         const mains = await fetchSurveyMainList();
         const firstMain = Array.isArray(mains) && mains.length > 0 ? mains[0] : null;
 
-        if (!firstMain || !firstMain.id) {
+        if (!firstMain || !hasPersistedId(firstMain.id)) {
           if (disposed) {
             return;
           }
           setLoadedMainRecord(null);
+          setHydratedDetailIds([]);
           setRecordBinding({
             detailIds: [],
-            departId: defaultDepartId,
+            departId: null,
             mainId: null,
           });
           setDraft(defaultDraft);
@@ -1183,32 +1327,41 @@ export function ResearchRecordWorkbench({
         }
 
         const resolvedDepartId = (() => {
-          const rawValue = main.departId ?? defaultDepartId;
-          const parsed = Number.parseInt(String(rawValue ?? ''), 10);
-          return Number.isFinite(parsed) ? parsed : defaultDepartId;
+          return parseDepartmentId(main.departId);
         })();
+        const resolvedMainId = hasPersistedId(main.id) ? main.id : firstMain.id;
+        const normalizedMain = {
+          ...main,
+          id: resolvedMainId,
+        };
+        const detailIds = details
+          .map((item) => item.id)
+          .filter((item): item is SurveyPersistedId => hasPersistedId(item));
 
-        setLoadedMainRecord(main);
+        setLoadedMainRecord(normalizedMain);
+        setHydratedDetailIds([]);
         setRecordBinding({
-          detailIds: details.map((item) => item.id).filter((item): item is number => typeof item === 'number'),
+          detailIds,
           departId: resolvedDepartId ?? null,
-          mainId: main.id,
+          mainId: resolvedMainId,
         });
-        setDraft(mapSurveyMainAndDetailsToDraft({
-          defaultDraft,
-          details,
-          firstLevelMenuName: activeFirstLevelMenuName,
-          main,
-        }));
+        setDraft({
+          ...mapSurveyMainToDraft({
+            defaultDraft,
+            main: normalizedMain,
+          }),
+          contentItems: mapSurveyDetailsToContentItems(details),
+        });
       } catch (error) {
         if (disposed) {
           return;
         }
         const nextMessage = error instanceof Error ? error.message : '调研记录加载失败';
         setLoadedMainRecord(null);
+        setHydratedDetailIds([]);
         setRecordBinding({
           detailIds: [],
-          departId: defaultDepartId,
+          departId: null,
           mainId: null,
         });
         setDraft(defaultDraft);
@@ -1226,7 +1379,7 @@ export function ResearchRecordWorkbench({
     return () => {
       disposed = true;
     };
-  }, [activeFirstLevelMenuName, defaultDepartId, defaultDraft, onShowToast]);
+  }, [defaultDraft, onShowToast]);
 
   useEffect(() => {
     setSelectedContentItemId((current) => {
@@ -1258,6 +1411,18 @@ export function ResearchRecordWorkbench({
       ...current,
       ...patch,
     }));
+  }, []);
+  const handleDepartmentSelect = useCallback((option: SystemDepartmentOption) => {
+    setRecordBinding((current) => ({
+      ...current,
+      departId: option.id,
+    }));
+    setDraft((current) => ({
+      ...current,
+      departmentName: option.name,
+    }));
+    setDepartmentSearchKeyword(option.name);
+    setIsDepartmentSearchOpen(false);
   }, []);
 
   const updateContentItem = useCallback((id: string, patch: Partial<ResearchContentItem>) => {
@@ -1305,7 +1470,7 @@ export function ResearchRecordWorkbench({
   const addContentItem = useCallback(() => {
     let nextItem: ResearchContentItem | null = null;
     setDraft((current) => {
-      nextItem = createResearchContentItem(current.contentItems.length + 1);
+      nextItem = createResearchContentItem(current.contentItems.length + 1, { shouldPersistEvenIfBlank: true });
       return {
         ...current,
         contentItems: [...current.contentItems, nextItem],
@@ -1337,14 +1502,21 @@ export function ResearchRecordWorkbench({
     setIsRecordSaving(true);
 
     try {
+      const selectedPersistedDetailIdBeforeSave = (() => {
+        const selectedItem = draft.contentItems.find((item) => item.id === selectedContentItemId);
+        return hasPersistedId(selectedItem?.backendId) ? selectedItem.backendId : null;
+      })();
       const savedMain = await saveSurveyMain(buildSurveyMainPayload({
-        defaultDepartId,
         draft,
         existingId: recordBinding.mainId,
         existingMain: loadedMainRecord,
+        selectedDepartId: recordBinding.departId,
       }));
-      const mainId = savedMain.id;
-      const persistableItems = draft.contentItems.filter((item) => hasMeaningfulContentItem(item));
+      const mainId = hasPersistedId(savedMain.id) ? savedMain.id : recordBinding.mainId;
+      if (!hasPersistedId(mainId)) {
+        throw new Error('调研主表保存成功但未返回主键 ID');
+      }
+      const persistableItems = draft.contentItems.filter((item) => shouldPersistContentItem(item));
       const savedDetailPairs: Array<{ clientId: string; detail: SurveyDetailDto }> = [];
 
       for (const item of persistableItems) {
@@ -1354,44 +1526,77 @@ export function ResearchRecordWorkbench({
 
       const savedDetailIds = savedDetailPairs
         .map((entry) => entry.detail.id)
-        .filter((item): item is number => typeof item === 'number');
-      const removedDetailIds = recordBinding.detailIds.filter((id) => !savedDetailIds.includes(id));
+        .filter((item): item is SurveyPersistedId => hasPersistedId(item));
+      const savedDetailKeySet = new Set(savedDetailIds.map((id) => toPersistedIdKey(id)));
+      const removedDetailIds = recordBinding.detailIds.filter((id) => !savedDetailKeySet.has(toPersistedIdKey(id)));
 
       for (const detailId of removedDetailIds) {
         await deleteSurveyDetail(mainId, detailId);
       }
 
-      setLoadedMainRecord(savedMain);
+      const [refreshedMainResponse, refreshedDetails] = await Promise.all([
+        fetchSurveyMain(mainId),
+        fetchSurveyDetails(mainId),
+      ]);
+      const refreshedMain = {
+        ...refreshedMainResponse,
+        id: hasPersistedId(refreshedMainResponse.id) ? refreshedMainResponse.id : mainId,
+      };
+      const refreshedDetailIds = refreshedDetails
+        .map((item) => item.id)
+        .filter((item): item is SurveyPersistedId => hasPersistedId(item));
+
+      setLoadedMainRecord(refreshedMain);
       setRecordBinding({
-        detailIds: savedDetailIds,
+        detailIds: refreshedDetailIds,
         departId: (() => {
-          const rawValue = savedMain.departId ?? recordBinding.departId ?? defaultDepartId;
-          const parsed = Number.parseInt(String(rawValue ?? ''), 10);
-          return Number.isFinite(parsed) ? parsed : defaultDepartId;
+          return parseDepartmentId(refreshedMain.departId) ?? recordBinding.departId;
         })(),
-        mainId,
+        mainId: refreshedMain.id,
       });
-      setDraft((current) => ({
-        ...current,
-        documentNo: toText(savedMain.fileNo).trim() || current.documentNo,
-        surveyCount: toText(savedMain.orderNum).trim() || current.surveyCount,
-        surveyDate: normalizeDateInputValue(savedMain.surveyDate) || current.surveyDate,
-        contentItems: current.contentItems
-          .map((item) => {
-            const matched = savedDetailPairs.find((entry) => entry.clientId === item.id);
-            if (!matched) {
-              return item;
+      setHydratedDetailIds([]);
+      setDraft((current) => {
+        const refreshedContentItems = refreshedDetails.map((detail, index) => {
+          const matchedSavedPair = savedDetailPairs.find((entry) => toPersistedIdKey(entry.detail.id) === toPersistedIdKey(detail.id));
+          const existingItem = current.contentItems.find((item) => {
+            if (hasPersistedId(item.backendId) && toPersistedIdKey(item.backendId) === toPersistedIdKey(detail.id)) {
+              return true;
             }
-            return {
-              ...item,
-              backendBillNo: toText(matched.detail.billNo),
-              backendId: matched.detail.id,
-              linkedModuleCode: item.linkedModuleCode.trim() || toText(matched.detail.moduleId).trim(),
-              linkedModuleName: item.linkedModuleName.trim() || toText(matched.detail.moduleName).trim(),
-            };
-          })
-          .filter((item) => item.backendId || hasMeaningfulContentItem(item)),
-      }));
+            return matchedSavedPair ? item.id === matchedSavedPair.clientId : false;
+          });
+
+          return mergeSurveyDetailIntoContentItem({
+            detail,
+            existing: existingItem
+              ? {
+                  ...existingItem,
+                  shouldPersistEvenIfBlank: false,
+                }
+              : undefined,
+            index,
+          });
+        });
+        const selectedPersistedDetailId = (() => {
+          const matchedSavedPair = savedDetailPairs.find((entry) => entry.clientId === selectedContentItemId);
+          if (matchedSavedPair && hasPersistedId(matchedSavedPair.detail.id)) {
+            return matchedSavedPair.detail.id;
+          }
+          return selectedPersistedDetailIdBeforeSave;
+        })();
+        const nextSelectedItem = hasPersistedId(selectedPersistedDetailId)
+          ? refreshedContentItems.find((item) => hasPersistedId(item.backendId) && toPersistedIdKey(item.backendId) === toPersistedIdKey(selectedPersistedDetailId))
+          : refreshedContentItems[0] ?? null;
+
+        setSelectedContentItemId(nextSelectedItem?.id ?? null);
+
+        return {
+          ...mapSurveyMainToDraft({
+            defaultDraft: current,
+            main: refreshedMain,
+          }),
+          contentItems: refreshedContentItems,
+        };
+      });
       setStatusMessage('已保存调研记录');
       onShowToast?.('已保存调研记录');
     } catch (error) {
@@ -1401,7 +1606,7 @@ export function ResearchRecordWorkbench({
     } finally {
       setIsRecordSaving(false);
     }
-  }, [defaultDepartId, draft, loadedMainRecord, onShowToast, recordBinding]);
+  }, [draft, loadedMainRecord, onShowToast, recordBinding, selectedContentItemId]);
 
   const handleExportWord = useCallback(async () => {
     try {
@@ -1565,11 +1770,70 @@ export function ResearchRecordWorkbench({
 
   const selectedContentIndex = Math.max(0, draft.contentItems.findIndex((item) => item.id === selectedContentItemId));
   const selectedContentItem = draft.contentItems[selectedContentIndex] ?? draft.contentItems[0] ?? null;
+  const selectedContentBackendId = selectedContentItem?.backendId ?? null;
   const selectedContentDisplayName = selectedContentItem ? getContentItemDisplayName(selectedContentItem, selectedContentIndex) : '';
   const selectedContentOrdinal = String(selectedContentIndex + 1).padStart(2, '0');
   const readyContentCount = draft.contentItems.filter((item) => isContentItemReady(item)).length;
   const wordEditorTitle = `${(draft.departmentName || activeFirstLevelMenuName || '调研记录').trim() || '调研记录'}-调研记录.docx`;
   const isWordPrimaryMode = wordEditorRuntime.enabled;
+
+  useEffect(() => {
+    if (
+      !hasPersistedId(recordBinding.mainId)
+      || !selectedContentItemId
+      || !hasPersistedId(selectedContentBackendId)
+      || hydratedDetailIds.includes(toPersistedIdKey(selectedContentBackendId))
+    ) {
+      setIsSelectedDetailLoading(false);
+      return;
+    }
+
+    let disposed = false;
+    setIsSelectedDetailLoading(true);
+
+    async function loadSelectedSurveyDetail() {
+      try {
+        const detail = await fetchSurveyDetail(recordBinding.mainId, selectedContentBackendId);
+
+        if (disposed) {
+          return;
+        }
+
+        setDraft((current) => ({
+          ...current,
+          contentItems: current.contentItems.map((item, index) => (
+            item.id === selectedContentItemId
+              ? mergeSurveyDetailIntoContentItem({
+                  detail,
+                  existing: item,
+                  index,
+                })
+              : item
+          )),
+        }));
+        setHydratedDetailIds((current) => (
+          current.includes(toPersistedIdKey(selectedContentBackendId)) ? current : [...current, toPersistedIdKey(selectedContentBackendId)]
+        ));
+      } catch (error) {
+        if (disposed) {
+          return;
+        }
+        const nextMessage = error instanceof Error ? error.message : '调研明细加载失败';
+        setStatusMessage(nextMessage);
+        onShowToast?.(nextMessage);
+      } finally {
+        if (!disposed) {
+          setIsSelectedDetailLoading(false);
+        }
+      }
+    }
+
+    void loadSelectedSurveyDetail();
+
+    return () => {
+      disposed = true;
+    };
+  }, [hydratedDetailIds, onShowToast, recordBinding.mainId, selectedContentBackendId, selectedContentItemId]);
   const activeQuickContext = useMemo(() => {
     if (!selectedContentItem) {
       return null;
@@ -1975,17 +2239,15 @@ export function ResearchRecordWorkbench({
       case 'departmentName':
         return {
           title: '调研部门快捷',
-          subtitle: '优先使用当前所在一级菜单名称。',
-          emptyText: '当前没有可用部门建议。',
-          actions: [
-            activeFirstLevelMenuName
-              ? {
-                  key: 'department-current',
-                  label: activeFirstLevelMenuName,
-                  onClick: () => updateDraft({ departmentName: activeFirstLevelMenuName }),
-                }
-              : null,
-          ].filter(isDefined),
+          subtitle: '通过部门表搜索并选择，保存时提交 Departmentid。',
+          emptyText: isDepartmentOptionsLoading ? '部门列表加载中。' : '在下方搜索框里输入关键字查找部门。',
+          actions: selectedDepartmentOption
+            ? [{
+                key: `department-selected-${selectedDepartmentOption.id}`,
+                label: selectedDepartmentOption.name,
+                onClick: () => handleDepartmentSelect(selectedDepartmentOption),
+              }]
+            : [],
         };
       case 'surveyCount':
         return {
@@ -2035,15 +2297,16 @@ export function ResearchRecordWorkbench({
         return null;
     }
   }, [
-    activeFirstLevelMenuName,
     activeOverviewQuickTarget,
     activeSubsystemName,
-    currentUserName,
     draft.documentNo,
     draft.engineers,
     draft.respondents,
     draft.signerDate,
     draft.surveyDate,
+    handleDepartmentSelect,
+    isDepartmentOptionsLoading,
+    selectedDepartmentOption,
     updateDraft,
   ]);
   const activeOverviewQuickTone = OVERVIEW_QUICK_TARGET_META[activeOverviewQuickTarget].tone;
@@ -2163,6 +2426,7 @@ export function ResearchRecordWorkbench({
     if (
       draft.companyName.trim()
       && draft.projectName.trim()
+      && recordBinding.departId !== null
       && draft.surveyDate.trim()
       && draft.departmentName.trim()
       && draft.respondents.trim()
@@ -2195,6 +2459,7 @@ export function ResearchRecordWorkbench({
     draft.specialDiscussion,
     draft.surveyDate,
     draft.workTools,
+    recordBinding.departId,
     readyContentCount,
   ]);
 
@@ -2361,13 +2626,68 @@ export function ResearchRecordWorkbench({
                         </FieldShell>
                       </FocusFieldCard>
                       <FocusFieldCard active={activeOverviewQuickTarget === 'departmentName'} tone={OVERVIEW_QUICK_TARGET_META.departmentName.tone} className="xl:col-span-4">
-                        <FieldShell label="调研部门">
-                          <TextInput
-                            value={draft.departmentName}
-                            onFocus={() => setActiveOverviewQuickTarget('departmentName')}
-                            onChange={(event) => updateDraft({ departmentName: event.target.value })}
-                            placeholder="质量检验部"
-                          />
+                        <FieldShell label="调研部门" hint={recordBinding.departId !== null ? `ID ${recordBinding.departId}` : undefined}>
+                          <div className="relative">
+                            <TextInput
+                              value={isDepartmentSearchOpen ? departmentSearchKeyword : draft.departmentName}
+                              onFocus={() => {
+                                setActiveOverviewQuickTarget('departmentName');
+                                setDepartmentSearchKeyword(draft.departmentName);
+                                setIsDepartmentSearchOpen(true);
+                              }}
+                              onBlur={() => {
+                                window.setTimeout(() => {
+                                  setIsDepartmentSearchOpen(false);
+                                  setDepartmentSearchKeyword(draft.departmentName);
+                                }, 120);
+                              }}
+                              onChange={(event) => {
+                                setActiveOverviewQuickTarget('departmentName');
+                                setDepartmentSearchKeyword(event.target.value);
+                                setIsDepartmentSearchOpen(true);
+                              }}
+                              placeholder={isDepartmentOptionsLoading ? '部门列表加载中...' : '输入部门名称搜索'}
+                              className="pr-11"
+                            />
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400">
+                              <span className="material-symbols-outlined text-[18px]">
+                                {isDepartmentOptionsLoading ? 'progress_activity' : 'search'}
+                              </span>
+                            </div>
+                            {isDepartmentSearchOpen ? (
+                              <div className="absolute left-0 right-0 z-20 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_44px_-28px_rgba(15,23,42,0.45)]">
+                                <div className="max-h-64 overflow-y-auto p-1.5">
+                                  {isDepartmentOptionsLoading ? (
+                                    <div className="px-3 py-2.5 text-xs text-slate-500">部门列表加载中...</div>
+                                  ) : filteredDepartmentOptions.length > 0 ? (
+                                    filteredDepartmentOptions.map((option) => {
+                                      const isSelected = option.id === recordBinding.departId;
+                                      return (
+                                        <button
+                                          key={option.id}
+                                          type="button"
+                                          onMouseDown={(event) => {
+                                            event.preventDefault();
+                                            handleDepartmentSelect(option);
+                                          }}
+                                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition-colors ${
+                                            isSelected
+                                              ? 'bg-sky-50 text-sky-700'
+                                              : 'text-slate-700 hover:bg-slate-50'
+                                          }`}
+                                        >
+                                          <span className="truncate">{option.name}</span>
+                                          <span className="ml-3 shrink-0 text-[11px] text-slate-400">ID {option.id}</span>
+                                        </button>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="px-3 py-2.5 text-xs text-slate-500">没有匹配的部门，请换个关键字试试。</div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
                         </FieldShell>
                       </FocusFieldCard>
                       <FocusFieldCard active={activeOverviewQuickTarget === 'surveyCount'} tone={OVERVIEW_QUICK_TARGET_META.surveyCount.tone} className="xl:col-span-2">
@@ -2549,13 +2869,20 @@ export function ResearchRecordWorkbench({
                                     className="h-11 rounded-2xl border-slate-200 bg-white px-4 text-[18px] font-black tracking-tight text-slate-950"
                                   />
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => removeContentItem(selectedContentItem.id)}
-                                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100"
-                                >
-                                  <span className="material-symbols-outlined text-[16px]">delete</span>
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  {isSelectedDetailLoading ? (
+                                    <span className="inline-flex h-10 items-center rounded-2xl border border-sky-200 bg-sky-50 px-3 text-[11px] font-semibold text-sky-700">
+                                      明细加载中
+                                    </span>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={() => removeContentItem(selectedContentItem.id)}
+                                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                                  </button>
+                                </div>
                               </div>
 
                               <div className="mt-4">

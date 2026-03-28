@@ -483,6 +483,43 @@
 - In this module, the current requirement is simpler: `GET /api/survey/mains` with no query parameters, then take the first row. `departmentId` still belongs to create/save defaults, but not to the initial list query.
 - If a feature prop is introduced only to satisfy a guessed query filter and the user later removes that filter, delete the prop chain instead of leaving dead context threaded through the workbench.
 
+## 2026-03-28 Survey Main Schema Changes Must Update Read And Save Mappers Together
+- When the backend adds canonical main-table fields for research records, such as `title` or `project`, do not patch only the query side or only the save side. The main DTO, load mapper, save mapper, and save-success rehydration must be updated together.
+- For this workbench, backend `title/project` should be wired directly into the existing overview fields that users edit, rather than leaving the UI on old defaults and silently dropping the new values on save.
+
+## 2026-03-28 Loaded Survey Records Must Preserve Persisted IDs Across List And Detail Reads
+- If the page first discovers a survey record from `GET /api/survey/mains` and then fetches the full row from `GET /api/survey/mains/{id}`, do not assume the second payload always repeats the same `id` field. Preserve the persisted id from the list row as a fallback, or the editor can display existing data but still save as a create.
+- Apply the same rule to detail ids and to mixed `number/string` legacy ids. Diff, hydrate, and delete logic should compare ids by normalized identity, not by a narrow numeric-only filter.
+- When a legacy API may serialize the primary key as `ID` or `Id`, normalize that casing at the API adapter boundary instead of hoping each page remembers to read all variants. Otherwise the same persisted row can look like “loaded but no id” in one screen and “has id” in another.
+
+## 2026-03-28 Explicitly Added Child Rows Must Not Be Dropped Just Because They Are Still Blank
+- In editors where users can manually add child rows, do not reuse a pure “has meaningful content” filter as the only save gate. A user-added blank row is still an intentional row and should usually be persisted, or at minimum preserved through save.
+- Keep a small explicit-persist flag on newly added rows when the product expects “新增明细” to create real child records under the parent, even before the user fills every field.
+
+## 2026-03-28 After Batch-Saving Child Rows, Reload The Whole Child Collection
+- When a parent page can save multiple child rows in one action, do not stop at stitching together the per-row save responses. The authoritative post-save state is the full child list under that parent, so reload it and rehydrate from the collection endpoint.
+- This is especially important when the backend may assign defaults, reorder rows, merge payloads, or return partial DTOs from save endpoints. A collection re-read after save is more reliable than guessing from local optimistic state.
+
+## 2026-03-28 Legacy Detail DTOs Need Full Field-Name Normalization, Not Just ID Normalization
+- When a legacy detail API returns database-style column names like `billno`, `mid`, `modulename`, `moduleid`, `Position1`, or `Working_rate1`, normalizing only the primary key is not enough. The adapter must map the whole row into the front-end field vocabulary or the form will save successfully but re-render blank.
+- Put that mapping in the shared API adapter layer so list read, single-row read, and save-response hydration all agree on the same canonical detail shape.
+
+## 2026-03-28 Legacy Main DTOs Need The Same Full Field-Name Normalization And Semantic Mapping
+- For research-record main rows, do not stop after wiring `title/project`. Legacy responses can still use column names like `departid`, `surveydate`, `Address`, `ordernum`, `empnames`, `Positionsbak`, `operatedate`, and `operatorname`.
+- Normalize those names in the shared survey adapter, and keep the UI-to-backend semantic mapping explicit: `surveyUsers` belongs to the “调研工程师” field, while `operatorName/operateDate` belong to the output-confirmation signer/date fields.
+
+## 2026-03-28 Survey Main Form Fields Must Follow Backend Semantics, Not Convenient Fallbacks
+- When a main form shows both “调研工程师” and “输出确认签字人”, do not fill both from the same `surveyUsers` source just because it makes old records look less empty. That creates silent write-back drift.
+- In this workbench, `surveyUsers` should own the overview engineer field, while `operatorName/operateDate` should own the output-confirmation signer/date. Any fallback between them must stay clearly secondary and only for backward compatibility during read.
+
+## 2026-03-28 Department Pickers Must Persist Backend IDs, Not Just Display Names
+- If the backend contract says a department field stores `Departmentid`, do not keep the UI on a plain text box that only edits `departmentName`. A page that displays the right label but drops the foreign key will drift on save and reload.
+- For this research-record workbench, treat the department search result as a pair: show `departmentname`, persist `Departmentid`, and when the main row reloads with only `departid`, resolve the label from the department source before rendering.
+
+## 2026-03-28 Search-Backed Department Fields Must Not Sneak In Login Defaults
+- Once a department field is changed to a real search picker, do not keep preselecting the login department id or the current menu name as a silent default. That makes the screen look filled even when the user never chose a department.
+- In this research-record workbench, a new record should leave “调研部门” empty until the user selects one, while existing records may still hydrate from the saved `departid`.
+
 ## 2026-03-27 Preview And Export Should Share One Research Word Template Source
 - When the user asks for Word export to match the right-side preview “一比一”, do not keep two separately maintained template trees and try to visually sync them by hand. That always drifts.
 - In the research-record module, the durable fix is to extract one shared page builder and one shared CSS source, then let both the browser preview and the `.doc` export consume that same template.
