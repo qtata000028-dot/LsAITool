@@ -295,10 +295,6 @@ export function DetailCanvas({
   const childrenMap = useMemo(() => buildDetailLayoutChildrenMap(document.items), [document.items]);
   const rootItems = childrenMap.get(null) ?? [];
   const hasCanvasInteraction = mode === 'design' && Boolean(draggingId || resizingId);
-  const selectedItem = useMemo(
-    () => document.items.find((item) => item.id === selectedId) ?? null,
-    [document.items, selectedId],
-  );
   const rootDrop = useDroppable({
     data: buildDetailDropTargetData(null, null),
     disabled: mode !== 'design',
@@ -334,9 +330,7 @@ export function DetailCanvas({
           )}
         >
           <div className="rounded-full border border-white/80 bg-white/88 px-3 py-1.5 text-[11px] font-semibold text-slate-500 shadow-[0_10px_20px_-18px_rgba(15,23,42,0.3)]">
-            {selectedItem
-              ? `当前选中：${selectedItem.title || DETAIL_LAYOUT_REGISTRY[selectedItem.type].defaultTitle}`
-              : '当前未选中控件'}
+            设计画布 · {document.gridSize}px 网格 · {rootItems.length} 个根级控件
           </div>
           <div
             className={clsx(
@@ -369,7 +363,7 @@ export function DetailCanvas({
             hasCanvasInteraction ? 'opacity-0' : 'opacity-100',
           )}
         >
-          双击缩放手柄可恢复默认尺寸，容器通过头部拖动
+          选中后去右侧微调属性；双击缩放手柄可恢复默认尺寸，容器通过头部拖动
         </div>
       ) : null}
 

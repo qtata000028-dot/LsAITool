@@ -100,8 +100,8 @@ export function buildConfigWizardModalNodes(input: BuildConfigWizardModalNodesIn
         {input.archiveLayoutCanvasNode}
         {input.detailBoardPreviewNode}
         {input.mainHiddenColumnsModalNode}
-        {input.builderSelectionContextMenuNode}
-        {input.previewContextMenuNode}
+        {input.configStep === input.modulePreviewStep ? null : input.builderSelectionContextMenuNode}
+        {input.configStep === input.modulePreviewStep ? null : input.previewContextMenuNode}
       </>
     ),
     sidebarNode: (

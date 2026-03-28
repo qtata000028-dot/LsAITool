@@ -33,9 +33,9 @@ export function GroupBoxRenderer({
   return (
     <div
       className={clsx(
-        'flex h-full flex-col overflow-hidden rounded-[20px] border bg-white/92 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.28)]',
+        'flex h-full flex-col overflow-hidden rounded-[20px] border bg-white/92 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.28)] transition-[border-color,box-shadow] duration-150',
         selected
-          ? 'border-[color:var(--workspace-accent,#3162ff)] ring-2 ring-[color:var(--workspace-accent-soft,rgba(49,98,255,0.18))]'
+          ? 'border-[color:var(--workspace-accent,#3162ff)] ring-2 ring-[color:var(--workspace-accent-soft,rgba(49,98,255,0.18))] shadow-[0_28px_48px_-34px_rgba(49,98,255,0.4)]'
           : 'border-slate-200/80',
         mode === 'design' ? 'cursor-default' : 'pointer-events-none',
         className,
@@ -46,6 +46,14 @@ export function GroupBoxRenderer({
     >
       <div className={clsx('flex h-10 items-center border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.92))] px-3', mode === 'design' ? 'detail-layout-groupbox-handle cursor-move' : '')}>
         <span className="truncate text-[12px] font-semibold text-slate-700">{item.title || '分组框'}</span>
+        <div className="ml-auto flex items-center gap-1.5">
+          {selected ? (
+            <span className="rounded-full border border-[color:var(--workspace-accent-border,#bfd0ff)] bg-[color:var(--workspace-accent-soft,rgba(49,98,255,0.1))] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--workspace-accent-strong,#3152c8)]">
+              已选中
+            </span>
+          ) : null}
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">{childCount} 项</span>
+        </div>
       </div>
       <div
         ref={bodyRef}

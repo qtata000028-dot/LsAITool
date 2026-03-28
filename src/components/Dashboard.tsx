@@ -2669,7 +2669,12 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     || configStep === RESTRICTION_STEP
     || configStep === PROCESS_DESIGN_STEP
   );
-  const isConfigFullscreenActive = isModuleSettingStep && isFullscreenConfig;
+  const isConfigFullscreenActive = isConfigOpen && isFullscreenConfig && (
+    configStep === MODULE_SETTING_STEP
+    || configStep === RESTRICTION_STEP
+    || configStep === PROCESS_DESIGN_STEP
+    || configStep === MODULE_PREVIEW_STEP
+  );
   const isCompactModuleSetting = isModuleSettingStep && !isFullscreenConfig;
   const {
     moduleSettingStageStyle,
@@ -3257,12 +3262,14 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
       businessType,
       commonFilledMenuFieldCount,
       commonFuncs,
+      currentModuleCode,
       currentAdvancedMenuKeys,
       currentAdvancedMenuSections,
       currentMenuDraft,
       currentMenuFieldEntriesCount: currentMenuFieldEntries.length,
       currentMenuFieldMap,
       currentModuleGuideLabel: currentModuleGuide.label,
+      currentModuleName,
       currentPinnedMenuKeys,
       currentPinnedMenuKeySet,
       currentCommonMenuSections,
@@ -6276,7 +6283,10 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
             : configStep === MODULE_SETTING_STEP && isSingleTableModuleSettingsSaving
               ? '保存中...'
               : '保存本页',
-          showFullscreenToggle: configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP,
+          showFullscreenToggle: configStep === MODULE_SETTING_STEP
+            || configStep === RESTRICTION_STEP
+            || configStep === PROCESS_DESIGN_STEP
+            || configStep === MODULE_PREVIEW_STEP,
         },
         actions: {
           handleConfigNext,
@@ -6326,6 +6336,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         <ConfigWizardModalShell
           open={isConfigOpen}
           isFullscreenConfigActive={isConfigFullscreenActive}
+          isModulePreviewStep={configStep === MODULE_PREVIEW_STEP}
           isModuleSettingStep={isModuleSettingStep}
           onClose={closeConfigWizard}
           toastMessage={toastMessage}
@@ -6622,6 +6633,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
       <ConfigWizardModalShell
         open={isConfigOpen}
         isFullscreenConfigActive={isConfigFullscreenActive}
+        isModulePreviewStep={configStep === MODULE_PREVIEW_STEP}
         isModuleSettingStep={isModuleSettingStep}
         onClose={closeConfigWizard}
         toastMessage={toastMessage}

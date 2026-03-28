@@ -57,7 +57,7 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
 
   return (
     <div className={stripLayoutClass}>
-      <div className="-ml-px -mt-px min-w-0 overflow-x-auto pr-px">
+      <div className="-ml-px -mt-px min-w-0 overflow-x-auto overflow-y-hidden pr-px scrollbar-none">
         <div className="inline-flex min-w-max items-end border-b border-[#d5e0eb] bg-transparent">
           {detailTabs.map((tab) => {
             const isActive = activeTab === tab.id;

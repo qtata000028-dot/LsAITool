@@ -40,9 +40,9 @@ export function DetailItemRenderer({ className, content, item, mode, onSelect, s
   return (
     <div
       className={clsx(
-        'flex h-full flex-col overflow-hidden rounded-[16px] border bg-white shadow-[0_16px_30px_-26px_rgba(15,23,42,0.35)]',
+        'flex h-full flex-col overflow-hidden rounded-[16px] border bg-white shadow-[0_16px_30px_-26px_rgba(15,23,42,0.35)] transition-[border-color,box-shadow,transform] duration-150',
         selected
-          ? 'border-[color:var(--workspace-accent,#3162ff)] ring-2 ring-[color:var(--workspace-accent-soft,rgba(49,98,255,0.18))]'
+          ? 'border-[color:var(--workspace-accent,#3162ff)] ring-2 ring-[color:var(--workspace-accent-soft,rgba(49,98,255,0.18))] shadow-[0_26px_46px_-28px_rgba(49,98,255,0.45)]'
           : 'border-slate-200/80',
         mode === 'design' ? 'cursor-default' : 'pointer-events-none',
         className,
@@ -54,7 +54,14 @@ export function DetailItemRenderer({ className, content, item, mode, onSelect, s
       <div className="flex h-full flex-col px-3 py-2.5">
         <div className={clsx('mb-1 flex items-center justify-between gap-2', mode === 'design' ? 'detail-layout-item-handle cursor-move' : '')}>
           <span className="truncate text-[11px] font-semibold text-slate-700">{item.title || registryItem.defaultTitle}</span>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">{registryItem.label}</span>
+          <div className="flex items-center gap-1.5">
+            {selected ? (
+              <span className="rounded-full border border-[color:var(--workspace-accent-border,#bfd0ff)] bg-[color:var(--workspace-accent-soft,rgba(49,98,255,0.1))] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--workspace-accent-strong,#3152c8)]">
+                已选中
+              </span>
+            ) : null}
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">{registryItem.label}</span>
+          </div>
         </div>
         <div
           className={clsx(

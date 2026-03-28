@@ -2,6 +2,20 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "日常启动（推荐）",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/restart-client-with-api.mjs"],
+      "problemMatcher": []
+    },
+    {
+      "label": "首次启动（前端+本地代理）",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/ensure-dev-server.mjs"],
+      "problemMatcher": []
+    },
+    {
       "label": "ensure-dev-server",
       "type": "shell",
       "command": "node",
