@@ -2415,6 +2415,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     mapProcessDesignerSchemeToItem,
     showToast,
   ]);
+  const [isRestrictionTabSaving, setIsRestrictionTabSaving] = useState(false);
   const handleSaveRestrictionTab = useCallback(async (tabId: RestrictionConfigTabId) => {
     if (tabId !== 'process') {
       const tabLabelMap: Record<RestrictionConfigTabId, string> = {
@@ -2424,15 +2425,16 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         process: '流程设计管理',
       };
       showToast(`${tabLabelMap[tabId]} 已暂存`);
-      return;
+      return true;
     }
 
     if (!selectedRestrictionProcessDesign) {
       showToast('请先选择一个流程方案');
-      return;
+      return false;
     }
 
     try {
+      setIsRestrictionTabSaving(true);
       const savedScheme = await saveProcessDesignerScheme({
         approvalFamily: selectedRestrictionProcessDesign.approvalFamily,
         actionDescription: selectedRestrictionProcessDesign.actionDescription,
@@ -2453,8 +2455,12 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
       )));
       setRestrictionSelection((prev) => ({ ...prev, process: mapped.id }));
       showToast('流程方案已保存');
+      return true;
     } catch (error) {
       showToast(getDashboardErrorMessage(error));
+      return false;
+    } finally {
+      setIsRestrictionTabSaving(false);
     }
   }, [
     mapProcessDesignerSchemeToItem,
@@ -3195,6 +3201,14 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   const handleConfigPageSave = async () => {
     if (configStep === MODULE_SETTING_STEP && isSingleTableModuleBranch) {
       const saved = await saveSingleTableModuleSettingsPage();
+      if (saved) {
+        markStepCompleted(configStep);
+      }
+      return;
+    }
+
+    if (configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP) {
+      const saved = await handleSaveRestrictionTab('process');
       if (saved) {
         markStepCompleted(configStep);
       }
@@ -6266,15 +6280,19 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
           moduleSettingStep: MODULE_SETTING_STEP,
           nextDisabled: (configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving || activeConfigMenu === null))
             || (configStep + 1 >= MODULE_SETTING_STEP && !isMenuInfoBuilt)
-            || (configStep === MODULE_SETTING_STEP && (isSingleTableModuleEnsuring || isSingleTableModuleSettingsSaving)),
+            || (configStep === MODULE_SETTING_STEP && (isSingleTableModuleEnsuring || isSingleTableModuleSettingsSaving))
+            || ((configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP) && isRestrictionTabSaving),
           nextLabel: configStep === MODULE_PREVIEW_STEP ? '完成配置' : '下一步',
           restrictionStep: RESTRICTION_STEP,
           saveDisabled: (configStep === 2 && (isMenuInfoLoading || isMenuInfoSaving))
-            || (configStep === MODULE_SETTING_STEP && (isSingleTableModuleEnsuring || isSingleTableModuleSettingsSaving)),
+            || (configStep === MODULE_SETTING_STEP && (isSingleTableModuleEnsuring || isSingleTableModuleSettingsSaving))
+            || ((configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP) && isRestrictionTabSaving),
           saveLabel: configStep === 2 && isMenuInfoSaving
             ? (activeConfigMenu ? '保存中...' : '创建中...')
             : configStep === MODULE_SETTING_STEP && isSingleTableModuleSettingsSaving
               ? '保存中...'
+              : (configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP) && isRestrictionTabSaving
+                ? '保存中...'
               : '保存本页',
           showFullscreenToggle: configStep === MODULE_SETTING_STEP || configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP,
         },
