@@ -4690,3 +4690,117 @@
 - 明细列保存时会优先使用当前 UI 的 `visible`，并按后端要求反向写成 `isVisible`：显示保存为 `0`，隐藏保存为 `1`。
 - 这次没有改动主表列的 `vislble` 旧语义，只对明细 grid field 的 `isVisible` 读写做了对齐，避免影响未确认的其它接口。
 - 这轮没有代替用户做浏览器里的真实保存回归，剩余风险只在这一点：建议现场勾掉/勾上“界面显示”后看请求体是否分别变成 `1/0`，并刷新确认回显一致。
+
+## 2026-03-29 未指定模块类型的菜单也允许删除
+
+### Requirement Spec
+- 目标：
+  - 放开模块删除对“单据/单表”类型的限制。
+  - 当菜单模块类型未指定时，也允许执行删除。
+- 影响范围：
+  - 模块卡片删除入口
+  - Dashboard 删除确认链路
+- 关键约束：
+  - 已知模块类型仍保持原有模块配置删除逻辑。
+  - 未知模块类型至少要能删除 `subsystem-menu-config` 里的菜单关系。
+- 不做什么：
+  - 暂不扩展其它类型模块的专门清理接口。
+  - 暂不改删除弹窗样式。
+- 验证标准：
+  - 未指定模块类型的菜单仍可点击删除并完成删除。
+  - 已知单据/单表模块的删除行为不回归。
+
+### Checklist
+- [x] 定位删除按钮限制和删除函数中的模块类型校验
+- [x] 调整未知类型菜单的删除逻辑
+- [x] 跑 lint/build 验证
+- [x] 记录结果和复盘
+
+### Progress Notes
+- 用户补充了新的删除边界：当前菜单即使没有标成单据或单表，也应该允许删掉菜单关系，不该被类型限制卡住。
+- 已确认实际拦截点在 `handleSecondLevelMenuDelete`：进入删除后会先校验 `moduleTypeProfile`，未知类型直接 toast 返回，后面的 `DELETE /api/system/subsystem-menu-config/{menuId}` 根本不会执行。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 菜单删除现在不再依赖“必须识别成单据或单表”才能执行。
+- 已知 `bill / single-table` 类型时，仍会先删除对应模块配置，再删 `subsystem-menu-config` 里的菜单关系。
+- 未指定类型或无法识别类型时，会直接删除菜单关系，不再被类型限制卡住。
+- 这轮没有代替用户做浏览器里的真实点击回归，剩余风险只在这一点：建议现场再删一次“未指定”类型菜单，确认 Network 里至少能看到 `DELETE /api/system/subsystem-menu-config/{menuId}`。
+
+## 2026-03-29 明细表属性 SQL 修改未进入保存
+
+### Requirement Spec
+- 目标：
+  - 修复模块设置中“明细表属性 / 明细 SQL”修改后没有触发保存的问题。
+- 影响范围：
+  - 明细保存体构造
+  - 明细差异比较链路
+- 关键约束：
+  - 必须以当前 UI 正在编辑的明细 SQL 为准。
+  - 不能因为修复 SQL 保存而影响其它明细属性的保存逻辑。
+- 不做什么：
+  - 暂不改明细 SQL 输入交互本身。
+  - 暂不改 AI 生成 SQL 的逻辑。
+- 验证标准：
+  - 修改明细 SQL 后执行保存，本次保存请求体会带上新的 SQL。
+  - 差异比较能识别明细 SQL 的变更，不会误判“没有变化”。
+
+### Checklist
+- [x] 定位明细 SQL 在状态、保存体与 diff 比较中的取值优先级
+- [x] 修复当前编辑值被旧字段覆盖的问题
+- [x] 跑 lint/build 验证
+- [x] 记录结果和复盘
+
+### Progress Notes
+- 用户反馈明细表属性中的 SQL 修改后没有触发保存，优先怀疑保存体仍在优先读取旧的 `detailsql/detailSql` 原始字段，而不是当前 `gridConfig.mainSql`。
+- 已确认根因在 `buildDetailBody`：`detailsql` 和 `unioncond` 都是先取 `record` 里的旧值，再回退到 `gridConfig`，所以右侧刚编辑的明细 SQL/关联条件会被旧 DTO 字段覆盖。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 明细保存体现在会优先使用当前编辑中的 `gridConfig.mainSql` 和 `gridConfig.sourceCondition/defaultQuery`。
+- 旧的 `detailsql/detailSql/detailSQL`、`unioncond/relatedCondition` 只作为缺省回退，不再覆盖当前 UI 改动。
+- 这次还顺手修正了“主动清空 SQL 也会被旧值顶回来”的问题，因为现在用的是 `??` 风格的取值顺序，而不是 `||`。
+- 这轮没有代替用户做浏览器里的真实保存回归，剩余风险只在这一点：建议现场改一次明细 SQL 后点“保存本页”，确认保存请求体里的 `detailsql` 已变成新值。
+
+## 2026-03-29 退出配置向导后刷新当前菜单页
+
+### Requirement Spec
+- 目标：
+  - 从配置向导退出回菜单页时，自动刷新当前选中菜单页。
+- 影响范围：
+  - 配置向导关闭动作
+  - 当前菜单页数据加载链路
+- 关键约束：
+  - 不改变现有退出导航行为，只补上刷新。
+  - 刷新范围应聚焦当前选中菜单页，避免无意义全量重载。
+- 不做什么：
+  - 暂不改动菜单页整体布局和交互。
+  - 暂不重构整套菜单加载流程。
+- 验证标准：
+  - 从配置向导退出后，当前菜单页会自动拉取最新数据并刷新展示。
+
+### Checklist
+- [x] 定位配置向导关闭与菜单页加载的连接点
+- [x] 接入退出后的当前菜单页刷新
+- [x] 跑 lint/build 验证
+- [x] 记录结果和复盘
+
+### Progress Notes
+- 用户要求配置向导退出回菜单页时自动刷新当前选中菜单页面，优先检查 `closeConfigWizard` 和当前二级菜单加载 effect 的触发条件。
+- 已确认当前菜单页二级菜单数据只在 `activeFirstLevelMenu?.menuId` 或 `selectedSubsystem` 变化时重拉，单纯关闭配置向导不会触发这条 effect。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 退出配置向导时现在会递增一个当前菜单页刷新戳，驱动当前二级菜单加载 effect 再执行一次。
+- 刷新范围仍然只落在当前选中的一级菜单页面，不会把整个 Dashboard 重新初始化。
+- 现有退出导航行为没有变化，仍然只是关闭配置向导并回到菜单页。
+- 这轮没有代替用户做浏览器里的真实点击回归，剩余风险只在这一点：建议现场从配置向导退出一次，确认当前菜单卡片区会重新请求并刷新。

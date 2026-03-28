@@ -729,6 +729,14 @@ function normalizeDetailTypeCode(fillType: string, rawValue: unknown) {
 
 function buildDetailBody(record: any, gridConfig: any, _moduleCode: string, fillType: string, index: number) {
   const detailTypeCode = normalizeDetailTypeCode(fillType, record?.detailTypeCode);
+  const resolvedDetailCondition = gridConfig?.sourceCondition
+    ?? gridConfig?.defaultQuery
+    ?? record?.unioncond
+    ?? record?.relatedCondition;
+  const resolvedDetailSql = gridConfig?.mainSql
+    ?? record?.detailsql
+    ?? record?.detailSql
+    ?? record?.detailSQL;
   return ensureOptionalId(stripUndefinedEntries({
     detailname: toText(record?.detailname || record?.detailName || record?.name || `鏄庣粏 ${index + 1}`),
     detailtype: detailTypeCode,
@@ -736,8 +744,8 @@ function buildDetailBody(record: any, gridConfig: any, _moduleCode: string, fill
     unionmodule: toText(record?.unionmodule || record?.relatedModule),
     unionparentfield: toText(record?.unionparentfield || record?.relatedModuleField),
     unionvalue: toText(record?.unionvalue || record?.relatedValue),
-    unioncond: toText(record?.unioncond || record?.relatedCondition || gridConfig?.sourceCondition),
-    detailsql: toText(record?.detailsql || record?.detailSql || record?.detailSQL || gridConfig?.mainSql),
+    unioncond: toText(resolvedDetailCondition),
+    detailsql: toText(resolvedDetailSql),
     rightvisible: toBooleanNumber(record?.rightvisible ?? record?.rightDisplay, false),
     addvisible: toBooleanNumber(record?.addvisible ?? record?.addDisplay, false),
     defaultitem: toBooleanNumber(record?.defaultitem ?? record?.defaultOpen, false),

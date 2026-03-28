@@ -1282,6 +1282,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   const [secondLevelMenus, setSecondLevelMenus] = useState<BackendMenuNode[]>([]);
   const [isLoadingSubsystemMenus, setIsLoadingSubsystemMenus] = useState(true);
   const [isLoadingSecondLevelMenus, setIsLoadingSecondLevelMenus] = useState(false);
+  const [menuPageRefreshNonce, setMenuPageRefreshNonce] = useState(0);
   const [menuLoadError, setMenuLoadError] = useState<string | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(initialConfigOpen);
@@ -1425,6 +1426,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   const closeConfigWizard = useCallback(() => {
     setIsConfigOpen(false);
     setIsDocumentConditionWorkbenchOpen(false);
+    setMenuPageRefreshNonce((prev) => prev + 1);
     updateCurrentDesignSearch({
       config: null,
       module: null,
@@ -3252,37 +3254,25 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   };
 
   const handleSecondLevelMenuDelete = async (menu: BackendMenuNode) => {
-    const moduleTypeProfile = getMenuModuleTypeProfile(menu.moduleType);
     const moduleKey = normalizeMenuCode(menu.purviewId);
     const menuId = Number(menu.menuId);
     const normalizedModuleType = String(menu.moduleType || '').trim().toLowerCase();
     const menuTitle = normalizeMenuTitle(menu.title) || '当前模块';
-
-    if (!moduleTypeProfile) {
-      showToast('当前菜单的模块类型无法识别，暂时不能删除。');
-      return;
-    }
+    const shouldDeleteBillConfig = normalizedModuleType === 'bill';
+    const shouldDeleteSingleTableConfig = normalizedModuleType === 'single-table';
 
     if (!Number.isFinite(menuId) || menuId <= 0) {
       showToast('当前菜单缺少菜单编号，无法删除。');
       return;
     }
 
-    if (!moduleKey) {
-      showToast('当前菜单缺少模块标识，无法删除。');
-      return;
-    }
-
     setDeletingMenuId(menu.id);
 
     try {
-      if (normalizedModuleType === 'bill') {
+      if (shouldDeleteBillConfig && moduleKey) {
         await deleteBillTypeConfig(moduleKey);
-      } else if (normalizedModuleType === 'single-table') {
+      } else if (shouldDeleteSingleTableConfig && moduleKey) {
         await deleteSingleTableModuleConfig(moduleKey);
-      } else {
-        showToast('当前菜单的模块类型无法识别，暂时不能删除。');
-        return;
       }
 
       await deleteSubsystemMenuConfig(menuId);
@@ -4374,7 +4364,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     return () => {
       isActive = false;
     };
-  }, [activeFirstLevelMenu?.menuId, selectedSubsystem]);
+  }, [activeFirstLevelMenu?.menuId, menuPageRefreshNonce, selectedSubsystem]);
 
   useEffect(() => {
     if (!initialConfigOpen || !initialRouteModuleCode || activeConfigMenu || secondLevelMenus.length === 0) {

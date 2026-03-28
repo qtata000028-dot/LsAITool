@@ -620,3 +620,18 @@
 - Do not let a legacy field like `isVisible` flow straight into shared `visible` booleans when the backend semantics are inverted. In this detail-grid contract, `0` means visible and `1` means hidden, so a generic `Boolean(isVisible)` mapper will always be wrong.
 - Save bodies must also prefer the current UI field (`visible`) over any stale raw backend field (`isVisible`) that may still be sitting on the row object. Otherwise the checkbox appears editable, but save keeps replaying the original backend value.
 - When only one endpoint family uses the reversed meaning, isolate that inversion to the specific read mapper and save builder for that family rather than “fixing” every visibility flag globally.
+
+## 2026-03-29 Menu Deletion Should Treat The Menu Relation As The Primary Delete Boundary
+- A delete action launched from a second-level menu card should not be blocked just because the module type is unknown. The menu relation row in `subsystem-menu-config` is still a valid primary delete target even when the downstream module-config cleanup path is unavailable.
+- In this dashboard flow, the safer order is: require a real `menuId`, optionally delete known module config for recognized types, and always delete the menu relation when the user confirms. Using `moduleTypeProfile` as a hard gate makes “未指定” menus undeletable for no good reason.
+- If some module families still lack dedicated cleanup APIs, skip only that cleanup branch. Do not turn that into a blanket “cannot delete menu” decision.
+
+## 2026-03-29 Detail Save Bodies Must Prefer Live Grid Config Over Legacy Raw DTO Fields
+- In module-setting detail saves, do not build the request body by preferring legacy raw fields like `detailsql` or `unioncond` ahead of the current `gridConfig.mainSql/sourceCondition`. That makes the editor appear editable while the save path silently replays the original backend values.
+- This is especially dangerous when the UI stores the live draft in a different object than the original tab DTO. Diff comparison will also misfire if both the “current” body and baseline body are normalized from the same stale raw field.
+- For detail SQL and related conditions, the durable rule is: use current grid config first, and only fall back to legacy DTO fields when the current grid config truly has no value.
+
+## 2026-03-29 Closing A Wizard Does Not Automatically Refresh Page Data Unless The Load Effect Watches A Dedicated Signal
+- If a page list is loaded only from route or selection dependencies, simply closing a modal or config wizard will not refresh the list even when users expect to return to freshly updated cards. In this dashboard flow, the second-level menu page only reloaded on `activeFirstLevelMenu` or `selectedSubsystem` changes.
+- The minimal fix is often a small refresh nonce tied to the close action and included in the page-load effect dependencies. That keeps navigation behavior unchanged while still re-fetching the current page when the wizard closes.
+- Prefer this scoped refresh signal over broad “reset the whole page” logic when the user only needs the currently selected menu page to rehydrate.
