@@ -16,3 +16,10 @@ export async function saveSubsystemMenuConfig(body: Record<string, unknown>) {
     method: 'POST',
   });
 }
+
+export async function deleteSubsystemMenuConfig(menuId: number | string) {
+  return apiRequest<void>(`/api/system/subsystem-menu-config/${encodeURIComponent(String(menuId).trim())}`, {
+    auth: true,
+    method: 'DELETE',
+  });
+}

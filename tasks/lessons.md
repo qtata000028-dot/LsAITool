@@ -607,3 +607,16 @@
 ## 2026-03-28 Inspector Copy For Small Setting Panels Should Prefer Local Stable Text Over Upstream Garbled Labels
 - If a narrow inspector panel only needs a small amount of copy, do not keep depending on upstream context titles/descriptions once you notice encoding drift or mojibake. A local, stable title/description can be safer than propagating broken strings through multiple layers.
 - For compact operation bars, status should be expressed mostly by selection and color, not by stacking more badges and helper text. Once the user asks for a denser control strip, reduce button height and trim secondary descriptions in the inspector at the same time.
+## 2026-03-28 Module Deletion Flows Must Remove The Menu Relation Row, Not Just The Module Config Row
+- If a delete dialog is triggered from a second-level menu card, deleting only the downstream bill/single-table config is not enough. The menu relation in `subsystem-menu-config` must be deleted as part of the same confirmation flow, or the UI/backend relationship drifts.
+- For this dashboard flow, the delete path needs the real `menuId` from the selected menu card. Validate that id before deleting, call `DELETE /api/system/subsystem-menu-config/{menuId}`, and only then treat the menu as fully removed in local state.
+
+## 2026-03-29 Detail Resource Load Effects Must Not Depend On Live SQL Draft State
+- In module-setting editors, a live textarea draft like `detailTableConfigs[activeTab].mainSql` is not an authoritative backend identity. If a resource-loading effect depends on that draft, every keystroke can fan out into needless GET requests and state rewrites.
+- For detail menus/colors, the durable trigger is the persisted detail identity plus the detail fill type, not the unsaved SQL text. Tie the load effect to `detailId`, `relatedModule`, and table-like fill types, and keep the SQL draft out of the dependency list unless the request really parses the draft itself.
+- If an effect both fetches decorations and writes them back into `detailTableConfigs`, accidental draft dependencies are especially costly because each keystroke creates both network noise and extra state churn.
+
+## 2026-03-29 Reverse-Semantics Visibility Flags Need Explicit Read/Write Adapters
+- Do not let a legacy field like `isVisible` flow straight into shared `visible` booleans when the backend semantics are inverted. In this detail-grid contract, `0` means visible and `1` means hidden, so a generic `Boolean(isVisible)` mapper will always be wrong.
+- Save bodies must also prefer the current UI field (`visible`) over any stale raw backend field (`isVisible`) that may still be sitting on the row object. Otherwise the checkbox appears editable, but save keeps replaying the original backend value.
+- When only one endpoint family uses the reversed meaning, isolate that inversion to the specific read mapper and save builder for that family rather than “fixing” every visibility flag globally.

@@ -212,6 +212,22 @@ function toBooleanNumber(value: unknown, truthyFallback = false) {
   return truthyFallback ? 1 : 0;
 }
 
+function resolveGridFieldVisible(record: any, fallback = true) {
+  if (record && Object.prototype.hasOwnProperty.call(record, 'visible')) {
+    return Boolean(record.visible);
+  }
+
+  if (record && Object.prototype.hasOwnProperty.call(record, 'isVisible')) {
+    return Boolean(record.isVisible);
+  }
+
+  if (record && Object.prototype.hasOwnProperty.call(record, 'isvisible')) {
+    return Boolean(record.isvisible);
+  }
+
+  return fallback;
+}
+
 function buildModuleOperationPatch(record: Record<string, any> | null | undefined) {
   return buildGridOperationConfigSnapshot(record);
 }
@@ -627,7 +643,11 @@ function buildConditionBody(record: any, index: number, sourceId?: number | null
   }), record);
 }
 
-function buildGridFieldBody(record: any, fieldId?: number | null) {
+function buildGridFieldBody(
+  record: any,
+  fieldId?: number | null,
+  options: { invertVisibleFlag?: boolean } = {},
+) {
   const hasSourceField = Object.prototype.hasOwnProperty.call(record ?? {}, 'sourceField');
   const fieldName = hasSourceField
     ? toText(record?.sourceField)
@@ -639,6 +659,7 @@ function buildGridFieldBody(record: any, fieldId?: number | null) {
     || record?.displayName
     || record?.displayname,
   );
+  const resolvedVisible = resolveGridFieldVisible(record, true);
 
   return ensureOptionalId(stripUndefinedEntries({
     ...(fieldId != null ? { fieldId } : {}),
@@ -652,7 +673,9 @@ function buildGridFieldBody(record: any, fieldId?: number | null) {
     orderId: toInteger(record?.orderId ?? record?.orderid, 1),
     width: toInteger(record?.width, 120),
     mobileWidth: toInteger(record?.mobileWidth ?? record?.mobilewidth, toInteger(record?.width, 120)),
-    isVisible: Boolean(record?.isVisible ?? record?.isvisible ?? record?.visible ?? true),
+    isVisible: options.invertVisibleFlag
+      ? toBooleanNumber(!resolvedVisible, false)
+      : resolvedVisible,
     showMobile: Boolean(record?.showMobile ?? record?.showmobile ?? false),
     isCodeField: Boolean(record?.isCodeField ?? record?.iscodefield ?? false),
   }), record);
@@ -1212,7 +1235,7 @@ export function useSingleTableModuleSettingsSave({
             sortedBaselineColumns,
             sortedDetailColumns,
             getGridFieldIdentityKey,
-            (column) => buildGridFieldBody(column),
+            (column) => buildGridFieldBody(column, undefined, { invertVisibleFlag: true }),
           )
           || !areCollectionsEquivalent(
             normalizedBaselineColors,
@@ -1308,7 +1331,7 @@ export function useSingleTableModuleSettingsSave({
             sortedBaselineColumns,
             sortedDetailColumns,
             getGridFieldIdentityKey,
-            (column) => buildGridFieldBody(column),
+            (column) => buildGridFieldBody(column, undefined, { invertVisibleFlag: true }),
           );
           let localDetailColorsChanged = !areCollectionsEquivalent(
             effectiveLocalBaselineColors,
@@ -1352,7 +1375,7 @@ export function useSingleTableModuleSettingsSave({
           const nextColumns = localDetailColumnsChanged
             ? (await saveDiffedCollection({
               baselineRows: sortedBaselineColumns,
-              buildBody: (column) => buildGridFieldBody(column),
+              buildBody: (column) => buildGridFieldBody(column, undefined, { invertVisibleFlag: true }),
               currentRows: sortedDetailColumns,
               getIdentityKey: getGridFieldIdentityKey,
               mapSavedRow: (savedRow, index) => mapDetailGridFieldToColumn(savedRow, index),

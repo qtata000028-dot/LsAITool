@@ -40,6 +40,7 @@ import {
   type SingleTableModuleFieldDto,
 } from '../lib/backend-module-config';
 import {
+  deleteSubsystemMenuConfig,
   fetchSubsystemMenuConfig,
   saveSubsystemMenuConfig,
   type SubsystemMenuConfigDto,
@@ -432,6 +433,14 @@ function toRecordBoolean(value: unknown, fallback: boolean) {
   return fallback;
 }
 
+function toDetailGridFieldVisible(value: unknown, fallback: boolean) {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+
+  return !toRecordBoolean(value, false);
+}
+
 function normalizeFieldSqlTagId(value: unknown, fallback = 0) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return Math.round(value);
@@ -653,6 +662,7 @@ function mapSingleTableDetailGridFieldToColumn(field: SingleTableGridFieldDto, i
   const { id: _ignoredId, ...rest } = mappedColumn;
   const displayName = toRecordText(getRecordFieldValue(field, 'username', 'userName', 'displayName', 'displayname'));
   const fieldName = toRecordText(getRecordFieldValue(field, 'fieldName', 'fieldname'));
+  const detailVisibleValue = getRecordFieldValue(field, 'isvisible', 'isVisible');
 
   return {
     ...rest,
@@ -661,6 +671,7 @@ function mapSingleTableDetailGridFieldToColumn(field: SingleTableGridFieldDto, i
     orderId: toRecordNumber(getRecordFieldValue(field, 'orderid', 'orderId'), index + 1),
     name: displayName || mappedColumn.name || `明细字段 ${index + 1}`,
     sourceField: fieldName,
+    visible: toDetailGridFieldVisible(detailVisibleValue, mappedColumn.visible !== false),
   };
 }
 const DETAIL_BOARD_CLIPBOARD_PREFIX = '__LS_DETAIL_BOARD_COLUMNS__';
@@ -3243,11 +3254,17 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   const handleSecondLevelMenuDelete = async (menu: BackendMenuNode) => {
     const moduleTypeProfile = getMenuModuleTypeProfile(menu.moduleType);
     const moduleKey = normalizeMenuCode(menu.purviewId);
+    const menuId = Number(menu.menuId);
     const normalizedModuleType = String(menu.moduleType || '').trim().toLowerCase();
     const menuTitle = normalizeMenuTitle(menu.title) || '当前模块';
 
     if (!moduleTypeProfile) {
       showToast('当前菜单的模块类型无法识别，暂时不能删除。');
+      return;
+    }
+
+    if (!Number.isFinite(menuId) || menuId <= 0) {
+      showToast('当前菜单缺少菜单编号，无法删除。');
       return;
     }
 
@@ -3267,6 +3284,8 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         showToast('当前菜单的模块类型无法识别，暂时不能删除。');
         return;
       }
+
+      await deleteSubsystemMenuConfig(menuId);
 
       setSecondLevelMenus((prev) => prev.filter((item) => item.id !== menu.id));
 
@@ -4583,7 +4602,6 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
   const getDetailRelatedModuleCodeByTabId = (tabId: string) => String(detailTabConfigs[tabId]?.relatedModule || '').trim();
   const activeDetailBackendId = toRecordNumber(detailTabConfigs[activeTab]?.backendId, Number.NaN);
   const activeDetailRelatedModuleCode = getDetailRelatedModuleCodeByTabId(activeTab);
-  const activeDetailSql = String(detailTableConfigs[activeTab]?.mainSql || '').trim();
   const activeDetailGridConfig = detailTableConfigs[activeTab] ?? buildGridConfig('', '', { sourceCondition: 'parent_id = ${id}' });
   const activeDetailContextMenuItems = detailTableConfigs[activeTab]?.contextMenuItems ?? [];
   const activeDetailColorRules = detailTableConfigs[activeTab]?.colorRules ?? [];
@@ -5677,7 +5695,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
           return;
         }
 
-        if (!Number.isFinite(activeDetailBackendId) || !activeDetailSql) {
+        if (!Number.isFinite(activeDetailBackendId)) {
           clearActiveDetailDecorations();
           return;
         }
@@ -5711,7 +5729,6 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     activeConfigModuleKey,
     activeDetailBackendId,
     activeDetailRelatedModuleCode,
-    activeDetailSql,
     activeTab,
     canLoadSingleTableModuleResources,
     captureDetailResources,

@@ -4574,3 +4574,119 @@
 - 点击“增加 / 删除 / 修改”会在右侧进入按钮属性面板，目前可设置“是否启用”；“保存”按钮固定启用，仅展示说明，不提供关闭能力。
 - 明细按钮启用位现在会以右侧最新编辑值为准，不再在明细保存后被 `mapped.gridConfig` 覆盖回 `1`。
 - 这轮没有代替用户做浏览器里的真实点击回归，剩余风险主要在这一点：建议现场验证主表按钮开关保存，以及继承模块明细的按钮开关保存是否都按预期回显。
+
+## 2026-03-28 删除确认调用 subsystem-menu-config 删除接口
+
+### Requirement Spec
+- 目标：
+  - 在模块列表点击“确认删除”后，除了现有模块配置删除逻辑，还要调用 `DELETE /api/system/subsystem-menu-config/{menuId}` 删除对应二级菜单配置。
+- 影响范围：
+  - `src/lib/backend-subsystem-menu-config.ts`
+  - 删除确认链路所在的 Dashboard 删除逻辑
+- 关键约束：
+  - 必须使用当前菜单真实的 `menuId` 调接口。
+  - 删除成功后仍要同步清理本地模块列表和当前激活配置态。
+- 不做什么：
+  - 暂不改删除弹窗样式和文案。
+  - 暂不重构整套模块删除流程。
+- 验证标准：
+  - 点击“确认删除”时会实际发出 `DELETE /api/system/subsystem-menu-config/{menuId}`。
+  - 删除成功后该二级菜单从列表中消失，当前配置态正确关闭。
+
+### Checklist
+- [x] 补充 subsystem-menu-config 删除 service
+- [x] 接入确认删除流程
+- [x] 跑 lint/build 验证
+
+### Progress Notes
+- 已确认当前删除链路只会删 bill/single-table 的模块配置，还没有调用菜单配置删除接口。
+- 已在删除确认流程里补上 `menu.menuId` 校验，并在模块配置删除成功后继续调用 `DELETE /api/system/subsystem-menu-config/{menuId}`。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 点击“确认删除”时，现在会先删除 bill/single-table 的模块配置，再删除对应的 subsystem menu config。
+- 删除成功后仍会同步移除本地二级菜单列表，并在删掉当前正在配置的模块时关闭当前配置态。
+
+## 2026-03-29 明细 SQL 输入触发模块设置资源重复刷新
+
+### Requirement Spec
+- 目标：
+  - 排查并修复在模块设置界面输入“明细 SQL”时持续触发资源刷新请求的问题。
+- 影响范围：
+  - `src/components/Dashboard.tsx`
+  - 如有必要，`src/features/dashboard/module-settings/**`
+- 关键约束：
+  - 只修正错误的刷新触发链路，不改变现有保存语义。
+  - 不能因为去掉请求而让明细切换、首次加载或保存后回填失效。
+- 不做什么：
+  - 暂不重构整套模块设置资源加载架构。
+  - 暂不改动明细 SQL 的保存和列同步规则。
+- 验证标准：
+  - 输入明细 SQL 草稿时，不会因为每个字符变动而重新请求明细资源。
+  - 明细首次切换、模块切换和已有资源加载仍正常。
+
+### Checklist
+- [x] 定位输入明细 SQL 时触发网络请求的 effect 依赖链
+- [x] 按最小侵入方式修复错误依赖
+- [x] 跑 lint/build 验证
+- [x] 记录结果和复盘
+
+### Progress Notes
+- 已回看 Dashboard 约束和近期 lessons，优先怀疑“把编辑中的 SQL 草稿误接成资源加载依赖”。
+- 已定位到明细装饰数据加载 effect 直接依赖了 `activeDetailSql`，这会让用户每次输入都重新触发对应 GET 请求。
+- 已把 `activeDetailSql` 从明细装饰数据加载 effect 的依赖中移除，并把本地明细装饰数据加载的判定收紧为“当前是表格/树表格且存在已保存的 detailId”。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 这轮根因不是“输入框 onChange 直接请求后台”，而是明细装饰数据读取 effect 错把编辑中的 `mainSql` 草稿当成了重新加载依赖。
+- 修复后，输入明细 SQL 不会再因为每个字符变动反复触发 `menus/colors` 这条后台读取链，也不会再顺手回写一次 `detailTableConfigs` 造成额外刷新。
+- 本地明细装饰数据现在只会在真正需要的时候读取：当前明细是表格/树表格，且存在已持久化的 `detailId`。
+- 这轮没有代替用户做浏览器里的真实 Network 回归，剩余风险只在这一点：建议现场再输入一次明细 SQL，确认不再持续刷请求。
+
+## 2026-03-29 明细列界面显示开关对齐 isVisible
+
+### Requirement Spec
+- 目标：
+  - 对齐明细列配置里“界面显示”开关与后端 `isVisible` 字段的语义。
+  - 规则为：`isVisible = 0` 表示显示，`isVisible = 1` 表示不显示。
+- 影响范围：
+  - 明细列查询 mapper
+  - 右侧列属性面板“界面显示”绑定
+  - 明细列保存体构造
+- 关键约束：
+  - 查询和保存必须使用同一套语义，不允许前端界面和保存体各自解释。
+  - 仅修正显示开关，不改变其他列属性语义。
+- 不做什么：
+  - 暂不扩展其他隐藏/启用字段。
+  - 暂不改动主表列未被本需求覆盖的其它兼容逻辑。
+- 验证标准：
+  - 查询回来 `isVisible=0` 时，“界面显示”勾选为显示状态。
+  - 查询回来 `isVisible=1` 时，“界面显示”勾选为关闭/隐藏状态。
+  - 保存时，勾选显示会保存为 `0`，关闭显示会保存为 `1`。
+
+### Checklist
+- [x] 定位明细列 `isVisible` 的查询、界面绑定和保存链路
+- [x] 统一修正读取与保存语义
+- [x] 跑 lint/build 验证
+- [x] 记录结果和复盘
+
+### Progress Notes
+- 用户补充了明确语义：后端 `isVisible` 不是布尔直译，而是反向语义字段，`0=显示`、`1=不显示`。
+- 本轮会优先检查明细 grid field 的 mapper 和保存 body 是否直接把 `isVisible` 当成普通 truthy/falsey 使用。
+- 已确认问题分成两层：查询 mapper 把 `isVisible=1` 当成显示；保存体又优先读旧的 `record.isVisible`，导致右侧“界面显示”勾选后的 `record.visible` 根本没有真正写回。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 明细列查询现在按 `isVisible=0 => visible=true`、`isVisible=1 => visible=false` 回填右侧“界面显示”。
+- 明细列保存时会优先使用当前 UI 的 `visible`，并按后端要求反向写成 `isVisible`：显示保存为 `0`，隐藏保存为 `1`。
+- 这次没有改动主表列的 `vislble` 旧语义，只对明细 grid field 的 `isVisible` 读写做了对齐，避免影响未确认的其它接口。
+- 这轮没有代替用户做浏览器里的真实保存回归，剩余风险只在这一点：建议现场勾掉/勾上“界面显示”后看请求体是否分别变成 `1/0`，并刷新确认回显一致。
