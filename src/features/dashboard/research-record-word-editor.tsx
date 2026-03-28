@@ -82,7 +82,9 @@ export function ResearchRecordWordEditor({
       <div className="border-b border-slate-200 bg-white px-4 py-3">
         <div className="text-[12px] font-semibold tracking-[0.02em] text-slate-700">Word 主编辑区</div>
         <div className="mt-1 text-[11px] font-medium text-slate-400">
-          {runtime.canSave ? '已连接文档服务，可直接编辑保存' : '已连接文档服务，可编辑但尚未接入持久化回调'}
+          {runtime.canSave
+            ? '已连接文档服务，可直接编辑并保存。'
+            : '已连接文档服务，可编辑预览，但当前未接入回调保存。'}
         </div>
       </div>
 
@@ -93,11 +95,11 @@ export function ResearchRecordWordEditor({
             events: {
               onAppReady: () => {
                 setLoadError(null);
-                onStatusChange?.('Word 模板已连接');
+                onStatusChange?.('Word 模板已连接。');
               },
               onDocumentReady: () => {
                 setLoadError(null);
-                onStatusChange?.(runtime.canSave ? 'Word 模板已加载，可直接编辑' : 'Word 模板已加载，可编辑但不会自动保存');
+                onStatusChange?.(runtime.canSave ? 'Word 模板已加载，可直接编辑。' : 'Word 模板已加载，可编辑但不会自动保存。');
               },
               onError: () => {
                 setLoadError('Word 模板加载失败');
@@ -108,7 +110,7 @@ export function ResearchRecordWordEditor({
           documentServerUrl={runtime.documentServerUrl}
           id="research-record-word-editor"
           onLoadComponentError={(errorCode, errorDescription) => {
-            const nextMessage = `Word 组件加载失败（${errorCode}）`;
+            const nextMessage = `Word 组件加载失败：${errorCode}`;
             setLoadError(nextMessage);
             onStatusChange?.(errorDescription || nextMessage);
           }}

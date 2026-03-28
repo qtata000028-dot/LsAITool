@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 
 import type { AuthSession } from '../../lib/backend-auth';
+import Login from '../../components/Login';
+import { DesignPlatformApp } from '../../platforms/design/design-platform-app';
 import {
   resolveDesignRoute,
   resolveRuntimeRoute,
@@ -14,8 +16,6 @@ import {
 } from '../registry/platform-registry';
 import { AppLoadingScreen } from '../shells/app-loading-screen';
 
-const Login = lazy(() => import('../../components/Login'));
-const DesignPlatformApp = lazy(() => import('../../platforms/design/design-platform-app').then((module) => ({ default: module.DesignPlatformApp })));
 const RuntimePlatformApp = lazy(() => import('../../platforms/runtime/runtime-platform-app').then((module) => ({ default: module.RuntimePlatformApp })));
 const MesPlatformApp = lazy(() => import('../../platforms/mes/mes-platform-app').then((module) => ({ default: module.MesPlatformApp })));
 
@@ -53,6 +53,9 @@ type AppRoute = RootRoute | LoginRoute | PlatformRoute | NotFoundRoute;
 type NavigateOptions = {
   replace?: boolean;
 };
+
+const DEFAULT_DESIGN_HOME_PATH = '/design/bill';
+const DEFAULT_DESIGN_LOGIN_PATH = '/design/login';
 
 function normalizePathname(pathname: string) {
   if (!pathname || pathname === '/') {
@@ -172,7 +175,7 @@ function PlatformLoginFrame({
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-6xl items-center justify-between rounded-full border border-white/70 bg-white/72 px-4 py-2 shadow-[0_20px_44px_-28px_rgba(15,23,42,0.28)] backdrop-blur-xl">
           <div className="pointer-events-auto text-[11px] font-bold uppercase tracking-[0.24em] text-slate-500">
-            Current entry
+            当前入口
             <span className="ml-2 text-primary">{platform.name}</span>
           </div>
           <div className="pointer-events-auto flex items-center gap-2">
@@ -232,10 +235,18 @@ function resolveLoginPlatform(route: AppRoute) {
 
 function resolvePostLoginPath(route: AppRoute) {
   if (route.kind === 'platform') {
+    if (route.platform.id === 'design' && route.pathname === '/design') {
+      return DEFAULT_DESIGN_HOME_PATH;
+    }
+
     return route.pathname;
   }
 
   const platform = resolveLoginPlatform(route);
+  if (platform.id === 'design') {
+    return DEFAULT_DESIGN_HOME_PATH;
+  }
+
   return platform.basePath;
 }
 
@@ -299,13 +310,13 @@ export function AppRouter({ onLogin, onLogout, session }: AppRouterProps) {
 
   useEffect(() => {
     if (route.kind === 'root') {
-      navigateTo(getDefaultPlatform().basePath, { replace: true });
+      navigateTo(DEFAULT_DESIGN_LOGIN_PATH, { replace: true });
     }
   }, [route]);
 
   useEffect(() => {
-    if (session && route.kind === 'login') {
-      navigateTo(resolvePostLoginPath(route), { replace: true });
+    if (session && route.kind === 'platform' && route.platform.id === 'design' && route.pathname === '/design') {
+      navigateTo(DEFAULT_DESIGN_HOME_PATH, { replace: true });
     }
   }, [route, session]);
 
@@ -317,11 +328,11 @@ export function AppRouter({ onLogin, onLogout, session }: AppRouterProps) {
     return <NotFoundPage pathname={route.pathname} />;
   }
 
-  if (!session) {
+  if (route.kind === 'login') {
     const loginPlatform = resolveLoginPlatform(route);
 
     return (
-      <Suspense fallback={<AppLoadingScreen title="Loading Login" description="Preparing the shared authentication entry for the selected platform." />}>
+      <Suspense fallback={<AppLoadingScreen title="加载登录页" description="正在准备登录入口。" />}>
         <PlatformLoginFrame
           platform={loginPlatform}
           onLogin={(nextSession) => {
@@ -333,8 +344,20 @@ export function AppRouter({ onLogin, onLogout, session }: AppRouterProps) {
     );
   }
 
-  if (route.kind === 'login') {
-    return null;
+  if (!session) {
+    const loginPlatform = resolveLoginPlatform(route);
+
+    return (
+      <Suspense fallback={<AppLoadingScreen title="加载登录页" description="正在准备登录入口。" />}>
+        <PlatformLoginFrame
+          platform={loginPlatform}
+          onLogin={(nextSession) => {
+            onLogin(nextSession);
+            navigateTo(resolvePostLoginPath(route), { replace: true });
+          }}
+        />
+      </Suspense>
+    );
   }
 
   return (

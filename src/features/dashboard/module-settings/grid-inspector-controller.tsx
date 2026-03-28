@@ -12,7 +12,6 @@ import {
   normalizeContextMenuItem,
 } from './context-menu-utils';
 import {
-  createSuggestedDetailBoardGroups,
   getDetailBoardTheme,
   normalizeDetailBoardConfig,
 } from './detail-board-config';
@@ -26,6 +25,10 @@ import {
   LeftGridMappingSection,
 } from './grid-overview-sections';
 import { PopupMenuManager } from './popup-menu-manager';
+
+function isLowQualityTranslatedIdentifier(value: string) {
+  return /^(?:field|column|col|unknown|temp|tmp)(?:_\d+)?$/i.test(String(value || '').trim());
+}
 
 type DetailFillTypeOption = {
   backendValue?: string;
@@ -393,18 +396,6 @@ export function GridInspectorController({
     });
   };
 
-  const detailBoardReady = currentDetailBoard.groups.length > 0;
-  const applySuggestedDetailLayout = () => {
-    const suggestedGroups = createSuggestedDetailBoardGroups(availableGridColumns);
-    updateDetailBoard({
-      ...currentDetailBoard,
-      groups: suggestedGroups,
-      sortColumnId: availableGridColumns[0]?.id ?? null,
-    });
-    setSelectedDetailBoardGroupId(suggestedGroups[0]?.id ?? null);
-    showToast('已应用推荐详情分组布局');
-  };
-
   const isGridDecorationManagerAvailable = isDocumentArchiveGrid || canManageDetailGridDecorations;
   const selectedPopupMenuItem = isGridDecorationManagerAvailable
     ? contextMenuItems.find((item: any) => item.id === activeContextMenuSelectionId) ?? contextMenuItems[0] ?? null
@@ -547,14 +538,18 @@ export function GridInspectorController({
           };
         }),
       );
-      const identifierMap = new Map(response.items.map((item) => [item.id, item.identifier]));
+      const acceptedItems = response.items.filter((item) => !isLowQualityTranslatedIdentifier(item.identifier));
+      const identifierMap = new Map(acceptedItems.map((item) => [item.id, item.identifier]));
+      const skippedCount = response.items.length - acceptedItems.length;
 
       onUpdateGridColumns(context.scope, (prev) => prev.map((column) => (
         identifierMap.has(column.id)
           ? { ...column, sourceField: identifierMap.get(column.id) }
           : column
       )));
-      showToast(`已翻译 ${response.items.length} 个字段标识`);
+      showToast(skippedCount > 0
+        ? `已翻译 ${acceptedItems.length} 个字段标识，${skippedCount} 个低质量结果已忽略`
+        : `已翻译 ${acceptedItems.length} 个字段标识`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'MiniMax 翻译字段标识失败');
     } finally {
@@ -609,31 +604,6 @@ export function GridInspectorController({
               >
                 <span className="material-symbols-outlined text-[16px]">filter_alt</span>
                 条件配置
-              </button>
-            ) : null}
-            {!isBillHeadGridConfig && !isBillDetailGridConfig && !isLeftGridConfig && !isDetailChartInspector && !isMainGridConfig ? (
-              <button
-                type="button"
-                onClick={applySuggestedDetailLayout}
-                className={useQuietDocumentInspector ? quietDocumentInspectorActionClass : 'inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-slate-200/80 bg-white/92 px-3 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200'}
-              >
-                <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-                推荐布局
-              </button>
-            ) : null}
-            {isMainGridConfig && !isBillHeadGridConfig ? (
-              <button
-                type="button"
-                onClick={() => onOpenDetailBoardPreview(1, currentDetailBoard.sortColumnId)}
-                disabled={!detailBoardReady}
-                className={`${useQuietDocumentInspector ? 'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-medium transition-colors' : 'inline-flex h-9 items-center gap-1.5 rounded-[14px] px-3 text-[12px] font-bold transition-colors'} ${
-                  detailBoardReady
-                    ? `${useQuietDocumentInspector ? 'shadow-none' : 'shadow-[0_16px_28px_-22px_rgba(15,23,42,0.24)]'} bg-[color:var(--workspace-accent)] text-white hover:bg-[color:var(--workspace-accent-strong)]`
-                    : 'cursor-not-allowed bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[16px]">preview</span>
-                预览详情
               </button>
             ) : null}
           </div>
@@ -1008,6 +978,7 @@ export function GridInspectorController({
                 compactCardClass={compactCardClass}
                 compactInfoCardClass={compactInfoCardClass}
                 groups={currentDetailBoard.groups}
+                onOpenConditionEditor={() => onOpenConditionWorkbench(isLeftGridConfig ? 'left' : 'main')}
                 onOpenEditor={onOpenArchiveLayoutEditor}
                 onOpenPreview={() => onOpenDetailBoardPreview(1, currentDetailBoard.sortColumnId)}
                 sectionTitleClass={sectionTitleClass}
@@ -1024,6 +995,8 @@ export function GridInspectorController({
                 DesignerWorkbenchDropLane={DesignerWorkbenchDropLane}
                 activeDetailBoardResize={activeDetailBoardResize}
                 availableGridColumns={availableGridColumns}
+                compactCardClass={compactCardClass}
+                compactInfoCardClass={compactInfoCardClass}
                 currentDetailBoard={currentDetailBoard}
                 designerWorkbenchSensors={designerWorkbenchSensors}
                 detailBoardClipboardIds={detailBoardClipboardIds}
@@ -1039,6 +1012,7 @@ export function GridInspectorController({
                 onUpdateDetailBoard={updateDetailBoard}
                 parseDetailBoardClipboardColumnIds={parseDetailBoardClipboardColumnIds}
                 renderFieldPreview={renderFieldPreview}
+                sectionTitleClass={sectionTitleClass}
                 selectedDetailBoardGroupId={selectedDetailBoardGroupId}
                 setSelectedDetailBoardGroupId={setSelectedDetailBoardGroupId}
               />

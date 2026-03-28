@@ -18,14 +18,23 @@ type FieldBackedDetailLayoutDesignerProps<T = any> = {
   getDefaultSize: (field: T) => { h: number; w: number };
   onDocumentChange?: (document: DetailLayoutDocument) => void;
   onSelectedItemChange?: (item: DetailLayoutItem | null) => void;
+  paletteDescription?: string;
   paletteLeadItems?: Array<{
     description: string;
     id: string;
     label: string;
+    template?: Partial<DetailLayoutItem>;
     type: 'groupbox' | 'label' | 'button';
   }>;
+  paletteTitle?: string;
+  paletteVariant?: 'cards' | 'plain';
   renderFieldPreview: (field: T, index: number, scope: string) => React.ReactNode;
-  toolbarActions?: React.ReactNode;
+  toolbarActions?: React.ReactNode | ((helpers: {
+    addPaletteItem: (paletteItem: any) => void;
+    itemCount: number;
+    selectedId: string | null;
+    selectedItem: DetailLayoutItem | null;
+  }) => React.ReactNode);
 };
 
 export function FieldBackedDetailLayoutDesigner<T = any>({
@@ -37,7 +46,10 @@ export function FieldBackedDetailLayoutDesigner<T = any>({
   getDefaultSize,
   onDocumentChange,
   onSelectedItemChange,
+  paletteDescription,
   paletteLeadItems,
+  paletteTitle,
+  paletteVariant,
   renderFieldPreview,
   toolbarActions,
 }: FieldBackedDetailLayoutDesignerProps<T>) {
@@ -50,6 +62,7 @@ export function FieldBackedDetailLayoutDesigner<T = any>({
       description: item.description,
       id: item.id,
       label: item.label,
+      template: item.template,
     })),
     document,
     fieldOptions,
@@ -94,6 +107,9 @@ export function FieldBackedDetailLayoutDesigner<T = any>({
       onDocumentChange={onDocumentChange}
       onSelectedItemChange={onSelectedItemChange}
       paletteItems={paletteItems}
+      paletteDescription={paletteDescription}
+      paletteTitle={paletteTitle}
+      paletteVariant={paletteVariant}
       renderItemContent={renderItemContent}
       toolbarActions={toolbarActions}
     />

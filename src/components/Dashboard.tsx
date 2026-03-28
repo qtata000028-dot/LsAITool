@@ -726,6 +726,7 @@ const MODULE_GUIDE_PROFILES: Record<BusinessType, {
 const MENU_CONFIG_TABLE_NAME = 'P_FormMenuConfigTab';
 const MENU_CONFIG_TABLE_DESC = '功能树菜单信息';
 const MENU_CONFIG_TABLE_FIELDS = ['MenuId', 'SubsysId', 'MenuStruct', 'Menucaption', 'ParentMenuId', 'PurviewId', 'UrlParams', 'DllFileName', 'GroupCaption', 'MenuRow', 'UseFlag', 'ModType', 'MenuTips'];
+const SINGLE_TABLE_DEFAULT_DLL_FILE_NAME = 'Lskj.PubModuleDetail.dll';
 const MENU_CONFIG_DEFAULTS: ModuleMenuDraft = {
   menuId: '',
   subsystemId: '',
@@ -741,6 +742,22 @@ const MENU_CONFIG_DEFAULTS: ModuleMenuDraft = {
   menuRow: '',
   menuTips: '',
 };
+function getDefaultMenuDllFileName(businessType: BusinessType) {
+  return businessType === 'document' ? SINGLE_TABLE_DEFAULT_DLL_FILE_NAME : '';
+}
+
+function buildMenuConfigDraftDefaults(
+  businessType: BusinessType,
+  overrides: Partial<ModuleMenuDraft> = {},
+): ModuleMenuDraft {
+  return {
+    ...MENU_CONFIG_DEFAULTS,
+    modType: businessType === 'table' ? '2' : '1',
+    dllFileName: getDefaultMenuDllFileName(businessType),
+    ...overrides,
+  };
+}
+
 const MENU_CONFIG_SECTIONS: ModuleMenuSectionSchema[] = [
   {
     title: '结构列表基础',
@@ -1264,7 +1281,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     table: [...MENU_DEFAULT_COMMON_FIELD_KEYS.table],
     tree: [...MENU_DEFAULT_COMMON_FIELD_KEYS.tree],
   }));
-  const [menuConfigDraft, setMenuConfigDraft] = useState<ModuleMenuDraft>(MENU_CONFIG_DEFAULTS);
+  const [menuConfigDraft, setMenuConfigDraft] = useState<ModuleMenuDraft>(() => buildMenuConfigDraftDefaults(initialBusinessType));
   const [activeConfigMenu, setActiveConfigMenu] = useState<BackendMenuNode | null>(null);
   const [deletingMenuId, setDeletingMenuId] = useState<string | null>(null);
   const [pendingDeleteMenu, setPendingDeleteMenu] = useState<BackendMenuNode | null>(null);
@@ -2896,6 +2913,15 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     setMenuConfigDraft((prev) => ({
       ...prev,
       modType: nextType === 'table' ? '2' : '1',
+      ...((() => {
+        const currentDll = toDraftText(prev.dllFileName).trim();
+        const previousDefaultDll = getDefaultMenuDllFileName(businessType);
+        const nextDefaultDll = getDefaultMenuDllFileName(nextType);
+        if (!currentDll || currentDll === previousDefaultDll) {
+          return { dllFileName: nextDefaultDll };
+        }
+        return {};
+      })()),
     }));
     resetModuleDesignerState();
     setMenuInfoTab('common');
@@ -2963,12 +2989,11 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     setMenuInfoError(null);
     setIsMenuInfoLoading(false);
     setIsMenuInfoSaving(false);
-    setMenuConfigDraft({
-      ...MENU_CONFIG_DEFAULTS,
+    setMenuConfigDraft(buildMenuConfigDraftDefaults('document', {
       parentMenuId: toDraftText(activeFirstLevelMenu?.menuId),
       subsystemId: toDraftText(selectedSubsystem?.subsysId),
       useFlag: 'true',
-    });
+    }));
     openModuleGuide('document', {
       moduleCode: null,
     });
@@ -3071,7 +3096,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     setActiveConfigMenu(menu);
     setMenuInfoError(null);
     setIsMenuInfoSaving(false);
-    setMenuConfigDraft(MENU_CONFIG_DEFAULTS);
+    setMenuConfigDraft(buildMenuConfigDraftDefaults(nextType));
     openModuleGuide(nextType, {
       completedSteps: [1],
       initialStep: 2,
@@ -4292,7 +4317,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     setActiveConfigMenu(nextMenu);
     setMenuInfoError(null);
     setIsMenuInfoSaving(false);
-    setMenuConfigDraft(MENU_CONFIG_DEFAULTS);
+    setMenuConfigDraft(buildMenuConfigDraftDefaults(nextType));
     openModuleGuide(nextType, {
       completedSteps: [1],
       initialStep: Math.max(2, initialConfigStep),

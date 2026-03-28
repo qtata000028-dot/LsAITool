@@ -17,11 +17,19 @@
       }
     },
     {
-      "name": "Run App in Safari",
+      "name": "Run App in Installed Edge",
+      "type": "pwa-msedge",
+      "request": "launch",
+      "runtimeExecutable": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      "url": "http://127.0.0.1:3000",
+      "webRoot": "${workspaceFolder}",
+      "preLaunchTask": "ensure-client-dev-server"
+    },
+    {
+      "name": "Start Vite Dev Server Only",
       "type": "node-terminal",
       "request": "launch",
-      "command": "open -a Safari http://127.0.0.1:3000",
-      "preLaunchTask": "ensure-client-dev-server"
+      "command": "npm run dev:client"
     },
     {
       "name": "Start Full Dev Stack Only",

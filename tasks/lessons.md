@@ -477,3 +477,18 @@
 - Once the editor has already loaded a detail tab's `menus/colors` or a related module's shared `menus/colors`, saving should reuse that in-memory snapshot as the first authoritative baseline. A save button that always re-fetches the same decoration data feels broken to users even if no write occurs.
 - Keep two small caches: one keyed by `moduleCode` for shared `UnionModule` decorations, and one keyed by `moduleCode:detailId` for local detail decorations. Save-time diff verification can read these caches before deciding whether a network `GET` is needed.
 - Only fall back to live `fetchSingleTableDetailMenus/Colors` or `fetchSingleTableModuleMenus/Colors` when the cache is absent. That preserves correctness without showing needless post-save reads in normal flows.
+
+## 2026-03-27 Survey Main First-Load Query Should Not Overfit Assumed Filters
+- When the user corrects the survey first-load query rule multiple times, do not keep layering new filters (`departmentId`, then entry `id`) onto the list request. Step back and align to the actual current contract.
+- In this module, the current requirement is simpler: `GET /api/survey/mains` with no query parameters, then take the first row. `departmentId` still belongs to create/save defaults, but not to the initial list query.
+- If a feature prop is introduced only to satisfy a guessed query filter and the user later removes that filter, delete the prop chain instead of leaving dead context threaded through the workbench.
+
+## 2026-03-27 Preview And Export Should Share One Research Word Template Source
+- When the user asks for Word export to match the right-side preview “一比一”, do not keep two separately maintained template trees and try to visually sync them by hand. That always drifts.
+- In the research-record module, the durable fix is to extract one shared page builder and one shared CSS source, then let both the browser preview and the `.doc` export consume that same template.
+- This does not guarantee Microsoft Word’s rendering engine matches the browser pixel-for-pixel, but it removes the self-inflicted drift where preview and export already disagree before Word gets involved.
+
+## 2026-03-27 Export Fidelity Must Not Regress The Existing Preview
+- If the user says the right-side preview was changed by an export-fidelity refactor, stop optimizing the export path first and restore the preview. The visible in-app preview is the product surface; it must not regress just to make export plumbing cleaner.
+- In this research-record module, “shared template” is only acceptable if it preserves the original preview layout exactly. Once the user notices style drift, the safer approach is to restore the preview component and make the export template follow it.
+- For Word exports, border visibility is a separate compatibility problem. Solve it with Word-friendly table attributes/inline border styles instead of changing the preview DOM/CSS just to satisfy Office rendering quirks.

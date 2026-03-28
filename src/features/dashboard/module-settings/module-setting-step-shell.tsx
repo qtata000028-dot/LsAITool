@@ -109,6 +109,11 @@ export function ModuleSettingStepShell({
 }: ModuleSettingStepShellProps) {
   const hasDocumentDetails = document.detailTabs.length > 0;
   const stageShellClass = `flex min-h-0 overflow-hidden bg-[#f3f6fa] ${workspaceThemeStyles.tableSurface}`;
+  const documentWorkspaceShellClass = 'flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-[linear-gradient(180deg,#fbfdff_0%,#f2f7fb_100%)] p-1.5 shadow-[0_24px_48px_-44px_rgba(96,165,250,0.22)]';
+  const documentWorkspaceGridClass = hasDocumentDetails
+    ? 'grid-rows-[minmax(0,0.92fr)_minmax(300px,1.08fr)] gap-y-2.5'
+    : 'grid-rows-[minmax(0,1fr)_auto]';
+  const documentMainWorkbenchClass = 'relative flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-[#dbe5f3] bg-white shadow-[0_18px_36px_-32px_rgba(15,23,42,0.16)]';
   const workspacePanelClass = 'flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#d9e2ec] bg-white shadow-none';
   const workspacePanelHeaderClass = 'flex items-center justify-between border-b border-[#e6edf5] bg-[#f8fafc] px-4 py-3';
   const sectionIconClass = 'flex size-8 items-center justify-center rounded-[10px] border border-[#dbe5ef] bg-[#f6f9fc] text-[color:var(--workspace-accent-strong)]';
@@ -122,7 +127,7 @@ export function ModuleSettingStepShell({
     return (
       <>
         <div style={moduleSettingStageStyle} className={`${stageShellClass} ${moduleSettingStageHeightClass}`}>
-          <div className="min-h-0 min-w-0 flex flex-1 flex-col">
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
             <div className="border-b border-[#e6edf5] bg-[#fbfcfe]">
               <div
                 className="cursor-pointer select-none border-t-[4px] border-[color:var(--workspace-accent)] px-6 py-3 text-center transition-colors hover:bg-[#f8fbff]"
@@ -155,66 +160,69 @@ export function ModuleSettingStepShell({
                 </>
               ) : null}
 
-              <div className="min-h-0 min-w-0 flex-1">
-                <div className={`grid h-full min-h-0 gap-0 overflow-hidden ${hasDocumentDetails ? 'grid-rows-2' : 'grid-rows-[minmax(0,1fr)_auto]'}`}>
-                  <div className="flex min-h-0 flex-col overflow-hidden">
-                    <div
-                      className="scrollbar-none min-h-0 flex-1 overflow-auto outline-none dark:bg-slate-900/90"
-                      tabIndex={0}
-                      onPaste={document.onPasteMainTable}
-                      style={{ backgroundColor: '#ffffff' }}
-                    >
-                      {document.archiveMainTableBuilderNode}
-                    </div>
-                  </div>
-
-                  {hasDocumentDetails ? (
-                    <div className="flex min-h-0 flex-col overflow-hidden">
-                      <MemoDocumentDetailWorkbench
-                        tableSurfaceClass=""
-                        detailTabStripNode={(
-                          <MemoDetailTabStrip
-                            detailTabs={document.detailTabs}
-                            activeTab={document.activeTab}
-                            currentDetailFillType={document.currentDetailFillType}
-                            onActivateTab={document.onActivateDetailTab}
-                            onAddTab={document.onAddDetailTab}
-                            addLabel="新增明细"
-                            showModeBadge={false}
-                          />
-                        )}
-                        currentDetailFillType={document.currentDetailFillType}
-                        onPasteTableColumns={document.onPasteDetailTableColumns}
-                        tableBuilderNode={document.documentDetailTableBuilderNode}
-                        fillPlaceholderNode={(
-                          <DetailFillPlaceholder
-                            currentDetailFillType={document.currentDetailFillType}
-                            isSelected={document.isDetailFillSelected}
-                            onActivate={document.onActivateDetailFill}
-                          />
-                        )}
-                      />
-                    </div>
-                  ) : (
-                    <div className="rounded-[20px] border border-dashed border-[color:var(--workspace-accent-border)] bg-white px-4 py-4 dark:bg-slate-900/75">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div className="min-w-0">
-                          <div className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">当前未创建明细</div>
-                          <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-300">
-                            点击创建明细后，再展开下方工作台，按现在的上下等分方式继续配置。
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={document.onAddDetailTab}
-                          className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-[color:var(--workspace-accent)] px-4 text-[12px] font-semibold text-white shadow-[0_12px_24px_-22px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">add</span>
-                          创建明细
-                        </button>
+              <div className="h-full min-h-0 min-w-0 flex-1">
+                <div className={documentWorkspaceShellClass}>
+                  <div className={`grid h-full min-h-0 overflow-hidden ${documentWorkspaceGridClass}`}>
+                    <div className={documentMainWorkbenchClass}>
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-[linear-gradient(90deg,rgba(96,165,250,0.18),rgba(37,99,235,0.22),rgba(96,165,250,0.18))]" />
+                      <div
+                        className="scrollbar-none min-h-0 flex-1 overflow-auto outline-none dark:bg-slate-900/90"
+                        tabIndex={0}
+                        onPaste={document.onPasteMainTable}
+                        style={{ backgroundColor: '#ffffff' }}
+                      >
+                        {document.archiveMainTableBuilderNode}
                       </div>
                     </div>
-                  )}
+
+                    {hasDocumentDetails ? (
+                      <div className="relative flex min-h-0 flex-col overflow-hidden before:pointer-events-none before:absolute before:inset-x-8 before:-top-1 before:h-px before:bg-[linear-gradient(90deg,transparent,rgba(148,163,184,0.58),transparent)]">
+                        <MemoDocumentDetailWorkbench
+                          tableSurfaceClass=""
+                          detailTabStripNode={(
+                            <MemoDetailTabStrip
+                              detailTabs={document.detailTabs}
+                              activeTab={document.activeTab}
+                              currentDetailFillType={document.currentDetailFillType}
+                              onActivateTab={document.onActivateDetailTab}
+                              onAddTab={document.onAddDetailTab}
+                              addLabel="新增明细"
+                              showModeBadge={false}
+                            />
+                          )}
+                          currentDetailFillType={document.currentDetailFillType}
+                          onPasteTableColumns={document.onPasteDetailTableColumns}
+                          tableBuilderNode={document.documentDetailTableBuilderNode}
+                          fillPlaceholderNode={(
+                            <DetailFillPlaceholder
+                              currentDetailFillType={document.currentDetailFillType}
+                              isSelected={document.isDetailFillSelected}
+                              onActivate={document.onActivateDetailFill}
+                            />
+                          )}
+                        />
+                      </div>
+                    ) : (
+                      <div className="rounded-[18px] border border-dashed border-[color:var(--workspace-accent-border)] bg-white px-4 py-4 dark:bg-slate-900/75">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div className="min-w-0">
+                            <div className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">当前未创建明细</div>
+                            <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-300">
+                              点击创建明细后，再展开下方工作台，按现在的上下等分方式继续配置。
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={document.onAddDetailTab}
+                            className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-[color:var(--workspace-accent)] px-4 text-[12px] font-semibold text-white shadow-[0_12px_24px_-22px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">add</span>
+                            创建明细
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

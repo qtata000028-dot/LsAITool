@@ -680,7 +680,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
 
   if (cols.length === 0) {
     return (
-      <div className={`flex items-center justify-center px-6 text-center text-slate-400 ${isCompactCanvas ? 'min-h-[164px] py-6' : 'h-full min-h-[240px]'}`}>
+      <div className={`flex h-full min-h-0 items-center justify-center px-6 text-center text-slate-400 ${isCompactCanvas ? 'min-h-[164px] py-6' : 'min-h-[240px]'}`}>
         <div className="flex flex-col items-center gap-3">
           <div className="cloudy-glass-orb flex size-14 items-center justify-center rounded-3xl">
             <span className="material-symbols-outlined text-[24px] text-slate-300 dark:text-slate-500">data_object</span>

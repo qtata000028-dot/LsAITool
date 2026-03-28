@@ -1,5 +1,6 @@
 import { DndContext, DragOverlay } from '@dnd-kit/core';
-import { useEffect, type ReactNode } from 'react';
+import clsx from 'clsx';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 import { DETAIL_LAYOUT_PALETTE_ITEMS, DETAIL_LAYOUT_REGISTRY } from '../registry';
 import { useDetailDnD } from '../hooks/useDetailDnD';
@@ -21,8 +22,16 @@ type DetailLayoutDesignerProps = {
   onDocumentChange?: (document: DetailLayoutDocument) => void;
   onSelectedItemChange?: (item: DetailLayoutItem | null) => void;
   paletteItems?: DetailLayoutPaletteItem[];
+  paletteTitle?: string;
+  paletteDescription?: string;
+  paletteVariant?: 'cards' | 'plain';
   renderItemContent?: (item: DetailLayoutItem) => ReactNode;
-  toolbarActions?: ReactNode;
+  toolbarActions?: ReactNode | ((helpers: {
+    addPaletteItem: (paletteItem: DetailLayoutPaletteItem) => void;
+    itemCount: number;
+    selectedId: string | null;
+    selectedItem: DetailLayoutItem | null;
+  }) => ReactNode);
 };
 
 export function DetailLayoutDesigner({
@@ -36,6 +45,9 @@ export function DetailLayoutDesigner({
   onDocumentChange,
   onSelectedItemChange,
   paletteItems = DETAIL_LAYOUT_PALETTE_ITEMS,
+  paletteTitle,
+  paletteDescription,
+  paletteVariant = 'cards',
   renderItemContent,
   toolbarActions,
 }: DetailLayoutDesignerProps) {
@@ -43,6 +55,16 @@ export function DetailLayoutDesigner({
     defaultDocument,
     mode,
   });
+  const onDocumentChangeRef = useRef(onDocumentChange);
+  const onSelectedItemChangeRef = useRef(onSelectedItemChange);
+
+  useEffect(() => {
+    onDocumentChangeRef.current = onDocumentChange;
+  }, [onDocumentChange]);
+
+  useEffect(() => {
+    onSelectedItemChangeRef.current = onSelectedItemChange;
+  }, [onSelectedItemChange]);
 
   useEffect(() => {
     if (mode !== 'design') {
@@ -88,12 +110,20 @@ export function DetailLayoutDesigner({
   }, [document, layoutState.document, layoutState.replaceDocument]);
 
   useEffect(() => {
-    onSelectedItemChange?.(layoutState.selectedItem);
-  }, [layoutState.selectedItem, onSelectedItemChange]);
+    onSelectedItemChangeRef.current?.(layoutState.selectedItem);
+  }, [layoutState.selectedItem]);
 
   const handleAddPaletteItem = (paletteItem: DetailLayoutPaletteItem) => {
     layoutState.addItem(paletteItem.type, paletteItem.template);
   };
+  const resolvedToolbarActions = typeof toolbarActions === 'function'
+    ? toolbarActions({
+        addPaletteItem: handleAddPaletteItem,
+        itemCount: layoutState.document.items.length,
+        selectedId: layoutState.selectedId,
+        selectedItem: layoutState.selectedItem,
+      })
+    : toolbarActions;
 
   const detailDnD = useDetailDnD({
     enabled: mode === 'design',
@@ -110,8 +140,8 @@ export function DetailLayoutDesigner({
   });
 
   useEffect(() => {
-    onDocumentChange?.(layoutState.document);
-  }, [layoutState.document, onDocumentChange]);
+    onDocumentChangeRef.current?.(layoutState.document);
+  }, [layoutState.document]);
 
   return (
     <DndContext
@@ -121,9 +151,16 @@ export function DetailLayoutDesigner({
       onDragStart={detailDnD.onDragStart}
       sensors={detailDnD.sensors}
     >
-      <section className={className}>
-        <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
-          <DetailPalette items={paletteItems} onAddItem={handleAddPaletteItem} />
+      <section className={clsx('flex h-full min-h-0 flex-col', className)}>
+        <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[240px_minmax(0,1fr)_300px]">
+          <DetailPalette
+            className="min-h-0 overflow-auto"
+            description={paletteDescription}
+            items={paletteItems}
+            onAddItem={handleAddPaletteItem}
+            title={paletteTitle}
+            variant={paletteVariant}
+          />
 
           <div className="flex min-h-0 flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-slate-200/80 bg-white/88 px-4 py-3 shadow-[0_20px_36px_-32px_rgba(15,23,42,0.25)]">
@@ -146,7 +183,7 @@ export function DetailLayoutDesigner({
                 ) : null}
               </div>
               <div className="flex items-center gap-2">
-                {toolbarActions}
+                {resolvedToolbarActions}
                 <button
                   className="rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-xs font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={!layoutState.history.canUndo}
@@ -175,6 +212,7 @@ export function DetailLayoutDesigner({
             </div>
 
             <DetailCanvas
+              className="min-h-[720px] flex-1"
               document={layoutState.document}
               draggingId={layoutState.ui.draggingId}
               hoveringId={layoutState.ui.hoveringId}

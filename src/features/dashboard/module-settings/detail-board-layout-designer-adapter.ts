@@ -7,6 +7,8 @@ import type {
 import { createEmptyDetailLayoutDocument } from '../detail-layout-designer/utils/layout';
 import {
   DETAIL_BOARD_GROUP_MIN_ROWS,
+  DETAIL_BOARD_GROUP_MAX_ROWS,
+  buildDetailBoardGroup,
   getDetailBoardGroupColumnRow,
   getDetailBoardGroupRows,
 } from './detail-board-config';
@@ -382,6 +384,211 @@ export function buildDetailBoardFieldOptions(
         value: fieldId,
       };
     });
+}
+
+type SuggestedLayoutBucketKey = 'basic' | 'business' | 'extra' | 'audit';
+
+const SUGGESTED_LAYOUT_BUCKETS: Array<{
+  description: string;
+  key: SuggestedLayoutBucketKey;
+  title: string;
+}> = [
+  { key: 'basic', title: '基础信息', description: '主编码、名称、分类与基础归属信息' },
+  { key: 'business', title: '业务信息', description: '状态、组织、人员、日期与业务属性' },
+  { key: 'extra', title: '扩展信息', description: '补充说明、联系信息与备注内容' },
+  { key: 'audit', title: '审计信息', description: '创建、修改、审核与系统追踪字段' },
+];
+
+const AUDIT_FIELD_KEYWORDS = ['创建', '修改', '更新', '审核', '审批', '登记', '制单', '录入', '停用', '启用'];
+const EXTRA_FIELD_KEYWORDS = ['备注', '说明', '描述', '原因', '地址', '电话', '手机', '邮箱', '联系'];
+const BASIC_FIELD_KEYWORDS = ['编码', '编号', '名称', '简称', '类型', '分类', '键值', '标识', '代码'];
+const BUSINESS_FIELD_KEYWORDS = ['状态', '组织', '部门', '员工', '人员', '客户', '供应商', '仓库', '项目', '日期', '时间', '数量', '金额', '单位'];
+const LONG_FIELD_KEYWORDS = ['备注', '说明', '描述', '地址', '原因', '内容', '详情'];
+
+function normalizeSuggestedLayoutFieldText(normalizedColumn: Record<string, any>) {
+  return `${String(normalizedColumn.name || '')} ${String(normalizedColumn.sourceField || '')}`.trim().toLowerCase();
+}
+
+function includesSuggestedLayoutKeyword(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+}
+
+function resolveSuggestedLayoutBucket(
+  normalizedColumn: Record<string, any>,
+  isTallControl: boolean,
+): SuggestedLayoutBucketKey {
+  const fieldText = normalizeSuggestedLayoutFieldText(normalizedColumn);
+
+  if (includesSuggestedLayoutKeyword(fieldText, AUDIT_FIELD_KEYWORDS)) {
+    return 'audit';
+  }
+
+  if (isTallControl || includesSuggestedLayoutKeyword(fieldText, EXTRA_FIELD_KEYWORDS)) {
+    return 'extra';
+  }
+
+  if (includesSuggestedLayoutKeyword(fieldText, BASIC_FIELD_KEYWORDS)) {
+    return 'basic';
+  }
+
+  if (includesSuggestedLayoutKeyword(fieldText, BUSINESS_FIELD_KEYWORDS)) {
+    return 'business';
+  }
+
+  return 'business';
+}
+
+function resolveSuggestedLayoutOrderScore(normalizedColumn: Record<string, any>) {
+  const fieldText = normalizeSuggestedLayoutFieldText(normalizedColumn);
+
+  if (includesSuggestedLayoutKeyword(fieldText, ['编码', '编号', '标识', '代码'])) return 10;
+  if (includesSuggestedLayoutKeyword(fieldText, ['名称', '简称'])) return 20;
+  if (includesSuggestedLayoutKeyword(fieldText, ['类型', '分类'])) return 30;
+  if (includesSuggestedLayoutKeyword(fieldText, ['状态'])) return 40;
+  if (includesSuggestedLayoutKeyword(fieldText, ['组织', '部门', '人员', '员工', '客户', '供应商', '仓库'])) return 50;
+  if (includesSuggestedLayoutKeyword(fieldText, ['日期', '时间'])) return 60;
+  if (includesSuggestedLayoutKeyword(fieldText, ['数量', '金额', '单位'])) return 70;
+  if (includesSuggestedLayoutKeyword(fieldText, EXTRA_FIELD_KEYWORDS)) return 90;
+  if (includesSuggestedLayoutKeyword(fieldText, AUDIT_FIELD_KEYWORDS)) return 100;
+  return 80;
+}
+
+function resolveSuggestedFieldWidth(normalizedColumn: Record<string, any>, fallbackWidth: number, isTallControl: boolean) {
+  const fieldText = normalizeSuggestedLayoutFieldText(normalizedColumn);
+
+  if (isTallControl || includesSuggestedLayoutKeyword(fieldText, LONG_FIELD_KEYWORDS)) {
+    return Math.max(620, Math.min(840, fallbackWidth + 260));
+  }
+
+  if (includesSuggestedLayoutKeyword(fieldText, ['编码', '编号', '状态', '类型', '分类', '日期', '时间'])) {
+    return Math.max(240, Math.min(300, fallbackWidth));
+  }
+
+  if (String(normalizedColumn.name || '').trim().length >= 8) {
+    return Math.max(300, Math.min(380, fallbackWidth + 48));
+  }
+
+  return Math.max(280, Math.min(340, fallbackWidth));
+}
+
+export function buildSuggestedDetailBoardLayout(
+  currentDetailBoard: Record<string, any>,
+  availableGridColumns: Record<string, any>[],
+  normalizeColumn: NormalizeColumn,
+) {
+  if (availableGridColumns.length === 0) {
+    const nextDetailBoard = {
+      ...currentDetailBoard,
+      enabled: true,
+      groups: [
+        buildDetailBoardGroup(1, [], {
+          description: '当前还没有字段，可以先新增分组，后续再把主表字段拖进来。',
+          id: 'archive_group_basic',
+          name: '基础信息',
+          rows: 1,
+        }),
+      ],
+      sortColumnId: null,
+    };
+
+    return {
+      ...nextDetailBoard,
+      designerLayout: buildDetailLayoutDocumentFromDetailBoard(nextDetailBoard, availableGridColumns, normalizeColumn),
+    };
+  }
+
+  const groupedColumns = new Map<SuggestedLayoutBucketKey, Array<{ column: Record<string, any>; normalizedColumn: Record<string, any> }>>(
+    SUGGESTED_LAYOUT_BUCKETS.map((bucket) => [bucket.key, []]),
+  );
+
+  availableGridColumns
+    .filter((column) => Boolean(column?.id))
+    .forEach((column) => {
+      const normalizedColumn = normalizeColumn(column);
+      const fieldMeta = buildLayoutFieldWorkbenchMeta(normalizeColumn, column);
+      const bucketKey = resolveSuggestedLayoutBucket(normalizedColumn, fieldMeta.isTallControl);
+      groupedColumns.get(bucketKey)?.push({ column, normalizedColumn });
+    });
+
+  const groups = SUGGESTED_LAYOUT_BUCKETS
+    .map((bucket, index) => {
+      const bucketFields = (groupedColumns.get(bucket.key) ?? [])
+        .sort((left, right) => (
+          resolveSuggestedLayoutOrderScore(left.normalizedColumn) - resolveSuggestedLayoutOrderScore(right.normalizedColumn)
+        ) || String(left.column.orderId ?? '').localeCompare(String(right.column.orderId ?? '')));
+
+      if (bucketFields.length === 0) {
+        return null;
+      }
+
+      let currentRow = 1;
+      let itemsInRow = 0;
+      const columnIds: string[] = [];
+      const columnRows: Record<string, number> = {};
+      const columnWidths: Record<string, number> = {};
+      const columnHeights: Record<string, number> = {};
+
+      bucketFields.forEach(({ column, normalizedColumn }) => {
+        const fieldMeta = buildLayoutFieldWorkbenchMeta(normalizeColumn, column);
+        const fieldId = String(column.id);
+        const forceSingleRow = fieldMeta.isTallControl || includesSuggestedLayoutKeyword(
+          normalizeSuggestedLayoutFieldText(normalizedColumn),
+          LONG_FIELD_KEYWORDS,
+        );
+
+        if (forceSingleRow && itemsInRow > 0) {
+          currentRow += 1;
+          itemsInRow = 0;
+        }
+
+        columnIds.push(fieldId);
+        columnRows[fieldId] = currentRow;
+        columnWidths[fieldId] = resolveSuggestedFieldWidth(normalizedColumn, fieldMeta.width, forceSingleRow);
+
+        if (fieldMeta.isTallControl) {
+          columnHeights[fieldId] = Math.max(fieldMeta.height, 104);
+        }
+
+        if (forceSingleRow) {
+          currentRow += 1;
+          itemsInRow = 0;
+          return;
+        }
+
+        itemsInRow += 1;
+        if (itemsInRow >= 2) {
+          currentRow += 1;
+          itemsInRow = 0;
+        }
+      });
+
+      const usedRows = Math.max(1, ...Object.values(columnRows));
+
+      return {
+        columnHeights,
+        columnIds,
+        columnRows,
+        columnWidths,
+        columnsPerRow: 2,
+        description: bucket.description,
+        id: `suggested_detail_group_${bucket.key}_${index + 1}`,
+        name: bucket.title,
+        rows: Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, Math.min(DETAIL_BOARD_GROUP_MAX_ROWS, usedRows)),
+      };
+    })
+    .filter(Boolean) as Record<string, any>[];
+
+  const nextDetailBoard = {
+    ...currentDetailBoard,
+    enabled: true,
+    groups,
+    sortColumnId: currentDetailBoard.sortColumnId ?? availableGridColumns[0]?.id ?? null,
+  };
+
+  return {
+    ...nextDetailBoard,
+    designerLayout: buildDetailLayoutDocumentFromDetailBoard(nextDetailBoard, availableGridColumns, normalizeColumn),
+  };
 }
 
 export function getDetailBoardFieldDefaultSize(

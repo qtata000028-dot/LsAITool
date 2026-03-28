@@ -143,6 +143,7 @@ export function buildDetailBoardConfig(columns: any[] = [], overrides: Record<st
   return {
     enabled: false,
     designerLayout: null,
+    hiddenColumnIds: [],
     theme: DETAIL_BOARD_DEFAULT_THEME,
     sortColumnId: columns[0]?.id ?? null,
     groups: createSuggestedDetailBoardGroups(columns),
@@ -152,12 +153,28 @@ export function buildDetailBoardConfig(columns: any[] = [], overrides: Record<st
 
 export function normalizeDetailBoardConfig(config: any, columns: any[] = []) {
   const availableColumnIds = new Set(columns.map((column) => column.id));
+  const hiddenColumnIds = Array.from(new Set(
+    (Array.isArray(config?.hiddenColumnIds) ? config.hiddenColumnIds : [])
+      .map(String)
+      .filter((columnId: string) => availableColumnIds.has(columnId)),
+  ));
+  const hiddenColumnIdSet = new Set(hiddenColumnIds);
+  const assignedColumnIdSet = new Set<string>();
   const suggestedGroups = createSuggestedDetailBoardGroups(columns);
   const hasCustomGroups = Array.isArray(config?.groups);
   const rawGroups = hasCustomGroups ? config.groups : suggestedGroups;
   const normalizedGroups = rawGroups.map((group: any, index: number) => (
     (() => {
-      const columnIds = Array.from(new Set((group?.columnIds ?? []).filter((columnId: string) => availableColumnIds.has(columnId))));
+      const columnIds = Array.from(new Set(
+        (group?.columnIds ?? [])
+          .map(String)
+          .filter((columnId: string) => (
+            availableColumnIds.has(columnId)
+            && !hiddenColumnIdSet.has(columnId)
+            && !assignedColumnIdSet.has(columnId)
+          )),
+      ));
+      columnIds.forEach((columnId: string) => assignedColumnIdSet.add(columnId));
       const legacyColumnsPerRow = Math.max(1, Math.min(4, Number(group?.columnsPerRow) || 2));
       const rows = clampDetailBoardValue(
         Number.isFinite(Number(group?.rows))
@@ -203,6 +220,7 @@ export function normalizeDetailBoardConfig(config: any, columns: any[] = []) {
     designerLayout: config?.designerLayout && typeof config.designerLayout === 'object'
       ? config.designerLayout
       : null,
+    hiddenColumnIds,
     theme: DETAIL_BOARD_THEME_OPTIONS.some((option) => option.value === config?.theme) ? config.theme : DETAIL_BOARD_DEFAULT_THEME,
     sortColumnId: availableColumnIds.has(config?.sortColumnId) ? config.sortColumnId : columns[0]?.id ?? null,
     groups: hasCustomGroups ? normalizedGroups : suggestedGroups,

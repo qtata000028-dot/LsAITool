@@ -9,7 +9,7 @@ const port = Number(process.env.PORT || 3001);
 const baseUrl = process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1';
 const model = process.env.MINIMAX_MODEL || 'MiniMax-M2.1';
 const translateModel = process.env.MINIMAX_TRANSLATE_MODEL || model;
-const businessApiBaseUrl = (process.env.BUSINESS_API_BASE_URL || process.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
+const businessApiBaseUrl = (process.env.BUSINESS_API_BASE_URL || process.env.VITE_API_BASE_URL || 'http://114.116.135.188:9093').replace(/\/+$/, '');
 
 const hopByHopHeaders = new Set([
   'connection',
@@ -172,7 +172,14 @@ function normalizeTableName(input: string) {
   return sanitizeIdentifier(input, 'main_table');
 }
 
+function isPlaceholderIdentifier(input: string) {
+  return /^(?:field|column|col|unknown|temp|tmp)(?:_\d+)?$/i.test(String(input || '').trim());
+}
+
 const identifierDictionary: Array<[string, string]> = [
+  ['\u4E0A\u7EA7\u5173\u7CFB', 'parent_relation'],
+  ['\u4E0B\u7EA7\u5173\u7CFB', 'child_relation'],
+  ['\u5173\u8054\u5173\u7CFB', 'relation'],
   ['\u521B\u5EFA\u65E5\u671F', 'created_date'],
   ['\u66F4\u65B0\u65E5\u671F', 'updated_date'],
   ['\u521B\u5EFA\u65F6\u95F4', 'created_time'],
@@ -207,6 +214,18 @@ const identifierDictionary: Array<[string, string]> = [
   ['\u6210\u672C', 'cost'],
   ['\u9884\u7B97', 'budget'],
   ['\u660E\u7EC6', 'detail'],
+  ['\u7236\u7EA7', 'parent'],
+  ['\u5B50\u7EA7', 'child'],
+  ['\u5173\u7CFB', 'relation'],
+  ['\u5173\u8054', 'relation'],
+  ['\u5C5E\u6027', 'attribute'],
+  ['\u5206\u7EC4', 'group_name'],
+  ['\u7EA7\u6B21', 'level'],
+  ['\u5C42\u7EA7', 'level'],
+  ['\u987A\u5E8F', 'sort_order'],
+  ['\u6392\u5E8F', 'sort_order'],
+  ['\u542F\u7528', 'enabled'],
+  ['\u7981\u7528', 'disabled'],
   ['\u9644\u4EF6', 'attachment'],
   ['\u65E5\u5FD7', 'log'],
   ['\u5907\u6CE8', 'remark'],
@@ -465,6 +484,7 @@ function buildTranslatePrompt(columns: Array<{ id: string; name: string; identif
     'Translate Chinese field names into concise snake_case ASCII identifiers.',
     'Only return JSON.',
     'If an identifier is already valid ASCII snake_case, keep it.',
+    'Never use placeholders such as field_1, field_2, column_1, temp, or unknown.',
     'JSON schema:',
     '{"items":[{"id":"column id","identifier":"english_identifier"}]}',
     'Columns:',
@@ -479,16 +499,20 @@ function normalizeTranslationItems(rawText: string, columns: Array<{ id: string;
   const mapped = columns.map((column, index) => {
     const matched = rawItems.find((item: any) => String(item?.id || '') === column.id);
     const heuristic = guessIdentifierFromName(column.name || '', index);
-    const fallback = column.identifier && /^[a-z0-9_]+$/.test(column.identifier)
+    const fallback = column.identifier && /^[a-z0-9_]+$/.test(column.identifier) && !isPlaceholderIdentifier(column.identifier)
       ? column.identifier
       : heuristic;
     const matchedIdentifier = String(matched?.identifier || '').trim();
-    const useFallback = !matchedIdentifier || matchedIdentifier.length <= 2 || /^(?:field|unknown)(?:_|$)/i.test(matchedIdentifier);
-    const preferHeuristic = !column.identifier && !/^field(?:_|$)/i.test(heuristic);
+    const sanitizedMatchedIdentifier = sanitizeIdentifier(matchedIdentifier, fallback);
+    const useFallback = !matchedIdentifier
+      || matchedIdentifier.length <= 2
+      || isPlaceholderIdentifier(matchedIdentifier)
+      || isPlaceholderIdentifier(sanitizedMatchedIdentifier);
+    const preferHeuristic = !column.identifier && !isPlaceholderIdentifier(heuristic);
 
     return {
       id: column.id,
-      identifier: preferHeuristic ? heuristic : (useFallback ? fallback : sanitizeIdentifier(matchedIdentifier, fallback)),
+      identifier: preferHeuristic ? heuristic : (useFallback ? fallback : sanitizedMatchedIdentifier),
     };
   });
 
