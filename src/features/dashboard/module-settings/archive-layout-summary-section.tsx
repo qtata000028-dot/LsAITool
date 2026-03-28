@@ -8,6 +8,7 @@ type ArchiveLayoutSummarySectionProps = {
   emptyStateText?: string;
   groupSummaryTitle?: string;
   groups: Record<string, any>[];
+  onOpenConditionEditor?: () => void;
   title?: string;
   onOpenEditor: () => void;
   onOpenPreview: () => void;
@@ -18,9 +19,10 @@ export const ArchiveLayoutSummarySection = React.memo(function ArchiveLayoutSumm
   availableGridColumnCount,
   compactCardClass,
   compactInfoCardClass,
-  emptyStateText = '还没有分组，点击上方“点击设计”开始创建。',
+  emptyStateText = '还没有分组',
   groupSummaryTitle = '分组概览',
   groups,
+  onOpenConditionEditor,
   title = '基础档案详情布局',
   onOpenEditor,
   onOpenPreview,
@@ -41,6 +43,16 @@ export const ArchiveLayoutSummarySection = React.memo(function ArchiveLayoutSumm
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {onOpenConditionEditor ? (
+              <button
+                type="button"
+                onClick={onOpenConditionEditor}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3.5 text-[12px] font-semibold text-slate-600 transition-colors hover:border-[color:var(--workspace-accent-border)] hover:text-[color:var(--workspace-accent-strong)]"
+              >
+                <span className="material-symbols-outlined text-[15px]">filter_alt</span>
+                设计条件
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onOpenEditor}

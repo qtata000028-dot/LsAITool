@@ -62,7 +62,7 @@ export const DetailBoardLayoutManagerContainer = React.memo(function DetailBoard
         availableGridColumnCount={availableGridColumns.length}
         compactCardClass={compactCardClass}
         compactInfoCardClass={compactInfoCardClass}
-        emptyStateText="还没有明细分组，点击上方“点击设计”开始创建。"
+        emptyStateText="还没有明细分组"
         groupSummaryTitle="明细分组"
         groups={Array.isArray(currentDetailBoard?.groups) ? currentDetailBoard.groups : []}
         onOpenEditor={() => setIsEditorOpen(true)}

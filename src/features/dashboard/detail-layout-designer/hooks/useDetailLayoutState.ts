@@ -33,11 +33,14 @@ export function useDetailLayoutState(options: UseDetailLayoutStateOptions = {}) 
     const selectedParentId = isDetailLayoutContainer(selection.selectedItem)
       ? selection.selectedItem.id
       : selection.selectedItem?.parentId ?? null;
+    const resolvedParentId = Object.prototype.hasOwnProperty.call(overrides, 'parentId')
+      ? (overrides.parentId ?? null)
+      : selectedParentId;
 
     const item = createDetailLayoutItem(
       type,
       {
-        parentId: overrides.parentId ?? selectedParentId,
+        parentId: resolvedParentId,
         x: overrides.x ?? 24 + (nextIndex % 4) * 24,
         y: overrides.y ?? 24 + Math.floor(nextIndex / 4) * 24,
         ...overrides,

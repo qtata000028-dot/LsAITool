@@ -1,4 +1,5 @@
 import type { BackendMenuNode } from '../../../lib/backend-menus';
+import { buildDesignBillPath } from '../navigation/design-navigation';
 import {
   getMenuModuleTypeProfile,
   normalizeMenuCode,
@@ -14,12 +15,13 @@ type DesignModuleDetailPanelProps = {
 
 function resolveNextRoute(selectedModule: BackendMenuNode | null) {
   const normalizedType = selectedModule?.moduleType?.trim().toLowerCase() || '';
+  const moduleCode = selectedModule?.purviewId || selectedModule?.code;
 
   if (normalizedType === 'bill') {
     return {
-      href: '/design/bill',
+      href: buildDesignBillPath({ moduleCode }),
       label: 'Go to bill route',
-      summary: 'This module is already marked as a bill-oriented configuration and should migrate into the bill design route next.',
+      summary: 'This module is already marked as a bill-oriented configuration and should move into the dedicated bill route with its module context preserved.',
     };
   }
 

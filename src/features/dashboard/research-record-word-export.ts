@@ -1,53 +1,316 @@
+import JSZip from 'jszip';
 import {
-  buildResearchRecordWordPageHtml,
-  RESEARCH_RECORD_WORD_PAGE_CSS,
-} from './research-record-word-template-shared';
+  buildMultilineDisplayLines,
+  type ResearchLineColorMap,
+} from './research-record-multiline';
+import { buildResearchRecordWordPageHtml } from './research-record-word-template-shared';
 
 type ResearchExportDraft = Parameters<typeof buildResearchRecordWordPageHtml>[0];
+type ResearchExportContentItem = ResearchExportDraft['contentItems'][number];
 
-function enhanceWordTableBorders(html: string) {
-  return html
-    .replace(
-      /<table\b/g,
-      '<table border="1" cellspacing="0" cellpadding="0"',
-    )
-    .replace(
-      /<(th|td)(\b[^>]*)>/g,
-      '<$1$2 style="border:1px solid #000;mso-border-alt:solid windowtext .75pt;">',
-    );
+const WORD_DOCUMENT_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const EXPORT_TEMPLATE_URL = '/research-record-export-template.docx';
+const WORD_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const XML_NAMESPACE = 'http://www.w3.org/XML/1998/namespace';
+const ELEMENT_NODE = 1;
+
+function getElementChildren(parent: Element, localName: string) {
+  return Array.from(parent.childNodes).filter(
+    (node): node is Element => node.nodeType === ELEMENT_NODE && (node as Element).localName === localName,
+  );
 }
 
-export function buildResearchRecordWordDocumentHtml(draft: ResearchExportDraft) {
-  const pageHtml = enhanceWordTableBorders(buildResearchRecordWordPageHtml(draft));
-  return `
-    <!doctype html>
-    <html lang="zh-CN">
-      <head>
-        <meta charset="UTF-8" />
-        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-        <title>${draft.departmentName?.trim() || '调研记录'}</title>
-        <style>
-          html, body {
-            margin: 0;
-            padding: 0;
-            background: #fff;
-          }
+function toDelimitedParts(value: string, delimiters: RegExp) {
+  return value
+    .split(delimiters)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
-          body {
-            font-family: "FangSong", "STFangsong", "SimSun", "Songti SC", serif;
-          }
+function formatChineseDate(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
 
-          ${RESEARCH_RECORD_WORD_PAGE_CSS}
+  const match = trimmed.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+  if (!match) {
+    return trimmed;
+  }
 
-          .research-word-page {
-            margin: 0 auto;
-            box-shadow: none;
-          }
-        </style>
-      </head>
-      <body>
-        ${pageHtml}
-      </body>
-    </html>
-  `;
+  const [, year, month, day] = match;
+  return `${year}年${Number(month)}月${Number(day)}日`;
+}
+
+function formatScopeDisplay(value: string) {
+  if (value === '全员') {
+    return '全员☑ 部门□ 单独□';
+  }
+  if (value === '单独') {
+    return '全员□ 部门□ 单独☑';
+  }
+  return '全员□ 部门☑ 单独□';
+}
+
+function getContentItemDisplayName(item: ResearchExportContentItem, index: number) {
+  return item.businessTheme.trim() || item.sceneName.trim() || `调研明细 ${index + 1}`;
+}
+
+function getContentItemSubheading(item: ResearchExportContentItem) {
+  const sceneName = item.sceneName.trim();
+  const businessTheme = item.businessTheme.trim();
+  if (!sceneName || !businessTheme || sceneName === businessTheme || businessTheme.includes(sceneName)) {
+    return '';
+  }
+  return sceneName;
+}
+
+function buildPlainLines(value: string, lineColors: ResearchLineColorMap = {}) {
+  return buildMultilineDisplayLines(value, lineColors)
+    .map((line) => line.text.trim())
+    .filter(Boolean);
+}
+
+async function getXmlImplementation() {
+  if (typeof DOMParser !== 'undefined' && typeof XMLSerializer !== 'undefined') {
+    return { DOMParser, XMLSerializer };
+  }
+
+  return import('@xmldom/xmldom');
+}
+
+function cloneElement<T extends Element>(element: T) {
+  return element.cloneNode(true) as T;
+}
+
+function setParagraphText(paragraph: Element, text: string) {
+  const paragraphProperties = getElementChildren(paragraph, 'pPr')[0] ?? null;
+  const sourceRun = paragraph.getElementsByTagNameNS(WORD_NAMESPACE, 'r')[0];
+  const sourceRunProps = sourceRun ? getElementChildren(sourceRun, 'rPr')[0] ?? null : null;
+
+  while (paragraph.firstChild) {
+    paragraph.removeChild(paragraph.firstChild);
+  }
+
+  if (paragraphProperties) {
+    const nextParagraphProperties = cloneElement(paragraphProperties);
+    if (!text) {
+      const numbering = getElementChildren(nextParagraphProperties, 'numPr')[0];
+      if (numbering) {
+        nextParagraphProperties.removeChild(numbering);
+      }
+    }
+    paragraph.appendChild(nextParagraphProperties);
+  }
+
+  const run = paragraph.ownerDocument.createElementNS(WORD_NAMESPACE, 'w:r');
+  if (sourceRunProps) {
+    run.appendChild(cloneElement(sourceRunProps));
+  }
+
+  const textNode = paragraph.ownerDocument.createElementNS(WORD_NAMESPACE, 'w:t');
+  if (/^\s|\s$/.test(text)) {
+    textNode.setAttributeNS(XML_NAMESPACE, 'xml:space', 'preserve');
+  }
+  textNode.textContent = text;
+  run.appendChild(textNode);
+  paragraph.appendChild(run);
+  return paragraph;
+}
+
+function setCellParagraphs(cell: Element, lines: string[]) {
+  const cellProperties = getElementChildren(cell, 'tcPr')[0] ?? null;
+  const paragraphPrototypes = getElementChildren(cell, 'p');
+  const fallbackPrototype = paragraphPrototypes[paragraphPrototypes.length - 1]
+    ?? cell.ownerDocument.createElementNS(WORD_NAMESPACE, 'w:p');
+  const nextLines = lines.length > 0 ? lines : [''];
+  const lineCount = Math.max(nextLines.length, paragraphPrototypes.length || 1);
+
+  while (cell.firstChild) {
+    cell.removeChild(cell.firstChild);
+  }
+
+  if (cellProperties) {
+    cell.appendChild(cellProperties);
+  }
+
+  Array.from({ length: lineCount }).forEach((_, index) => {
+    const line = nextLines[index] ?? '';
+    const prototype = paragraphPrototypes[index] ?? fallbackPrototype;
+    cell.appendChild(setParagraphText(cloneElement(prototype), line));
+  });
+}
+
+function setCellText(cell: Element, text: string) {
+  setCellParagraphs(cell, [text]);
+}
+
+function getBody(xmlDocument: XMLDocument) {
+  const body = xmlDocument.getElementsByTagNameNS(WORD_NAMESPACE, 'body')[0];
+  if (!body) {
+    throw new Error('Word 模板缺少文档主体');
+  }
+  return body;
+}
+
+function getDirectBodyParagraphs(body: Element) {
+  return getElementChildren(body, 'p');
+}
+
+function getDirectBodyTables(body: Element) {
+  return getElementChildren(body, 'tbl');
+}
+
+function getRows(table: Element) {
+  return getElementChildren(table, 'tr');
+}
+
+function getCells(row: Element) {
+  return getElementChildren(row, 'tc');
+}
+
+function buildContentRows(rowPrototypes: Element[], item: ResearchExportContentItem, index: number) {
+  const displayName = getContentItemDisplayName(item, index);
+  const subheading = getContentItemSubheading(item);
+  const formsLines = buildPlainLines(item.formsProvided, item.lineColors.formsProvided);
+  const workDescriptionLines = buildPlainLines(item.workDescription, item.lineColors.workDescription);
+  const painLines = buildPlainLines(item.painPoints, item.lineColors.painPoints);
+  const suggestionLines = buildPlainLines(item.suggestions, item.lineColors.suggestions);
+  const [firstPainLine = '', ...restPainLines] = painLines;
+
+  const [topRowPrototype, formsRowPrototype, workRowPrototype, suggestionRowPrototype] = rowPrototypes;
+
+  const topRow = cloneElement(topRowPrototype);
+  const topCells = getCells(topRow);
+  setCellParagraphs(topCells[0], [displayName, subheading]);
+  setCellParagraphs(topCells[1], [
+    `工作岗位：${item.jobRole.trim()}`,
+    `工时占比：${item.timeShare.trim()}`,
+  ]);
+
+  const formsRow = cloneElement(formsRowPrototype);
+  const formsCells = getCells(formsRow);
+  setCellText(formsCells[0], '');
+  setCellParagraphs(formsCells[1], ['表单提供：', ...formsLines]);
+
+  const workRow = cloneElement(workRowPrototype);
+  const workCells = getCells(workRow);
+  setCellText(workCells[0], '');
+  setCellParagraphs(workCells[1], [
+    '工作描述：',
+    ...workDescriptionLines,
+    firstPainLine ? `痛点说明： ${firstPainLine}` : '痛点说明：',
+    ...restPainLines,
+  ]);
+
+  const suggestionRow = cloneElement(suggestionRowPrototype);
+  const suggestionCells = getCells(suggestionRow);
+  setCellText(suggestionCells[0], '');
+  setCellParagraphs(suggestionCells[1], ['朗速建议：', ...suggestionLines]);
+
+  return [topRow, formsRow, workRow, suggestionRow];
+}
+
+async function rebuildTemplateXml(templateXml: string, draft: ResearchExportDraft) {
+  const { DOMParser, XMLSerializer } = await getXmlImplementation();
+  const xmlDocument = new DOMParser().parseFromString(templateXml, 'application/xml');
+  if (xmlDocument.getElementsByTagName('parsererror').length > 0) {
+    throw new Error('Word 模板解析失败');
+  }
+
+  const body = getBody(xmlDocument);
+  const paragraphs = getDirectBodyParagraphs(body);
+  const tables = getDirectBodyTables(body);
+  if (paragraphs.length < 2 || tables.length < 2) {
+    throw new Error('Word 模板结构不符合预期');
+  }
+
+  setParagraphText(paragraphs[0], draft.companyName.trim() || '东方水利智能科技股份有限公司');
+  setParagraphText(paragraphs[1], `${draft.projectName.trim() || '数字一体化平台项目'}-调研访谈记录`);
+
+  const overviewRows = getRows(tables[0]);
+  const overviewRow0Cells = getCells(overviewRows[0]);
+  const overviewRow1Cells = getCells(overviewRows[1]);
+  const overviewRow2Cells = getCells(overviewRows[2]);
+
+  setCellText(overviewRow0Cells[1], formatChineseDate(draft.surveyDate));
+  setCellText(overviewRow0Cells[3], draft.surveyLocation.trim());
+  setCellText(overviewRow0Cells[5], draft.documentNo.trim());
+
+  setCellText(overviewRow1Cells[1], draft.departmentName.trim());
+  setCellText(overviewRow1Cells[3], formatScopeDisplay(draft.surveyScope));
+  setCellText(overviewRow1Cells[5], draft.surveyCount.trim());
+
+  setCellText(overviewRow2Cells[1], toDelimitedParts(draft.respondents, /[、,，\n]+/).join('、'));
+  setCellText(overviewRow2Cells[3], toDelimitedParts(draft.engineers, /[、,，\n]+/).join('、'));
+
+  const contentTable = tables[1];
+  const rowPrototypes = getRows(contentTable);
+  const contentBlockPrototypes = rowPrototypes.slice(5, 9).map((row) => cloneElement(row));
+  const staticRowPrefix = rowPrototypes.slice(0, 5).map((row) => cloneElement(row));
+  const staticRowSuffix = rowPrototypes.slice(10).map((row) => cloneElement(row));
+
+  const departmentPostLines = buildPlainLines(draft.departmentPosts, draft.lineColors.departmentPosts);
+  const workToolLines = buildPlainLines(draft.workTools, draft.lineColors.workTools);
+
+  setCellParagraphs(getCells(staticRowPrefix[1])[0], departmentPostLines);
+  setCellParagraphs(getCells(staticRowPrefix[3])[0], workToolLines);
+
+  while (contentTable.firstChild) {
+    contentTable.removeChild(contentTable.firstChild);
+  }
+
+  staticRowPrefix.forEach((row) => contentTable.appendChild(row));
+
+  const contentItems = draft.contentItems.length > 0
+    ? draft.contentItems
+    : [{
+      businessTheme: '暂无明细',
+      formsProvided: '',
+      id: 'empty-content-item',
+      jobRole: '',
+      lineColors: {},
+      linkedModuleName: '',
+      linkedModuleTable: '',
+      painPoints: '',
+      sceneName: '',
+      suggestions: '',
+      timeShare: '',
+      workDescription: '',
+    }];
+
+  contentItems.forEach((item, index) => {
+    buildContentRows(contentBlockPrototypes, item, index).forEach((row) => contentTable.appendChild(row));
+  });
+
+  const outputRows = staticRowSuffix;
+  setCellParagraphs(getCells(outputRows[1])[0], buildPlainLines(draft.overallPainPoints, draft.lineColors.overallPainPoints));
+  setCellParagraphs(getCells(outputRows[3])[0], buildPlainLines(draft.specialDiscussion, draft.lineColors.specialDiscussion));
+  setCellParagraphs(getCells(outputRows[5])[0], buildPlainLines(draft.extraNotes, draft.lineColors.extraNotes));
+  setCellText(getCells(outputRows[6])[1], draft.signer.trim());
+  setCellText(getCells(outputRows[7])[0], formatChineseDate(draft.signerDate));
+
+  outputRows.forEach((row) => contentTable.appendChild(row));
+
+  return new XMLSerializer().serializeToString(xmlDocument);
+}
+
+async function loadTemplateZip() {
+  const response = await fetch(EXPORT_TEMPLATE_URL, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Word 模板加载失败：${response.status}`);
+  }
+
+  return JSZip.loadAsync(await response.arrayBuffer());
+}
+
+export async function buildResearchRecordWordDocumentBlob(draft: ResearchExportDraft) {
+  const zip = await loadTemplateZip();
+  const documentEntry = zip.file('word/document.xml');
+  if (!documentEntry) {
+    throw new Error('Word 模板缺少 document.xml');
+  }
+
+  zip.file('word/document.xml', await rebuildTemplateXml(await documentEntry.async('string'), draft));
+  return zip.generateAsync({ mimeType: WORD_DOCUMENT_MIME, type: 'blob' });
 }

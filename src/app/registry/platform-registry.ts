@@ -19,8 +19,8 @@ export interface PlatformDefinition {
 export const PLATFORM_REGISTRY: readonly PlatformDefinition[] = [
   {
     id: 'design',
-    name: 'Design Studio',
-    description: 'Hosts the existing design workspace, fixed routes, and interactive studio tools.',
+    name: '设计平台',
+    description: '用于模块设计、布局设计和平台级配置。',
     kind: 'studio',
     basePath: '/design',
     loginPath: '/design/login',
@@ -30,8 +30,8 @@ export const PLATFORM_REGISTRY: readonly PlatformDefinition[] = [
   },
   {
     id: 'runtime',
-    name: 'Runtime Platform',
-    description: 'Reserves the low-code runtime shell, dynamic routes, and runtime permission parsing.',
+    name: '运行平台',
+    description: '用于低代码运行时和动态页面入口。',
     kind: 'runtime',
     basePath: '/runtime',
     loginPath: '/runtime/login',
@@ -41,8 +41,8 @@ export const PLATFORM_REGISTRY: readonly PlatformDefinition[] = [
   },
   {
     id: 'mes',
-    name: 'MES Platform',
-    description: 'Reserves an independent business platform shell and dedicated login entry.',
+    name: 'MES 平台',
+    description: '用于业务端独立入口与后续 MES 功能。',
     kind: 'business',
     basePath: '/mes',
     loginPath: '/mes/login',

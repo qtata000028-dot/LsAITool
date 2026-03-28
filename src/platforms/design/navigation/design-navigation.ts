@@ -116,6 +116,16 @@ export function buildDesignModulePath(context?: Pick<DesignRouteContext, 'menuCo
   return segments.join('/');
 }
 
+export function buildDesignBillPath(context?: Pick<DesignRouteContext, 'moduleCode'>) {
+  const segments = ['/design', 'bill'];
+
+  if (context?.moduleCode) {
+    segments.push(encodeSegment(context.moduleCode));
+  }
+
+  return segments.join('/');
+}
+
 export function navigateToDesignPath(path: string, options: NavigateOptions = {}) {
   if (typeof window === 'undefined') {
     return;

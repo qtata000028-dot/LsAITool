@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from 'react';
 
 import {
   buildDetailBoardGroup,
@@ -54,7 +54,7 @@ type LegacyDefinitionLayoutWorkbenchProps = {
   title?: string;
 };
 
-const STAGE_WIDTH = 780;
+const STAGE_WIDTH = 860;
 const STAGE_OFFSET_X = 24;
 const STAGE_TOP_PADDING = 24;
 const GROUP_GAP = 22;
@@ -303,27 +303,27 @@ function renderControlShell(field: PreviewFieldLayout) {
   switch (field.type) {
     case 'number':
       return (
-        <div className="bill-designer-control-shell flex h-full items-center justify-between rounded-[14px] px-3 text-[12px] text-slate-500">
-          <span>{field.defaultValue || '0'}</span>
-          <span className="material-symbols-outlined text-[15px] text-slate-300">straighten</span>
+        <div className="bill-designer-control-shell flex h-full items-center gap-2 rounded-[14px] border border-slate-200 bg-white px-3 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+          <span className="min-w-0 flex-1 truncate">{field.defaultValue || '0.00'}</span>
+          <span className="material-symbols-outlined text-[15px] text-slate-300">calculate</span>
         </div>
       );
     case 'select':
       return (
-        <div className="bill-designer-control-shell flex h-full items-center justify-between rounded-[14px] px-3 text-[12px] text-slate-500">
-          <span>{field.defaultValue || '请选择'}</span>
+        <div className="bill-designer-control-shell flex h-full items-center justify-between rounded-[14px] border border-slate-200 bg-white px-3 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+          <span className="truncate">{field.defaultValue || '请选择'}</span>
           <span className="material-symbols-outlined text-[16px] text-slate-300">expand_more</span>
         </div>
       );
     case 'textarea':
       return (
-        <div className="bill-designer-control-shell flex h-full rounded-[14px] px-3 py-2 text-[12px] leading-5 text-slate-500">
+        <div className="bill-designer-control-shell flex h-full rounded-[14px] border border-slate-200 bg-white px-3 py-2 text-[12px] leading-5 text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
           <span className="overflow-hidden">{field.defaultValue || '请输入内容'}</span>
         </div>
       );
     default:
       return (
-        <div className="bill-designer-control-shell flex h-full items-center rounded-[14px] px-3 text-[12px] text-slate-500">
+        <div className="bill-designer-control-shell flex h-full items-center rounded-[14px] border border-slate-200 bg-white px-3 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
           <span>{field.defaultValue || '请输入内容'}</span>
         </div>
       );
@@ -334,17 +334,205 @@ function formatPixelValue(value: number) {
   return `${Math.round(value)}px`;
 }
 
-function SummaryBox({
-  label,
-  value,
-}: {
+function buildFlowRows(columnIds: string[], columnsPerRow: number) {
+  const safeColumnsPerRow = Math.max(1, columnsPerRow);
+
+  return {
+    columnRows: Object.fromEntries(
+      columnIds.map((columnId, index) => [columnId, Math.floor(index / safeColumnsPerRow) + 1]),
+    ),
+    rows: Math.max(1, Math.ceil(Math.max(columnIds.length, 1) / safeColumnsPerRow)),
+  };
+}
+
+function useStackedFieldPreview(field: PreviewFieldLayout) {
+  return field.type === 'textarea' || field.height >= 96;
+}
+
+function matchesFieldSearch(field: NormalizedLayoutField, keyword: string) {
+  if (!keyword) {
+    return true;
+  }
+
+  const haystack = `${field.label} ${field.id}`.toLowerCase();
+  return haystack.includes(keyword);
+}
+
+type FieldTokenProps = {
+  active?: boolean;
+  checked?: boolean;
+  compact?: boolean;
+  disabled?: boolean;
   label: string;
-  value: string;
-}) {
+  meta?: string;
+  onClick?: () => void;
+  onRemove?: () => void;
+  onToggleSelect?: () => void;
+  trailingIcon?: string;
+};
+
+function FieldToken({
+  active = false,
+  checked = false,
+  compact = false,
+  disabled = false,
+  label,
+  meta,
+  onClick,
+  onRemove,
+  onToggleSelect,
+  trailingIcon,
+}: FieldTokenProps) {
+  if (compact) {
+    return (
+      <div
+        className={`group inline-flex h-8 max-w-full items-center gap-1 rounded-full border px-2.5 transition-all ${
+          disabled
+            ? 'border-slate-200 bg-slate-100 text-slate-400'
+            : active
+              ? 'border-primary/30 bg-primary/10 text-primary shadow-[0_12px_20px_-18px_rgba(37,99,235,0.35)]'
+              : checked
+                ? 'border-slate-300 bg-white text-slate-700 shadow-[0_10px_18px_-20px_rgba(15,23,42,0.26)]'
+                : 'border-slate-200/85 bg-slate-50/92 text-slate-600 hover:border-slate-300 hover:bg-white'
+        }`}
+      >
+        {onToggleSelect ? (
+          <button
+            type="button"
+            onClick={onToggleSelect}
+            disabled={disabled}
+            className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
+              checked
+                ? 'border-primary bg-primary text-white'
+                : 'border-slate-300 bg-white text-transparent hover:border-primary/40'
+            }`}
+            aria-label={`${checked ? '取消勾选' : '勾选'} ${label}`}
+          >
+            <span className="material-symbols-outlined text-[11px] leading-none">check</span>
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={disabled || !onClick}
+          className="min-w-0 flex-1 truncate text-left text-[11px] font-semibold"
+        >
+          {label}
+        </button>
+        {onRemove ? (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:text-rose-600"
+            aria-label={`移除 ${label}`}
+          >
+            <span className="material-symbols-outlined text-[13px] leading-none">close</span>
+          </button>
+        ) : trailingIcon ? (
+          <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled || !onClick}
+            className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:text-primary"
+            aria-label={`${trailingIcon === 'add' ? '加入' : '操作'} ${label}`}
+          >
+            <span className="material-symbols-outlined text-[13px] leading-none">{trailingIcon}</span>
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-[18px] border border-slate-200/80 bg-slate-50/85 px-4 py-3">
-      <div className="text-[11px] font-semibold text-slate-400">{label}</div>
-      <div className="mt-1 text-[14px] font-semibold text-slate-900">{value}</div>
+    <div
+      className={`group flex min-h-[46px] items-center gap-2 rounded-[16px] border px-3 py-2 transition-all ${
+        disabled
+          ? 'border-slate-200 bg-slate-100 text-slate-400'
+          : active
+            ? 'border-primary/25 bg-primary/10 shadow-[0_18px_34px_-28px_rgba(37,99,235,0.32)]'
+            : 'border-slate-200/80 bg-slate-50/82 text-slate-700 hover:border-slate-300 hover:bg-white'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled || !onClick}
+        className="min-w-0 flex-1 text-left"
+      >
+        <div className={`truncate text-[12px] font-semibold ${active ? 'text-primary' : 'text-current'}`}>{label}</div>
+        {meta ? (
+          <div className={`mt-0.5 truncate text-[10px] ${active ? 'text-primary/70' : 'text-slate-400'}`}>{meta}</div>
+        ) : null}
+      </button>
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-colors ${
+            active
+              ? 'border-primary/15 bg-white/85 text-primary hover:border-rose-200 hover:text-rose-600'
+              : 'border-slate-200 bg-white text-slate-400 hover:border-rose-200 hover:text-rose-600'
+          }`}
+          aria-label={`移除 ${label}`}
+        >
+          <span className="material-symbols-outlined text-[15px]">close</span>
+        </button>
+      ) : trailingIcon ? (
+        <span
+          className={`material-symbols-outlined shrink-0 text-[16px] ${
+            disabled ? 'text-slate-300' : active ? 'text-primary/80' : 'text-slate-400'
+          }`}
+        >
+          {trailingIcon}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+type RangeFieldProps = {
+  label: string;
+  marks?: Array<{ label: string; value: number }>;
+  max: number;
+  min: number;
+  onChange: (nextValue: number) => void;
+  step: number;
+  value: number;
+  valueLabel?: string;
+};
+
+function RangeField({
+  label,
+  marks,
+  max,
+  min,
+  onChange,
+  step,
+  value,
+  valueLabel,
+}: RangeFieldProps) {
+  return (
+    <div className="rounded-[22px] border border-slate-200/80 bg-white/88 px-4 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[12px] font-semibold text-slate-800">{label}</div>
+        <div className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">{valueLabel ?? value}</div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="mt-4 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-primary"
+      />
+      {marks && marks.length > 0 ? (
+        <div className="mt-3 flex items-center justify-between text-[10px] font-medium text-slate-400">
+          {marks.map((mark) => (
+            <span key={`${label}-${mark.value}`}>{mark.label}</span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -352,17 +540,25 @@ function SummaryBox({
 export function LegacyDefinitionLayoutWorkbench({
   availableColumns,
   currentDetailBoard,
-  moduleCode = '',
+  moduleCode: _moduleCode = '',
   normalizeColumn,
   onOpenPreview,
   onUpdateDetailBoard,
   selectedGroupId,
   setSelectedGroupId,
-  title = '详情布局',
+  title: _title = '详情布局',
 }: LegacyDefinitionLayoutWorkbenchProps) {
   const defaultPreset = getPresetDefinition('balanced');
   const [selectedPreset, setSelectedPreset] = useState<LayoutPresetKey>(defaultPreset.key);
   const [columnCount, setColumnCount] = useState(defaultPreset.defaultColumnCount);
+  const [fieldSearch, setFieldSearch] = useState('');
+  const [checkedFieldIds, setCheckedFieldIds] = useState<string[]>([]);
+  const [marqueeSelection, setMarqueeSelection] = useState<null | {
+    currentX: number;
+    currentY: number;
+    startX: number;
+    startY: number;
+  }>(null);
   const [pendingSelectedGroupId, setPendingSelectedGroupId] = useState<string | null>(null);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [rowSpace, setRowSpace] = useState(defaultPreset.defaultRowSpace);
@@ -373,16 +569,28 @@ export function LegacyDefinitionLayoutWorkbench({
     startY: number;
   }>(null);
   const [isPending, startTransition] = useTransition();
+  const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const normalizedFields = useMemo(
     () => buildNormalizedFields(availableColumns, normalizeColumn),
     [availableColumns, normalizeColumn],
   );
-  const fieldMap = useMemo(
-    () => new Map(normalizedFields.map((field) => [field.id, field])),
-    [normalizedFields],
-  );
   const groups = Array.isArray(currentDetailBoard?.groups) ? currentDetailBoard.groups : [];
+  const hiddenFieldIds = Array.isArray(currentDetailBoard?.hiddenColumnIds)
+    ? currentDetailBoard.hiddenColumnIds.map(String)
+    : [];
+  const hiddenFieldIdSet = useMemo(
+    () => new Set(hiddenFieldIds),
+    [hiddenFieldIds],
+  );
+  const visibleFields = useMemo(
+    () => normalizedFields.filter((field) => !hiddenFieldIdSet.has(field.id)),
+    [hiddenFieldIdSet, normalizedFields],
+  );
+  const fieldMap = useMemo(
+    () => new Map(visibleFields.map((field) => [field.id, field])),
+    [visibleFields],
+  );
   const groupIds = useMemo(
     () => groups.map((group: any) => String(group?.id || '')).filter(Boolean),
     [groups],
@@ -430,7 +638,11 @@ export function LegacyDefinitionLayoutWorkbench({
     () => new Set(groups.flatMap((group: any) => Array.isArray(group?.columnIds) ? group.columnIds.map(String) : [])),
     [groups],
   );
-  const unassignedFields = normalizedFields.filter((field) => !occupiedFieldIds.has(field.id));
+  const unassignedFields = visibleFields.filter((field) => !occupiedFieldIds.has(field.id));
+  const unassignedFieldIds = useMemo(
+    () => new Set(unassignedFields.map((field) => field.id)),
+    [unassignedFields],
+  );
   const previewGroups = useMemo(
     () => buildPreviewGroups(groups, fieldMap, columnCount, rowSpace),
     [columnCount, fieldMap, groups, rowSpace],
@@ -442,6 +654,15 @@ export function LegacyDefinitionLayoutWorkbench({
   const selectedGroupFields = selectedGroupFieldIds
     .map((fieldId) => fieldMap.get(fieldId))
     .filter(Boolean) as NormalizedLayoutField[];
+  const normalizedFieldSearch = fieldSearch.trim().toLowerCase();
+  const filteredSelectedGroupFields = selectedGroupFields.filter((field) => matchesFieldSearch(field, normalizedFieldSearch));
+  const filteredUnassignedFields = unassignedFields.filter((field) => matchesFieldSearch(field, normalizedFieldSearch));
+  const checkedFieldIdSet = useMemo(
+    () => new Set(checkedFieldIds),
+    [checkedFieldIds],
+  );
+  const checkedSelectedGroupFieldIds = selectedGroupFieldIds.filter((fieldId) => checkedFieldIdSet.has(fieldId));
+  const checkedUnassignedFieldIds = unassignedFields.map((field) => field.id).filter((fieldId) => checkedFieldIdSet.has(fieldId));
   const activeFieldId = selectedFieldId && selectedGroupFieldIds.includes(selectedFieldId)
     ? selectedFieldId
     : (selectedGroupFieldIds[0] ?? null);
@@ -454,10 +675,50 @@ export function LegacyDefinitionLayoutWorkbench({
     }
   }, [activeFieldId, selectedFieldId]);
 
+  useEffect(() => {
+    setCheckedFieldIds((current) => {
+      const next = current.filter((fieldId) => selectedGroupFieldIds.includes(fieldId) || unassignedFieldIds.has(fieldId));
+      return next.length === current.length && next.every((fieldId, index) => fieldId === current[index]) ? current : next;
+    });
+  }, [selectedGroupFieldIds, unassignedFieldIds]);
+
   const selectGroup = (groupId: string | null) => {
     setPendingSelectedGroupId(null);
+    setCheckedFieldIds([]);
     setSelectedGroupId(groupId);
   };
+
+  const toggleCheckedField = (fieldId: string) => {
+    setCheckedFieldIds((current) => (
+      current.includes(fieldId)
+        ? current.filter((id) => id !== fieldId)
+        : [...current, fieldId]
+    ));
+  };
+
+  const toggleCheckAll = (fieldIds: string[]) => {
+    if (fieldIds.length === 0) {
+      return;
+    }
+
+    setCheckedFieldIds((current) => {
+      const currentSet = new Set(current);
+      const isAllChecked = fieldIds.every((fieldId) => currentSet.has(fieldId));
+
+      if (isAllChecked) {
+        return current.filter((fieldId) => !fieldIds.includes(fieldId));
+      }
+
+      return [...new Set([...current, ...fieldIds])];
+    });
+  };
+
+  const marqueeBounds = marqueeSelection ? {
+    height: Math.abs(marqueeSelection.currentY - marqueeSelection.startY),
+    left: Math.min(marqueeSelection.startX, marqueeSelection.currentX),
+    top: Math.min(marqueeSelection.startY, marqueeSelection.currentY),
+    width: Math.abs(marqueeSelection.currentX - marqueeSelection.startX),
+  } : null;
 
   const getSelectedFieldHeight = (fieldId: string) => clampValue(
     Number(selectedGroup?.columnHeights?.[fieldId]) > 0
@@ -476,6 +737,7 @@ export function LegacyDefinitionLayoutWorkbench({
 
     onUpdateDetailBoard((current: any) => ({
       ...current,
+      enabled: true,
       groups: (Array.isArray(current?.groups) ? current.groups : []).map((group: any) => {
         if (group.id !== selectedGroup.id) {
           return group;
@@ -515,6 +777,67 @@ export function LegacyDefinitionLayoutWorkbench({
     };
   }, [heightDragState, selectedGroup]);
 
+  useEffect(() => {
+    if (!marqueeSelection || !canvasRef.current || !previewSelectedGroup) {
+      return;
+    }
+
+    const canvasElement = canvasRef.current;
+    const canvasRect = canvasElement.getBoundingClientRect();
+
+    const handlePointerMove = (event: PointerEvent) => {
+      setMarqueeSelection((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          currentX: clampValue(event.clientX - canvasRect.left, 0, canvasRect.width),
+          currentY: clampValue(event.clientY - canvasRect.top, 0, canvasRect.height),
+        };
+      });
+    };
+
+    const handlePointerUp = () => {
+      setMarqueeSelection((current) => {
+        if (!current) {
+          return current;
+        }
+
+        const left = Math.min(current.startX, current.currentX);
+        const right = Math.max(current.startX, current.currentX);
+        const top = Math.min(current.startY, current.currentY);
+        const bottom = Math.max(current.startY, current.currentY);
+        const selectedIds = previewSelectedGroup.fields
+          .filter((field) => {
+            const fieldLeft = previewSelectedGroup.x + field.x;
+            const fieldTop = previewSelectedGroup.y + field.y;
+            const fieldRight = fieldLeft + field.width;
+            const fieldBottom = fieldTop + field.height;
+
+            return !(fieldRight < left || fieldLeft > right || fieldBottom < top || fieldTop > bottom);
+          })
+          .map((field) => field.id);
+
+        if (selectedIds.length > 0) {
+          setCheckedFieldIds((existing) => [...new Set([...existing, ...selectedIds])]);
+          setSelectedFieldId(selectedIds[selectedIds.length - 1] ?? null);
+        }
+
+        return null;
+      });
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [marqueeSelection, previewSelectedGroup]);
+
   const handlePresetSelect = (presetKey: LayoutPresetKey) => {
     const nextPreset = getPresetDefinition(presetKey);
     startTransition(() => {
@@ -529,13 +852,12 @@ export function LegacyDefinitionLayoutWorkbench({
       onUpdateDetailBoard((current: any) => {
         const nextGroups = (Array.isArray(current?.groups) ? current.groups : []).map((group: any) => {
           const columnIds = Array.isArray(group?.columnIds) ? group.columnIds.map(String) : [];
-          const nextRows = Math.max(1, Math.ceil(Math.max(columnIds.length, 1) / columnCount));
+          const nextFlow = buildFlowRows(columnIds, columnCount);
 
           return {
             ...group,
-            columnRows: Object.fromEntries(columnIds.map((columnId, index) => [columnId, Math.floor(index / columnCount) + 1])),
             columnsPerRow: columnCount,
-            rows: nextRows,
+            ...nextFlow,
           };
         });
 
@@ -556,6 +878,8 @@ export function LegacyDefinitionLayoutWorkbench({
       setColumnCount(nextPreset.defaultColumnCount);
       setRowSpace(nextPreset.defaultRowSpace);
       setShowCoordinates(false);
+      setCheckedFieldIds([]);
+      setSelectedFieldId(null);
 
       const suggestedGroups = createSuggestedDetailBoardGroups(availableColumns);
       setPendingSelectedGroupId(suggestedGroups[0]?.id ?? null);
@@ -563,6 +887,7 @@ export function LegacyDefinitionLayoutWorkbench({
         ...current,
         enabled: true,
         groups: suggestedGroups,
+        hiddenColumnIds: [],
         sortColumnId: availableColumns[0]?.id ?? current?.sortColumnId ?? null,
       }));
     });
@@ -587,560 +912,665 @@ export function LegacyDefinitionLayoutWorkbench({
       return;
     }
 
-    const remainingGroups = groups.filter((group: any) => group.id !== selectedGroup.id);
     setPendingSelectedGroupId(null);
+    setSelectedFieldId(null);
+    setCheckedFieldIds((current) => current.filter((fieldId) => !selectedGroupFieldIds.includes(fieldId)));
     onUpdateDetailBoard((current: any) => ({
       ...current,
-      groups: remainingGroups,
+      enabled: true,
+      hiddenColumnIds: (Array.isArray(current?.hiddenColumnIds) ? current.hiddenColumnIds : [])
+        .map(String)
+        .filter((fieldId: string) => !selectedGroupFieldIds.includes(fieldId)),
+      groups: (Array.isArray(current?.groups) ? current.groups : [])
+        .filter((group: any) => group.id !== selectedGroup.id)
+        .map((group: any) => {
+          const nextColumnIds = (Array.isArray(group?.columnIds) ? group.columnIds.map(String) : [])
+            .filter((fieldId: string) => !selectedGroupFieldIds.includes(fieldId));
+          const nextColumnsPerRow = Math.max(1, Number(group?.columnsPerRow) || columnCount);
+
+          return {
+            ...group,
+            columnIds: nextColumnIds,
+            columnHeights: Object.fromEntries(
+              Object.entries(group?.columnHeights ?? {}).filter(([key]) => nextColumnIds.includes(key)),
+            ),
+            columnsPerRow: nextColumnsPerRow,
+            ...buildFlowRows(nextColumnIds, nextColumnsPerRow),
+          };
+        }),
     }));
+    const remainingGroups = groups.filter((group: any) => group.id !== selectedGroup.id);
     setSelectedGroupId(remainingGroups[0]?.id ?? null);
   };
 
-  const handleRenameGroup = (name: string) => {
-    if (!selectedGroup) {
+  const handleAssignFields = (fieldIds: string[]) => {
+    if (!selectedGroup || fieldIds.length === 0) {
       return;
     }
 
+    const normalizedIds = [...new Set(fieldIds)];
+    setSelectedFieldId(normalizedIds[normalizedIds.length - 1] ?? null);
+    setCheckedFieldIds((current) => current.filter((fieldId) => !normalizedIds.includes(fieldId)));
+
     onUpdateDetailBoard((current: any) => ({
       ...current,
-      groups: (Array.isArray(current?.groups) ? current.groups : []).map((group: any) => (
-        group.id === selectedGroup.id
-          ? { ...group, name }
-          : group
-      )),
+      enabled: true,
+      hiddenColumnIds: (Array.isArray(current?.hiddenColumnIds) ? current.hiddenColumnIds : [])
+        .map(String)
+        .filter((fieldId: string) => !normalizedIds.includes(fieldId)),
+      groups: (Array.isArray(current?.groups) ? current.groups : []).map((group: any) => {
+        const baseColumnIds = (Array.isArray(group?.columnIds) ? group.columnIds.map(String) : [])
+          .filter((columnId: string) => !normalizedIds.includes(columnId));
+        const nextColumnIds = group.id === selectedGroup.id
+          ? [...new Set([...baseColumnIds, ...normalizedIds])]
+          : baseColumnIds;
+        const nextColumnsPerRow = Math.max(1, Number(group?.columnsPerRow) || columnCount);
+
+        return {
+          ...group,
+          columnIds: nextColumnIds,
+          columnHeights: Object.fromEntries(
+            Object.entries(group?.columnHeights ?? {}).filter(([key]) => nextColumnIds.includes(key)),
+          ),
+          columnsPerRow: nextColumnsPerRow,
+          ...buildFlowRows(nextColumnIds, nextColumnsPerRow),
+        };
+      }),
     }));
   };
 
   const handleAssignField = (fieldId: string) => {
-    if (!selectedGroup) {
+    handleAssignFields([fieldId]);
+  };
+
+  const handleRemoveFields = (fieldIds: string[]) => {
+    if (!selectedGroup || fieldIds.length === 0) {
       return;
     }
 
-    setSelectedFieldId(fieldId);
+    const normalizedIds = [...new Set(fieldIds)];
+    const remainingFieldIds = selectedGroupFieldIds.filter((fieldId) => !normalizedIds.includes(fieldId));
+    setCheckedFieldIds((current) => current.filter((fieldId) => !normalizedIds.includes(fieldId)));
+    setSelectedFieldId((current) => (current && normalizedIds.includes(current) ? (remainingFieldIds[0] ?? null) : current));
+
     onUpdateDetailBoard((current: any) => ({
       ...current,
+      enabled: true,
+      hiddenColumnIds: (Array.isArray(current?.hiddenColumnIds) ? current.hiddenColumnIds : [])
+        .map(String)
+        .filter((fieldId: string) => !normalizedIds.includes(fieldId)),
       groups: (Array.isArray(current?.groups) ? current.groups : []).map((group: any) => {
-        if (group.id !== selectedGroup.id) {
-          return group;
-        }
-
-        const nextColumnIds = [...new Set([...(Array.isArray(group?.columnIds) ? group.columnIds.map(String) : []), fieldId])];
+        const nextColumnIds = (Array.isArray(group?.columnIds) ? group.columnIds.map(String) : [])
+          .filter((id: string) => !normalizedIds.includes(id));
+        const nextColumnsPerRow = Math.max(1, Number(group?.columnsPerRow) || columnCount);
         return {
           ...group,
           columnIds: nextColumnIds,
-          columnRows: {
-            ...(group?.columnRows ?? {}),
-            [fieldId]: Math.floor((nextColumnIds.length - 1) / Math.max(columnCount, 1)) + 1,
-          },
-          rows: Math.max(1, Math.ceil(nextColumnIds.length / Math.max(columnCount, 1))),
+          columnHeights: Object.fromEntries(
+            Object.entries(group?.columnHeights ?? {}).filter(([key]) => !normalizedIds.includes(key)),
+          ),
+          columnsPerRow: nextColumnsPerRow,
+          ...buildFlowRows(nextColumnIds, nextColumnsPerRow),
         };
       }),
     }));
   };
 
   const handleRemoveField = (fieldId: string) => {
-    if (!selectedGroup) {
+    handleRemoveFields([fieldId]);
+  };
+
+  const handleClearCurrentGroup = () => {
+    handleRemoveFields(selectedGroupFieldIds);
+  };
+
+  const handleCanvasPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!event.ctrlKey || event.button !== 0 || !canvasRef.current) {
       return;
     }
 
-    onUpdateDetailBoard((current: any) => ({
-      ...current,
-      groups: (Array.isArray(current?.groups) ? current.groups : []).map((group: any) => {
-        if (group.id !== selectedGroup.id) {
-          return group;
-        }
+    const target = event.target as HTMLElement;
+    if (target.closest('[data-preview-field="true"]')) {
+      return;
+    }
 
-        const nextColumnIds = (Array.isArray(group?.columnIds) ? group.columnIds.map(String) : []).filter((id: string) => id !== fieldId);
-        return {
-          ...group,
-          columnIds: nextColumnIds,
-          columnHeights: Object.fromEntries(
-            Object.entries(group?.columnHeights ?? {}).filter(([key]) => key !== fieldId),
-          ),
-          columnRows: Object.fromEntries(
-            nextColumnIds.map((columnId, index) => [columnId, Math.floor(index / Math.max(columnCount, 1)) + 1]),
-          ),
-          rows: Math.max(1, Math.ceil(Math.max(nextColumnIds.length, 1) / Math.max(columnCount, 1))),
-        };
-      }),
-    }));
+    const rect = canvasRef.current.getBoundingClientRect();
+    setMarqueeSelection({
+      currentX: clampValue(event.clientX - rect.left, 0, rect.width),
+      currentY: clampValue(event.clientY - rect.top, 0, rect.height),
+      startX: clampValue(event.clientX - rect.left, 0, rect.width),
+      startY: clampValue(event.clientY - rect.top, 0, rect.height),
+    });
+    event.preventDefault();
   };
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
-      <aside className="space-y-4">
-        <section className="rounded-[28px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,249,252,0.92))] p-6 shadow-[0_24px_52px_-36px_rgba(15,23,42,0.28)]">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{title}</div>
-              <h3 className="mt-2 text-[22px] font-black tracking-tight text-slate-950">布局配置</h3>
-            </div>
-            {onOpenPreview ? (
-              <button
-                type="button"
-                onClick={onOpenPreview}
-                className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-[12px] font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
-              >
-                <span className="material-symbols-outlined text-[16px]">preview</span>
-                预览
-              </button>
-            ) : null}
-          </div>
+    <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
+      <aside className="min-w-0">
+        <section className="flex max-h-[calc(100vh-164px)] min-h-[600px] flex-col overflow-hidden rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(245,248,252,0.95))] shadow-[0_28px_60px_-40px_rgba(15,23,42,0.28)]">
+          <div className="sticky top-0 z-20 border-b border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,248,252,0.94))] px-4 pb-4 pt-4">
+            <div className="rounded-[22px] border border-slate-200/80 bg-white/92 p-3 shadow-[0_16px_32px_-30px_rgba(15,23,42,0.22)]">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-slate-950 px-3 py-1 text-[11px] font-semibold text-white">
+                  {selectedGroup ? selectedGroup.name || '当前分组' : '未选择分组'}
+                </span>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                  已放入 {selectedGroupFields.length}
+                </span>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                  待放入 {unassignedFields.length}
+                </span>
+              </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500">
-              {moduleCode ? `模块 ${moduleCode}` : title}
-            </span>
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500">
-              字段 {normalizedFields.length}
-            </span>
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500">
-              分组 {groups.length}
-            </span>
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500">
-              未分组 {unassignedFields.length}
-            </span>
-          </div>
+              <div className="mt-3 flex items-center gap-2 rounded-[16px] border border-slate-200 bg-slate-50/90 px-3 focus-within:border-primary/30 focus-within:bg-white">
+                <span className="material-symbols-outlined text-[18px] text-slate-400">search</span>
+                <input
+                  value={fieldSearch}
+                  onChange={(event) => setFieldSearch(event.target.value)}
+                  placeholder="搜索字段"
+                  className="h-10 w-full bg-transparent text-[13px] font-medium text-slate-900 outline-none placeholder:text-slate-400"
+                />
+              </div>
 
-          <div className="mt-6 space-y-4 border-t border-slate-200/80 pt-5">
-            <div>
-              <div className="text-[12px] font-semibold text-slate-900">布局预设</div>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                {LAYOUT_PRESET_OPTIONS.map((option) => {
-                  const isActive = option.key === selectedPreset;
-
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => handlePresetSelect(option.key)}
-                      className={`rounded-[16px] border px-3 py-3 text-[12px] font-semibold transition-all ${
-                        isActive
-                          ? 'border-primary/20 bg-primary/10 text-primary'
-                          : 'border-slate-200/80 bg-slate-50/70 text-slate-600 hover:border-slate-300 hover:bg-white'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddGroup}
+                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-[16px] border border-slate-200 bg-white px-4 text-[12px] font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950"
+                >
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  新增分组
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteGroup}
+                  disabled={!selectedGroup}
+                  className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-[16px] border px-4 text-[12px] font-semibold transition-colors ${
+                    selectedGroup
+                      ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                      : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">delete</span>
+                  删除当前
+                </button>
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <div className="text-[12px] font-semibold text-slate-700">每行列数</div>
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  {[1, 2, 3].map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setColumnCount(value)}
-                      className={`rounded-[14px] border px-3 py-2 text-[12px] font-semibold transition-all ${
-                        columnCount === value
-                          ? 'border-primary/20 bg-primary/10 text-primary'
-                          : 'border-slate-200/80 bg-white text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      {value} 列
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[12px] font-semibold text-slate-700">行间距</div>
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  {[
-                    { label: '紧凑', value: 10 },
-                    { label: '标准', value: 14 },
-                    { label: '舒展', value: 18 },
-                  ].map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setRowSpace(option.value)}
-                      className={`rounded-[14px] border px-3 py-2 text-[12px] font-semibold transition-all ${
-                        rowSpace === option.value
-                          ? 'border-primary/20 bg-primary/10 text-primary'
-                          : 'border-slate-200/80 bg-white text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={handleGenerateLayout}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-primary px-4 text-[12px] font-semibold text-white transition-colors hover:bg-blue-700"
-              >
-                <span className="material-symbols-outlined text-[16px]">auto_fix_high</span>
-                一键生成
-              </button>
-              <button
-                type="button"
-                onClick={handleResetLayout}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-[12px] font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
-              >
-                <span className="material-symbols-outlined text-[16px]">refresh</span>
-                推荐布局
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-[28px] border border-white/75 bg-white/92 p-5 shadow-[0_22px_46px_-36px_rgba(15,23,42,0.24)]">
-          <div className="flex items-start justify-between gap-3">
-            <div className="text-[12px] font-semibold text-slate-900">
-              {selectedGroup ? `当前分组 · ${String(selectedGroup.name || '未命名分组')}` : '分组与字段'}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={handleAddGroup}
-                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 transition-colors hover:border-slate-300"
-              >
-                <span className="material-symbols-outlined text-[14px]">add</span>
-                新增分组
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteGroup}
-                disabled={!selectedGroup}
-                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-full border px-3 text-[11px] font-semibold transition-colors ${
-                  selectedGroup
-                    ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                    : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[14px]">delete</span>
-                删除当前
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-5 space-y-5">
-            <div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">分组</div>
-                {selectedGroup ? (
-                  <div className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[10px] font-semibold text-primary">
-                    {getDetailBoardGroupRows(selectedGroup)} 行
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 rounded-[22px] border border-slate-200/80 bg-white/92 p-3 shadow-[0_16px_32px_-30px_rgba(15,23,42,0.18)]">
+              <div className="space-y-2">
                 {groups.length > 0 ? (
                   groups.map((group: any, index: number) => {
                     const isActive = group.id === activeGroupId;
                     const fieldCount = Array.isArray(group?.columnIds) ? group.columnIds.length : 0;
 
                     return (
-                      <button
+                      <div
                         key={group.id}
-                        type="button"
                         onClick={() => selectGroup(group.id)}
-                        className={`rounded-[16px] border px-3 py-2 text-left transition-all ${
+                        className={`flex items-center gap-3 rounded-[18px] border px-3 py-2.5 transition-all ${
                           isActive
-                            ? 'border-primary/20 bg-primary/10 text-primary shadow-[0_16px_28px_-24px_rgba(37,99,235,0.28)]'
-                            : 'border-slate-200/80 bg-slate-50/70 text-slate-600 hover:border-slate-300 hover:bg-white'
+                            ? 'border-primary/20 bg-primary/10 shadow-[0_14px_26px_-24px_rgba(37,99,235,0.28)]'
+                            : 'border-slate-200/80 bg-slate-50/85 hover:border-slate-300 hover:bg-white'
                         }`}
                       >
-                        <div className="text-[12px] font-semibold">{String(group?.name || `信息分组 ${index + 1}`)}</div>
-                        <div className={`mt-1 text-[10px] ${isActive ? 'text-primary/80' : 'text-slate-400'}`}>{fieldCount} 项字段</div>
-                      </button>
+                        <span className={`inline-flex size-2.5 shrink-0 rounded-full ${isActive ? 'bg-primary' : 'bg-slate-300'}`} />
+                        <input
+                          value={String(group?.name || `信息分组 ${index + 1}`)}
+                          onFocus={() => selectGroup(group.id)}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => {
+                            selectGroup(group.id);
+                            onUpdateDetailBoard((current: any) => ({
+                              ...current,
+                              enabled: true,
+                              groups: (Array.isArray(current?.groups) ? current.groups : []).map((currentGroup: any) => (
+                                currentGroup.id === group.id
+                                  ? { ...currentGroup, name: event.target.value }
+                                  : currentGroup
+                              )),
+                            }));
+                          }}
+                          className={`h-8 min-w-0 flex-1 rounded-[12px] border border-transparent bg-transparent px-2 text-[13px] font-semibold outline-none transition-colors ${
+                            isActive
+                              ? 'text-primary focus:border-primary/20 focus:bg-white/90'
+                              : 'text-slate-900 focus:border-slate-200 focus:bg-white'
+                          }`}
+                        />
+                        <div className="rounded-full bg-white/85 px-2.5 py-1 text-[10px] font-semibold text-slate-500">
+                          {fieldCount}
+                        </div>
+                      </div>
                     );
                   })
                 ) : (
-                  <div className="w-full rounded-[16px] border border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center text-[12px] text-slate-500">
+                  <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-[12px] text-slate-500">
                     还没有分组
                   </div>
                 )}
               </div>
             </div>
+          </div>
 
-            {selectedGroup ? (
-              <>
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">分组名称</div>
-                  <input
-                    value={String(selectedGroup.name || '')}
-                    onChange={(event) => handleRenameGroup(event.target.value)}
-                    className="mt-3 h-11 w-full rounded-[16px] border border-slate-200 bg-slate-50/70 px-4 text-[13px] font-semibold text-slate-900 outline-none transition-colors focus:border-primary/30 focus:bg-white"
-                    placeholder="输入分组名称"
-                  />
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4">
+            <div className="space-y-4">
+              <div className="rounded-[22px] border border-slate-200/80 bg-white/92 p-4 shadow-[0_20px_34px_-32px_rgba(15,23,42,0.22)]">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] font-semibold text-slate-900">已放入字段</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-500">
+                      {filteredSelectedGroupFields.length}/{selectedGroupFields.length}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleCheckAll(filteredSelectedGroupFields.map((field) => field.id))}
+                      disabled={filteredSelectedGroupFields.length === 0}
+                      className={`inline-flex h-7 items-center justify-center rounded-full border px-3 text-[10px] font-semibold transition-colors ${
+                        filteredSelectedGroupFields.length > 0
+                          ? 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-800'
+                          : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                      }`}
+                    >
+                      全选
+                    </button>
+                    {selectedGroupFieldIds.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={handleClearCurrentGroup}
+                        className="inline-flex h-7 items-center justify-center rounded-full border border-rose-200 bg-white px-3 text-[10px] font-semibold text-rose-700 transition-colors hover:bg-rose-50"
+                      >
+                        清空当前
+                      </button>
+                    ) : null}
+                    {checkedSelectedGroupFieldIds.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFields(checkedSelectedGroupFieldIds)}
+                        className="inline-flex h-7 items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-3 text-[10px] font-semibold text-rose-700 transition-colors hover:bg-rose-100"
+                      >
+                        删除 {checkedSelectedGroupFieldIds.length}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">已放入字段</div>
-                    <div className="text-[11px] font-semibold text-slate-500">{selectedGroupFields.length} 项</div>
-                  </div>
-
-                  <div className="mt-3 space-y-2">
-                    {selectedGroupFields.length > 0 ? (
-                      selectedGroupFields.map((field) => (
-                        <div
-                          key={field.id}
-                          className={`flex items-center justify-between rounded-[16px] border px-4 py-3 transition-all ${
-                            activeFieldId === field.id
-                              ? 'border-primary/20 bg-primary/10 shadow-[0_16px_28px_-24px_rgba(37,99,235,0.28)]'
-                              : 'border-slate-200/80 bg-slate-50/70'
-                          }`}
-                          onClick={() => setSelectedFieldId(field.id)}
-                        >
-                          <div>
-                            <div className="text-[13px] font-semibold text-slate-900">{field.label}</div>
-                            <div className="mt-1 text-[11px] text-slate-500">{getSelectedFieldHeight(field.id)}px</div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {activeFieldId === field.id ? (
-                              <span className="rounded-full border border-primary/20 bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                                当前
-                              </span>
-                            ) : null}
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleRemoveField(field.id);
-                              }}
-                              className="inline-flex size-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition-colors hover:border-rose-200 hover:text-rose-600"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">close</span>
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center text-[12px] text-slate-500">
-                        这个分组还没有字段
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {filteredSelectedGroupFields.length > 0 ? (
+                    filteredSelectedGroupFields.map((field) => (
+                      <div key={field.id}>
+                        {FieldToken({
+                          active: activeFieldId === field.id,
+                          checked: checkedFieldIdSet.has(field.id),
+                          compact: true,
+                          label: field.label,
+                          onClick: () => setSelectedFieldId(field.id),
+                          onRemove: () => handleRemoveField(field.id),
+                          onToggleSelect: () => toggleCheckedField(field.id),
+                        })}
                       </div>
-                    )}
-                  </div>
+                    ))
+                  ) : (
+                    <div className="w-full rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-[12px] text-slate-500">
+                      {selectedGroupFields.length > 0 ? '没有匹配字段' : '这个分组还没有字段'}
+                    </div>
+                  )}
                 </div>
+              </div>
 
-                {selectedField ? (
-                  <div>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">控件高度</div>
-                      <div className="text-[12px] font-semibold text-slate-700">{getSelectedFieldHeight(selectedField.id)}px</div>
-                    </div>
+              {selectedField ? (
+                <div className="rounded-[22px] border border-slate-200/80 bg-white/92 p-4 shadow-[0_20px_34px_-32px_rgba(15,23,42,0.22)]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12px] font-semibold text-slate-900">{selectedField.label}</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                      {getSelectedFieldHeight(selectedField.id)}px
+                    </span>
+                  </div>
 
-                    <div className="mt-3 grid grid-cols-3 gap-2">
-                      {FIELD_HEIGHT_PRESETS.map((preset) => (
-                        <button
-                          key={preset.value}
-                          type="button"
-                          onClick={() => handleUpdateFieldHeight(selectedField.id, preset.value)}
-                          className={`rounded-[14px] border px-3 py-2 text-[12px] font-semibold transition-all ${
-                            getSelectedFieldHeight(selectedField.id) === preset.value
-                              ? 'border-primary/20 bg-primary/10 text-primary'
-                              : 'border-slate-200/80 bg-white text-slate-600 hover:border-slate-300'
-                          }`}
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
-                    </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {FIELD_HEIGHT_PRESETS.map((preset) => (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => handleUpdateFieldHeight(selectedField.id, preset.value)}
+                        className={`rounded-[14px] border px-3 py-2 text-[12px] font-semibold transition-all ${
+                          getSelectedFieldHeight(selectedField.id) === preset.value
+                            ? 'border-primary/20 bg-primary/10 text-primary'
+                            : 'border-slate-200/80 bg-white text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
 
-                    <input
-                      type="range"
+                  <div className="mt-3">
+                    <RangeField
+                      label="控件高度"
                       min={FIELD_HEIGHT_MIN}
                       max={FIELD_HEIGHT_MAX}
                       step={2}
                       value={getSelectedFieldHeight(selectedField.id)}
-                      onChange={(event) => handleUpdateFieldHeight(selectedField.id, Number(event.target.value))}
-                      className="mt-4 h-2 w-full cursor-pointer accent-primary"
+                      valueLabel={`${getSelectedFieldHeight(selectedField.id)}px`}
+                      onChange={(nextValue) => handleUpdateFieldHeight(selectedField.id, nextValue)}
+                      marks={[
+                        { label: `${FIELD_HEIGHT_MIN}`, value: FIELD_HEIGHT_MIN },
+                        { label: '标准', value: 96 },
+                        { label: `${FIELD_HEIGHT_MAX}`, value: FIELD_HEIGHT_MAX },
+                      ]}
                     />
                   </div>
-                ) : null}
-              </>
-            ) : null}
-
-            <div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  {selectedGroup ? '待加入字段' : '未分组字段'}
                 </div>
-                <div className="text-[11px] font-semibold text-slate-500">{unassignedFields.length} 项</div>
-              </div>
+              ) : null}
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                {unassignedFields.length > 0 ? (
-                  unassignedFields.map((field) => (
+              <div className="rounded-[22px] border border-slate-200/80 bg-white/92 p-4 shadow-[0_20px_34px_-32px_rgba(15,23,42,0.22)]">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] font-semibold text-slate-900">待放入字段</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-500">
+                      {filteredUnassignedFields.length}/{unassignedFields.length}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
-                      key={field.id}
                       type="button"
-                      onClick={() => handleAssignField(field.id)}
-                      disabled={!selectedGroup}
-                      className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-                        selectedGroup
-                          ? 'border-slate-200 bg-slate-50 text-slate-600 hover:border-primary/20 hover:bg-primary/10 hover:text-primary'
+                      onClick={() => toggleCheckAll(filteredUnassignedFields.map((field) => field.id))}
+                      disabled={filteredUnassignedFields.length === 0}
+                      className={`inline-flex h-7 items-center justify-center rounded-full border px-3 text-[10px] font-semibold transition-colors ${
+                        filteredUnassignedFields.length > 0
+                          ? 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-800'
                           : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
                       }`}
                     >
-                      {field.label}
+                      全选
                     </button>
-                  ))
-                ) : (
-                  <div className="w-full rounded-[16px] border border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center text-[12px] text-slate-500">
-                    所有字段都已经分组
+                    {selectedGroup && checkedUnassignedFieldIds.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => handleAssignFields(checkedUnassignedFieldIds)}
+                        className="inline-flex h-7 items-center justify-center rounded-full border border-primary/20 bg-primary/10 px-3 text-[10px] font-semibold text-primary transition-colors hover:bg-primary/15"
+                      >
+                        加入 {checkedUnassignedFieldIds.length}
+                      </button>
+                    ) : null}
                   </div>
-                )}
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {filteredUnassignedFields.length > 0 ? (
+                    filteredUnassignedFields.map((field) => (
+                      <div key={field.id}>
+                        {FieldToken({
+                          checked: checkedFieldIdSet.has(field.id),
+                          compact: true,
+                          disabled: !selectedGroup,
+                          label: field.label,
+                          onClick: () => handleAssignField(field.id),
+                          onToggleSelect: () => toggleCheckedField(field.id),
+                          trailingIcon: 'add',
+                        })}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="w-full rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-[12px] text-slate-500">
+                      {unassignedFields.length > 0 ? '没有匹配字段' : '没有待放入字段'}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </section>
       </aside>
 
-      <section className="rounded-[30px] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(244,248,252,0.9))] p-6 shadow-[0_28px_56px_-36px_rgba(15,23,42,0.3)]">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">布局预览</div>
-            <h3 className="mt-2 text-[24px] font-black tracking-tight text-slate-950">
-              {previewSelectedGroup?.name || '页面效果'}
-            </h3>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-[11px] font-semibold text-primary">
-                {getPresetDefinition(selectedPreset).label}
-              </span>
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500">
-                {previewSelectedGroup ? `${previewSelectedGroup.fields.length} 项字段` : '还没有分组'}
-              </span>
-              {previewSelectedField ? (
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700">
-                  当前控件 · {previewSelectedField.label}
+      <section className="rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(244,248,252,0.92))] p-5 shadow-[0_32px_68px_-44px_rgba(15,23,42,0.32)]">
+        <div className="flex flex-col gap-4">
+          <div className="rounded-[24px] border border-slate-200/80 bg-white/90 p-4 shadow-[0_20px_36px_-34px_rgba(15,23,42,0.24)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-slate-950 px-3 py-1 text-[11px] font-semibold text-white">
+                  {previewSelectedGroup?.name || '页面效果'}
                 </span>
-              ) : null}
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500">
-                每行 {columnCount} 列
-              </span>
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500">
-                间距 {rowSpace}px
-              </span>
-              {isPending ? (
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-semibold text-amber-700">
-                  更新中
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                  分组 {previewGroups.length}
                 </span>
-              ) : null}
+                {previewSelectedGroup ? (
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                    字段 {previewSelectedGroup.fields.length}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {onOpenPreview ? (
+                  <button
+                    type="button"
+                    onClick={onOpenPreview}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-[12px] font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">preview</span>
+                    预览
+                  </button>
+                ) : null}
+                <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={showCoordinates}
+                    onChange={(event) => setShowCoordinates(event.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                  />
+                  坐标
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(180px,0.9fr)_minmax(180px,0.9fr)_auto]">
+              <div className="rounded-[20px] border border-slate-200/80 bg-slate-50/88 p-2">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {LAYOUT_PRESET_OPTIONS.map((option) => {
+                    const isActive = option.key === selectedPreset;
+
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => handlePresetSelect(option.key)}
+                        className={`rounded-[16px] px-3 py-2.5 text-left text-[12px] font-semibold transition-all ${
+                          isActive
+                            ? 'bg-slate-950 text-white shadow-[0_16px_28px_-22px_rgba(15,23,42,0.5)]'
+                            : 'bg-white text-slate-600 hover:bg-white hover:text-slate-900'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <RangeField
+                label="每行列数"
+                min={1}
+                max={3}
+                step={1}
+                value={columnCount}
+                valueLabel={`${columnCount} 列`}
+                onChange={(nextValue) => setColumnCount(nextValue)}
+                marks={[
+                  { label: '1列', value: 1 },
+                  { label: '2列', value: 2 },
+                  { label: '3列', value: 3 },
+                ]}
+              />
+
+              <RangeField
+                label="组内间距"
+                min={8}
+                max={24}
+                step={2}
+                value={rowSpace}
+                valueLabel={`${rowSpace}px`}
+                onChange={(nextValue) => setRowSpace(nextValue)}
+                marks={[
+                  { label: '紧凑', value: 8 },
+                  { label: '标准', value: 14 },
+                  { label: '舒展', value: 24 },
+                ]}
+              />
+
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={handleGenerateLayout}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-[16px] bg-slate-950 px-5 text-[12px] font-semibold text-white transition-colors hover:bg-slate-800"
+                >
+                  <span className="material-symbols-outlined text-[16px]">auto_fix_high</span>
+                  一键生成
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetLayout}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-[16px] border border-slate-200 bg-white px-5 text-[12px] font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+                >
+                  <span className="material-symbols-outlined text-[16px]">refresh</span>
+                  推荐布局
+                </button>
+              </div>
             </div>
           </div>
 
-          <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-600">
-            <input
-              type="checkbox"
-              checked={showCoordinates}
-              onChange={(event) => setShowCoordinates(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
-            />
-            显示坐标
-          </label>
-        </div>
-
-        <div className="mt-6 overflow-x-auto rounded-[28px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.94),rgba(255,255,255,0.96))] p-4">
-          <div
-            className="cloudy-cloud-grid relative mx-auto rounded-[28px] border border-white/85 bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(244,248,255,0.88))] shadow-[0_28px_64px_-48px_rgba(15,23,42,0.35)]"
-            style={{ height: canvasHeight, minWidth: STAGE_WIDTH, width: STAGE_WIDTH }}
-          >
-            {previewGroups.map((group) => {
-              const isActive = group.id === activeGroupId;
-
-              return (
-                <section
-                  key={group.id}
-                  className={`absolute overflow-hidden rounded-[24px] border bg-white/78 shadow-[0_18px_32px_-28px_rgba(15,23,42,0.18)] transition-all ${
-                    isActive
-                      ? 'border-primary/30 ring-2 ring-primary/20'
-                      : 'border-slate-200/80'
-                  }`}
-                  onClick={() => selectGroup(group.id)}
+          <div className="overflow-x-auto rounded-[28px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(246,249,252,0.98),rgba(255,255,255,0.98))] p-4">
+            <div
+              ref={canvasRef}
+              className="cloudy-cloud-grid relative mx-auto rounded-[28px] border border-slate-200/70 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.06),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,251,255,0.96))] shadow-[0_30px_64px_-48px_rgba(15,23,42,0.36)]"
+              onPointerDown={handleCanvasPointerDown}
+              style={{ height: canvasHeight, minWidth: STAGE_WIDTH, width: STAGE_WIDTH }}
+            >
+              {marqueeBounds ? (
+                <div
+                  className="pointer-events-none absolute z-20 rounded-[16px] border border-primary/40 bg-primary/10"
                   style={{
-                    height: group.height,
-                    left: group.x,
-                    top: group.y,
-                    width: group.width,
+                    height: marqueeBounds.height,
+                    left: marqueeBounds.left,
+                    top: marqueeBounds.top,
+                    width: marqueeBounds.width,
                   }}
-                >
-                  <div className="flex cursor-pointer items-center justify-between border-b border-slate-200/70 px-5 py-4">
-                    <div className="text-[15px] font-semibold text-slate-900">{group.name}</div>
-                    <div className="flex items-center gap-2">
-                      {isActive ? (
-                        <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[10px] font-semibold text-primary">
-                          当前
-                        </span>
-                      ) : null}
-                      <span className="rounded-full border border-slate-200/80 bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-slate-500">
-                        {group.fields.length} 项
-                      </span>
-                    </div>
-                  </div>
+                />
+              ) : null}
+              {previewGroups.map((group) => {
+                const isActive = group.id === activeGroupId;
 
-                  {group.fields.map((field) => (
-                    <div
-                      key={field.id}
-                      className="absolute"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        selectGroup(group.id);
-                        setSelectedFieldId(field.id);
-                      }}
-                      style={{
-                        height: field.height,
-                        left: field.x,
-                        top: field.y,
-                        width: field.width,
-                      }}
-                    >
-                      <div
-                        className={`bill-designer-field relative h-full rounded-[18px] border bg-white/94 p-3 shadow-[0_14px_26px_-20px_rgba(15,23,42,0.16)] transition-all ${
-                          activeFieldId === field.id && isActive
-                            ? 'border-primary/35 ring-2 ring-primary/15'
-                            : 'border-white/75'
-                        }`}
-                      >
-                        <div className="text-[13px] font-semibold text-slate-900">{field.label}</div>
-                        <div
-                          className="mt-2"
-                          style={{ height: Math.max(field.type === 'textarea' ? 50 : 34, field.height - 38) }}
-                        >
-                          {renderControlShell(field)}
-                        </div>
-                        {showCoordinates ? (
-                          <div className="mt-2 text-[10px] font-medium text-slate-400">
-                            {`${formatPixelValue(group.x + field.x)} / ${formatPixelValue(group.y + field.y)}`}
-                          </div>
-                        ) : null}
-                        {activeFieldId === field.id && isActive ? (
-                          <button
-                            type="button"
-                            onPointerDown={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              setSelectedFieldId(field.id);
-                              setHeightDragState({
-                                fieldId: field.id,
-                                startHeight: field.height,
-                                startY: event.clientY,
-                              });
-                            }}
-                            className="absolute inset-x-5 bottom-2 flex h-4 cursor-row-resize items-center justify-center rounded-full bg-slate-950/6 text-[10px] font-semibold text-slate-500 transition-colors hover:bg-primary/10 hover:text-primary"
-                          >
-                            拖动调高度
-                          </button>
-                        ) : null}
+                return (
+                  <section
+                    key={group.id}
+                    className={`absolute overflow-hidden rounded-[22px] border transition-all ${
+                      isActive
+                        ? 'border-primary/30 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(243,248,255,0.97))] ring-2 ring-primary/15 shadow-[0_24px_48px_-34px_rgba(37,99,235,0.3)]'
+                        : 'border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(247,250,252,0.97))] shadow-[0_18px_34px_-30px_rgba(15,23,42,0.18)]'
+                    }`}
+                    onClick={() => selectGroup(group.id)}
+                    style={{
+                      height: group.height,
+                      left: group.x,
+                      top: group.y,
+                      width: group.width,
+                    }}
+                  >
+                    <div className="flex cursor-pointer items-center justify-between border-b border-slate-200/70 px-5 py-3.5">
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex size-2.5 rounded-full ${isActive ? 'bg-primary' : 'bg-slate-300'}`} />
+                        <div className="text-[14px] font-semibold text-slate-900">{group.name}</div>
+                      </div>
+                      <div className="rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-slate-500">
+                        {group.fields.length} 项
                       </div>
                     </div>
-                  ))}
-                </section>
-              );
-            })}
+
+                    {group.fields.map((field) => (
+                      (() => {
+                        const isStacked = useStackedFieldPreview(field);
+                        const isActiveField = activeFieldId === field.id && isActive;
+                        const isCheckedField = isActive && checkedFieldIdSet.has(field.id);
+                        const controlHeight = isStacked
+                          ? Math.max(field.type === 'textarea' ? 64 : 44, field.height - 40)
+                          : Math.max(40, field.height - 16);
+
+                        return (
+                          <div
+                            key={field.id}
+                            className="absolute"
+                            data-preview-field="true"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              selectGroup(group.id);
+                              setSelectedFieldId(field.id);
+                            }}
+                            style={{
+                              height: field.height,
+                              left: field.x,
+                              top: field.y,
+                              width: field.width,
+                            }}
+                          >
+                            <div
+                              className={`bill-designer-field relative h-full rounded-[18px] border px-2.5 py-2 transition-all ${
+                                isActiveField
+                                  ? 'border-primary/20 bg-primary/[0.05] shadow-[0_14px_22px_-20px_rgba(37,99,235,0.35)]'
+                                  : isCheckedField
+                                    ? 'border-primary/15 bg-primary/[0.03]'
+                                    : 'border-transparent bg-transparent'
+                              }`}
+                            >
+                              <div className={`flex h-full min-h-0 ${isStacked ? 'flex-col gap-2' : 'items-center gap-3'}`}>
+                                <div className={`${isStacked ? 'min-w-0 text-[12px]' : 'w-[38%] max-w-[132px] min-w-0 text-[13px]'} truncate font-semibold text-slate-700`}>
+                                  {field.label}
+                                </div>
+
+                                <div
+                                  className={`${isStacked ? 'min-h-0 flex-1' : 'min-w-0 flex-1 self-stretch'}`}
+                                  style={{ height: isStacked ? undefined : controlHeight }}
+                                >
+                                  <div style={{ height: controlHeight }}>
+                                    {renderControlShell(field)}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {showCoordinates ? (
+                                <div className="absolute right-2 top-1 text-[10px] font-medium text-slate-400">
+                                  {`${formatPixelValue(group.x + field.x)} / ${formatPixelValue(group.y + field.y)}`}
+                                </div>
+                              ) : null}
+
+                              {isActiveField ? (
+                                <button
+                                  type="button"
+                                  onPointerDown={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    setSelectedFieldId(field.id);
+                                    setHeightDragState({
+                                      fieldId: field.id,
+                                      startHeight: field.height,
+                                      startY: event.clientY,
+                                    });
+                                  }}
+                                  className="absolute inset-x-8 bottom-1.5 flex h-4 cursor-row-resize items-center justify-center rounded-full bg-slate-950/6 text-slate-400 transition-colors hover:bg-primary/10 hover:text-primary"
+                                  aria-label={`调整 ${field.label} 高度`}
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">drag_handle</span>
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })()
+                    ))}
+                  </section>
+                );
+              })}
+            </div>
           </div>
         </div>
       </section>

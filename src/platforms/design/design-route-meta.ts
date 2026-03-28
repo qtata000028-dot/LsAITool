@@ -17,8 +17,8 @@ export const DESIGN_FIXED_ROUTE_META: readonly DesignRouteMeta[] = [
       'Continue reducing orchestration logic inside Dashboard.tsx.',
       'Use this route as the compatibility entry while feature pages are carved out.',
     ],
-    summary: 'Current production entry that keeps the existing dashboard and design workbench online.',
-    title: 'Workspace',
+    summary: '旧工作区兼容入口，仅用于保留历史路由。',
+    title: '旧工作区',
   },
   {
     href: '/design/module',
@@ -28,8 +28,8 @@ export const DESIGN_FIXED_ROUTE_META: readonly DesignRouteMeta[] = [
       'Promote dashboard/module-settings building blocks into dedicated design pages.',
       'Use this route as the landing page for table, tree, and single-table module design.',
     ],
-    summary: 'Reserved fixed route for module design flows, schema governance, and future split views.',
-    title: 'Module Designer',
+    summary: '模块配置、字段结构和模块级设计入口。',
+    title: '模块设计',
   },
   {
     href: '/design/bill',
@@ -39,8 +39,8 @@ export const DESIGN_FIXED_ROUTE_META: readonly DesignRouteMeta[] = [
       'Treat bill design as its own product surface instead of a dashboard mode.',
       'Keep room for bill-specific publish, preview, and validation workflows.',
     ],
-    summary: 'Reserved fixed route for bill composition, page assembly, and document design.',
-    title: 'Bill Designer',
+    summary: '表单布局、分组设计和页面生成入口。',
+    title: '布局设计',
   },
   {
     href: '/design/settings',
@@ -50,8 +50,8 @@ export const DESIGN_FIXED_ROUTE_META: readonly DesignRouteMeta[] = [
       'Keep shared settings outside of module and bill workbenches.',
       'Prepare a stable home for future platform-level preferences and release policies.',
     ],
-    summary: 'Reserved fixed route for studio settings, release policies, and platform-level governance.',
-    title: 'Studio Settings',
+    summary: '平台级设置、命名规则和发布参数入口。',
+    title: '平台设置',
   },
 ] as const;
 

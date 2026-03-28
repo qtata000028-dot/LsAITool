@@ -28,7 +28,7 @@ import {
   type ResearchLineColorMap,
   type ResearchLineColorTone,
 } from './research-record-multiline';
-import { buildResearchRecordWordDocumentHtml } from './research-record-word-export';
+import { buildResearchRecordWordDocumentBlob } from './research-record-word-export';
 import { ResearchRecordWordEditor } from './research-record-word-editor';
 import { ResearchRecordWordTemplatePreview } from './research-record-word-template-preview';
 import { getResearchRecordWordEditorRuntime } from './research-record-word-template-config';
@@ -52,7 +52,8 @@ type ResearchContentMaster = {
 };
 
 type ResearchContentMultilineFieldKey = 'formsProvided' | 'workDescription' | 'painPoints' | 'suggestions';
-type ResearchDraftMultilineFieldKey = 'departmentPosts' | 'workTools' | 'overallPainPoints' | 'specialDiscussion' | 'extraNotes';
+type ResearchEnvironmentDelimitedFieldKey = 'departmentPosts' | 'workTools';
+type ResearchDraftMultilineFieldKey = 'overallPainPoints' | 'specialDiscussion' | 'extraNotes';
 
 type ResearchContentLineColors = Partial<Record<ResearchContentMultilineFieldKey, ResearchLineColorMap>>;
 type ResearchDraftLineColors = Partial<Record<ResearchDraftMultilineFieldKey, ResearchLineColorMap>>;
@@ -646,11 +647,9 @@ function normalizeDraftLineColors(raw: unknown): ResearchDraftLineColors {
 
   const record = raw as Partial<Record<ResearchDraftMultilineFieldKey, unknown>>;
   return {
-    departmentPosts: normalizeLineColorMap(record.departmentPosts),
     extraNotes: normalizeLineColorMap(record.extraNotes),
     overallPainPoints: normalizeLineColorMap(record.overallPainPoints),
     specialDiscussion: normalizeLineColorMap(record.specialDiscussion),
-    workTools: normalizeLineColorMap(record.workTools),
   };
 }
 
@@ -697,6 +696,26 @@ function normalizeContentItem(raw: unknown, index: number): ResearchContentItem 
   };
 }
 
+function toDelimitedInlineParts(value: string, delimiters: RegExp = /[、,，;；\n]+/) {
+  return value
+    .split(delimiters)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeDelimitedInlineValue(value: string, delimiters: RegExp = /[、,，;；\n]+/) {
+  return toDelimitedInlineParts(value, delimiters).join('、');
+}
+
+function normalizeDelimitedInlineInput(value: string, delimiters: RegExp = /[、,，;；\n]+/) {
+  const normalized = normalizeDelimitedInlineValue(value, delimiters);
+  if (!normalized) {
+    return '';
+  }
+
+  return /[、,，;；\n]\s*$/.test(value) ? `${normalized}、` : normalized;
+}
+
 function normalizeDraft(raw: unknown, fallback: ResearchRecordDraft): ResearchRecordDraft {
   if (!raw || typeof raw !== 'object') {
     return fallback;
@@ -710,7 +729,7 @@ function normalizeDraft(raw: unknown, fallback: ResearchRecordDraft): ResearchRe
   return {
     ...fallback,
     ...record,
-    departmentPosts: normalizeMultilineValue(toText(record.departmentPosts), /[；;\n]+/) || fallback.departmentPosts,
+    departmentPosts: normalizeDelimitedInlineValue(toText(record.departmentPosts)) || fallback.departmentPosts,
     departmentName: normalizeWorkspaceLabel(toText(record.departmentName)) || fallback.departmentName,
     contentItems: Array.isArray(record.contentItems) ? contentItems : fallback.contentItems,
     contentMaster: normalizeContentMaster(record.contentMaster, fallback.contentMaster),
@@ -720,7 +739,7 @@ function normalizeDraft(raw: unknown, fallback: ResearchRecordDraft): ResearchRe
     projectName: normalizeWorkspaceLabel(toText(record.projectName)) || fallback.projectName,
     specialDiscussion: normalizeMultilineValue(toText(record.specialDiscussion)),
     surveyScope: record.surveyScope === '全员' || record.surveyScope === '单独' ? record.surveyScope : '部门',
-    workTools: normalizeMultilineValue(toText(record.workTools), /[、,，\n]+/) || fallback.workTools,
+    workTools: normalizeDelimitedInlineValue(toText(record.workTools)) || fallback.workTools,
   };
 }
 
@@ -1384,19 +1403,27 @@ export function ResearchRecordWorkbench({
     }
   }, [defaultDepartId, draft, loadedMainRecord, onShowToast, recordBinding]);
 
-  const handleExportWord = useCallback(() => {
-    const html = buildResearchRecordWordDocumentHtml(draft);
-    const blob = new Blob([html], { type: 'application/msword;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    const fileName = `${(draft.documentNo || draft.departmentName || activeFirstLevelMenuName || '调研记录').replace(/\s+/g, '')}-调研记录.doc`;
+  const handleExportWord = useCallback(async () => {
+    try {
+      setStatusMessage('正在导出 Word...');
+      const blob = await buildResearchRecordWordDocumentBlob(draft);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const fileName = `${(draft.documentNo || draft.departmentName || activeFirstLevelMenuName || '调研记录').replace(/\s+/g, '')}-调研记录.docx`;
 
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    setStatusMessage('已导出 Word');
-  }, [activeFirstLevelMenuName, draft]);
+      anchor.href = url;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      setStatusMessage('已导出 Word');
+    } catch (error) {
+      const nextMessage = error instanceof Error ? error.message : 'Word 导出失败';
+      setStatusMessage(nextMessage);
+      onShowToast?.(nextMessage);
+    }
+  }, [activeFirstLevelMenuName, draft, onShowToast]);
 
   const syncActiveLineFromTextarea = useCallback((event: React.SyntheticEvent<HTMLTextAreaElement>) => {
     const target = event.currentTarget;
@@ -1437,6 +1464,18 @@ export function ResearchRecordWorkbench({
       };
     });
   }, [draft.lineColors, resolveMultilineInputState]);
+
+  const handleDraftDelimitedChange = useCallback((
+    field: ResearchEnvironmentDelimitedFieldKey,
+    nextValue: string,
+  ) => {
+    const normalized = normalizeDelimitedInlineInput(nextValue);
+    if (field === 'departmentPosts') {
+      updateDraft({ departmentPosts: normalized });
+      return;
+    }
+    updateDraft({ workTools: normalized });
+  }, [updateDraft]);
 
   const handleContentMultilineChange = useCallback((
     itemId: string,
@@ -1734,15 +1773,6 @@ export function ResearchRecordWorkbench({
     }
   }, [activeContentQuickTarget, isWordPrimaryMode, selectedContentItem]);
   const activeMultilineFieldState = useMemo<ActiveMultilineFieldState | null>(() => {
-    if (activeStep === 'environment') {
-      return {
-        field: activeEnvironmentQuickTarget,
-        lineColors: draft.lineColors[activeEnvironmentQuickTarget] ?? {},
-        scope: 'draft',
-        value: draft[activeEnvironmentQuickTarget],
-      };
-    }
-
     if (activeStep === 'output' && activeOutputQuickTarget !== 'signer' && activeOutputQuickTarget !== 'signerDate') {
       return {
         field: activeOutputQuickTarget,
@@ -1764,7 +1794,6 @@ export function ResearchRecordWorkbench({
     return null;
   }, [
     activeContentEditorConfig,
-    activeEnvironmentQuickTarget,
     activeOutputQuickTarget,
     activeStep,
     draft,
@@ -2023,23 +2052,23 @@ export function ResearchRecordWorkbench({
       case 'departmentPosts':
         return {
           title: '部门岗位快捷',
-          subtitle: '根据常用岗位快速追加到岗位说明。',
+          subtitle: '点击后按“、”追加到岗位说明。',
           emptyText: '当前没有可用岗位建议。',
           actions: DEPARTMENT_POST_PRESETS.map((item) => ({
             key: `department-post-${item}`,
             label: item,
-            onClick: () => updateDraft({ departmentPosts: appendLineValue(draft.departmentPosts, item) }),
+            onClick: () => updateDraft({ departmentPosts: appendDelimitedValue(draft.departmentPosts, item, '、') }),
           })),
         };
       case 'workTools':
         return {
           title: '工作工具快捷',
-          subtitle: '常用系统、表单和沟通工具可快速补充。',
+          subtitle: '点击后按“、”追加到工具清单。',
           emptyText: '当前没有可用工作工具建议。',
           actions: WORK_TOOL_PRESETS.map((item) => ({
             key: `work-tool-${item}`,
             label: item,
-            onClick: () => updateDraft({ workTools: appendLineValue(draft.workTools, item) }),
+            onClick: () => updateDraft({ workTools: appendDelimitedValue(draft.workTools, item, '、') }),
           })),
         };
       default:
@@ -2408,7 +2437,6 @@ export function ResearchRecordWorkbench({
                       actions={activeEnvironmentQuickContext?.actions ?? []}
                       activeKey={activeEnvironmentQuickTarget}
                       emptyText={activeEnvironmentQuickContext?.emptyText ?? '点击下方任一字段切换快捷建议。'}
-                      extra={activeLineColorToolbar}
                       onTabChange={(key) => setActiveEnvironmentQuickTarget(key as ResearchEnvironmentQuickTarget)}
                       subtitle=""
                       tabs={ENVIRONMENT_QUICK_TARGET_ORDER.map((target) => ({
@@ -2429,12 +2457,9 @@ export function ResearchRecordWorkbench({
                           <TextArea
                             value={draft.departmentPosts}
                             onFocus={() => setActiveEnvironmentQuickTarget('departmentPosts')}
-                            onClick={syncActiveLineFromTextarea}
-                            onChange={(event) => handleDraftMultilineChange('departmentPosts', event.target.value, event.currentTarget.selectionStart)}
-                            onKeyUp={syncActiveLineFromTextarea}
-                            onSelect={syncActiveLineFromTextarea}
-                            placeholder="一行一个岗位或岗位说明"
-                            className="min-h-[220px]"
+                            onChange={(event) => handleDraftDelimitedChange('departmentPosts', event.target.value)}
+                            placeholder="资料岗位、返聘岗位、检测岗位"
+                            className="min-h-[120px]"
                           />
                         </FieldShell>
                       </FocusFieldCard>
@@ -2444,12 +2469,9 @@ export function ResearchRecordWorkbench({
                           <TextArea
                             value={draft.workTools}
                             onFocus={() => setActiveEnvironmentQuickTarget('workTools')}
-                            onClick={syncActiveLineFromTextarea}
-                            onChange={(event) => handleDraftMultilineChange('workTools', event.target.value, event.currentTarget.selectionStart)}
-                            onKeyUp={syncActiveLineFromTextarea}
-                            onSelect={syncActiveLineFromTextarea}
-                            placeholder="一行一个系统、表单或沟通工具"
-                            className="min-h-[220px]"
+                            onChange={(event) => handleDraftDelimitedChange('workTools', event.target.value)}
+                            placeholder="金蝶云星空、EXCEL 线下表格、OA 办公系统"
+                            className="min-h-[120px]"
                           />
                         </FieldShell>
                       </FocusFieldCard>

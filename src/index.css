@@ -916,17 +916,17 @@ html[data-browser-engine="chromium"][data-app-mode="dev"] body {
 }
 
 :root {
-  --app-scrollbar-size: 10px;
-  --app-scrollbar-track: rgba(226, 232, 240, 0.46);
-  --app-scrollbar-thumb: rgba(148, 163, 184, 0.82);
-  --app-scrollbar-thumb-hover: rgba(100, 116, 139, 0.92);
-  --app-scrollbar-thumb-border: rgba(255, 255, 255, 0.86);
+  --app-scrollbar-size: 8px;
+  --app-scrollbar-track: rgba(241, 245, 249, 0.9);
+  --app-scrollbar-thumb: rgba(148, 163, 184, 0.58);
+  --app-scrollbar-thumb-hover: rgba(100, 116, 139, 0.72);
+  --app-scrollbar-thumb-border: rgba(255, 255, 255, 0.94);
 }
 
 .dark {
-  --app-scrollbar-track: rgba(30, 41, 59, 0.56);
-  --app-scrollbar-thumb: rgba(100, 116, 139, 0.84);
-  --app-scrollbar-thumb-hover: rgba(148, 163, 184, 0.92);
+  --app-scrollbar-track: rgba(30, 41, 59, 0.34);
+  --app-scrollbar-thumb: rgba(148, 163, 184, 0.58);
+  --app-scrollbar-thumb-hover: rgba(148, 163, 184, 0.78);
   --app-scrollbar-thumb-border: rgba(15, 23, 42, 0.9);
 }
 
@@ -947,9 +947,10 @@ html[data-browser-engine="chromium"][data-app-mode="dev"] body {
 
 *::-webkit-scrollbar-thumb {
   background-color: var(--app-scrollbar-thumb);
-  border: 2px solid var(--app-scrollbar-thumb-border);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--app-scrollbar-thumb-border);
   border-radius: 999px;
-  min-height: 28px;
+  min-height: 20px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
@@ -966,30 +967,37 @@ html[data-browser-engine="chromium"][data-app-mode="dev"] body {
 }
 
 .workspace-scrollbar::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 8px;
+  height: 8px;
 }
 
 .workspace-scrollbar::-webkit-scrollbar-track {
   background:
     linear-gradient(
       180deg,
-      var(--workspace-accent-tint) 0%,
+      rgba(255, 255, 255, 0.72) 0%,
       var(--workspace-accent-soft) 100%
     );
   border-radius: 999px;
 }
 
 .workspace-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--workspace-accent-border-strong);
   background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.26) 0%,
+      rgba(255, 255, 255, 0.04) 26%
+    ),
     linear-gradient(
       180deg,
       var(--workspace-accent-border-strong) 0%,
       var(--workspace-accent) 100%
     );
-  border: 2px solid rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.94);
   border-radius: 999px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+  min-height: 20px;
 }
 
 .workspace-scrollbar::-webkit-scrollbar-thumb:hover {

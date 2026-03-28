@@ -978,6 +978,7 @@ export function GridInspectorController({
                 compactCardClass={compactCardClass}
                 compactInfoCardClass={compactInfoCardClass}
                 groups={currentDetailBoard.groups}
+                onOpenConditionEditor={() => onOpenConditionWorkbench(isLeftGridConfig ? 'left' : 'main')}
                 onOpenEditor={onOpenArchiveLayoutEditor}
                 onOpenPreview={() => onOpenDetailBoardPreview(1, currentDetailBoard.sortColumnId)}
                 sectionTitleClass={sectionTitleClass}

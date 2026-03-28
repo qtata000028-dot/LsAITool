@@ -640,10 +640,9 @@ export function useArchiveLayoutPaletteColumns({
         const designerBoardConfig = buildDesignerGroupBoardConfig(groupRows, layoutRows, mappedColumns);
         onUpdateDetailBoard((current: any) => {
           const hasLocalDesignerLayout = Array.isArray(current?.designerLayout?.items) && current.designerLayout.items.length > 0;
-          const hasAssignedGroups = Array.isArray(current?.groups)
-            && current.groups.some((group: any) => Array.isArray(group?.columnIds) && group.columnIds.length > 0);
+          const hasCommittedLayout = Boolean(current?.enabled);
 
-          if (hasLocalDesignerLayout || hasAssignedGroups) {
+          if (hasLocalDesignerLayout || hasCommittedLayout) {
             return current;
           }
 
