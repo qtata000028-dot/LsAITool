@@ -1,0 +1,22 @@
+.iconfont {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  line-height: 1;
+}
+
+.iconfont::before {
+  font-weight: 700;
+}
+
+.icon-approve::before { content: 'A'; }
+.icon-copy::before { content: 'C'; }
+.icon-exclusive::before { content: 'E'; }
+.icon-parallel::before { content: 'P'; }
+.icon-inclusive::before { content: 'I'; }
+.icon-delay::before { content: 'D'; }
+.icon-trigger::before { content: 'T'; }
+.icon-router::before { content: 'R'; }
+.icon-transactor::before { content: 'H'; }
+.icon-child-process::before { content: 'S'; }

@@ -19,6 +19,7 @@ The frontend now includes a reusable process-designer component that can:
   - shared wrapper used by both workspace and wizard
 - `src/lib/backend-process-designer.ts`
   - request builder and backend bridge API client
+  - carries explicit approval-family routing for `bill` and `archive`
 - `src/features/dashboard/module-settings/restriction-workbench.tsx`
   - current "流程设计管理" entry now uses the shared process-design panel
 - `src/components/Dashboard.tsx`
@@ -63,6 +64,27 @@ This version is intentionally the first reusable frontend shell, but it is alrea
   - `POST /api/bpm/legacy-flow/publish`
 - shows returned Flowable XML and legacy table previews inside the panel
 - shows publish result statistics inside the panel
+- routes legacy persistence by approval family before publish
+
+## Approval Family Contract
+
+Bridge requests must distinguish two approval families:
+
+- `archive`
+  - owner table: `p_systemdlltab`
+  - flow type: `p_systemdlltabflowtype`
+  - type step: `p_systemdlltabflowtypestep`
+  - step grid: `p_systemdlltabflowstepgrid`
+  - legacy flow: `p_systemdlltabflow`
+
+- `bill`
+  - owner table: `p_systembilltype`
+  - flow type: `p_systembillflowtype`
+  - type step: `p_systembillflowtypestep`
+  - step grid: `p_systembillstepgrid`
+  - legacy flow: `p_systembillflow`
+
+The shared designer canvas can stay unified, but the bridge request must carry the target family so the backend can choose the correct persistence adapter.
 
 ## How To View
 

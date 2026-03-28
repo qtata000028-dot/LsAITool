@@ -4,10 +4,15 @@ import {
   compileProcessDesignerXml,
   publishProcessDesignerBridge,
   previewProcessDesignerBridge,
+  type ApprovalFlowFamily,
   type FlowableBridgePublishResult,
   type FlowableBridgePreviewResult,
   type FlowableBridgeTablePreview,
 } from '../../../lib/backend-process-designer';
+import type {
+  SimpleProcessSchema,
+  SimpleProcessSchemaVersion,
+} from '../../../lib/simple-process-designer-host';
 import { cn } from '../../../lib/utils';
 import { ProcessDesignerStudio } from './process-designer-studio';
 import {
@@ -21,13 +26,17 @@ import {
 
 type ProcessDesignValue = {
   actionDescription: string;
+  approvalFamily: ApprovalFlowFamily;
   businessCode: string;
   businessType: string;
   designerDocument: ProcessDesignerDocument;
+  legacyFlowTypeId?: number;
   permissionScope: string;
   planValue: string;
   schemeCode: string;
   schemeName: string;
+  simpleSchema?: SimpleProcessSchema;
+  simpleSchemaVersion?: SimpleProcessSchemaVersion;
 };
 
 type ProcessDesignPanelProps = {
@@ -151,6 +160,7 @@ export function ProcessDesignPanel({
     }
 
     return buildFlowableBridgeRequest({
+      approvalFamily: processDesign.approvalFamily,
       businessCode: processDesign.businessCode,
       businessType: processDesign.businessType,
       currentUserName,
@@ -159,6 +169,8 @@ export function ProcessDesignPanel({
       planValue: processDesign.planValue,
       schemeCode: processDesign.schemeCode,
       schemeName: processDesign.schemeName,
+      simpleSchema: processDesign.simpleSchema,
+      simpleSchemaVersion: processDesign.simpleSchemaVersion,
     });
   }, [currentUserName, processDesign]);
 

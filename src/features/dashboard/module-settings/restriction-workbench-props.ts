@@ -1,4 +1,5 @@
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
+
 import type { LongTextEditorState } from './long-text-editor-modal';
 import type {
   RestrictionConfigTabId,
@@ -16,6 +17,7 @@ export type BuildRestrictionWorkbenchPropsInput = {
   buildRestrictionTopStructure: (index: number, overrides?: Partial<RestrictionTopStructureItem>) => RestrictionTopStructureItem;
   currentModuleName: string;
   onOpenLongTextEditor: Dispatch<SetStateAction<LongTextEditorState>>;
+  onSaveRestrictionTab: (tabId: RestrictionConfigTabId) => void;
   restrictionActiveTab: RestrictionConfigTabId;
   restrictionMeasures: RestrictionMeasureItem[];
   restrictionNumberRules: RestrictionNumberRuleItem[];
@@ -39,13 +41,6 @@ export function buildRestrictionWorkbenchProps(
   const setRestrictionSelectedId = (tabId: RestrictionConfigTabId, rowId: string | null) => {
     input.setRestrictionSelection((prev) => ({ ...prev, [tabId]: rowId }));
   };
-
-  const restrictionTabMeta = [
-    { id: 'guard' as RestrictionConfigTabId, label: '管控限制措施' },
-    { id: 'number' as RestrictionConfigTabId, label: '编号规则管理' },
-    { id: 'structure' as RestrictionConfigTabId, label: '顶层数据结构' },
-    { id: 'process' as RestrictionConfigTabId, label: '流程设计管理' },
-  ];
 
   const selectedGuardRule = input.restrictionMeasures.find((item) => item.id === input.restrictionSelection.guard) ?? input.restrictionMeasures[0] ?? null;
   const selectedNumberRule = input.restrictionNumberRules.find((item) => item.id === input.restrictionSelection.number) ?? input.restrictionNumberRules[0] ?? null;
@@ -116,9 +111,11 @@ export function buildRestrictionWorkbenchProps(
       return;
     }
     if (input.restrictionActiveTab === 'process' && selectedProcessDesign) {
-      const { id, ...rest } = selectedProcessDesign;
+      const { id, legacyFlowTypeId, planValue, ...rest } = selectedProcessDesign;
       const next = input.buildRestrictionProcessDesign(input.restrictionProcessDesigns.length + 1, {
         ...rest,
+        legacyFlowTypeId: undefined,
+        planValue: '',
         schemeName: `${selectedProcessDesign.schemeName || '流程方案'} 副本`,
       });
       input.setRestrictionProcessDesigns((prev) => [...prev, next]);
@@ -148,11 +145,6 @@ export function buildRestrictionWorkbenchProps(
     input.showToast('当前页签没有可删除的数据。');
   };
 
-  const handleSaveRestrictionTab = () => {
-    const activeTabLabel = restrictionTabMeta.find((item) => item.id === input.restrictionActiveTab)?.label || '限制措施';
-    input.showToast(`${activeTabLabel} 已暂存`);
-  };
-
   return {
     activeTab: input.restrictionActiveTab,
     currentModuleName: input.currentModuleName,
@@ -161,7 +153,7 @@ export function buildRestrictionWorkbenchProps(
     onDeleteItem: handleDeleteRestrictionItem,
     onDuplicateItem: handleDuplicateRestrictionItem,
     onOpenLongTextEditor: input.onOpenLongTextEditor,
-    onSaveTab: handleSaveRestrictionTab,
+    onSaveTab: () => input.onSaveRestrictionTab(input.restrictionActiveTab),
     onSelectedIdChange: setRestrictionSelectedId,
     restrictionMeasures: input.restrictionMeasures,
     restrictionNumberRules: input.restrictionNumberRules,

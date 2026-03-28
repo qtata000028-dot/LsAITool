@@ -12,7 +12,12 @@ import {
   shadcnSectionCardClass,
   shadcnTextareaClass,
 } from '../../../components/ui/shadcn-inspector';
-import { ProcessDesignPanel } from './process-design-panel';
+import type { ApprovalFlowFamily } from '../../../lib/backend-process-designer';
+import type {
+  SimpleProcessSchema,
+  SimpleProcessSchemaVersion,
+} from '../../../lib/simple-process-designer-host';
+import { SimpleProcessDesignHostPanel } from './simple-process-design-host-panel';
 import type { ProcessDesignerDocument } from './process-designer-types';
 import { type LongTextEditorState } from './long-text-editor-modal';
 
@@ -53,7 +58,9 @@ export type RestrictionNumberRuleItem = {
 };
 
 export type RestrictionProcessDesignItem = {
+  approvalFamily: ApprovalFlowFamily;
   id: string;
+  legacyFlowTypeId?: number;
   planValue: string;
   businessCode: string;
   schemeCode: string;
@@ -62,6 +69,8 @@ export type RestrictionProcessDesignItem = {
   businessType: string;
   actionDescription: string;
   designerDocument: ProcessDesignerDocument;
+  simpleSchema?: SimpleProcessSchema;
+  simpleSchemaVersion?: SimpleProcessSchemaVersion;
 };
 
 export type RestrictionTopStructureItem = {
@@ -300,6 +309,9 @@ export function RestrictionWorkbench({
       return item.remark || `${item.fieldPrefix || '-'} / ${item.sequenceRule || '-'}`;
     }
     const item = row as RestrictionProcessDesignItem;
+    if (item.simpleSchema) {
+      return '已切换为 Vue Simple 设计器草稿';
+    }
     return item.actionDescription || item.permissionScope || '暂无流程说明';
   };
 
@@ -756,7 +768,7 @@ export function RestrictionWorkbench({
     };
 
     return (
-      <ProcessDesignPanel
+      <SimpleProcessDesignHostPanel
         currentModuleName={currentModuleName}
         mode="workspace"
         onUpdate={updateSelectedProcess}

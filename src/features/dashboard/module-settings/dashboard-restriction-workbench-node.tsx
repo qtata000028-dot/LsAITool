@@ -35,6 +35,7 @@ type DashboardRestrictionWorkbenchNodeInput = {
   >;
   ui: Pick<
     BuildRestrictionWorkbenchPropsInput,
+    | 'onSaveRestrictionTab'
     | 'onOpenLongTextEditor'
     | 'showToast'
     | 'workspaceThemeTableSurfaceClass'

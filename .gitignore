@@ -1,6 +1,7 @@
 node_modules/
 build/
 dist/
+public/simple-process-designer/
 coverage/
 output/
 .playwright-cli/

@@ -105,7 +105,7 @@ import { useBillFieldResize } from '../features/dashboard/module-settings/use-bi
 import { useBillHeaderWorkbench } from '../features/dashboard/module-settings/use-bill-header-workbench';
 import { ConfigWizardModalShell } from '../features/dashboard/module-settings/config-wizard-modal-shell';
 import { buildDashboardConfigWizardStepNodes } from '../features/dashboard/module-settings/dashboard-config-wizard-step-nodes';
-import { ProcessDesignPanel } from '../features/dashboard/module-settings/process-design-panel';
+import { SimpleProcessDesignHostPanel } from '../features/dashboard/module-settings/simple-process-design-host-panel';
 import {
   DETAIL_BOARD_FIELD_DEFAULT_HEIGHT,
   DETAIL_BOARD_FIELD_DEFAULT_WIDTH,
@@ -142,6 +142,11 @@ import {
   updateCurrentDesignSearch,
 } from '../platforms/design/navigation/design-navigation';
 import { Badge } from './ui/badge';
+import {
+  listProcessDesignerSchemes,
+  saveProcessDesignerScheme,
+  type ProcessDesignerSchemeDto,
+} from '../lib/backend-process-designer';
 
 interface DashboardProps {
   currentUserName: string;
@@ -2247,16 +2252,59 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     creator: '',
     ...overrides,
   });
+  const currentRestrictionProcessBusinessType = businessType === 'table' ? '单据' : businessType === 'tree' ? '树形单表' : '单表';
+  const buildRestrictionProcessDesignId = (value: {
+    legacyFlowTypeId?: number;
+    planValue?: string;
+    schemeCode?: string;
+    fallbackIndex?: number;
+  }) => {
+    if (typeof value.legacyFlowTypeId === 'number' && Number.isFinite(value.legacyFlowTypeId)) {
+      return `process_scheme_${value.legacyFlowTypeId}`;
+    }
+    if (value.planValue && value.planValue.trim()) {
+      return `process_scheme_${value.planValue.trim()}`;
+    }
+    if (value.schemeCode && value.schemeCode.trim()) {
+      return `process_scheme_${value.schemeCode.trim()}`;
+    }
+    return `process_rule_${Date.now()}_${value.fallbackIndex ?? 0}`;
+  };
+  const mapProcessDesignerSchemeToItem = useCallback((
+    scheme: ProcessDesignerSchemeDto,
+    fallbackIndex: number,
+  ): RestrictionProcessDesignItem => ({
+    id: buildRestrictionProcessDesignId({
+      fallbackIndex,
+      legacyFlowTypeId: scheme.legacyFlowTypeId,
+      planValue: scheme.planValue,
+      schemeCode: scheme.schemeCode,
+    }),
+    legacyFlowTypeId: scheme.legacyFlowTypeId,
+    planValue: String(scheme.planValue || scheme.legacyFlowTypeId || ''),
+    businessCode: String(scheme.businessCode || currentModuleCode || ''),
+    schemeCode: String(scheme.schemeCode || `Q0${fallbackIndex}`),
+    schemeName: String(scheme.schemeName || `流程方案 ${fallbackIndex}`),
+    permissionScope: String(scheme.permissionScope || ''),
+    approvalFamily: scheme.approvalFamily || (businessType === 'table' ? 'bill' : 'archive'),
+    businessType: String(scheme.businessType || currentRestrictionProcessBusinessType),
+    actionDescription: String(scheme.actionDescription || ''),
+    designerDocument: createLinearProcessDesignerDocument(currentModuleName),
+    simpleSchema: scheme.simpleSchema,
+    simpleSchemaVersion: scheme.simpleSchemaVersion || 'v1',
+  }), [businessType, currentModuleCode, currentModuleName, currentRestrictionProcessBusinessType]);
   const buildRestrictionProcessDesign = (index: number, overrides: Partial<RestrictionProcessDesignItem> = {}): RestrictionProcessDesignItem => ({
-    id: `process_rule_${Date.now()}_${index}`,
-    planValue: `${1200 + index}`,
+    id: buildRestrictionProcessDesignId({ fallbackIndex: index, schemeCode: `Q0${index}` }),
+    planValue: '',
     businessCode: currentModuleCode,
     schemeCode: `Q0${index}`,
     schemeName: `流程方案 ${index}`,
     permissionScope: '',
-    businessType: businessType === 'table' ? '单据' : businessType === 'tree' ? '树形单表' : '单表',
+    approvalFamily: businessType === 'table' ? 'bill' : 'archive',
+    businessType: currentRestrictionProcessBusinessType,
     actionDescription: '',
     designerDocument: createLinearProcessDesignerDocument(currentModuleName),
+    simpleSchemaVersion: 'v1',
     ...overrides,
   });
   const buildRestrictionTopStructure = (index: number, overrides: Partial<RestrictionTopStructureItem> = {}): RestrictionTopStructureItem => ({
@@ -2303,6 +2351,100 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     setRestrictionSelection((prev) => ({ ...prev, process: next.id }));
     showToast('已创建流程设计方案');
   }, [buildRestrictionProcessDesign, restrictionProcessDesigns.length, showToast]);
+  useEffect(() => {
+    if (!isConfigOpen || !isMenuInfoBuilt || !currentModuleCode.trim()) {
+      return;
+    }
+
+    let active = true;
+
+    const loadRestrictionProcessDesigns = async () => {
+      try {
+        const schemes = await listProcessDesignerSchemes({
+          approvalFamily: businessType === 'table' ? 'bill' : 'archive',
+          businessCode: currentModuleCode,
+          businessType: currentRestrictionProcessBusinessType,
+        });
+        if (!active) {
+          return;
+        }
+
+        const mapped = schemes.map((scheme, index) => mapProcessDesignerSchemeToItem(scheme, index + 1));
+        setRestrictionProcessDesigns(mapped);
+        setRestrictionSelection((prev) => {
+          const nextSelectedId = mapped.some((item) => item.id === prev.process)
+            ? prev.process
+            : mapped[0]?.id ?? null;
+          return nextSelectedId === prev.process ? prev : { ...prev, process: nextSelectedId };
+        });
+      } catch (error) {
+        if (active) {
+          showToast(getDashboardErrorMessage(error));
+        }
+      }
+    };
+
+    void loadRestrictionProcessDesigns();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    businessType,
+    currentModuleCode,
+    currentRestrictionProcessBusinessType,
+    isConfigOpen,
+    isMenuInfoBuilt,
+    mapProcessDesignerSchemeToItem,
+    showToast,
+  ]);
+  const handleSaveRestrictionTab = useCallback(async (tabId: RestrictionConfigTabId) => {
+    if (tabId !== 'process') {
+      const tabLabelMap: Record<RestrictionConfigTabId, string> = {
+        guard: '管控限制措施',
+        number: '编号规则管理',
+        structure: '顶层数据结构',
+        process: '流程设计管理',
+      };
+      showToast(`${tabLabelMap[tabId]} 已暂存`);
+      return;
+    }
+
+    if (!selectedRestrictionProcessDesign) {
+      showToast('请先选择一个流程方案');
+      return;
+    }
+
+    try {
+      const savedScheme = await saveProcessDesignerScheme({
+        approvalFamily: selectedRestrictionProcessDesign.approvalFamily,
+        actionDescription: selectedRestrictionProcessDesign.actionDescription,
+        businessCode: selectedRestrictionProcessDesign.businessCode,
+        businessType: selectedRestrictionProcessDesign.businessType,
+        legacyFlowTypeId: selectedRestrictionProcessDesign.legacyFlowTypeId,
+        permissionScope: selectedRestrictionProcessDesign.permissionScope,
+        planValue: selectedRestrictionProcessDesign.planValue,
+        schemeCode: selectedRestrictionProcessDesign.schemeCode,
+        schemeName: selectedRestrictionProcessDesign.schemeName,
+        simpleSchema: selectedRestrictionProcessDesign.simpleSchema,
+        simpleSchemaVersion: selectedRestrictionProcessDesign.simpleSchemaVersion,
+      });
+
+      const mapped = mapProcessDesignerSchemeToItem(savedScheme, restrictionProcessDesigns.length || 1);
+      setRestrictionProcessDesigns((prev) => prev.map((item) => (
+        item.id === selectedRestrictionProcessDesign.id ? mapped : item
+      )));
+      setRestrictionSelection((prev) => ({ ...prev, process: mapped.id }));
+      showToast('流程方案已保存');
+    } catch (error) {
+      showToast(getDashboardErrorMessage(error));
+    }
+  }, [
+    mapProcessDesignerSchemeToItem,
+    restrictionProcessDesigns.length,
+    selectedRestrictionProcessDesign,
+    showToast,
+  ]);
   const [documentConditionScope, setDocumentConditionScope] = useState<ConditionWorkbenchScope>('main');
   const [billHeaderWorkbenchConfig, setBillHeaderWorkbenchConfig] = useState<BillHeaderWorkbenchConfig>(
     buildBillHeaderWorkbenchConfig(),
@@ -3125,7 +3267,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
     },
     processDesign: {
       processDesignNode: (
-        <ProcessDesignPanel
+        <SimpleProcessDesignHostPanel
           currentModuleName={currentModuleName}
           currentUserName={currentUserName}
           emptyHint="先创建流程方案，再在这里完成审批流画布和节点属性配置。"
@@ -6017,12 +6159,13 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         restrictionSelection,
         restrictionTopStructures,
       },
-      ui: {
-        onOpenLongTextEditor: setLongTextEditorState,
-        showToast,
-        workspaceThemeTableSurfaceClass: workspaceThemeStyles.tableSurface,
-        workspaceThemeVars,
-      },
+        ui: {
+          onOpenLongTextEditor: setLongTextEditorState,
+          onSaveRestrictionTab: handleSaveRestrictionTab,
+          showToast,
+          workspaceThemeTableSurfaceClass: workspaceThemeStyles.tableSurface,
+          workspaceThemeVars,
+        },
     },
     modals: buildDashboardConfigBridgeModalsInput({
       deleteFlowState: {
