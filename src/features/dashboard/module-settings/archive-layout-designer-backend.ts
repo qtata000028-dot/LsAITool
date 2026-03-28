@@ -74,6 +74,14 @@ export type ArchiveLayoutSourceState = {
   moduleCode: string;
 };
 
+export type ArchiveLayoutSavePlan = {
+  formKey: string;
+  groupDeleteIds: Array<number | string>;
+  groupSaveBodies: Record<string, unknown>[];
+  layoutDeleteFieldIds: Array<number | string>;
+  layoutSaveBodies: Record<string, unknown>[];
+};
+
 const GROUP_COLUMNS_PER_ROW_KEYS = [
   'columnsPerRow',
   'columnCount',
@@ -198,15 +206,22 @@ const RECT_WIDTH_KEYS = [
 ];
 
 const GROUP_HEADER_HEIGHT = 56;
+const GROUP_GAP = 22;
+const GROUP_MIN_HEIGHT = GROUP_HEADER_HEIGHT + 96;
 const GROUP_PADDING_X = 18;
+const GROUP_PADDING_BOTTOM = 18;
 const GROUP_PADDING_TOP = 16;
 const FIELD_GAP = 14;
 const DEFAULT_ROW_GAP = 14;
+const STAGE_OFFSET_X = 24;
+const STAGE_TOP_PADDING = 24;
+const STAGE_WIDTH = 760;
 const UNASSIGNED_LEFT = 24;
 const UNASSIGNED_TOP_GAP = 48;
 const UNASSIGNED_ROW_GAP = 16;
 const UNASSIGNED_WIDTH = 120;
 const UNASSIGNED_HEIGHT = 36;
+const DESIGNER_GROUP_CONTROL_TYPE = 333;
 
 function normalizeLookupKey(value: unknown) {
   return String(value ?? '').trim().toLowerCase();
@@ -732,6 +747,191 @@ function getControlHeight(control: ArchiveLayoutDesignerControlSource, group: Re
   return Math.max(21, Math.round(control.controlHeight || UNASSIGNED_HEIGHT));
 }
 
+function normalizeIdentityToken(value: unknown) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function getPersistedGroupId(group: ArchiveLayoutDesignerGroupSource | Record<string, any> | null | undefined) {
+  if (!group || typeof group !== 'object') {
+    return null;
+  }
+
+  const candidate = getRecordFieldValue(group as Record<string, unknown>, 'id', 'ID', 'Id', 'groupid', 'groupId');
+  if (candidate === undefined || candidate === null || candidate === '') {
+    return null;
+  }
+
+  const numeric = Number(candidate);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric;
+  }
+
+  const text = String(candidate).trim();
+  return text.length > 0 ? text : null;
+}
+
+function getPersistedLayoutFieldId(layoutRow: SingleTableDesignerLayoutDto | null | undefined) {
+  if (!layoutRow || typeof layoutRow !== 'object') {
+    return null;
+  }
+
+  const candidate = getRecordFieldValue(layoutRow, 'fieldId', 'fieldid');
+  if (candidate === undefined || candidate === null || candidate === '') {
+    return null;
+  }
+
+  const numeric = Number(candidate);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric;
+  }
+
+  const text = String(candidate).trim();
+  return text.length > 0 ? text : null;
+}
+
+function buildLayoutRect(left: number, top: number, width: number, height: number): LayoutRect {
+  return {
+    bottom: top + height,
+    centerX: left + width / 2,
+    centerY: top + height / 2,
+    height,
+    left,
+    right: left + width,
+    top,
+    width,
+  };
+}
+
+function buildArchiveLayoutGroupSnapshots(
+  detailBoardConfig: Record<string, any>,
+  source: ArchiveLayoutSourceState,
+) {
+  const currentGroups = Array.isArray(detailBoardConfig?.groups) ? detailBoardConfig.groups : [];
+  const sourceGroupMap = new Map(source.groups.map((group) => [String(group.id), group]));
+  const controlsById = new Map(source.controls.map((control) => [control.columnId, control]));
+  const stageWidth = STAGE_WIDTH - STAGE_OFFSET_X * 2;
+  let currentTop = STAGE_TOP_PADDING;
+
+  return currentGroups.map((group: Record<string, any>, groupIndex: number) => {
+    const sourceGroup = sourceGroupMap.get(String(group?.id)) ?? null;
+    const groupControlIds = (Array.isArray(group?.columnIds) ? group.columnIds : [])
+      .map(String)
+      .filter((columnId: string) => controlsById.has(columnId));
+    const columnsPerRow = Math.max(
+      1,
+      Number(group?.columnsPerRow) || sourceGroup?.configuredColumnsPerRow || 2,
+    );
+    const rowBuckets = buildRowBucket(group, groupControlIds);
+
+    let groupContentBottom = GROUP_HEADER_HEIGHT + GROUP_PADDING_TOP;
+    rowBuckets.forEach((rowControlIds) => {
+      const rowControls = rowControlIds
+        .map((columnId) => controlsById.get(columnId))
+        .filter(Boolean) as ArchiveLayoutDesignerControlSource[];
+      const rowHeight = rowControls.length > 0
+        ? Math.max(...rowControls.map((control) => getControlHeight(control, group)))
+        : 0;
+
+      groupContentBottom += rowHeight;
+      if (rowHeight > 0) {
+        groupContentBottom += DEFAULT_ROW_GAP;
+      }
+    });
+
+    const groupHeight = Math.max(
+      GROUP_MIN_HEIGHT,
+      groupContentBottom > GROUP_HEADER_HEIGHT + GROUP_PADDING_TOP
+        ? groupContentBottom - DEFAULT_ROW_GAP + GROUP_PADDING_BOTTOM
+        : GROUP_HEADER_HEIGHT + GROUP_PADDING_TOP + GROUP_PADDING_BOTTOM,
+    );
+    const rect = buildLayoutRect(STAGE_OFFSET_X, currentTop, stageWidth, groupHeight);
+    const persistedId = sourceGroup ? getPersistedGroupId(sourceGroup.raw) : null;
+    const name = toRecordText(group?.name || sourceGroup?.name) || `Group ${groupIndex + 1}`;
+
+    currentTop += groupHeight + GROUP_GAP;
+
+    return {
+      controlIds: groupControlIds,
+      currentGroup: group,
+      name,
+      persistedId,
+      rawGroup: sourceGroup?.raw ?? null,
+      rect,
+      sourceGroup,
+    };
+  });
+}
+
+function buildDesignerGroupSaveBody(input: {
+  formKey: string;
+  groupIndex: number;
+  name: string;
+  persistedId: number | string | null;
+  rawGroup: SingleTableDesignerGroupDto | null;
+  rect: LayoutRect;
+}) {
+  const rawGroup = input.rawGroup ?? {};
+  const borderColor = toRecordText(getRecordFieldValue(rawGroup, 'borderColor', 'bordercolor'));
+  const titlePosition = getRecordFieldValue(rawGroup, 'titlePosition', 'titleposition');
+  const groupName = toRecordText(input.name) || `Group ${input.groupIndex + 1}`;
+
+  return stripUndefinedEntries({
+    ...(input.persistedId !== null ? { id: input.persistedId } : {}),
+    formKey: input.formKey,
+    formkey: input.formKey,
+    groupName,
+    groupname: groupName,
+    GroupName: groupName,
+    controlLeft: Math.round(input.rect.left),
+    controlTop: Math.round(input.rect.top),
+    controlHeight: Math.round(input.rect.height),
+    controlWidth: Math.round(input.rect.width),
+    controlType: DESIGNER_GROUP_CONTROL_TYPE,
+    borderColor: borderColor || undefined,
+    titlePosition: titlePosition ?? undefined,
+  });
+}
+
+function hasDesignerGroupBodyChanged(body: Record<string, unknown>, rawGroup: SingleTableDesignerGroupDto | null) {
+  if (!rawGroup || typeof rawGroup !== 'object') {
+    return true;
+  }
+
+  const bodyGroupName = toRecordText(body.groupName ?? body.groupname ?? body.GroupName);
+  const rawGroupName = toRecordText(getRecordFieldValue(rawGroup, 'groupName', 'groupname', 'GroupName', 'name', 'caption', 'title'));
+  if (bodyGroupName !== rawGroupName) {
+    return true;
+  }
+
+  const numericKeys: Array<[bodyKey: string, rawKeys: string[]]> = [
+    ['controlLeft', ['controlLeft', 'left', 'Left', 'groupLeft', 'GroupLeft']],
+    ['controlTop', ['controlTop', 'top', 'Top', 'groupTop', 'GroupTop']],
+    ['controlHeight', ['controlHeight', 'height', 'Height', 'groupHeight', 'GroupHeight']],
+    ['controlWidth', ['controlWidth', 'width', 'Width', 'groupWidth', 'GroupWidth']],
+    ['controlType', ['controlType', 'controltype']],
+  ];
+
+  for (const [bodyKey, rawKeys] of numericKeys) {
+    const bodyValue = toRecordNumber(body[bodyKey], Number.NaN);
+    const rawValue = toRecordNumber(getRecordFieldValue(rawGroup, ...rawKeys), Number.NaN);
+    if (Number.isFinite(bodyValue) || Number.isFinite(rawValue)) {
+      if (Math.round(bodyValue) !== Math.round(rawValue)) {
+        return true;
+      }
+    }
+  }
+
+  const bodyBorderColor = toRecordText(body.borderColor);
+  const rawBorderColor = toRecordText(getRecordFieldValue(rawGroup, 'borderColor', 'bordercolor'));
+  if (bodyBorderColor !== rawBorderColor) {
+    return true;
+  }
+
+  const bodyTitlePosition = toRecordText(body.titlePosition);
+  const rawTitlePosition = toRecordText(getRecordFieldValue(rawGroup, 'titlePosition', 'titleposition'));
+  return bodyTitlePosition !== rawTitlePosition;
+}
+
 function buildDesignerLayoutRowBody(input: {
   control: ArchiveLayoutDesignerControlSource;
   fieldId: number | string;
@@ -804,45 +1004,38 @@ export function buildArchiveLayoutSaveBodies(
   }
 
   const currentGroups = Array.isArray(detailBoardConfig?.groups) ? detailBoardConfig.groups : [];
-  const sourceGroups = Array.isArray(source.groups) ? source.groups : [];
-  const sourceGroupMap = new Map(sourceGroups.map((group) => [String(group.id), group]));
   const formKey = stripBraces(source.formKey || fallbackFormKey || '');
   if (!formKey) {
     return [];
   }
 
+  const groupSnapshots = buildArchiveLayoutGroupSnapshots(detailBoardConfig, source);
   const controlsById = new Map(source.controls.map((control) => [control.columnId, control]));
   const assignedControlIdSet = new Set<string>();
   const saveBodies: Record<string, unknown>[] = [];
   let nextOrderId = 1;
 
-  currentGroups.forEach((group) => {
-    const sourceGroup = sourceGroupMap.get(String(group?.id));
-    if (!sourceGroup?.rect) {
-      return;
-    }
-
-    const groupControlIds = (Array.isArray(group?.columnIds) ? group.columnIds : [])
-      .map(String)
-      .filter((columnId: string) => controlsById.has(columnId));
+  groupSnapshots.forEach((groupSnapshot) => {
+    const { currentGroup, name, rect, sourceGroup } = groupSnapshot;
+    const groupControlIds = groupSnapshot.controlIds;
     if (groupControlIds.length === 0) {
       return;
     }
 
     groupControlIds.forEach((columnId: string) => assignedControlIdSet.add(columnId));
-    const rowBuckets = buildRowBucket(group, groupControlIds);
-    const columnsPerRow = Math.max(1, Number(group?.columnsPerRow) || sourceGroup.configuredColumnsPerRow || 1);
+    const rowBuckets = buildRowBucket(currentGroup, groupControlIds);
+    const columnsPerRow = Math.max(1, Number(currentGroup?.columnsPerRow) || sourceGroup?.configuredColumnsPerRow || 1);
     const safeSlotWidth = Math.max(
       24,
-      Math.floor((sourceGroup.rect.width - GROUP_PADDING_X * 2 - FIELD_GAP * Math.max(columnsPerRow - 1, 0)) / columnsPerRow),
+      Math.floor((rect.width - GROUP_PADDING_X * 2 - FIELD_GAP * Math.max(columnsPerRow - 1, 0)) / columnsPerRow),
     );
-    let currentTop = sourceGroup.rect.top + GROUP_HEADER_HEIGHT + GROUP_PADDING_TOP;
+    let currentTop = rect.top + GROUP_HEADER_HEIGHT + GROUP_PADDING_TOP;
 
     rowBuckets.forEach((rowControlIds) => {
       const rowControls = rowControlIds
         .map((columnId) => controlsById.get(columnId))
         .filter(Boolean) as ArchiveLayoutDesignerControlSource[];
-      const rowHeight = Math.max(...rowControls.map((control) => getControlHeight(control, group)));
+      const rowHeight = Math.max(...rowControls.map((control) => getControlHeight(control, currentGroup)));
 
       rowControls.forEach((control, slotIndex) => {
         const matchedColumn = findMatchedCurrentColumn(control, currentColumns);
@@ -866,9 +1059,9 @@ export function buildArchiveLayoutSaveBodies(
           fieldId,
           fieldName,
           formKey,
-          groupName: toRecordText(group?.name || sourceGroup.name),
-          height: getControlHeight(control, group),
-          left: sourceGroup.rect.left + GROUP_PADDING_X + slotIndex * (safeSlotWidth + FIELD_GAP),
+          groupName: name,
+          height: getControlHeight(control, currentGroup),
+          left: rect.left + GROUP_PADDING_X + slotIndex * (safeSlotWidth + FIELD_GAP),
           orderId: nextOrderId,
           top: currentTop,
           width: safeSlotWidth,
@@ -880,7 +1073,7 @@ export function buildArchiveLayoutSaveBodies(
     });
   });
 
-  const maxGroupBottom = Math.max(0, ...sourceGroups.map((group) => group.rect?.bottom ?? 0));
+  const maxGroupBottom = Math.max(0, ...groupSnapshots.map((group) => group.rect.bottom));
   const unassignedControls = source.controls.filter((control) => !assignedControlIdSet.has(control.columnId));
 
   unassignedControls.forEach((control, index) => {
@@ -915,4 +1108,71 @@ export function buildArchiveLayoutSaveBodies(
   });
 
   return saveBodies;
+}
+
+export function buildArchiveLayoutSavePlan(
+  detailBoardConfig: Record<string, any>,
+  currentColumns: Record<string, any>[],
+  fallbackFormKey?: string,
+): ArchiveLayoutSavePlan {
+  const source = detailBoardConfig?.archiveLayoutSource as ArchiveLayoutSourceState | undefined;
+  const formKey = stripBraces(source?.formKey || fallbackFormKey || '');
+  if (!source || !formKey) {
+    return {
+      formKey,
+      groupDeleteIds: [],
+      groupSaveBodies: [],
+      layoutDeleteFieldIds: [],
+      layoutSaveBodies: [],
+    };
+  }
+
+  const groupSnapshots = buildArchiveLayoutGroupSnapshots(detailBoardConfig, source);
+  const layoutSaveBodies = buildArchiveLayoutSaveBodies(detailBoardConfig, currentColumns, formKey);
+  const currentGroupIdSet = new Set(
+    (Array.isArray(detailBoardConfig?.groups) ? detailBoardConfig.groups : [])
+      .map((group: Record<string, any>) => String(group?.id || ''))
+      .filter(Boolean),
+  );
+  const existingLayoutFieldIds = Array.from(new Set(
+    (Array.isArray(source.layoutRows) ? source.layoutRows : [])
+      .map((layoutRow) => getPersistedLayoutFieldId(layoutRow))
+      .filter((fieldId): fieldId is number | string => fieldId !== null),
+  ));
+  const nextLayoutFieldIdSet = new Set(
+    layoutSaveBodies.map((body) => normalizeIdentityToken(body.fieldId ?? body.fieldid)),
+  );
+
+  const layoutDeleteFieldIds = existingLayoutFieldIds.filter((fieldId) => (
+    !nextLayoutFieldIdSet.has(normalizeIdentityToken(fieldId))
+  ));
+  const groupDeleteIds = source.groups
+    .filter((group) => !currentGroupIdSet.has(String(group.id)))
+    .map((group) => getPersistedGroupId(group.raw))
+    .filter((groupId): groupId is number | string => groupId !== null);
+  const groupSaveBodies = groupSnapshots
+    .map((groupSnapshot, groupIndex) => ({
+      body: buildDesignerGroupSaveBody({
+        formKey,
+        groupIndex,
+        name: groupSnapshot.name,
+        persistedId: groupSnapshot.persistedId,
+        rawGroup: groupSnapshot.rawGroup,
+        rect: groupSnapshot.rect,
+      }),
+      groupSnapshot,
+    }))
+    .filter(({ body, groupSnapshot }) => (
+      groupSnapshot.persistedId === null
+      || hasDesignerGroupBodyChanged(body, groupSnapshot.rawGroup)
+    ))
+    .map(({ body }) => body);
+
+  return {
+    formKey,
+    groupDeleteIds: Array.from(new Set(groupDeleteIds)),
+    groupSaveBodies,
+    layoutDeleteFieldIds,
+    layoutSaveBodies,
+  };
 }

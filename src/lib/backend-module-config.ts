@@ -194,11 +194,33 @@ export async function fetchSingleTableDesignerLayout(dllCoId: string) {
   });
 }
 
+export async function saveSingleTableDesignerGroup(dllCoId: string, body: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/api/single-table/modules/${encodePathParam(dllCoId)}/designer-groups`, {
+    auth: true,
+    body,
+    method: 'POST',
+  });
+}
+
+export async function deleteSingleTableDesignerGroup(dllCoId: string, id: number | string) {
+  return apiRequest<void>(`/api/single-table/modules/${encodePathParam(dllCoId)}/designer-groups/${encodePathParam(String(id))}`, {
+    auth: true,
+    method: 'DELETE',
+  });
+}
+
 export async function saveSingleTableDesignerLayout(dllCoId: string, body: Record<string, unknown>) {
   return apiRequest<Record<string, unknown>>(`/api/single-table/modules/${encodePathParam(dllCoId)}/designer-layout`, {
     auth: true,
     body,
     method: 'POST',
+  });
+}
+
+export async function deleteSingleTableDesignerLayout(dllCoId: string, fieldId: number | string) {
+  return apiRequest<void>(`/api/single-table/modules/${encodePathParam(dllCoId)}/designer-layout/${encodePathParam(String(fieldId))}`, {
+    auth: true,
+    method: 'DELETE',
   });
 }
 

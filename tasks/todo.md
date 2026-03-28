@@ -4267,3 +4267,163 @@
 ### Result Notes
 - 通过明细 SQL 查询得到的 `grid-fields` 现在会把后端 `username` 正确显示到“字段名称”，把 `fieldName` 正确显示到“字段标识”，不再互相串位。
 - 保存时会把当前编辑后的名称和标识按多套兼容别名一起带回去，因此保存成功后的回填和下次重载会继续保持同一组对应关系。
+## 2026-03-28 发布环境登录 Invalid CORS request 修复
+
+### Requirement Spec
+- 目标：
+  - 修复发布后登录请求出现 `Invalid CORS request` 的问题，恢复 IIS 发布包下的同源登录。
+  - 同时修正发布包首页标题乱码，避免入口级可见文案继续带坏。
+- 影响范围：
+  - `public/web.config`
+  - `index.html`
+  - 生成后的 `dist/web.config` 与 `dist/index.html`
+- 关键约束：
+  - 不把生产包改回浏览器跨域直连后端，继续保持同源 `/api` 访问方式。
+  - 只修正 IIS 反代和入口静态文案，不改登录业务逻辑与接口封装。
+- 不做什么：
+  - 不改后端 Java/Spring 的 CORS 配置。
+  - 不改本地开发代理行为。
+- 验证标准：
+  - 生产构建后的 bundle 继续使用同源 `/api/*`，不写死浏览器直连后端。
+  - `dist/web.config` 包含 API 反代时清空 `Origin`/预检相关头的规则。
+  - `dist/index.html` 标题恢复正常中文。
+  - `npm run build` 通过。
+
+### Checklist
+- [x] 确认生产包当前 API 基地址与 `web.config` 反代策略
+- [x] 修复 IIS 反代到后端时的跨域头透传问题
+- [x] 修复入口标题乱码
+- [ ] 重新构建并核对 dist 产物
+- [ ] 记录验证结果和剩余风险
+
+### Progress Notes
+- 已确认当前生产 bundle 内 `API_BASE_URL` 实际为 `''`，登录请求走的是同源 `/api/auth/login`，不是浏览器直接跨域到 `114.116.135.188:9093`。
+- 已确认 `Invalid CORS request` 更像 IIS `web.config` 反代到后端时把浏览器的 `Origin` 原样透传给了后端，触发了后端 CORS 校验；对同源站点来说这层 `Origin` 对代理链路不是必须的。
+- 已在 `public/web.config` 的 `ReverseProxyApi` 规则中增加 `allowedServerVariables` 和 `serverVariables`，代理 API 时会清空 `HTTP_ORIGIN`、`HTTP_ACCESS_CONTROL_REQUEST_METHOD`、`HTTP_ACCESS_CONTROL_REQUEST_HEADERS`。
+- 已重写根目录 `index.html`，修复标题 `Ls AI 开发平台` 的乱码和破损闭合标签。
+## 2026-03-28 IIS URL Rewrite 500 回退与发布包恢复
+
+### Requirement Spec
+- 目标：
+  - 修复上一轮 `web.config` 调整后发布站点出现的 `500 URL Rewrite Module Error`。
+  - 恢复一个至少不会被 IIS Rewrite 规则直接打挂的可部署包。
+- 影响范围：
+  - `public/web.config`
+  - `dist/web.config`
+  - 发布压缩包
+- 关键约束：
+  - 优先恢复站点可访问性，不继续在站点级 `web.config` 里使用可能被 IIS 锁定的 admin-only 配置。
+  - 需要明确说明：原始 `Invalid CORS request` 仍然是 IIS 服务器级或后端级问题，不能假装已经在前端包里彻底解决。
+- 验证标准：
+  - `public/web.config` 不再包含导致 IIS Rewrite 500 的 `allowedServerVariables/serverVariables` 写法。
+  - 新发布包可用于替换当前 500 版本。
+  - `npm run build` 通过。
+
+### Checklist
+- [x] 定位 500 Rewrite 错误与站点级配置变更的关系
+- [x] 回退站点级 `web.config` 中的高风险规则
+- [x] 同步 `dist/web.config`
+- [x] 重新生成发布包
+- [x] 记录剩余风险
+
+### Progress Notes
+- 用户反馈部署上一版后出现 `500 URL Rewrite Module Error`，说明上一轮加入的 `allowedServerVariables` / `serverVariables` 规则在当前 IIS 站点级配置里不可用。
+- 已回退 `public/web.config` 中这组 admin-only rewrite 配置，恢复到原来的反代规则，优先保证站点不会因 URL Rewrite 配置直接报 500。
+- 已再次确认当前前端生产 bundle 仍然走同源 `/api/*`；因此原始 `Invalid CORS request` 更可能需要在 IIS 服务器级允许/清洗请求头，或由后端放开站点域名，而不是继续硬塞进站点级前端包。
+- 已重新同步 `dist/web.config` 并生成新的“rewrite-safe”发布包，供当前站点先恢复使用。
+
+### Verification
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+- 代码级核对：`dist/web.config` 已回退到无 `allowedServerVariables/serverVariables` 的安全版本
+
+### Result Notes
+- 这轮修复的目标是先解除 IIS `URL Rewrite` 级别的 500，让站点重新可访问。
+- 原始登录 `Invalid CORS request` 问题并没有被前端包单独彻底解决；它更像是 IIS 服务器级反代头处理或后端 CORS 白名单问题，需要服务器管理员或后端一起处理。
+- 用户反馈：部署 rewrite-safe 包后，站点仍然报 500 URL Rewrite Module Error，需要继续核对包内容与 IIS 前提条件。
+- 用户最新修正：定义布局保存不能只发 designer-layout，需要同时按情况调用 designer-groups 的新增/保存/删除，以及 designer-layout 的保存/删除接口。
+
+## 2026-03-28 定义布局保存改为 groups + layout 差异落库
+
+### Requirement Spec
+- 目标：
+  - 修复定义布局弹窗保存按钮只保存 `designer-layout` 的问题。
+  - 保存时按当前变更分别调用 `designer-groups` 的新增/更新/删除，以及 `designer-layout` 的保存/删除接口。
+- 影响范围：
+  - `src/lib/backend-module-config.ts`
+  - `src/features/dashboard/module-settings/archive-layout-designer-backend.ts`
+  - `src/features/dashboard/module-settings/use-archive-layout-designer-save.ts`
+- 关键约束：
+  - 继续复用当前统一的 archive-layout adapter / bridge，不在 `Dashboard.tsx` 新堆保存逻辑。
+  - 保存成功后必须重新加载设计数据，拿回后端分组 id 和布局结果，不能只靠前端本地拼状态。
+  - 分组保存要兼容“无 id 新增 / 有 id 更新”；删除要走后端定义的 `DELETE` 接口。
+- 不做什么：
+  - 不新增另一套定义布局编辑器。
+  - 不把定义布局保存重新挂回页面级“保存本页”。
+- 验证标准：
+  - 定义布局保存按钮会按情况调用 `designer-groups` POST/DELETE 与 `designer-layout` POST/DELETE。
+  - 保存成功后本地 `archiveLayoutSource` 由重新查询结果刷新。
+  - `npm run lint` 与 `npm run build` 通过。
+
+### Checklist
+- [x] 补全 `designer-groups` / `designer-layout` 的 service save/delete 接口
+- [x] 生成定义布局保存差异计划，区分分组保存、分组删除、布局保存、布局删除
+- [x] 调整弹窗保存按钮逻辑，按差异依次调用接口
+- [x] 保存成功后重新拉取 `designer-controls / designer-groups / designer-layout`
+- [x] 记录用户修正和本轮验证结果
+
+### Progress Notes
+- 当前定义布局保存按钮只循环调用 `POST /designer-layout`，没有处理分组新增/删除，也没有处理旧布局删除，所以用户删除分组或字段后后端状态会残留。
+- 已在 `backend-module-config.ts` 增加 `saveSingleTableDesignerGroup`、`deleteSingleTableDesignerGroup`、`deleteSingleTableDesignerLayout`，把 designer 相关接口补齐到 service 层。
+- 已在 `archive-layout-designer-backend.ts` 新增统一的 `buildArchiveLayoutSavePlan`，基于当前 detail board groups 和后端 source 计算四类动作：分组保存、分组删除、布局保存、布局删除。
+- 分组保存体会兼容 Delphi 老字段名，带上 `groupName / controlLeft / controlTop / controlHeight / controlWidth / formKey`，已有分组带 `id`，新分组不带 `id`。
+- 保存成功后不再手工拼 `archiveLayoutSource`，而是重新拉取 `designer-controls / designer-groups / designer-layout` 并通过共享 adapter 重建当前定义布局状态，保证新分组 id 和后端布局结果一致。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+- `git diff --check`：通过
+
+### Result Notes
+- 定义布局保存按钮现在会按差异同时处理 groups 与 layout 的新增、更新、删除，不再只发 `designer-layout`。
+- 分组 POST 目前只在“新分组”或“分组名称/矩形等保存字段发生变化”时才发送，避免每次保存都全量重写所有分组。
+- 这轮没有做真实浏览器 Network 点测，剩余风险是需要在页面上实际新增分组、删除分组、移除字段后各点一次保存，确认四类接口都按预期出现。
+- 用户最新反馈：直接从旧 `dist` 压出来的发布包部署后不是新版界面，且缺少 `simple-process-designer` 静态目录。
+
+## 2026-03-28 发布包改为基于 fresh outDir 构建
+
+### Requirement Spec
+- 目标：
+  - 修复“构建成功但压缩包仍然是旧界面”的发布问题。
+  - 确保发布包中带上根应用最新 bundle 和 `simple-process-designer` 静态目录。
+- 影响范围：
+  - 构建产物目录选择
+  - 发布压缩包
+- 关键约束：
+  - 不能再直接复用仓库里已有的陈旧 `dist`。
+  - 需要确认 zip 内含新版 `assets/*` 和 `simple-process-designer/*`。
+- 验证标准：
+  - fresh outDir 下的资源时间戳为本次构建时间。
+  - 新 zip 内含 `./assets/*` 与 `./simple-process-designer/*`。
+
+### Checklist
+- [x] 核对旧 `dist` 与旧 zip 的实际内容
+- [x] 验证根构建输出到 fresh outDir 时能正确生成新资源
+- [x] 基于 fresh outDir 重新生成发布包
+- [x] 检查 zip 条目，确认包含 `simple-process-designer`
+
+### Progress Notes
+- 用户反馈部署上一版 zip 后页面仍是旧版，且包里没有设计子应用目录。
+- 已确认旧 `dist` 的根资源时间戳仍停留在 `2026/3/27`，并且旧 zip 只有根 `assets`，确实不包含 `simple-process-designer`。
+- 已验证 `npm run build -- --outDir dist-release-test` 会正确生成本次最新版根应用资源，同时把 `public/simple-process-designer` 复制进 fresh outDir。
+- 已改为从 `dist-release-test` 重新打包，而不是继续沿用陈旧 `dist`。
+
+### Verification
+- `cmd /d /c "npm run build -- --outDir dist-release-test & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+- 产物核对：`dist-release-test/assets/*` 时间戳为本次构建时间
+- 压缩包核对：新 zip 已包含 `./simple-process-designer/index.html` 与对应 assets
+
+### Result Notes
+- 当前可部署包应以 fresh outDir 版本为准，不能再继续使用 `LsAITool-dist-20260328-2000.zip` 那类直接从陈旧 `dist` 压出的包。
+- 这轮没有做真实服务器部署回归，但包内容已经与用户指出的问题一一对上：新版根资源已更新，设计子应用目录也已带上。
+
+- 用户最新反馈：新生成的发布包部署后不是新版界面，且缺少 design 文件夹，需要核对真实构建输出和打包范围。

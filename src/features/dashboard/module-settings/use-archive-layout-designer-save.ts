@@ -1,7 +1,15 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import { saveSingleTableDesignerLayout } from '../../../lib/backend-module-config';
-import { buildArchiveLayoutSaveBodies } from './archive-layout-designer-backend';
+import {
+  deleteSingleTableDesignerGroup,
+  deleteSingleTableDesignerLayout,
+  fetchSingleTableDesignerControls,
+  fetchSingleTableDesignerGroups,
+  fetchSingleTableDesignerLayout,
+  saveSingleTableDesignerGroup,
+  saveSingleTableDesignerLayout,
+} from '../../../lib/backend-module-config';
+import { buildArchiveLayoutDesignerState, buildArchiveLayoutSavePlan } from './archive-layout-designer-backend';
 
 type UseArchiveLayoutDesignerSaveOptions = {
   currentDetailBoard: Record<string, any>;
@@ -36,34 +44,52 @@ export function useArchiveLayoutDesignerSave({
       return false;
     }
 
-    const saveBodies = buildArchiveLayoutSaveBodies(currentDetailBoard, layoutColumns);
-    if (saveBodies.length === 0) {
+    const savePlan = buildArchiveLayoutSavePlan(currentDetailBoard, layoutColumns);
+    const hasChanges = savePlan.groupSaveBodies.length > 0
+      || savePlan.groupDeleteIds.length > 0
+      || savePlan.layoutSaveBodies.length > 0
+      || savePlan.layoutDeleteFieldIds.length > 0;
+
+    if (!hasChanges) {
       onShowToast('\u5f53\u524d\u6ca1\u6709\u53ef\u4fdd\u5b58\u7684\u5b9a\u4e49\u8bbe\u8ba1\u5e03\u5c40\u3002');
       return false;
     }
 
     setIsSaving(true);
     try {
-      for (const body of saveBodies) {
+      for (const body of savePlan.groupSaveBodies) {
+        await saveSingleTableDesignerGroup(moduleCode, body);
+      }
+
+      for (const body of savePlan.layoutSaveBodies) {
         await saveSingleTableDesignerLayout(moduleCode, body);
       }
 
-      onUpdateDetailBoard((current: any) => {
-        const currentSource = current?.archiveLayoutSource && typeof current.archiveLayoutSource === 'object'
-          ? current.archiveLayoutSource
-          : null;
+      for (const fieldId of savePlan.layoutDeleteFieldIds) {
+        await deleteSingleTableDesignerLayout(moduleCode, fieldId);
+      }
 
+      for (const groupId of savePlan.groupDeleteIds) {
+        await deleteSingleTableDesignerGroup(moduleCode, groupId);
+      }
+
+      const [controlRows, groupRows, layoutRows] = await Promise.all([
+        fetchSingleTableDesignerControls(moduleCode),
+        fetchSingleTableDesignerGroups(moduleCode),
+        fetchSingleTableDesignerLayout(moduleCode),
+      ]);
+      const designerState = buildArchiveLayoutDesignerState(
+        moduleCode,
+        controlRows,
+        groupRows,
+        layoutRows,
+        layoutColumns,
+      );
+
+      onUpdateDetailBoard((current: any) => {
         return {
           ...current,
-          archiveLayoutDirty: false,
-          archiveLayoutSource: currentSource
-            ? {
-              ...currentSource,
-              formKey: String(saveBodies[0]?.formKey ?? currentSource.formKey ?? '').trim(),
-              layoutRows: saveBodies,
-              moduleCode,
-            }
-            : currentSource,
+          ...designerState.detailBoardPatch,
         };
       });
 
