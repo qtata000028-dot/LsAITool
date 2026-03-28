@@ -4,15 +4,18 @@
       <div class="poster-canvas">
         <header class="poster-header">
           <div class="poster-header__title">{{ resolvedTitle }}</div>
-          <div class="poster-header__brand">
-            <span class="poster-header__line"></span>
-            <span class="poster-header__brand-name">lumsoft 朗速</span>
-            <span class="poster-header__line"></span>
-          </div>
         </header>
 
-        <section class="poster-body">
-          <div class="poster-body__main">
+        <div class="poster-brandbar">
+          <span class="poster-brandbar__line"></span>
+          <span class="poster-brandbar__name">lumsoft 朗速</span>
+          <span class="poster-brandbar__line"></span>
+        </div>
+
+        <section class="poster-stage">
+          <div class="poster-stage__rail poster-stage__rail--left"></div>
+
+          <div class="poster-stage__main">
             <div v-if="flowNode" class="poster-graph">
               <ProcessPosterNode :node="flowNode" :depth="0" />
             </div>
@@ -20,7 +23,11 @@
               还没有可预览的流程数据，请先在设计模式中完成流程配置。
             </div>
           </div>
+
+          <div class="poster-stage__rail poster-stage__rail--right"></div>
         </section>
+
+        <footer class="poster-footer"></footer>
       </div>
     </div>
   </div>
@@ -43,7 +50,7 @@ const props = defineProps<{
 
 const resolvedTitle = computed(() => {
   if (props.schemeName && props.schemeName.trim()) {
-    return `${props.schemeName.trim()}图`
+    return `${props.schemeName.trim()}流程图`
   }
   return '流程图'
 })
@@ -71,14 +78,15 @@ const resolvedTitle = computed(() => {
 }
 
 .poster-canvas {
-  width: 420px;
+  width: 440px;
+  min-height: 760px;
   background: #fff;
   box-shadow: 0 22px 40px -34px rgba(15, 23, 42, 0.24);
 }
 
 .poster-header {
-  padding: 18px 18px 12px;
-  background: linear-gradient(180deg, #134a88 0%, #1f67ac 100%);
+  padding: 16px 18px 14px;
+  background: linear-gradient(180deg, #154780 0%, #1e5fa2 100%);
   color: #fff;
   text-align: center;
 }
@@ -87,33 +95,56 @@ const resolvedTitle = computed(() => {
   font-size: 26px;
   line-height: 1.18;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 
-.poster-header__brand {
+.poster-brandbar {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  margin-top: 10px;
-  color: rgba(255, 255, 255, 0.84);
+  height: 38px;
+  background: linear-gradient(180deg, #1f6bac 0%, #1b5c9b 100%);
+  color: rgba(255, 255, 255, 0.9);
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.poster-brandbar__name {
   font-size: 12px;
   font-style: italic;
   font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
-.poster-header__line {
-  width: 20px;
+.poster-brandbar__line {
+  width: 24px;
   height: 2px;
-  background: rgba(238, 242, 255, 0.45);
+  background: rgba(255, 243, 199, 0.8);
 }
 
-.poster-body {
+.poster-stage {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 22px;
+  align-items: stretch;
+  min-height: 640px;
   background: #fff;
 }
 
-.poster-body__main {
-  padding: 30px 22px 24px;
+.poster-stage__rail {
+  min-height: 100%;
+}
+
+.poster-stage__rail--left {
+  background: linear-gradient(180deg, #f6fbff 0%, #dbeeff 24%, #add4f1 100%);
+}
+
+.poster-stage__rail--right {
+  background: linear-gradient(180deg, #f7fcff 0%, #e3f2ff 24%, #b8daf2 100%);
+}
+
+.poster-stage__main {
+  padding: 34px 18px 56px;
   background: #fff;
 }
 
@@ -132,5 +163,10 @@ const resolvedTitle = computed(() => {
   text-align: center;
   font-size: 13px;
   line-height: 1.8;
+}
+
+.poster-footer {
+  height: 32px;
+  background: linear-gradient(180deg, #1f5a95 0%, #16497f 100%);
 }
 </style>

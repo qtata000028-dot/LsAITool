@@ -281,7 +281,7 @@ const nodeTitle = computed(() => {
 
 .poster-node__branch-rise {
   width: 1px;
-  height: 18px;
+  height: 20px;
   margin-top: auto;
   background: #d7dce5;
 }
@@ -291,8 +291,9 @@ const nodeTitle = computed(() => {
   display: flex;
   justify-content: center;
   max-width: 100%;
-  height: 18px;
+  height: 20px;
   box-sizing: border-box;
+  margin-top: -1px;
 }
 
 .poster-node__merge-topline {
@@ -306,7 +307,7 @@ const nodeTitle = computed(() => {
 
 .poster-node__merge-line {
   width: 1px;
-  height: 18px;
+  height: 20px;
   background: #d7dce5;
 }
 </style>
