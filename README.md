@@ -59,3 +59,6 @@ The app is now moving toward a platform workspace model instead of a single admi
 - `/login`
 
 At the current stage only the design platform is fully wired to the existing Dashboard. Runtime and MES are placeholder platform shells used to keep the app-level architecture stable while future platforms are introduced.
+
+
+## 这是项目的描述文件
