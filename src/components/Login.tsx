@@ -222,7 +222,7 @@ export default function Login({ onLogin }: LoginProps) {
             </div>
           </div>
           <h1 className="text-4xl font-light text-slate-900 md:text-5xl">
-            构建<span className="font-bold">下一代</span>企业级智能应用
+            构建<span className="font-bold">下一代</span>朗速开发的企业级智能应用
           </h1>
         </div>
 
