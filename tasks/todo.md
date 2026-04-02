@@ -4804,3 +4804,32 @@
 - 刷新范围仍然只落在当前选中的一级菜单页面，不会把整个 Dashboard 重新初始化。
 - 现有退出导航行为没有变化，仍然只是关闭配置向导并回到菜单页。
 - 这轮没有代替用户做浏览器里的真实点击回归，剩余风险只在这一点：建议现场从配置向导退出一次，确认当前菜单卡片区会重新请求并刷新。
+## 2026-04-01 Clean Mother Migration Cost Assessment
+
+### Requirement Spec
+- Goal: evaluate the cost of moving the current `LsAITool` design platform into a cleaner mother workspace for future `designer + erp`.
+- Scope: shared infra, platform shell, dashboard-heavy design domain, embedded Vue process-designer subapp, and runtime placeholder boundaries.
+- Key constraints:
+  - Keep the current design platform usable during migration.
+  - Move reusable infrastructure first, then split heavy design-domain code.
+  - Decide explicitly whether the Vue process designer stays as an island first or is rewritten later.
+  - Do not treat the current `Dashboard.tsx` shell as the long-term mother entry.
+- Out of scope:
+  - Full ERP implementation.
+  - One-shot rewrite of all current designer features.
+
+### Checklist
+- [x] Inventory reusable infra vs heavy design-domain code.
+- [x] Measure current code concentration and platform-shell maturity.
+- [x] Estimate phased migration cost for a new clean mother workspace.
+- [ ] Convert the estimate into a concrete migration roadmap after the architecture direction is confirmed.
+
+### Progress Summary
+- `src` has about `45.6k` lines, and `src/features/dashboard` alone has about `33.5k` lines.
+- `src/components/Dashboard.tsx` is still the live heavy shell at about `6.2k` lines.
+- `src/app`, `src/platforms`, and `src/lib` are comparatively portable and can seed the new mother.
+- `src/platforms/runtime/runtime-platform-app.tsx` is still a placeholder boundary, so runtime migration cost stays low right now.
+- `subapps/simple-process-designer` is still a separate Vue 3 subapp integrated via `iframe + postMessage`.
+
+### Verification
+- Repository inspection only in this round; no new functional code was changed.
