@@ -173,7 +173,6 @@ export function ModuleSettingStepShell({
                 <div className={documentWorkspaceShellClass}>
                   <div className={`grid h-full min-h-0 overflow-hidden ${documentWorkspaceGridClass}`}>
                     <div className={documentMainWorkbenchClass}>
-                      <div className="pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-[linear-gradient(90deg,rgba(96,165,250,0.18),rgba(37,99,235,0.22),rgba(96,165,250,0.18))]" />
                       <div
                         className="scrollbar-none min-h-0 flex-1 overflow-auto outline-none dark:bg-slate-900/90"
                         tabIndex={0}

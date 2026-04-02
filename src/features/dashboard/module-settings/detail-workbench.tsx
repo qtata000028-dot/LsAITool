@@ -1,7 +1,5 @@
 import React from 'react';
-import { BarChart3, FolderTree, Globe, Plus, Table2 } from 'lucide-react';
-import { cn } from '../../../lib/utils';
-import { Badge } from '../../../components/ui/badge';
+import { Button, Flex, Tag, Tabs } from 'antd';
 
 type DetailTab = {
   id: string;
@@ -31,13 +29,13 @@ type DocumentDetailWorkbenchProps = {
 function getDetailFillTypeMeta(fillType?: string) {
   switch (fillType) {
     case '树表格':
-      return { icon: FolderTree, label: '树表格' };
+      return { icon: 'account_tree', label: '树表格视图' };
     case '图表':
-      return { icon: BarChart3, label: '图表' };
+      return { icon: 'monitoring', label: '图表视图' };
     case '网页':
-      return { icon: Globe, label: '网页' };
+      return { icon: 'language', label: '网页视图' };
     default:
-      return { icon: Table2, label: '表格' };
+      return { icon: 'table_view', label: '表格视图' };
   }
 }
 
@@ -51,65 +49,41 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
   showModeBadge = true,
 }: DetailTabStripProps) {
   const activeTabMeta = getDetailFillTypeMeta(currentDetailFillType);
-  const ActiveDetailIcon = activeTabMeta.icon;
-  const stripLayoutClass = showModeBadge
-    ? 'flex w-full flex-col gap-0 xl:flex-row xl:items-end xl:justify-between'
-    : 'flex w-full min-w-0 items-end justify-start';
 
   return (
-    <div className={stripLayoutClass}>
-      <div className="-ml-px -mt-px min-w-0 overflow-x-auto overflow-y-hidden pr-px scrollbar-none">
-        <div className="inline-flex min-w-max items-end border-b border-[#d5e0eb] bg-transparent">
-          {detailTabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-
-            return (
-              <div key={tab.id} title={tab.name} className="relative">
-                <button
-                  type="button"
-                  onClick={() => onActivateTab(tab.id)}
-                  className={cn(
-                    'relative -mb-px flex h-11 min-w-[116px] max-w-[196px] items-center truncate rounded-t-[14px] border border-b-0 px-4 text-left text-[12px] font-semibold leading-none tracking-[0.01em] transition-[background-color,border-color,box-shadow,color]',
-                    isActive
-                      ? 'border-[#d5e0eb] bg-white text-slate-900 shadow-[0_-16px_26px_-24px_rgba(15,23,42,0.26)]'
-                      : 'border-transparent bg-transparent text-slate-500 hover:border-[#e3ebf4] hover:bg-[#f7fafc] hover:text-slate-700',
-                  )}
-                  aria-label={tab.name}
-                >
-                  {isActive ? (
-                    <>
-                      <span className="pointer-events-none absolute inset-x-3 top-0 h-[2px] rounded-full bg-[color:var(--workspace-accent)]" />
-                      <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-white" />
-                    </>
-                  ) : null}
-                  <span className="truncate">{tab.name}</span>
-                </button>
-              </div>
-            );
-          })}
-
-          <button
-            type="button"
-            onClick={onAddTab}
-            title={addLabel ?? '新增页签'}
-            aria-label={addLabel ?? '新增页签'}
-            className="relative -mb-px ml-px flex h-10 w-10 shrink-0 items-center justify-center rounded-t-[12px] border border-transparent border-b-0 bg-transparent text-slate-500 transition-[background-color,border-color,color,box-shadow] hover:border-[#dbe5ef] hover:bg-white hover:text-[color:var(--workspace-accent-strong)] hover:shadow-[0_-14px_22px_-22px_rgba(37,99,235,0.34)]"
-          >
-            <Plus className="size-4" />
-          </button>
-        </div>
-      </div>
-
-      {showModeBadge ? (
-        <Badge
-          variant="muted"
-          className="h-8 gap-1.5 rounded-none border-[#d7e2ec] bg-[#eef3f8] px-2.5 text-[11px] font-medium text-slate-600"
-        >
-          <ActiveDetailIcon className="size-3.5" />
-          <span>{activeTabMeta.label}视图</span>
-        </Badge>
-      ) : null}
-    </div>
+    <Tabs
+      activeKey={activeTab}
+      onChange={onActivateTab}
+      items={detailTabs.map((tab) => ({
+        key: tab.id,
+        label: tab.name,
+        children: null,
+      }))}
+      className="dashboard-module-ant-tabs min-w-0"
+      tabBarExtraContent={{
+        right: (
+          <Flex align="center" gap={8}>
+            {showModeBadge ? (
+              <Tag
+                icon={<span className="material-symbols-outlined text-[14px]">{activeTabMeta.icon}</span>}
+                className="!me-0 !rounded-full !border-[#d9e7ff] !bg-[#f3f8ff] !px-2.5 !py-1 !text-[11px] !font-medium !text-[#2563eb]"
+              >
+                {activeTabMeta.label}
+              </Tag>
+            ) : null}
+            <Button
+              type="default"
+              size="small"
+              onClick={onAddTab}
+              className="dashboard-module-ant-add-detail-btn !h-8 !rounded-full !px-3.5 !text-[12px] !font-semibold !shadow-none"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              {addLabel ?? '新增页签'}
+            </Button>
+          </Flex>
+        ),
+      }}
+    />
   );
 });
 
@@ -122,32 +96,27 @@ export const MemoDocumentDetailWorkbench = React.memo(function DocumentDetailWor
   tableBuilderNode,
   fillPlaceholderNode,
 }: DocumentDetailWorkbenchProps) {
+
   return (
-    <div
-      className={cn(
-        'relative flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] border border-[#34455b]/68 bg-[linear-gradient(180deg,rgba(252,253,255,0.98),rgba(246,249,253,0.98))] shadow-[0_20px_42px_-34px_rgba(15,23,42,0.22)]',
-        tableSurfaceClass,
-      )}
-    >
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--workspace-accent-border-strong),transparent)]" />
-      <div className="flex min-w-0 items-end border-b border-[#d7e2ec] bg-[linear-gradient(180deg,#fbfdff_0%,#eef3f8_100%)] px-0 pt-0">
-        <div className="min-w-0 flex-1 overflow-hidden">{detailTabStripNode}</div>
+    <div className={`flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-[#d9e2ec] bg-white shadow-none ${tableSurfaceClass}`}>
+      <div className="border-b border-[#edf2f7] bg-white px-4 pt-2">
+        <div className="min-w-0 overflow-hidden">{detailTabStripNode}</div>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden bg-white">
+      <Flex vertical className="min-h-0 flex-1 overflow-hidden">
         {currentDetailFillType === '表格' ? (
           <div
-            className="workspace-scrollbar h-full min-h-0 overflow-x-hidden overflow-y-auto outline-none"
+            className="workspace-scrollbar min-h-0 flex-1 overflow-auto bg-white outline-none"
             tabIndex={0}
             onPaste={onPasteTableColumns}
           >
             {tableBuilderNode}
           </div>
         ) : (
-          <div className="flex h-full min-h-0 bg-white">
+          <div className="min-h-0 flex-1 bg-white">
             {fillPlaceholderNode}
           </div>
         )}
-      </div>
+      </Flex>
       {footerNode ? footerNode : null}
     </div>
   );

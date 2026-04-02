@@ -1,8 +1,8 @@
 import React from 'react';
+import { Button, Flex, Tag } from 'antd';
 import { Filter, Plus, Save, Table2, Trash2 } from 'lucide-react';
+
 import { cn } from '../../../lib/utils';
-import { Badge } from '../../../components/ui/badge';
-import { Button } from '../../../components/ui/button';
 import { createRuntimeClassName } from '../designer/runtime-dimension-rules';
 import type { WorkbenchResizeMode } from '../resize/use-workbench-resize-state';
 
@@ -134,33 +134,33 @@ export const MemoDocumentGridToolbar = React.memo(function DocumentGridToolbar({
   };
 
   const getFilterNameClass = (isSelected: boolean, isRequired: boolean) => cn(
-    'shrink-0 overflow-hidden text-ellipsis whitespace-nowrap text-left text-[11px] font-medium text-muted-foreground',
-    isRequired && 'text-primary',
-    isSelected && 'text-foreground',
+    'shrink-0 overflow-hidden text-ellipsis whitespace-nowrap text-left text-[11px] font-medium text-slate-500',
+    isRequired && 'text-[#2563eb]',
+    isSelected && 'text-slate-900',
   );
 
   const getFilterPreviewShellClass = (isSelected: boolean) => cn(
     'shrink-0 pr-0.5',
-    isSelected && '[&>div]:border-border/60 [&>div]:bg-background [&>div]:shadow-none',
+    isSelected && '[&>div]:border-[#dbe5ef] [&>div]:bg-white [&>div]:shadow-none',
   );
 
   return (
     <div className="shrink-0">
       {!hideFilterBar && (
-        <div className="px-1 py-1">
+        <div className="mx-3 mt-3 rounded-[14px] border border-[#d9e2ec] bg-white px-[14px] py-3 shadow-none">
           {filterRuntimeRules ? <style>{filterRuntimeRules}</style> : null}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="gap-1.5 rounded-xl border-border/60 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-foreground">
+          <Flex wrap align="center" justify="space-between" gap={8}>
+            <Flex wrap align="center" gap={8}>
+              <Tag className="!me-0 !rounded-full !border-[#dbe5ef] !bg-[#f8fafc] !px-2.5 !py-1 !text-[11px] !font-medium !text-slate-600">
                 <Filter className="size-3.5" />
                 查询条件
-              </Badge>
-              <span className="text-[11px] font-medium text-muted-foreground">{filterFields.length} 项</span>
-            </div>
+              </Tag>
+              <span className="text-[11px] font-medium text-slate-400">{filterFields.length} 项</span>
+            </Flex>
             {options?.filterAccessory ? (
               <div className="flex shrink-0 items-center gap-2">{options.filterAccessory}</div>
             ) : null}
-          </div>
+          </Flex>
           <div className="mt-2 flex flex-wrap items-center gap-1">
             {filterFields.map((field, index) => {
               const normalizedWidth = Math.min(
@@ -198,10 +198,10 @@ export const MemoDocumentGridToolbar = React.memo(function DocumentGridToolbar({
                   }}
                   className={cn(
                     widthClassName,
-                    'group relative flex h-11 shrink-0 cursor-grab select-none flex-row items-center gap-1 rounded-lg border pl-2 pr-3.5 py-1.5 transition-colors active:cursor-grabbing',
+                    'group relative flex h-11 shrink-0 cursor-grab select-none flex-row items-center gap-1 rounded-[10px] border pl-2 pr-3.5 py-1.5 transition-colors active:cursor-grabbing',
                     isSelected
-                      ? 'border-primary/20 bg-background/90'
-                      : 'border-transparent bg-transparent hover:border-border/40 hover:bg-background/70',
+                      ? 'border-[#91caff] bg-[#f6fbff]'
+                      : 'border-[#e6edf5] bg-white hover:border-[#bfd4ea] hover:bg-[#fafcff]',
                   )}
                 >
                   <div
@@ -210,34 +210,33 @@ export const MemoDocumentGridToolbar = React.memo(function DocumentGridToolbar({
                   >
                     <span className="block truncate">
                       {normalizedField.name}
-                      {normalizedField.required ? <span className="ml-1 text-primary">*</span> : null}
+                      {normalizedField.required ? <span className="ml-1 text-[#2563eb]">*</span> : null}
                     </span>
                   </div>
                   <div className={cn(previewClassName, getFilterPreviewShellClass(isSelected))}>
                     {renderFieldPreview(normalizedField, index, 'condition')}
                   </div>
                   <div
-                    className="absolute inset-y-2 right-0.5 flex w-1.5 cursor-col-resize items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    className="absolute inset-y-2 right-0.5 flex w-1.5 cursor-col-resize items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-[#eef4ff] hover:text-slate-900"
                     onMouseDown={(event) => filterConfig && startResize(event, field.id, filterFields, filterConfig.setFields, metrics.filterControlWidth, metrics.filterResizeMaxWidth, 'filter')}
                     onDoubleClick={(event) => filterConfig && autoFitColumnWidth(event, field.id, filterFields, filterConfig.setFields, metrics.filterControlWidth, metrics.filterResizeMaxWidth, 'filter')}
-                    title="拖动调整条件宽度，双击可自动适配"
+                    title="拖动调整条件宽度，双击自动适配"
                   >
-                    <span className="h-3.5 w-px rounded-full bg-border transition-colors group-hover:bg-primary" />
+                    <span className="h-3.5 w-px rounded-full bg-[#dbe5ef] transition-colors group-hover:bg-[#2563eb]" />
                   </div>
                 </div>
               );
             })}
             {filterConfig && !hideFilterQuickActions ? (
-              <Button size="sm" className="h-8 gap-1.5 rounded-xl px-3" onClick={filterConfig.onAdd}>
+              <Button size="small" type="primary" className="!h-8 !rounded-[10px] !shadow-none" onClick={filterConfig.onAdd}>
                 <Plus className="size-4" />
                 条件
               </Button>
             ) : null}
             {filterConfig && !hideFilterQuickActions ? (
               <Button
-                size="sm"
-                variant="outline"
-                className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3"
+                size="small"
+                className="!h-8 !rounded-[10px] !border-[#dbe5ef] !bg-white !shadow-none"
                 onClick={filterConfig.onDelete}
                 disabled={filterSelectionCount === 0}
               >
@@ -249,32 +248,32 @@ export const MemoDocumentGridToolbar = React.memo(function DocumentGridToolbar({
         </div>
       )}
       {!hideActionBar && (
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-3 px-1 py-1">
+        <Flex wrap align="center" justify="space-between" gap={12} className="mt-1 px-3 py-2">
           <Button
-            variant={tableConfigAction?.active ? 'secondary' : 'ghost'}
-            size="sm"
-            className="gap-1.5 rounded-xl"
+            size="small"
+            type={tableConfigAction?.active ? 'primary' : 'default'}
+            className="!h-8 !rounded-[10px] !shadow-none"
             onClick={tableConfigAction?.onSelect}
           >
             <Table2 className="size-4" />
             {title}
           </Button>
-          <div className="flex flex-wrap items-center gap-2">
+          <Flex wrap align="center" gap={8}>
             {extraActions}
-            <Button size="sm" className="h-8 gap-1.5 rounded-xl px-3" onClick={onAdd}>
+            <Button size="small" type="primary" className="!h-8 !rounded-[10px] !shadow-none" onClick={onAdd}>
               <Plus className="size-4" />
               新增
             </Button>
-            <Button size="sm" variant="outline" className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3" onClick={onDelete} disabled={selectedCount === 0}>
+            <Button size="small" className="!h-8 !rounded-[10px] !border-[#dbe5ef] !bg-white !shadow-none" onClick={onDelete} disabled={selectedCount === 0}>
               <Trash2 className="size-4" />
               删除
             </Button>
-            <Button size="sm" variant="outline" className="h-8 gap-1.5 rounded-xl border-border/60 bg-background/80 px-3">
+            <Button size="small" className="!h-8 !rounded-[10px] !border-[#dbe5ef] !bg-white !shadow-none">
               <Save className="size-4" />
               保存
             </Button>
-          </div>
-        </div>
+          </Flex>
+        </Flex>
       )}
     </div>
   );

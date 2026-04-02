@@ -1,7 +1,14 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Table } from 'antd';
+import { flushSync } from 'react-dom';
+import { DndContext, DragOverlay, PointerSensor, closestCenter, pointerWithin, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
+import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Resizable, type ResizeCallbackData } from 'react-resizable';
 import { cn } from '../../../lib/utils';
 import {
   resolveWorkbenchPreviewWidth,
+  updateItemWidthById,
   type ActiveWorkbenchResize,
   type WorkbenchResizeMode,
 } from '../resize/use-workbench-resize-state';
@@ -84,6 +91,317 @@ type TableBuilderDropIndicator =
   | { kind: 'append' }
   | null;
 
+type TableBuilderAntdSortableHeaderCellProps = React.ThHTMLAttributes<HTMLTableCellElement> & {
+  columnId?: string;
+  sortable?: boolean;
+  resizeWidth?: number;
+  resizeMinWidth?: number;
+  resizeMaxWidth?: number;
+  compact?: boolean;
+  isResizing?: boolean;
+  railClassName?: string;
+  onResizeStart?: (event: React.SyntheticEvent) => void;
+  onResizeWidth?: (width: number) => void;
+  onResizeStop?: (event: React.SyntheticEvent, width: number) => void;
+  onAutoFit?: (event: React.MouseEvent<HTMLSpanElement>) => void;
+};
+
+type TableBuilderAntdSortableHandleContextValue = {
+  sortable: boolean;
+  listeners?: Record<string, unknown>;
+  setActivatorNodeRef?: (element: HTMLElement | null) => void;
+};
+
+type TableBuilderResizableHeaderShellProps = {
+  width: number;
+  minWidth: number;
+  maxWidth: number;
+  compact: boolean;
+  isResizing: boolean;
+  railClassName: string;
+  onResizeStart: (event: React.SyntheticEvent) => void;
+  onResizeWidth: (width: number) => void;
+  onResizeStop: (event: React.SyntheticEvent, width: number) => void;
+  onAutoFit: (event: React.MouseEvent<HTMLSpanElement>) => void;
+  children: React.ReactNode;
+};
+
+const tableBuilderAntdSortableHandleContext = React.createContext<TableBuilderAntdSortableHandleContextValue>({
+  sortable: false,
+});
+
+const restrictTableBuilderPreviewToHorizontalAxis = ({ transform }: { transform: { x: number; y: number; scaleX: number; scaleY: number } }) => ({
+  ...transform,
+  y: 0,
+});
+
+const dashboardTableBuilderFillerWidthVar = '--dashboard-table-builder-filler-width';
+
+function getDashboardTableBuilderColumnWidthVarName(columnId: string) {
+  return `--dashboard-table-builder-col-width-${String(columnId).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
+function getDashboardTableBuilderColumnWidthVarValue(columnId: string, fallbackWidth: number) {
+  return `var(${getDashboardTableBuilderColumnWidthVarName(columnId)}, ${Math.round(fallbackWidth)}px)`;
+}
+
+function TableBuilderAntdSortableHeaderCell({
+  columnId,
+  sortable = false,
+  resizeWidth,
+  resizeMinWidth,
+  resizeMaxWidth,
+  compact = false,
+  isResizing = false,
+  railClassName,
+  onResizeStart,
+  onResizeWidth,
+  onResizeStop,
+  onAutoFit,
+  style,
+  className,
+  children,
+  ...rest
+}: TableBuilderAntdSortableHeaderCellProps) {
+  const staticHeaderId = React.useId();
+  const {
+    isDragging,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({
+    id: columnId ?? staticHeaderId,
+    disabled: !sortable || !columnId,
+  });
+
+  const contextValue = useMemo<TableBuilderAntdSortableHandleContextValue>(() => ({
+    sortable,
+    listeners: sortable ? listeners : undefined,
+    setActivatorNodeRef: sortable ? setActivatorNodeRef : undefined,
+  }), [listeners, setActivatorNodeRef, sortable]);
+
+  const canResize = typeof resizeWidth === 'number'
+    && typeof resizeMinWidth === 'number'
+    && typeof resizeMaxWidth === 'number'
+    && typeof onResizeWidth === 'function'
+    && typeof onResizeStop === 'function'
+    && typeof onAutoFit === 'function';
+  const [liveResizeWidth, setLiveResizeWidth] = React.useState<number | null>(
+    canResize ? Math.max(resizeMinWidth, Math.min(resizeMaxWidth, Math.round(resizeWidth))) : null,
+  );
+  const [liveResizing, setLiveResizing] = React.useState(false);
+  const normalizedWidth = canResize
+    ? Math.max(
+      resizeMinWidth,
+      Math.min(
+        resizeMaxWidth,
+        Math.round(liveResizeWidth ?? resizeWidth),
+      ),
+    )
+    : undefined;
+
+  useEffect(() => {
+    if (!canResize || liveResizing) {
+      return;
+    }
+
+    const nextWidth = Math.max(resizeMinWidth, Math.min(resizeMaxWidth, Math.round(resizeWidth)));
+    setLiveResizeWidth((previousWidth) => (
+      previousWidth === nextWidth ? previousWidth : nextWidth
+    ));
+  }, [canResize, liveResizing, resizeMaxWidth, resizeMinWidth, resizeWidth]);
+
+  const headerCellNode = (
+    <th
+      {...rest}
+      ref={sortable ? setNodeRef : undefined}
+      style={{
+        ...style,
+        ...(typeof normalizedWidth === 'number'
+          ? { width: normalizedWidth, minWidth: normalizedWidth }
+          : null),
+        transform: CSS.Translate.toString(transform),
+        transition,
+        position: 'relative',
+        zIndex: isDragging ? 2 : undefined,
+      }}
+      className={cn(
+        className,
+        'group',
+        sortable && 'select-none',
+        isDragging && 'z-[2] shadow-[0_12px_32px_-18px_rgba(15,23,42,0.38)]',
+      )}
+    >
+      {children}
+    </th>
+  );
+
+  return (
+    <tableBuilderAntdSortableHandleContext.Provider value={contextValue}>
+      {canResize && typeof normalizedWidth === 'number' ? (
+        <Resizable
+          width={normalizedWidth}
+          height={0}
+          axis="x"
+          resizeHandles={['e']}
+          minConstraints={[resizeMinWidth, 0]}
+          maxConstraints={[resizeMaxWidth, 0]}
+          draggableOpts={{ enableUserSelectHack: false }}
+          onResizeStart={(event) => {
+            flushSync(() => {
+              setLiveResizing(true);
+              setLiveResizeWidth(normalizedWidth);
+            });
+            onResizeStart?.(event);
+          }}
+          onResize={(_event, data: ResizeCallbackData) => {
+            flushSync(() => {
+              setLiveResizeWidth(data.size.width);
+            });
+            onResizeWidth(data.size.width);
+          }}
+          onResizeStop={(event, data) => {
+            flushSync(() => {
+              setLiveResizeWidth(data.size.width);
+              setLiveResizing(false);
+            });
+            onResizeStop(event, data.size.width);
+          }}
+          handle={(_axis, ref) => (
+            <span
+              ref={ref as React.Ref<HTMLSpanElement>}
+              role="separator"
+              aria-orientation="vertical"
+              tabIndex={-1}
+              onMouseDown={(event) => {
+                event.stopPropagation();
+              }}
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onAutoFit(event);
+              }}
+              className={cn(
+                'react-resizable-handle react-resizable-handle-e dashboard-table-builder-resize-handle absolute bottom-0 right-0 top-0 z-20 flex cursor-col-resize items-center justify-center border-0 p-0 outline-none touch-none select-none',
+                compact ? 'dashboard-table-builder-resize-handle-compact' : 'dashboard-table-builder-resize-handle-default',
+                railClassName,
+              )}
+              title="鎷栧姩璋冩暣鍒楀锛屽弻鍑昏嚜鍔ㄩ€傞厤"
+            >
+              <span
+                className={cn(
+                  'h-5 w-px rounded-full transition-all',
+                  isResizing
+                    ? 'bg-[#2563eb] shadow-[0_0_0_2px_rgba(37,99,235,0.12)]'
+                    : 'bg-transparent group-hover:bg-slate-300 dark:group-hover:bg-slate-500',
+                )}
+              />
+            </span>
+          )}
+        >
+          {headerCellNode}
+        </Resizable>
+      ) : headerCellNode}
+    </tableBuilderAntdSortableHandleContext.Provider>
+  );
+}
+
+type TableBuilderAntdSortableHandleProps = React.HTMLAttributes<HTMLSpanElement> & {
+  disabled?: boolean;
+};
+
+function TableBuilderAntdSortableHandle({
+  disabled = false,
+  className,
+  children,
+  ...rest
+}: TableBuilderAntdSortableHandleProps) {
+  const { sortable, listeners, setActivatorNodeRef } = React.useContext(tableBuilderAntdSortableHandleContext);
+  const canDrag = sortable && !disabled;
+
+  return (
+    <span
+      {...rest}
+      ref={canDrag ? setActivatorNodeRef : undefined}
+      {...(canDrag ? listeners : {})}
+      className={cn(
+        className,
+        canDrag && 'cursor-grab touch-none active:cursor-grabbing',
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function TableBuilderResizableHeaderShell({
+  width,
+  minWidth,
+  maxWidth,
+  compact,
+  isResizing,
+  railClassName,
+  onResizeStart,
+  onResizeWidth,
+  onResizeStop,
+  onAutoFit,
+  children,
+}: TableBuilderResizableHeaderShellProps) {
+  const normalizedWidth = Math.max(minWidth, Math.min(maxWidth, Math.round(width)));
+
+  return (
+    <Resizable
+      width={normalizedWidth}
+      height={0}
+      axis="x"
+      resizeHandles={['e']}
+      minConstraints={[minWidth, 0]}
+      maxConstraints={[maxWidth, 0]}
+      draggableOpts={{ enableUserSelectHack: false }}
+      onResizeStart={onResizeStart}
+      onResize={(_event, data: ResizeCallbackData) => onResizeWidth(data.size.width)}
+      onResizeStop={(event, data) => onResizeStop(event, data.size.width)}
+      handle={(_axis, ref) => (
+        <span
+          ref={ref as React.Ref<HTMLSpanElement>}
+          role="separator"
+          aria-orientation="vertical"
+          tabIndex={-1}
+          onMouseDown={(event) => {
+            event.stopPropagation();
+          }}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onAutoFit(event);
+          }}
+          className={cn(
+            'react-resizable-handle react-resizable-handle-e dashboard-table-builder-resize-handle absolute bottom-0 right-0 top-0 z-20 flex cursor-col-resize items-center justify-center border-0 p-0 outline-none touch-none select-none',
+            compact ? 'dashboard-table-builder-resize-handle-compact' : 'dashboard-table-builder-resize-handle-default',
+            railClassName,
+          )}
+          title="拖动调整列宽，双击自动适配"
+        >
+          <span
+            className={cn(
+              'h-5 w-px rounded-full transition-all',
+              isResizing
+                ? 'bg-[#2563eb] shadow-[0_0_0_2px_rgba(37,99,235,0.12)]'
+                : 'bg-transparent group-hover:bg-slate-300 dark:group-hover:bg-slate-500',
+            )}
+          />
+        </span>
+      )}
+    >
+      <div style={{ width: normalizedWidth, minWidth: normalizedWidth }} className="relative h-full">
+        {children}
+      </div>
+    </Resizable>
+  );
+}
+
 export const MemoTableBuilder = React.memo(function TableBuilder({
   scope,
   cols,
@@ -123,6 +441,20 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const selectedForDeleteSet = useMemo(() => new Set(selectedForDelete), [selectedForDelete]);
   const [draggingColumnId, setDraggingColumnId] = useState<string | null>(null);
   const [dropIndicator, setDropIndicator] = useState<TableBuilderDropIndicator>(null);
+  const [previewDraggingColumnId, setPreviewDraggingColumnId] = useState<string | null>(null);
+  const [resizingColumnId, setResizingColumnId] = useState<string | null>(null);
+  const previewColumnDragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 4,
+      },
+    }),
+  );
+  const previewColumnDragModifiers = useMemo(() => [restrictTableBuilderPreviewToHorizontalAxis], []);
+  const previewColumnCollisionDetection = useCallback((args: Parameters<typeof closestCenter>[0]) => {
+    const pointerCollisions = pointerWithin(args);
+    return pointerCollisions.length > 0 ? pointerCollisions : closestCenter(args);
+  }, []);
 
   const buildScopedSelectionIds = useCallback((currentIds: string[], id: string, append: boolean) => {
     if (currentIds.includes(id)) {
@@ -142,6 +474,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       'column',
     );
   }, [activeResize, helpers, metrics.collapsedRenderWidth, metrics.minWidth]);
+  const previewReadableMinWidth = useMemo(() => {
+    if (!backgroundSelectable) {
+      return metrics.collapsedRenderWidth;
+    }
+    return isCompactCanvas ? 72 : metrics.minWidth;
+  }, [backgroundSelectable, isCompactCanvas, metrics.collapsedRenderWidth, metrics.minWidth]);
 
   const clearColumnDragState = useCallback(() => {
     setDraggingColumnId(null);
@@ -247,6 +585,36 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     clearColumnDragState();
   }, [clearColumnDragState, draggingColumnId, moveColumnToEnd]);
 
+  const handlePreviewColumnDragStart = useCallback((event: DragStartEvent) => {
+    setPreviewDraggingColumnId(String(event.active.id));
+  }, []);
+
+  const handlePreviewColumnDragCancel = useCallback(() => {
+    setPreviewDraggingColumnId(null);
+  }, []);
+
+  const handlePreviewColumnDragEnd = useCallback((event: DragEndEvent) => {
+    setPreviewDraggingColumnId(null);
+    if (!event.over) {
+      return;
+    }
+
+    const activeId = String(event.active.id);
+    const overId = String(event.over.id);
+    if (!activeId || !overId || activeId === overId) {
+      return;
+    }
+
+    setCols((prev) => {
+      const activeIndex = prev.findIndex((column) => String(column?.id) === activeId);
+      const overIndex = prev.findIndex((column) => String(column?.id) === overId);
+      if (activeIndex < 0 || overIndex < 0 || activeIndex === overIndex) {
+        return prev;
+      }
+      return arrayMove(prev, activeIndex, overIndex);
+    });
+  }, [setCols]);
+
   const handleColumnHeaderClick = useCallback((event: React.MouseEvent<HTMLButtonElement>, id: string) => {
     setBuilderSelectionContextMenu(null);
     if (event.ctrlKey || event.metaKey) {
@@ -294,6 +662,10 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     setSelectedForDelete,
   ]);
 
+  const clampColumnWidth = useCallback((width: number) => (
+    Math.max(metrics.resizeMinWidth, Math.min(metrics.resizeMaxWidth, Math.round(width)))
+  ), [metrics.resizeMaxWidth, metrics.resizeMinWidth]);
+
   const addColumnWidth = isCompactModuleSetting ? 58 : 74;
   const tableSurfaceRadiusClass = useSquareSurface ? 'rounded-none' : 'rounded-[20px]';
   const tableSurfaceClass = useSolidSurface
@@ -308,60 +680,44 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
           : 'cloudy-glass-panel'
       );
   const headerDividerClass = tableSelected
-    ? 'border-[color:var(--workspace-accent-border)]'
-    : useSolidSurface
-      ? 'border-[#e6edf5] dark:border-slate-700/80'
-      : 'border-slate-200/70 dark:border-slate-700/80';
+    ? 'border-[#d7e2f0] dark:border-slate-700/80'
+    : 'border-[#e6edf5] dark:border-slate-700/80';
 
   const getHeaderButtonClass = useCallback((isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => (
     isActive
-      ? useSolidSurface
-        ? 'bg-[color:var(--workspace-accent-soft)] shadow-[inset_0_0_0_1px_var(--workspace-accent-border)] dark:bg-[color:var(--workspace-accent-soft)]'
-        : 'bg-[linear-gradient(180deg,rgba(255,252,253,0.98),rgba(255,247,250,1))] shadow-[inset_0_0_0_1px_var(--workspace-accent-border-strong)] dark:bg-[linear-gradient(180deg,rgba(80,7,36,0.26),rgba(59,7,30,0.18))]'
+      ? 'bg-[#eff6ff] hover:bg-[#eff6ff] dark:bg-slate-800/75 dark:hover:bg-slate-800/75'
       : isMarkedForDelete
-        ? 'bg-[linear-gradient(180deg,rgba(255,248,250,0.98),rgba(255,251,252,1))] shadow-[inset_0_0_0_1px_rgba(191,90,112,0.18)]'
+        ? 'bg-[#fff1f2] hover:bg-[#fff1f2] dark:bg-rose-950/20 dark:hover:bg-rose-950/20'
         : isTreeRelation
-          ? 'bg-[linear-gradient(180deg,rgba(237,247,255,0.98),rgba(245,250,255,1))] shadow-[inset_0_0_0_1px_rgba(125,176,255,0.46)]'
-          : tableSelected
-            ? useSolidSurface
-              ? 'bg-white hover:bg-[#f8fafc] dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
-              : 'bg-slate-50 hover:bg-white dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
-            : 'bg-white hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
-  ), [tableSelected, useSolidSurface]);
+          ? 'bg-[#f8fbff] hover:bg-[#f8fbff] dark:bg-slate-900/55 dark:hover:bg-slate-900/55'
+          : 'bg-white hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
+  ), []);
 
   const getHeaderLabelClass = useCallback((isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => {
     if (isActive) {
-      return 'rounded-md bg-[color:var(--workspace-accent-soft)] px-1.5 py-[3px] text-[color:var(--workspace-accent-strong)] shadow-[inset_0_0_0_1px_var(--workspace-accent-border)]';
+      return 'bg-transparent px-0 py-0 text-[#1d4ed8] dark:text-sky-200';
     }
     if (isMarkedForDelete) {
-      return 'rounded-md bg-[#fff1f4] px-1.5 py-[3px] text-[#bf5a70] shadow-[inset_0_0_0_1px_rgba(191,90,112,0.12)] dark:bg-rose-500/12 dark:text-rose-200';
+      return 'bg-transparent px-0 py-0 text-[#be123c] dark:text-rose-200';
     }
     if (isTreeRelation) {
-      return 'rounded-md bg-[#eaf4ff] px-1.5 py-[3px] text-[#2563eb] shadow-[0_12px_20px_-18px_rgba(59,130,246,0.7)] dark:bg-sky-500/16 dark:text-sky-200';
+      return 'bg-transparent px-0 py-0 text-[#2563eb] dark:text-sky-200';
     }
-    return tableSelected
-      ? useSolidSurface
-        ? 'px-0 py-0 text-slate-700 dark:text-slate-100'
-        : 'px-0 py-0 text-[#ba566d] dark:text-[#f4b5c1]'
-      : 'bg-transparent px-0 py-0 text-slate-700 dark:text-slate-100';
-  }, [tableSelected, useSolidSurface]);
+    return 'bg-transparent px-0 py-0 text-slate-700 dark:text-slate-100';
+  }, []);
 
   const getHeaderRequiredMarkClass = useCallback((isActive: boolean, isMarkedForDelete: boolean, isRequired: boolean, isTreeRelation: boolean) => {
     if (!isRequired) return 'hidden';
-    if (isActive) return 'text-white/88';
+    if (isActive) return 'text-[#1d4ed8] dark:text-sky-200';
     if (isTreeRelation) return 'text-[#2563eb] dark:text-sky-200';
-    if (isMarkedForDelete || tableSelected) return 'text-[#d15b75]';
-    return 'text-[color:var(--workspace-accent-strong)]';
-  }, [tableSelected]);
+    if (isMarkedForDelete) return 'text-[#be123c] dark:text-rose-200';
+    return 'text-[#2563eb] dark:text-sky-200';
+  }, []);
   const getHeaderResizeRailClass = useCallback((isActive: boolean) => (
     isActive
-      ? 'bg-[color:var(--workspace-accent-soft)]'
-      : tableSelected
-        ? useSolidSurface
-          ? 'bg-transparent group-hover:bg-slate-200 dark:group-hover:bg-white/6'
-          : 'bg-transparent group-hover:bg-white/30 dark:group-hover:bg-white/6'
-        : ''
-  ), [tableSelected, useSolidSurface]);
+      ? 'bg-transparent group-hover:bg-slate-200/70 dark:group-hover:bg-white/8'
+      : 'bg-transparent group-hover:bg-slate-200 dark:group-hover:bg-white/6'
+  ), []);
 
   const tableCanvasClass = useSolidSurface
     ? (
@@ -400,51 +756,137 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
           : 'border-white/85 bg-white/94 shadow-[0_24px_48px_-36px_rgba(15,23,42,0.24)] dark:border-slate-800/90 dark:bg-slate-950/84'
       );
   const getHeaderCornerClass = useCallback(() => '', []);
-  const addColumnHeaderShellClass = useSolidSurface
-    ? (
-        tableSelected
-          ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] dark:bg-white/6'
-          : 'border-[#e6edf5] bg-[#f8fafc]'
-      )
-    : (
-        tableSelected
-          ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] dark:bg-white/6'
-          : 'border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(246,249,252,0.6))]'
-      );
-  const addColumnButtonClass = useSolidSurface
-    ? (
-        tableSelected
-          ? 'border-[color:var(--workspace-accent-border)] bg-white text-[color:var(--workspace-accent-strong)]'
-          : 'border-[#dbe5ef] bg-white text-[color:var(--workspace-accent)]'
-      )
-    : (
-        tableSelected
-          ? 'cloudy-glass-orb border-[color:var(--workspace-accent-border)] text-[color:var(--workspace-accent-strong)]'
-          : 'cloudy-glass-orb text-[color:var(--workspace-accent)]'
-      );
+  const addColumnHeaderShellClass = tableSelected
+    ? 'border-[#d7e2f0] bg-[#f8fbff] dark:bg-white/6'
+    : 'border-[#e6edf5] bg-[#f8fafc]';
+  const addColumnButtonClass = tableSelected
+    ? 'border-[#c7d7ea] bg-white text-[color:var(--workspace-accent-strong)]'
+    : 'border-[#dbe5ef] bg-white text-[color:var(--workspace-accent)]';
 
   const headerColumns = useMemo(() => renderableCols.map((col, index) => {
     const normalizedCol = helpers.normalizeColumn(col);
-    const headerWidth = getColumnRenderWidth(normalizedCol);
+    const baseHeaderWidth = getColumnRenderWidth(normalizedCol);
+    const headerWidth = backgroundSelectable
+      ? Math.max(baseHeaderWidth, previewReadableMinWidth)
+      : baseHeaderWidth;
     return {
       col,
       index,
       normalizedCol,
       headerWidth,
-      isCollapsedHeader: headerWidth <= 18,
+      isCollapsedHeader: !backgroundSelectable && headerWidth <= 18,
       isTreeRelation: scope === 'main' && businessType !== 'table' && helpers.isTreeRelationFieldColumn(normalizedCol),
     };
-  }), [businessType, getColumnRenderWidth, helpers, renderableCols, scope]);
+  }), [backgroundSelectable, businessType, getColumnRenderWidth, helpers, previewReadableMinWidth, renderableCols, scope]);
 
   const totalTableWidth = useMemo(
     () => headerColumns.reduce((sum, column) => sum + column.headerWidth, addColumnWidth),
     [addColumnWidth, headerColumns],
   );
+  const previewHostRef = useRef<HTMLDivElement | null>(null);
+  const [previewHostHeight, setPreviewHostHeight] = useState(0);
+  const [previewHostWidth, setPreviewHostWidth] = useState(0);
+  const previewHeaderHeight = isCompactModuleSetting ? 34 : 40;
+  const previewRowHeight = isCompactCanvas ? 40 : 44;
+  const previewFillerWidth = useMemo(() => (
+    backgroundSelectable
+      ? Math.max(0, previewHostWidth - totalTableWidth)
+      : 0
+  ), [backgroundSelectable, previewHostWidth, totalTableWidth]);
+  const effectivePreviewTableWidth = totalTableWidth + previewFillerWidth;
+  const previewAvailableBodyHeight = useMemo(() => (
+    previewHostHeight > 0
+      ? Math.max(previewRowHeight, previewHostHeight - previewHeaderHeight - 2)
+      : 0
+  ), [previewHeaderHeight, previewHostHeight, previewRowHeight]);
+
+  const applyLiveColumnResizePreview = useCallback((columnId: string, width: number) => {
+    const hostElement = previewHostRef.current;
+    if (!hostElement) {
+      return;
+    }
+
+    hostElement.style.setProperty(getDashboardTableBuilderColumnWidthVarName(columnId), `${Math.round(width)}px`);
+    const nextTotalTableWidth = headerColumns.reduce(
+      (sum, column) => sum + (String(column.col.id) === String(columnId) ? width : column.headerWidth),
+      addColumnWidth,
+    );
+    const nextFillerWidth = backgroundSelectable
+      ? Math.max(0, previewHostWidth - nextTotalTableWidth)
+      : 0;
+    const nextEffectiveTableWidth = nextTotalTableWidth + nextFillerWidth;
+
+    hostElement.style.setProperty(dashboardTableBuilderFillerWidthVar, `${Math.round(nextFillerWidth)}px`);
+    hostElement.style.setProperty('--dashboard-table-builder-width', `${Math.round(nextEffectiveTableWidth)}px`);
+  }, [addColumnWidth, backgroundSelectable, headerColumns, previewHostWidth]);
+
+  const handleColumnResizeStart = useCallback((_event: React.SyntheticEvent, id: string) => {
+    setResizingColumnId(id);
+  }, []);
+
+  const handleColumnResizeWidth = useCallback((id: string, _label: string, width: number) => {
+    const nextWidth = clampColumnWidth(width);
+    applyLiveColumnResizePreview(id, nextWidth);
+  }, [applyLiveColumnResizePreview, clampColumnWidth]);
+
+  const handleColumnResizeStop = useCallback((_event: React.SyntheticEvent, id: string, _label: string, width: number) => {
+    const nextWidth = clampColumnWidth(width);
+    applyLiveColumnResizePreview(id, nextWidth);
+    setCols((prev) => updateItemWidthById(prev, id, nextWidth));
+    setResizingColumnId((prev) => (prev === id ? null : prev));
+  }, [applyLiveColumnResizePreview, clampColumnWidth, setCols]);
+
+  useEffect(() => {
+    const hostElement = previewHostRef.current;
+    if (!hostElement || typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+
+    const syncSize = (nextWidth: number, nextHeight: number) => {
+      const normalizedWidth = Math.max(0, Math.round(nextWidth));
+      const normalizedHeight = Math.max(0, Math.round(nextHeight));
+      setPreviewHostWidth((previousWidth) => (
+        previousWidth === normalizedWidth ? previousWidth : normalizedWidth
+      ));
+      setPreviewHostHeight((previousHeight) => (
+        previousHeight === normalizedHeight ? previousHeight : normalizedHeight
+      ));
+    };
+
+    const initialRect = hostElement.getBoundingClientRect();
+    syncSize(initialRect.width, initialRect.height);
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      const [entry] = entries;
+      if (entry) {
+        syncSize(entry.contentRect.width, entry.contentRect.height);
+      }
+    });
+
+    resizeObserver.observe(hostElement);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   const tableBuilderContentStyle = useMemo<React.CSSProperties>(() => ({
     width: `max(100%, ${totalTableWidth}px)`,
     minWidth: `max(100%, ${totalTableWidth}px)`,
   }), [totalTableWidth]);
+  const tablePreviewHostStyle = useMemo<React.CSSProperties>(() => {
+    const nextStyle: React.CSSProperties = {
+      ...workspaceThemeVars,
+      ['--dashboard-table-builder-width' as string]: `${effectivePreviewTableWidth}px`,
+      ['--dashboard-table-builder-preview-row-height' as string]: `${previewRowHeight}px`,
+      [dashboardTableBuilderFillerWidthVar as string]: `${previewFillerWidth}px`,
+    };
+
+    headerColumns.forEach(({ col, headerWidth }) => {
+      (nextStyle as Record<string, string>)[getDashboardTableBuilderColumnWidthVarName(String(col.id))] = `${headerWidth}px`;
+    });
+
+    return nextStyle;
+  }, [effectivePreviewTableWidth, headerColumns, previewFillerWidth, previewRowHeight, workspaceThemeVars]);
 
   const handleAddColumn = useCallback(() => {
     setCols((prev) => [...prev, helpers.buildColumn(scope === 'detail' ? 'd_col' : `${scope}_col`, prev.length + 1)]);
@@ -527,7 +969,6 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       {centeredCanvasPanelNode}
     </div>
   ), [centeredCanvasPanelNode]);
-
   const renderTableHead = useCallback((compactCanvasVariant: boolean) => (
     <>
       {headerColumns.map(({ col, index, normalizedCol, headerWidth, isCollapsedHeader, isTreeRelation }) => {
@@ -576,7 +1017,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
                     {normalizedCol.name}
                   </span>
                   {isTreeRelation && !isCollapsedHeader && (
-                    <span className="ml-1.5 inline-flex items-center rounded-full bg-white/75 px-1.5 py-0.5 text-[9px] font-black leading-none text-[#2563eb] shadow-[0_10px_18px_-16px_rgba(37,99,235,0.7)] dark:bg-sky-500/16 dark:text-sky-100">
+                    <span className="ml-1 text-[10px] font-semibold leading-none text-[#2563eb] dark:text-sky-200">
                       树
                     </span>
                   )}
@@ -584,14 +1025,6 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
                 </div>
               </div>
             </button>
-            {dropIndicatorPosition && (
-              <div
-                className={cn(
-                  'pointer-events-none absolute inset-y-1 z-30 w-[3px] rounded-full bg-[color:var(--workspace-accent-strong)] shadow-[0_0_0_2px_rgba(192,107,125,0.18)]',
-                  dropIndicatorPosition === 'before' ? 'left-0 -translate-x-1/2' : 'right-0 translate-x-1/2',
-                )}
-              />
-            )}
             <div
               className={`absolute bottom-0 right-0 top-0 z-20 flex ${isCompactModuleSetting ? 'w-2.5' : 'w-3'} cursor-col-resize items-center justify-center ${getHeaderResizeRailClass(isActive)}`}
               onMouseDown={(event) => {
@@ -667,8 +1100,143 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     startResize,
   ]);
 
-  const compactTableHeadNode = useMemo(() => renderTableHead(true), [renderTableHead]);
-  const standardTableHeadNode = useMemo(() => renderTableHead(false), [renderTableHead]);
+  const renderResizableTableHead = useCallback((compactCanvasVariant: boolean) => (
+    <>
+      {headerColumns.map(({ col, index, normalizedCol, headerWidth, isCollapsedHeader, isTreeRelation }) => {
+        const isActive = selectedId === col.id;
+        const isMarkedForDelete = selectedForDeleteSet.has(col.id);
+        const isDragging = draggingColumnId === col.id;
+        const isResizing = activeResize?.id === col.id || resizingColumnId === col.id;
+        const dropIndicatorPosition = dropIndicator?.kind === 'column' && dropIndicator.id === col.id
+          ? dropIndicator.position
+          : null;
+
+        return (
+          <th
+            key={col.id}
+            style={{ width: headerWidth, minWidth: headerWidth }}
+            className={`group relative border-b border-r p-0 align-top ${headerDividerClass}`}
+            onDragOver={(event) => handleColumnDragOver(event, col.id)}
+            onDrop={(event) => handleColumnDrop(event, col.id)}
+          >
+            <TableBuilderResizableHeaderShell
+              width={headerWidth}
+              minWidth={metrics.resizeMinWidth}
+              maxWidth={metrics.resizeMaxWidth}
+              compact={isCompactModuleSetting}
+              isResizing={isResizing}
+              railClassName={getHeaderResizeRailClass(isActive)}
+              onResizeStart={(event) => handleColumnResizeStart(event, col.id)}
+              onResizeWidth={(width) => handleColumnResizeWidth(col.id, normalizedCol.name || '未命名字段', width)}
+              onResizeStop={(event, width) => handleColumnResizeStop(event, col.id, normalizedCol.name || '未命名字段', width)}
+              onAutoFit={(event) => autoFitColumnWidth(event, col.id, cols, setCols, metrics.minWidth, metrics.resizeMaxWidth, 'column')}
+            >
+              <button
+                type="button"
+                onClick={(event) => handleColumnHeaderClick(event, col.id)}
+                onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
+                className={cn(
+                  `relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? (compactCanvasVariant ? 'min-h-[34px] px-0 pr-1.5 py-0' : 'min-h-[36px] px-0 pr-1.5 py-0') : isCompactModuleSetting ? `${compactCanvasVariant ? 'min-h-[32px]' : 'min-h-[34px]'} px-1.5 pr-3 py-0` : `${compactCanvasVariant ? 'min-h-[38px]' : 'min-h-[42px]'} px-2 pr-3.5 py-0`} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`,
+                  isDragging && 'opacity-70',
+                  dropIndicatorPosition && 'shadow-[inset_0_0_0_1px_var(--workspace-accent-border-strong)]',
+                )}
+                title="点击可选中字段"
+              >
+                <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
+                  <div
+                    className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+                    title={normalizedCol.name}
+                  >
+                    <span
+                      draggable={!isCollapsedHeader}
+                      onDragStart={(event) => handleColumnDragStart(event, col.id)}
+                      onDragEnd={clearColumnDragState}
+                      className={cn(
+                        'truncate rounded-sm',
+                        !isCollapsedHeader && 'cursor-grab active:cursor-grabbing',
+                      )}
+                      title="拖动标题可调整列顺序"
+                    >
+                      {normalizedCol.name}
+                    </span>
+                    {isTreeRelation && !isCollapsedHeader && (
+                      <span className="ml-1 text-[10px] font-semibold leading-none text-[#2563eb] dark:text-sky-200">
+                        树
+                      </span>
+                    )}
+                    <span className={`ml-0.5 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
+                  </div>
+                </div>
+              </button>
+            </TableBuilderResizableHeaderShell>
+          </th>
+        );
+      })}
+      <th
+        style={{ width: addColumnWidth, minWidth: addColumnWidth }}
+        onDragOver={handleAppendDragOver}
+        onDrop={handleAppendDrop}
+        className={cn(
+          `relative border-b p-0 align-top ${addColumnHeaderShellClass}`,
+          dropIndicator?.kind === 'append' && 'shadow-[inset_0_0_0_2px_var(--workspace-accent-border-strong)]',
+        )}
+      >
+        <button
+          type="button"
+          onClick={handleAddColumn}
+          className={`flex h-full w-full items-center justify-center transition-all ${isCompactModuleSetting ? (compactCanvasVariant ? 'min-h-[34px]' : 'min-h-[38px]') : (compactCanvasVariant ? 'min-h-[40px]' : 'min-h-[46px]')} hover:bg-white/55 dark:hover:bg-white/8`}
+          title="新增字段"
+        >
+          <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
+            <span className="material-symbols-outlined text-[17px]">add</span>
+          </div>
+        </button>
+        {dropIndicator?.kind === 'append' && (
+          <div className="pointer-events-none absolute inset-y-1 right-0 z-30 w-[3px] translate-x-1/2 rounded-full bg-[color:var(--workspace-accent-strong)] shadow-[0_0_0_2px_rgba(192,107,125,0.18)]" />
+        )}
+      </th>
+    </>
+  ), [
+    activeResize?.id,
+    addColumnButtonClass,
+    addColumnHeaderShellClass,
+    addColumnWidth,
+    autoFitColumnWidth,
+    clearColumnDragState,
+    cols,
+    draggingColumnId,
+    dropIndicator,
+    getHeaderButtonClass,
+    getHeaderCornerClass,
+    getHeaderLabelClass,
+    getHeaderRequiredMarkClass,
+    getHeaderResizeRailClass,
+    handleAddColumn,
+    handleAppendDragOver,
+    handleAppendDrop,
+    handleColumnDragOver,
+    handleColumnDragStart,
+    handleColumnDrop,
+    handleColumnHeaderClick,
+    handleColumnHeaderContextMenu,
+    handleColumnResizeStart,
+    handleColumnResizeStop,
+    handleColumnResizeWidth,
+    headerColumns,
+    headerDividerClass,
+    isCompactModuleSetting,
+    metrics.minWidth,
+    metrics.resizeMaxWidth,
+    metrics.resizeMinWidth,
+    resizingColumnId,
+    selectedForDeleteSet,
+    selectedId,
+    setCols,
+  ]);
+
+  const compactTableHeadNode = useMemo(() => renderResizableTableHead(true), [renderResizableTableHead]);
+  const standardTableHeadNode = useMemo(() => renderResizableTableHead(false), [renderResizableTableHead]);
+  const activeTableHeadNode = backgroundSelectable ? compactTableHeadNode : standardTableHeadNode;
   const tableColGroupNode = useMemo(() => (
     <colgroup>
       {headerColumns.map(({ col, headerWidth }) => (
@@ -677,6 +1245,550 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       <col style={{ width: addColumnWidth, minWidth: addColumnWidth }} />
     </colgroup>
   ), [addColumnWidth, headerColumns]);
+  const tableWrapperClass = cn(
+    backgroundSelectable
+      ? 'workspace-scrollbar relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden'
+      : 'workspace-scrollbar relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden',
+    tableSurfaceClass,
+    backgroundSelectable && (isCompactCanvas ? 'h-full min-h-[184px]' : 'h-full min-h-[260px]'),
+  );
+  const tableBodyButtonClass = cn(
+    'relative flex w-full overflow-hidden border-t px-4 text-center transition-all',
+    backgroundSelectable ? 'items-center justify-center' : 'items-center justify-start',
+    backgroundSelectable
+      ? `${tableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] py-3' : 'min-h-[188px] py-6'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`
+      : `${isCompactModuleSetting ? 'min-h-[190px] py-4' : 'min-h-[230px] py-6'} ${tableSelected ? 'border-[#efd6db]/85 bg-[#fff7f9] hover:bg-[#fff3f6] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`,
+  );
+  const activePreviewHeaderColumn = useMemo(
+    () => headerColumns.find(({ col }) => String(col.id) === previewDraggingColumnId) ?? null,
+    [headerColumns, previewDraggingColumnId],
+  );
+  const previewDragOverlayNode = useMemo(() => {
+    if (!activePreviewHeaderColumn) {
+      return null;
+    }
+
+    const { col, index, normalizedCol, headerWidth, isCollapsedHeader, isTreeRelation } = activePreviewHeaderColumn;
+    const isActive = selectedId === col.id;
+    const isMarkedForDelete = selectedForDeleteSet.has(col.id);
+
+    return (
+      <div
+        style={{ width: headerWidth, minWidth: headerWidth }}
+        className="pointer-events-none"
+      >
+        <div
+          className={cn(
+            `relative flex items-center overflow-hidden text-left ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-1.5 py-0' : isCompactModuleSetting ? 'min-h-[32px] px-1.5 pr-3 py-0' : 'min-h-[38px] px-2 pr-3.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`,
+            'rounded-md border border-[#c9d7ea] bg-white shadow-[0_20px_36px_-22px_rgba(15,23,42,0.5)] dark:border-slate-700 dark:bg-slate-900',
+          )}
+        >
+          <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
+            <div
+              className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+              title={normalizedCol.name}
+            >
+              <span className="truncate rounded-sm">{normalizedCol.name}</span>
+              {isTreeRelation && !isCollapsedHeader && (
+                <span className="ml-1 text-[10px] font-semibold leading-none text-[#2563eb] dark:text-sky-200">
+                  树
+                </span>
+              )}
+              <span className={`ml-0.5 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }, [
+    activePreviewHeaderColumn,
+    getHeaderButtonClass,
+    getHeaderCornerClass,
+    getHeaderLabelClass,
+    getHeaderRequiredMarkClass,
+    isCompactModuleSetting,
+    selectedForDeleteSet,
+    selectedId,
+  ]);
+  const previewSortableColumnIds = useMemo(
+    () => headerColumns.map(({ col }) => String(col.id)),
+    [headerColumns],
+  );
+  const previewHeaderRowComponent = useMemo(() => {
+    const PreviewHeaderRow = (props: React.HTMLAttributes<HTMLTableRowElement>) => (
+      <SortableContext items={previewSortableColumnIds} strategy={horizontalListSortingStrategy}>
+        <tr {...props} />
+      </SortableContext>
+    );
+
+    PreviewHeaderRow.displayName = 'TableBuilderPreviewHeaderRow';
+    return PreviewHeaderRow;
+  }, [previewSortableColumnIds]);
+  const previewTableComponents = useMemo(() => ({
+    header: {
+      row: previewHeaderRowComponent,
+      cell: TableBuilderAntdSortableHeaderCell,
+    },
+  }), [previewHeaderRowComponent]);
+  const previewRowCount = useMemo(() => {
+    const fallbackRowCount = isCompactCanvas ? 4 : 5;
+    if (previewAvailableBodyHeight <= 0) {
+      return fallbackRowCount;
+    }
+
+    return Math.max(
+      fallbackRowCount,
+      Math.ceil(previewAvailableBodyHeight / previewRowHeight),
+    );
+  }, [isCompactCanvas, previewAvailableBodyHeight, previewRowHeight]);
+  const previewTableDataSource = useMemo(
+    () => Array.from({ length: previewRowCount }, (_, index) => ({ key: `__preview__-${index}` })),
+    [previewRowCount],
+  );
+  const previewCellSpacerClass = isCompactCanvas ? 'min-h-[34px]' : 'min-h-[40px]';
+  const previewCellSpacerStyle = useMemo<React.CSSProperties>(() => ({
+    height: `${previewRowHeight}px`,
+    minHeight: `${previewRowHeight}px`,
+  }), [previewRowHeight]);
+  const previewTableColumns = useMemo(() => {
+    const headerDrivenColumns = headerColumns.map(({ col, index, normalizedCol, headerWidth, isCollapsedHeader, isTreeRelation }) => {
+      const isActive = selectedId === col.id;
+      const isMarkedForDelete = selectedForDeleteSet.has(col.id);
+      const isDragging = previewDraggingColumnId === String(col.id);
+      const isResizing = activeResize?.id === col.id;
+
+      return {
+        key: String(col.id),
+        dataIndex: String(col.id),
+        width: headerWidth,
+        title: (
+          <div className="group relative h-full">
+            <button
+              type="button"
+              onClick={(event) => handleColumnHeaderClick(event, col.id)}
+              onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
+              className={cn(
+                `relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-1.5 py-0' : isCompactModuleSetting ? 'min-h-[32px] px-1.5 pr-3 py-0' : 'min-h-[38px] px-2 pr-3.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`,
+                isDragging && 'opacity-25',
+              )}
+              title="点击可选中字段"
+            >
+              <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
+                <div
+                  className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+                  title={normalizedCol.name}
+                >
+                  <TableBuilderAntdSortableHandle
+                    disabled={isCollapsedHeader}
+                    className="truncate rounded-sm"
+                    title="拖动标题可调整列顺序"
+                  >
+                    {normalizedCol.name}
+                  </TableBuilderAntdSortableHandle>
+                  {isTreeRelation && !isCollapsedHeader && (
+                    <span className="ml-1 text-[10px] font-semibold leading-none text-[#2563eb] dark:text-sky-200">
+                      树
+                    </span>
+                  )}
+                  <span className={`ml-0.5 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
+                </div>
+              </div>
+            </button>
+            <div
+              className={`absolute bottom-0 right-0 top-0 z-20 flex ${isCompactModuleSetting ? 'w-2.5' : 'w-3'} cursor-col-resize items-center justify-center ${getHeaderResizeRailClass(isActive)}`}
+              onMouseDown={(event) => {
+                event.stopPropagation();
+                startResize(event, col.id, cols, setCols, metrics.resizeMinWidth, metrics.resizeMaxWidth, 'column');
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                autoFitColumnWidth(event, col.id, cols, setCols, metrics.minWidth, metrics.resizeMaxWidth, 'column');
+              }}
+              title="拖动调整列宽，双击自动适配"
+            >
+              <span className={`h-5 rounded-full transition-all ${isResizing ? 'bg-[#2563eb] shadow-[0_0_0_2px_rgba(37,99,235,0.12)]' : 'bg-transparent group-hover:bg-slate-300 dark:group-hover:bg-slate-500'} w-px`} />
+            </div>
+          </div>
+        ),
+        onHeaderCell: () => ({
+          style: { width: headerWidth, minWidth: headerWidth, padding: 0, background: 'transparent' },
+          className: cn('dashboard-table-builder-ant-header-cell align-top', headerDividerClass),
+          columnId: String(col.id),
+          sortable: !isCollapsedHeader,
+        }),
+        render: () => (
+          <div
+            className={cn('w-full border-t border-[#edf2f7] dark:border-slate-800/80', previewCellSpacerClass)}
+            style={previewCellSpacerStyle}
+          />
+        ),
+      };
+    });
+
+    headerDrivenColumns.push({
+      key: '__add__',
+      dataIndex: '__add__',
+      width: addColumnWidth,
+      title: (
+        <div className="group relative h-full">
+          <button
+            type="button"
+            onClick={handleAddColumn}
+            className={`flex h-full w-full items-center justify-center transition-all ${isCompactModuleSetting ? 'min-h-[34px]' : 'min-h-[40px]'} hover:bg-white/55 dark:hover:bg-white/8`}
+            title="新增字段"
+          >
+            <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
+              <span className="material-symbols-outlined text-[17px]">add</span>
+            </div>
+          </button>
+        </div>
+      ),
+      onHeaderCell: () => ({
+        style: { width: addColumnWidth, minWidth: addColumnWidth, padding: 0, background: 'transparent' },
+        className: cn('dashboard-table-builder-ant-header-cell align-top', addColumnHeaderShellClass),
+        sortable: false,
+      }),
+      render: () => (
+        <div
+          className={cn('w-full border-t border-[#edf2f7] dark:border-slate-800/80', previewCellSpacerClass)}
+          style={previewCellSpacerStyle}
+        />
+      ),
+    });
+
+    if (previewFillerWidth > 0) {
+      headerDrivenColumns.push({
+        key: '__filler__',
+        dataIndex: '__filler__',
+        width: previewFillerWidth,
+        title: <div className="h-full w-full" />,
+        onHeaderCell: () => ({
+          style: { width: previewFillerWidth, minWidth: previewFillerWidth, padding: 0, background: 'transparent' },
+          className: 'dashboard-table-builder-ant-header-cell dashboard-table-builder-ant-filler-header-cell align-top',
+          sortable: false,
+        }),
+        render: () => (
+          <div
+            className={cn('w-full border-t border-[#edf2f7] dark:border-slate-800/80', previewCellSpacerClass)}
+            style={previewCellSpacerStyle}
+          />
+        ),
+      });
+    }
+
+    return headerDrivenColumns;
+  }, [
+    activeResize?.id,
+    addColumnButtonClass,
+    addColumnHeaderShellClass,
+    addColumnWidth,
+    autoFitColumnWidth,
+    cols,
+    getHeaderButtonClass,
+    getHeaderCornerClass,
+    getHeaderLabelClass,
+    getHeaderRequiredMarkClass,
+    getHeaderResizeRailClass,
+    handleAddColumn,
+    handleColumnHeaderClick,
+    handleColumnHeaderContextMenu,
+    headerColumns,
+    headerDividerClass,
+    isCompactModuleSetting,
+    metrics.minWidth,
+    metrics.resizeMaxWidth,
+    metrics.resizeMinWidth,
+    previewCellSpacerClass,
+    previewCellSpacerStyle,
+    previewDraggingColumnId,
+    selectedForDeleteSet,
+    selectedId,
+    setCols,
+    startResize,
+  ]);
+  const previewTableColumnsResizable = useMemo(() => {
+    const headerDrivenColumns = headerColumns.map(({ col, index, normalizedCol, headerWidth, isCollapsedHeader, isTreeRelation }) => {
+      const isActive = selectedId === col.id;
+      const isMarkedForDelete = selectedForDeleteSet.has(col.id);
+      const isDragging = previewDraggingColumnId === String(col.id);
+      const isResizing = activeResize?.id === col.id || resizingColumnId === col.id;
+      const previewColumnWidth = getDashboardTableBuilderColumnWidthVarValue(String(col.id), headerWidth);
+
+      return {
+        key: String(col.id),
+        dataIndex: String(col.id),
+        width: previewColumnWidth,
+        title: (
+            <button
+              type="button"
+              onClick={(event) => handleColumnHeaderClick(event, col.id)}
+              onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
+              className={cn(
+                `relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-1.5 py-0' : isCompactModuleSetting ? 'min-h-[32px] px-1.5 pr-3 py-0' : 'min-h-[38px] px-2 pr-3.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`,
+                isDragging && 'opacity-25',
+              )}
+              title="点击可选中字段"
+            >
+              <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
+                <div
+                  className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+                  title={normalizedCol.name}
+                >
+                  <TableBuilderAntdSortableHandle
+                    disabled={isCollapsedHeader}
+                    className="truncate rounded-sm"
+                    title="拖动标题可调整列顺序"
+                  >
+                    {normalizedCol.name}
+                  </TableBuilderAntdSortableHandle>
+                  {isTreeRelation && !isCollapsedHeader && (
+                    <span className="ml-1 text-[10px] font-semibold leading-none text-[#2563eb] dark:text-sky-200">
+                      树
+                    </span>
+                  )}
+                  <span className={`ml-0.5 text-[10px] leading-none ${getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation)}`}>*</span>
+                </div>
+              </div>
+            </button>
+        ),
+        onHeaderCell: () => ({
+          style: { width: previewColumnWidth, minWidth: previewColumnWidth, padding: 0, background: 'transparent' },
+          className: cn('dashboard-table-builder-ant-header-cell align-top', headerDividerClass),
+          columnId: String(col.id),
+          sortable: !isCollapsedHeader,
+          resizeWidth: headerWidth,
+          resizeMinWidth: metrics.resizeMinWidth,
+          resizeMaxWidth: metrics.resizeMaxWidth,
+          compact: isCompactModuleSetting,
+          isResizing,
+          railClassName: getHeaderResizeRailClass(isActive),
+          onResizeStart: (event: React.SyntheticEvent) => handleColumnResizeStart(event, col.id),
+          onResizeWidth: (width: number) => handleColumnResizeWidth(col.id, normalizedCol.name || '未命名字段', width),
+          onResizeStop: (event: React.SyntheticEvent, width: number) => handleColumnResizeStop(event, col.id, normalizedCol.name || '未命名字段', width),
+          onAutoFit: (event: React.MouseEvent<HTMLSpanElement>) => autoFitColumnWidth(event, col.id, cols, setCols, metrics.minWidth, metrics.resizeMaxWidth, 'column'),
+        }),
+        render: () => (
+          <div
+            className={cn('w-full border-t border-[#edf2f7] dark:border-slate-800/80', previewCellSpacerClass)}
+            style={previewCellSpacerStyle}
+          />
+        ),
+      };
+    });
+
+    headerDrivenColumns.push({
+      key: '__add__',
+      dataIndex: '__add__',
+      width: addColumnWidth,
+      title: (
+        <div className="group relative h-full">
+          <button
+            type="button"
+            onClick={handleAddColumn}
+            className={`flex h-full w-full items-center justify-center transition-all ${isCompactModuleSetting ? 'min-h-[34px]' : 'min-h-[40px]'} hover:bg-white/55 dark:hover:bg-white/8`}
+            title="新增字段"
+          >
+            <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
+              <span className="material-symbols-outlined text-[17px]">add</span>
+            </div>
+          </button>
+        </div>
+      ),
+      onHeaderCell: () => ({
+        style: { width: addColumnWidth, minWidth: addColumnWidth, padding: 0, background: 'transparent' },
+        className: cn('dashboard-table-builder-ant-header-cell align-top', addColumnHeaderShellClass),
+        sortable: false,
+      }),
+      render: () => (
+        <div
+          className={cn('w-full border-t border-[#edf2f7] dark:border-slate-800/80', previewCellSpacerClass)}
+          style={previewCellSpacerStyle}
+        />
+      ),
+    });
+
+    if (previewFillerWidth > 0) {
+      const fillerPreviewWidth = `var(${dashboardTableBuilderFillerWidthVar}, ${Math.round(previewFillerWidth)}px)`;
+      headerDrivenColumns.push({
+        key: '__filler__',
+        dataIndex: '__filler__',
+        width: fillerPreviewWidth,
+        title: <div className="h-full w-full" />,
+        onHeaderCell: () => ({
+          style: { width: fillerPreviewWidth, minWidth: fillerPreviewWidth, padding: 0, background: 'transparent' },
+          className: 'dashboard-table-builder-ant-header-cell dashboard-table-builder-ant-filler-header-cell align-top',
+          sortable: false,
+        }),
+        render: () => (
+          <div
+            className={cn('w-full border-t border-[#edf2f7] dark:border-slate-800/80', previewCellSpacerClass)}
+            style={previewCellSpacerStyle}
+          />
+        ),
+      });
+    }
+
+    return headerDrivenColumns;
+  }, [
+    activeResize?.id,
+    addColumnButtonClass,
+    addColumnHeaderShellClass,
+    addColumnWidth,
+    autoFitColumnWidth,
+    cols,
+    getHeaderButtonClass,
+    getHeaderCornerClass,
+    getHeaderLabelClass,
+    getHeaderRequiredMarkClass,
+    getHeaderResizeRailClass,
+    handleAddColumn,
+    handleColumnHeaderClick,
+    handleColumnHeaderContextMenu,
+    handleColumnResizeStart,
+    handleColumnResizeStop,
+    handleColumnResizeWidth,
+    headerColumns,
+    headerDividerClass,
+    isCompactModuleSetting,
+    metrics.minWidth,
+    metrics.resizeMaxWidth,
+    metrics.resizeMinWidth,
+    previewCellSpacerClass,
+    previewCellSpacerStyle,
+    previewDraggingColumnId,
+    previewFillerWidth,
+    resizingColumnId,
+    selectedForDeleteSet,
+    selectedId,
+    setCols,
+  ]);
+  const plainAntdPreviewColumns = useMemo(() => {
+    const nextColumns = headerColumns.map(({ col, index, normalizedCol, headerWidth, isTreeRelation }) => {
+      const isActive = selectedId === col.id;
+      const isMarkedForDelete = selectedForDeleteSet.has(col.id);
+
+      return {
+        key: String(col.id),
+        dataIndex: String(col.id),
+        width: headerWidth,
+        title: (
+          <button
+            type="button"
+            onClick={(event) => handleColumnHeaderClick(event, col.id)}
+            onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
+            className={cn(
+              `relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCompactModuleSetting ? 'min-h-[34px] px-2 py-0' : 'min-h-[38px] px-2.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`,
+            )}
+            title="点击可选中字段"
+          >
+            <span
+              className={cn(
+                `inline-flex min-w-0 items-center gap-1 font-semibold tracking-[0.01em] ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'}`,
+                getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation),
+              )}
+              title={normalizedCol.name}
+            >
+              <span className="truncate">{normalizedCol.name}</span>
+              {isTreeRelation && (
+                <span className="text-[10px] font-semibold leading-none text-[#2563eb] dark:text-sky-200">
+                  树
+                </span>
+              )}
+              <span className={cn('text-[10px] leading-none', getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation))}>*</span>
+            </span>
+          </button>
+        ),
+        onHeaderCell: () => ({
+          style: { width: headerWidth, minWidth: headerWidth, padding: 0, background: 'transparent' },
+          className: cn('dashboard-table-builder-ant-header-cell align-top', headerDividerClass),
+        }),
+        render: () => (
+          <div
+            className={cn('w-full border-t border-[#edf2f7] bg-white dark:border-slate-800/80 dark:bg-slate-950/94', previewCellSpacerClass)}
+            style={previewCellSpacerStyle}
+          />
+        ),
+      };
+    });
+
+    nextColumns.push({
+      key: '__add__',
+      dataIndex: '__add__',
+      width: addColumnWidth,
+      title: (
+        <div className="group relative h-full">
+          <button
+            type="button"
+            onClick={handleAddColumn}
+            className={`flex h-full w-full items-center justify-center transition-all ${isCompactModuleSetting ? 'min-h-[34px]' : 'min-h-[40px]'} hover:bg-white/70 dark:hover:bg-white/8`}
+            title="新增字段"
+          >
+            <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
+              <span className="material-symbols-outlined text-[17px]">add</span>
+            </div>
+          </button>
+        </div>
+      ),
+      onHeaderCell: () => ({
+        style: { width: addColumnWidth, minWidth: addColumnWidth, padding: 0, background: 'transparent' },
+        className: cn('dashboard-table-builder-ant-header-cell align-top', addColumnHeaderShellClass),
+      }),
+      render: () => (
+        <div
+          className={cn('w-full border-t border-[#edf2f7] bg-white dark:border-slate-800/80 dark:bg-slate-950/94', previewCellSpacerClass)}
+          style={previewCellSpacerStyle}
+        />
+      ),
+    });
+
+    if (previewFillerWidth > 0) {
+      nextColumns.push({
+        key: '__filler__',
+        dataIndex: '__filler__',
+        width: previewFillerWidth,
+        title: <div className="h-full w-full" />,
+        onHeaderCell: () => ({
+          style: { width: previewFillerWidth, minWidth: previewFillerWidth, padding: 0, background: 'transparent' },
+          className: 'dashboard-table-builder-ant-header-cell dashboard-table-builder-ant-filler-header-cell align-top',
+        }),
+        render: () => (
+          <div
+            className={cn('w-full border-t border-[#edf2f7] bg-white dark:border-slate-800/80 dark:bg-slate-950/94', previewCellSpacerClass)}
+            style={previewCellSpacerStyle}
+          />
+        ),
+      });
+    }
+
+    return nextColumns;
+  }, [
+    addColumnButtonClass,
+    addColumnHeaderShellClass,
+    addColumnWidth,
+    getHeaderButtonClass,
+    getHeaderCornerClass,
+    getHeaderLabelClass,
+    getHeaderRequiredMarkClass,
+    handleAddColumn,
+    handleColumnHeaderClick,
+    handleColumnHeaderContextMenu,
+    headerColumns,
+    headerDividerClass,
+    isCompactModuleSetting,
+    previewCellSpacerClass,
+    previewCellSpacerStyle,
+    previewFillerWidth,
+    selectedForDeleteSet,
+    selectedId,
+  ]);
+  const handlePreviewTableRowClick = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
+    onSelectTable?.();
+  }, [onSelectTable]);
+  const handlePreviewTableRowDoubleClick = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
+    onCanvasDoubleClick?.();
+  }, [onCanvasDoubleClick]);
 
   if (cols.length === 0) {
     return (
@@ -694,60 +1806,41 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     );
   }
 
-  if (backgroundSelectable) {
-    return (
-      <div style={workspaceThemeVars} className={`workspace-scrollbar cloudy-cloud-grid relative flex min-h-0 min-w-0 w-full flex-col overflow-x-auto overflow-y-hidden ${tableSurfaceClass} ${isCompactCanvas ? 'h-full min-h-[184px]' : 'h-full min-h-[260px]'}`}>
-        <div className="min-w-full w-full shrink-0">
-          <table
-            style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
-            className="table-fixed border-separate border-spacing-0 text-left text-[12px]"
-          >
-            {tableColGroupNode}
-            <thead className={`sticky top-0 z-20 select-none bg-transparent ${tableSelected ? 'shadow-[inset_0_-1px_0_rgba(239,199,207,0.55)]' : ''}`}>
-              <tr>{compactTableHeadNode}</tr>
-            </thead>
-          </table>
-        </div>
-        <div className="sticky left-0 z-10 flex min-h-0 min-w-full flex-1">
-          <button
-            type="button"
-            onClick={onSelectTable}
-            onDoubleClick={handleCanvasDoubleClick}
-            className={`relative flex h-full w-full items-center justify-center overflow-hidden border-x-0 border-b-0 border-t px-4 text-center transition-all dark:border-slate-700 ${tableCanvasClass} ${isCompactCanvas ? 'min-h-[108px] py-3' : 'min-h-[188px] py-6'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
-          >
-            <div className={`pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.28),transparent_62%)] ${tableSelected ? 'opacity-80' : 'opacity-100'}`} />
-            {centeredCanvasOverlayNode}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div style={workspaceThemeVars} className={`workspace-scrollbar cloudy-cloud-grid relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden ${tableSurfaceClass}`}>
-      <table
-        style={{ ...tableBuilderContentStyle, tableLayout: 'fixed' }}
-        className="table-fixed border-separate border-spacing-0 text-left text-[12px]"
+    <div ref={previewHostRef} style={tablePreviewHostStyle} className={tableWrapperClass}>
+      <DndContext
+        sensors={previewColumnDragSensors}
+        modifiers={previewColumnDragModifiers}
+        collisionDetection={previewColumnCollisionDetection}
+        onDragStart={handlePreviewColumnDragStart}
+        onDragCancel={handlePreviewColumnDragCancel}
+        onDragEnd={handlePreviewColumnDragEnd}
       >
-        {tableColGroupNode}
-        <thead className={`sticky top-0 z-20 select-none bg-transparent ${tableSelected ? 'shadow-[inset_0_-1px_0_rgba(239,199,207,0.55)]' : ''}`}>
-          <tr>{standardTableHeadNode}</tr>
-        </thead>
-        <tbody className="text-slate-600 dark:text-slate-300">
-          <tr>
-            <td colSpan={renderableCols.length + 1} className="p-0">
-              <button
-                type="button"
-                onClick={onSelectTable}
-                onDoubleClick={handleCanvasDoubleClick}
-                className={`relative flex w-full items-center justify-start overflow-hidden border-t px-4 text-center transition-all ${isCompactModuleSetting ? 'min-h-[190px] py-4' : 'min-h-[230px] py-6'} ${tableSelected ? 'border-[#efd6db]/85 bg-[#fff7f9] hover:bg-[#fff3f6] dark:border-rose-400/18 dark:bg-[#efc7cf]/10' : 'border-slate-100 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.98))]'} ${backgroundSelectable ? 'cursor-pointer' : 'cursor-default'}`}
-              >
-                {centeredCanvasOverlayNode}
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+        <Table
+          className="dashboard-table-builder-ant-table min-h-0 flex-1"
+          rowKey="key"
+          pagination={false}
+          dataSource={previewTableDataSource}
+          columns={previewTableColumnsResizable}
+          components={previewTableComponents}
+          tableLayout="fixed"
+          size={isCompactModuleSetting ? 'small' : 'middle'}
+          scroll={{ x: effectivePreviewTableWidth }}
+          locale={{ emptyText: null }}
+          onRow={() => ({
+            onClick: handlePreviewTableRowClick,
+            onDoubleClick: handlePreviewTableRowDoubleClick,
+            className: cn(
+              'dashboard-table-builder-ant-preview-row',
+              onSelectTable && 'cursor-pointer',
+              tableSelected && 'dashboard-table-builder-ant-preview-row-selected',
+            ),
+          })}
+        />
+        <DragOverlay dropAnimation={null}>
+          {previewDragOverlayNode}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 });

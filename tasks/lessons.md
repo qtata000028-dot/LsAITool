@@ -1,19 +1,23 @@
-# 任务教训
+﻿## 2026-04-01 In This Repo, Favor Antd Controls Over Antd Card When JSX Types Start Fighting
+- This repo's current `antd` setup accepted `Table`, `Tabs`, `Button`, `Flex`, `Tag`, `Empty`, and `Typography` cleanly, but `Card` became unstable under type checking in the module-setting workspace and triggered `TS2604` as a JSX element.
+- When the product goal is "make the visible controls feel uniformly Antd," do not get stuck forcing every shell layer to become `Card`. It is acceptable to keep a plain container div and move the visible controls onto Antd components first, especially when that lets lint/build stay green.
+- Treat this as a delivery rule for this codebase: prioritize the user's visible consistency target and compile stability over full component-purity if one specific Antd shell component proves unreliable in the current toolchain.
+# 浠诲姟鏁欒
 
 ## 2026-03-28 AI Batch Actions Should Reuse The Real Page Save Instead Of Inventing Narrow Follow-Up Saves
-- When the user says an AI-assisted batch action like “一键翻译” should “save this page”, wire that action into the existing page-level save orchestration instead of inventing a special-case save that only persists one field such as the table name.
+- When the user says an AI-assisted batch action like 鈥滀竴閿炕璇戔€?should 鈥渟ave this page鈥? wire that action into the existing page-level save orchestration instead of inventing a special-case save that only persists one field such as the table name.
 - In this single-table module-settings flow, the authoritative save entry is `saveSingleTableModuleSettingsPage`; any follow-up save from the grid inspector should call that shared page save so master config, columns, conditions, menus, and related state stay consistent.
 - Treat translation and save as two distinct outcomes. If translation succeeds but page save fails, surface that partial-success state explicitly instead of showing a generic full-success toast.
-- Do not short-circuit the page save just because the AI translation step found zero acceptable replacements. If the product says “clicking the button should also save this page”, the save path still needs to run for “no translatable fields” and “all results filtered out” branches, or the user will see no save request at all.
-- When a grid save body is built from editable column state, prefer the screen’s canonical editable fields like `sourceField` and `name` over stale mirror fields such as `fieldName` and `displayName`. Otherwise the request body can keep posting the old values and make detail-column edits look like they were never saved.
-- For the single-table main-field inspector, the “字段标识” input should map to backend `fieldname` itself, not “best effort” fallbacks. If `fieldname` is empty, show empty; do not let `sysname` or `fieldKey` fill the gap and turn an unconfigured identifier into a UUID-like internal key on screen.
+- Do not short-circuit the page save just because the AI translation step found zero acceptable replacements. If the product says 鈥渃licking the button should also save this page鈥? the save path still needs to run for 鈥渘o translatable fields鈥?and 鈥渁ll results filtered out鈥?branches, or the user will see no save request at all.
+- When a grid save body is built from editable column state, prefer the screen鈥檚 canonical editable fields like `sourceField` and `name` over stale mirror fields such as `fieldName` and `displayName`. Otherwise the request body can keep posting the old values and make detail-column edits look like they were never saved.
+- For the single-table main-field inspector, the 鈥滃瓧娈垫爣璇嗏€?input should map to backend `fieldname` itself, not 鈥渂est effort鈥?fallbacks. If `fieldname` is empty, show empty; do not let `sysname` or `fieldKey` fill the gap and turn an unconfigured identifier into a UUID-like internal key on screen.
 - When `fieldname` is editable through `sourceField`, save logic must also respect an explicit empty string. If the UI clears the identifier, do not fall back to stale `fieldname/sysname` values during save or the bug will come back immediately after reload.
-- Detail `grid-fields` cannot blindly reuse the main-field mapper’s display-name rules. For `GET /details/{detailId}/grid-fields`, the visible field title belongs to backend `username`, while the identifier belongs to `fieldName`; if read mapping lets `fieldName` outrank `username`, the UI will show the wrong label even though both values are present.
+- Detail `grid-fields` cannot blindly reuse the main-field mapper鈥檚 display-name rules. For `GET /details/{detailId}/grid-fields`, the visible field title belongs to backend `username`, while the identifier belongs to `fieldName`; if read mapping lets `fieldName` outrank `username`, the UI will show the wrong label even though both values are present.
 - When saving detail or field grid columns, send the normalized title and identifier back under the backend aliases that these legacy endpoints actually understand. In this repo, carrying `username` together with `displayName`, and `fieldName` together with `fieldname`, is safer than assuming one alias family covers every grid-field endpoint.
 
 ## 2026-03-28 Follow-Up Saves After AI Create Must Respect The Exact Persistence Scope
-- When the user narrows a follow-up save rule from “save the generated config” to “save only the table name”, do not keep posting the broader payload through a shared adapter by accident. Re-check both the caller payload and the adapter’s fallback rules.
-- In this single-table flow, AI one-click table creation may still update local `mainSql`, but its follow-up module-config save should omit SQL entirely when the requirement is “only persist the table name”.
+- When the user narrows a follow-up save rule from 鈥渟ave the generated config鈥?to 鈥渟ave only the table name鈥? do not keep posting the broader payload through a shared adapter by accident. Re-check both the caller payload and the adapter鈥檚 fallback rules.
+- In this single-table flow, AI one-click table creation may still update local `mainSql`, but its follow-up module-config save should omit SQL entirely when the requirement is 鈥渙nly persist the table name鈥?
 - If the user still sees the generated SQL after the follow-up save payload is already narrowed, inspect local state writes next. In this screen, `updateGridConfig({ mainSql: response.result.mainSql })` was enough to make the UI and the later normal save path keep treating the AI result as persisted SQL.
 
 ## 2026-03-28 Single-Table Main Config Screens Must Load And Save The Master Config Row Explicitly
@@ -26,152 +30,46 @@
 - Keep the follow-up save aligned with the existing read contract. In this single-table module flow, the authoritative config keys are `mainTable` and `querySql`, so the post-create save should write those exact keys instead of inventing UI-only names such as `tableName`.
 
 ## 2026-03-23 Document Split, Resize Smoothness And Archive Group Layout
-- 文档工作台里主表和明细如果都是高频操作区，就不要继续保留可拖分隔条；默认应按稳定比例甚至等分高度展示，避免用户一点击下半区就感觉布局在缩动。
-- 对高频拖宽控件，不能一处用直接 setState 每帧刷新、另一处再单独实现临时预览；应统一成同一套 live preview + rAF 提交链路，否则体感会明显不一致。
-- 当用户明确需要“拖宽时有对齐刻度”时，不要只显示当前像素 HUD，要把可吸附宽度和刻度反馈一起给出来，帮助微调。
-- 基础档案主表详情布局如果已经有“分组”语义，就不要再停留在大块分组卡堆叠；应升级为主从工作台，让用户先选分组，再配置该分组内部行数和字段排布。
+- 鏂囨。宸ヤ綔鍙伴噷涓昏〃鍜屾槑缁嗗鏋滈兘鏄珮棰戞搷浣滃尯锛屽氨涓嶈缁х画淇濈暀鍙嫋鍒嗛殧鏉★紱榛樿搴旀寜绋冲畾姣斾緥鐢氳嚦绛夊垎楂樺害灞曠ず锛岄伩鍏嶇敤鎴蜂竴鐐瑰嚮涓嬪崐鍖哄氨鎰熻甯冨眬鍦ㄧ缉鍔ㄣ€?- 瀵归珮棰戞嫋瀹芥帶浠讹紝涓嶈兘涓€澶勭敤鐩存帴 setState 姣忓抚鍒锋柊銆佸彟涓€澶勫啀鍗曠嫭瀹炵幇涓存椂棰勮锛涘簲缁熶竴鎴愬悓涓€濂?live preview + rAF 鎻愪氦閾捐矾锛屽惁鍒欎綋鎰熶細鏄庢樉涓嶄竴鑷淬€?- 褰撶敤鎴锋槑纭渶瑕佲€滄嫋瀹芥椂鏈夊榻愬埢搴︹€濇椂锛屼笉瑕佸彧鏄剧ず褰撳墠鍍忕礌 HUD锛岃鎶婂彲鍚搁檮瀹藉害鍜屽埢搴﹀弽棣堜竴璧风粰鍑烘潵锛屽府鍔╁井璋冦€?- 鍩虹妗ｆ涓昏〃璇︽儏甯冨眬濡傛灉宸茬粡鏈夆€滃垎缁勨€濊涔夛紝灏变笉瑕佸啀鍋滅暀鍦ㄥぇ鍧楀垎缁勫崱鍫嗗彔锛涘簲鍗囩骇涓轰富浠庡伐浣滃彴锛岃鐢ㄦ埛鍏堥€夊垎缁勶紝鍐嶉厤缃鍒嗙粍鍐呴儴琛屾暟鍜屽瓧娈垫帓甯冦€?
+## 2026-03-23 鏄庣粏绫诲瀷鍏ュ彛涓庤〃鏍煎紡鏄庣粏鑳藉姏
+- 鏄庣粏绫诲瀷鍒囨崲蹇呴』鍐呰仛鍒版槑缁嗛〉绛惧彸渚э紝涓嶈鍐嶄繚鐣欏簳閮ㄧ嫭绔嬬被鍨嬫爮銆傞〉绛捐礋璐ｅ畾涔夊綋鍓嶆槑缁嗙殑鍐呴儴瑙嗗浘绫诲瀷锛屽伐浣滈潰鍙寜杩欎釜绫诲瀷娓叉煋銆?- 琛ㄦ牸寮忔槑缁嗘暣琛ㄨ兘鍔涘繀椤诲拰涓昏〃淇濇寔鍚岀骇锛岃嚦灏戣淇濈暀鏁磋〃銆佸竷灞€銆佸彸閿€侀鑹茶繖绫婚珮棰戝叆鍙ｏ紝涓嶈兘鍥犱负鏄槑缁嗗氨闄嶆垚瑁佸壀鐗堟鏌ュ櫒銆?- 楠岃瘉杩欑被鏀瑰姩鏃朵笉鑳藉彧鐪嬪彸渚ц〃鍗曟湁娌℃湁鍑虹幇锛岃繕瑕佺湡瀹炲垏涓€娆＄被鍨嬶紝纭涓棿宸ヤ綔闈㈠悓姝ュ垏鎹紝涓旀棫鐨勫簳閮ㄧ被鍨嬪垏鎹㈡潯宸茬粡娑堝け銆?
+## 浼氳瘽鍚姩鍓嶆鏌?- 寮€濮嬫湰椤圭洰鐨勫鏉備换鍔″墠锛屽厛闃呰鏈枃浠躲€?- 濡傛灉鐢ㄦ埛鍒氱粰鍑轰慨姝ｆ剰瑙侊紝鍏堟洿鏂版湰鏂囦欢锛屽啀缁х画鎵ц銆?
+## 褰撳墠娌夋穩瑙勫垯
 
-## 2026-03-23 明细类型入口与表格式明细能力
-- 明细类型切换必须内聚到明细页签右侧，不要再保留底部独立类型栏。页签负责定义当前明细的内部视图类型，工作面只按这个类型渲染。
-- 表格式明细整表能力必须和主表保持同级，至少要保留整表、布局、右键、颜色这类高频入口，不能因为是明细就降成裁剪版检查器。
-- 验证这类改动时不能只看右侧表单有没有出现，还要真实切一次类型，确认中间工作面同步切换，且旧的底部类型切换条已经消失。
+### 瑙勫垝涓庢墽琛?- 闈炵畝鍗曚换鍔″繀椤诲厛瑙勫垝锛岃鍒掗渶瑕佽鐩栧疄鐜颁笌楠岃瘉锛岃€屼笉鏄彧鍒楀姛鑳芥楠ゃ€?- 鎵ц涓鏋滃彂鐜版柟妗堝亸绂汇€佷笂涓嬫枃鍙樺寲鎴栭獙璇佷笉鎴愮珛锛屽厛鍋滀笅骞堕噸瑙勫垝銆?- 闇€姹傝鏍艰鎻愬墠鍐欑粏锛岄伩鍏嶉潬瀹炵幇杩囩▼涓存椂鐚滄祴銆?
+### 涓婁笅鏂囦笌骞惰
+- 璋冪爺銆佹帰绱€佸苟琛屽垎鏋愮被宸ヤ綔瑕佸敖閲忎笌涓诲疄鐜拌В鑰︼紝淇濇寔涓讳笂涓嬫枃骞插噣銆?- 鍗曚釜鍒嗘瀽鍗曞厓鍙鐞嗕竴涓棶棰橈紝閬垮厤娣锋潅澶氫釜鐩爣銆?
+### 璐ㄩ噺涓庨獙璇?- 鏈瘉鏄庡彲杩愯鍓嶏紝涓嶈兘澹扮О瀹屾垚銆?- 蹇呴』浠ユ祴璇曘€佹瀯寤恒€佹棩蹇椼€佹祻瑙堝櫒楠岃瘉鎴栬涓哄姣旇瘉鏄庣粨璁恒€?- 鑻ュ瓨鍦ㄦ湭楠岃瘉椤癸紝蹇呴』鏄庣‘璁板綍椋庨櫓锛屼笉鑳界渷鐣ャ€?
+### 鑷垜浼樺寲
+- 鐢ㄦ埛鐨勬瘡涓€娆′慨姝ｉ兘搴旇浆鍖栦负鏄庣‘瑙勫垯锛屽啓鍏ユ湰鏂囦欢锛岄槻姝㈤噸澶嶇姱閿欍€?- 瀵瑰凡鏈夋暀璁鎸佺画杩唬锛岃€屼笉鏄竴娆℃€ц褰曞悗澶辨晥銆?
+### 瀹炵幇椋庢牸
+- 鍏堣拷姹傛牴鍥犱慨澶嶏紝鍐嶈€冭檻鏈€灏忎镜鍏ュ疄鐜般€?- 瀵归潪绠€鍗曟敼鍔紝浼樺厛瀵绘壘鏇寸粺涓€銆佹洿浼橀泤鐨勬柟妗堬紝閬垮厤涓存椂鎷艰ˉ銆?
+## 鏇存柊璁板綍
 
-## 会话启动前检查
-- 开始本项目的复杂任务前，先阅读本文件。
-- 如果用户刚给出修正意见，先更新本文件，再继续执行。
-
-## 当前沉淀规则
-
-### 规划与执行
-- 非简单任务必须先规划，规划需要覆盖实现与验证，而不是只列功能步骤。
-- 执行中如果发现方案偏离、上下文变化或验证不成立，先停下并重规划。
-- 需求规格要提前写细，避免靠实现过程临时猜测。
-
-### 上下文与并行
-- 调研、探索、并行分析类工作要尽量与主实现解耦，保持主上下文干净。
-- 单个分析单元只处理一个问题，避免混杂多个目标。
-
-### 质量与验证
-- 未证明可运行前，不能声称完成。
-- 必须以测试、构建、日志、浏览器验证或行为对比证明结论。
-- 若存在未验证项，必须明确记录风险，不能省略。
-
-### 自我优化
-- 用户的每一次修正都应转化为明确规则，写入本文件，防止重复犯错。
-- 对已有教训要持续迭代，而不是一次性记录后失效。
-
-### 实现风格
-- 先追求根因修复，再考虑最小侵入实现。
-- 对非简单改动，优先寻找更统一、更优雅的方案，避免临时拼补。
-
-## 更新记录
-
-### 2026-03-22 明细页签与内部视图分层
-- 明细页签和明细内部视图不能重复承载同一批配置。页签只负责页签级定义，表格/图表/网页等内部视图要通过点击对应画布对象进入各自详情，否则用户会在两套右侧表单里来回找同一个配置。
-- 当用户明确指出“图表应该点击视图预留区展示配置”时，不要只靠底部类型切换推断当前配置对象；必须让画布对象本身成为详情入口，做到点击对象即切换到对应检查器。
-- 图表类高频配置如果字段多，不能简单平铺成密集的小格子；应按“基础信息 / 轴字段 / 颜色 / 开关”分组，优先保证扫描和填写顺手。
-
-### 2026-03-22 明细检查器布局
-- 当用户明确指出“右侧详情排版太乱”时，不要继续在现有结构上叠加小卡片、小统计块和多层入口；应退回到更少容器、更清晰分组的表单骨架。
-- 对同一工作面里的“明细模块定义”和“明细表格配置”，即使语义不同，也要共享统一的视觉节奏；不能一边是碎摘要卡，一边是密集嵌套入口，否则用户会直接感知成杂乱。
-- 高频配置面板里，低价值的计数卡、表名卡、说明文案和技术映射提示应优先删减或并入标题/次级信息，不能让它们抢占填写区的主层级。
-
-### 2026-03-22 明细图表配置口径
-- 当用户明确指向某张历史配置表，如 `p_systemdlltabchart`，不能只在右侧放一个“落点映射卡”或表名提示；必须按这张表的字段口径把真正可编辑的配置分支补出来，否则用户看到的仍然只是半成品。
-- 对这类“旧 WinForm 表格配置 -> 新工作台检查器”的迁移，优先保留字段语义和高频填写顺序，再做 shadcn/workbench 化，不要先做一层好看的摘要卡就停下。
-
-### 2026-03-22 明细配置职责边界
-- 当用户说“刚才的明细弄错了，拿这些配置去改”时，优先回查自己是不是把“明细模块定义”和“明细整表配置”拆成了两套并行模型；这类高频配置必须收口成一套主模型，不能让用户在两个右侧详情里来回找。
-- 基础档案下的明细表格如果要“和主表一样，只是来源不同”，正确做法是复用主表整表配置语法，再把“模块编号继承主表配置 / SQL 自动构列”作为来源增强规则，而不是再造一套明细专属表单。
-- 当用户给了明确的历史 WinForm 截图时，应优先按截图里字段口径和操作节奏对照实现，而不是继续沿用上一轮自己推断出的表结构分支。
-
+### 2026-03-22 鏄庣粏椤电涓庡唴閮ㄨ鍥惧垎灞?- 鏄庣粏椤电鍜屾槑缁嗗唴閮ㄨ鍥句笉鑳介噸澶嶆壙杞藉悓涓€鎵归厤缃€傞〉绛惧彧璐熻矗椤电绾у畾涔夛紝琛ㄦ牸/鍥捐〃/缃戦〉绛夊唴閮ㄨ鍥捐閫氳繃鐐瑰嚮瀵瑰簲鐢诲竷瀵硅薄杩涘叆鍚勮嚜璇︽儏锛屽惁鍒欑敤鎴蜂細鍦ㄤ袱濂楀彸渚ц〃鍗曢噷鏉ュ洖鎵惧悓涓€涓厤缃€?- 褰撶敤鎴锋槑纭寚鍑衡€滃浘琛ㄥ簲璇ョ偣鍑昏鍥鹃鐣欏尯灞曠ず閰嶇疆鈥濇椂锛屼笉瑕佸彧闈犲簳閮ㄧ被鍨嬪垏鎹㈡帹鏂綋鍓嶉厤缃璞★紱蹇呴』璁╃敾甯冨璞℃湰韬垚涓鸿鎯呭叆鍙ｏ紝鍋氬埌鐐瑰嚮瀵硅薄鍗冲垏鎹㈠埌瀵瑰簲妫€鏌ュ櫒銆?- 鍥捐〃绫婚珮棰戦厤缃鏋滃瓧娈靛锛屼笉鑳界畝鍗曞钩閾烘垚瀵嗛泦鐨勫皬鏍煎瓙锛涘簲鎸夆€滃熀纭€淇℃伅 / 杞村瓧娈?/ 棰滆壊 / 寮€鍏斥€濆垎缁勶紝浼樺厛淇濊瘉鎵弿鍜屽～鍐欓『鎵嬨€?
+### 2026-03-22 鏄庣粏妫€鏌ュ櫒甯冨眬
+- 褰撶敤鎴锋槑纭寚鍑衡€滃彸渚ц鎯呮帓鐗堝お涔扁€濇椂锛屼笉瑕佺户缁湪鐜版湁缁撴瀯涓婂彔鍔犲皬鍗＄墖銆佸皬缁熻鍧楀拰澶氬眰鍏ュ彛锛涘簲閫€鍥炲埌鏇村皯瀹瑰櫒銆佹洿娓呮櫚鍒嗙粍鐨勮〃鍗曢鏋躲€?- 瀵瑰悓涓€宸ヤ綔闈㈤噷鐨勨€滄槑缁嗘ā鍧楀畾涔夆€濆拰鈥滄槑缁嗚〃鏍奸厤缃€濓紝鍗充娇璇箟涓嶅悓锛屼篃瑕佸叡浜粺涓€鐨勮瑙夎妭濂忥紱涓嶈兘涓€杈规槸纰庢憳瑕佸崱锛屼竴杈规槸瀵嗛泦宓屽鍏ュ彛锛屽惁鍒欑敤鎴蜂細鐩存帴鎰熺煡鎴愭潅涔便€?- 楂橀閰嶇疆闈㈡澘閲岋紝浣庝环鍊肩殑璁℃暟鍗°€佽〃鍚嶅崱銆佽鏄庢枃妗堝拰鎶€鏈槧灏勬彁绀哄簲浼樺厛鍒犲噺鎴栧苟鍏ユ爣棰?娆＄骇淇℃伅锛屼笉鑳借瀹冧滑鎶㈠崰濉啓鍖虹殑涓诲眰绾с€?
+### 2026-03-22 鏄庣粏鍥捐〃閰嶇疆鍙ｅ緞
+- 褰撶敤鎴锋槑纭寚鍚戞煇寮犲巻鍙查厤缃〃锛屽 `p_systemdlltabchart`锛屼笉鑳藉彧鍦ㄥ彸渚ф斁涓€涓€滆惤鐐规槧灏勫崱鈥濇垨琛ㄥ悕鎻愮ず锛涘繀椤绘寜杩欏紶琛ㄧ殑瀛楁鍙ｅ緞鎶婄湡姝ｅ彲缂栬緫鐨勯厤缃垎鏀ˉ鍑烘潵锛屽惁鍒欑敤鎴风湅鍒扮殑浠嶇劧鍙槸鍗婃垚鍝併€?- 瀵硅繖绫烩€滄棫 WinForm 琛ㄦ牸閰嶇疆 -> 鏂板伐浣滃彴妫€鏌ュ櫒鈥濈殑杩佺Щ锛屼紭鍏堜繚鐣欏瓧娈佃涔夊拰楂橀濉啓椤哄簭锛屽啀鍋?shadcn/workbench 鍖栵紝涓嶈鍏堝仛涓€灞傚ソ鐪嬬殑鎽樿鍗″氨鍋滀笅銆?
+### 2026-03-22 鏄庣粏閰嶇疆鑱岃矗杈圭晫
+- 褰撶敤鎴疯鈥滃垰鎵嶇殑鏄庣粏寮勯敊浜嗭紝鎷胯繖浜涢厤缃幓鏀光€濇椂锛屼紭鍏堝洖鏌ヨ嚜宸辨槸涓嶆槸鎶娾€滄槑缁嗘ā鍧楀畾涔夆€濆拰鈥滄槑缁嗘暣琛ㄩ厤缃€濇媶鎴愪簡涓ゅ骞惰妯″瀷锛涜繖绫婚珮棰戦厤缃繀椤绘敹鍙ｆ垚涓€濂椾富妯″瀷锛屼笉鑳借鐢ㄦ埛鍦ㄤ袱涓彸渚ц鎯呴噷鏉ュ洖鎵俱€?- 鍩虹妗ｆ涓嬬殑鏄庣粏琛ㄦ牸濡傛灉瑕佲€滃拰涓昏〃涓€鏍凤紝鍙槸鏉ユ簮涓嶅悓鈥濓紝姝ｇ‘鍋氭硶鏄鐢ㄤ富琛ㄦ暣琛ㄩ厤缃娉曪紝鍐嶆妸鈥滄ā鍧楃紪鍙风户鎵夸富琛ㄩ厤缃?/ SQL 鑷姩鏋勫垪鈥濅綔涓烘潵婧愬寮鸿鍒欙紝鑰屼笉鏄啀閫犱竴濂楁槑缁嗕笓灞炶〃鍗曘€?- 褰撶敤鎴风粰浜嗘槑纭殑鍘嗗彶 WinForm 鎴浘鏃讹紝搴斾紭鍏堟寜鎴浘閲屽瓧娈靛彛寰勫拰鎿嶄綔鑺傚瀵圭収瀹炵幇锛岃€屼笉鏄户缁部鐢ㄤ笂涓€杞嚜宸辨帹鏂嚭鐨勮〃缁撴瀯鍒嗘敮銆?
 ### 2026-03-21
-- 用户要求将规划、验证、教训沉淀和优雅实现正式落到项目文档中，后续必须严格执行。
-- 当用户描述“放下面”这类布局诉求时，必须先区分是同一步内的视觉分区，还是新增一个后置步骤，不能直接按页面排版理解。
-- 做界面可视高度判断时，不能只依赖本地放大后的视口或截图缩略图，必须按用户真实常见窗口高度验证是否完整可见。
-- 对后台配置工作台，先设计滚动归属和高度分配，再决定字段压缩方式；否则容易误把容器层级问题当成字段太多。
-- 当用户明确表示“这个区域可以不用表格”时，不要继续执着保留表格隐喻，应回到任务本质，选更适合的主从卡片、列表或工作台结构。
-- 当用户继续指出“留白太多、重度配置不顺手”时，不要只靠缩小输入框高度修补；应直接重构成卡片式主从工作台，让摘要查验和详情编辑分层清晰。
-- 当字段只是只读查验信息而不是可编辑配置时，不要放进右侧配置表单；应优先放到左侧卡片或摘要区展示。
-- 当某些页签只是模型映射或只读查验入口，而不是限制措施的核心配置时，不要继续留在第 6 步里占空间；应直接从限制措施页签中移除。
-- 当限制措施里保留多个业务页签时，右侧布局不能一页一套风格；应统一为同一类摘要条 + 配置卡工作台，避免某些页签继续沿用老式双栏空面板。
-- 当用户反馈“结构可以但看起来乱”时，问题通常不在字段多少，而在同一信息被重复放置、说明文字过多、卡片层级不一致；优先统一骨架并删除重复信息，而不是继续叠样式。
-# 2026-03-21 高频配置补充教训
-- 对高频配置界面，用户说“切换不丝滑”时，要优先检查是否有人为引入 `deferred`、多次无效 setState 或重复渲染，而不是只盯视觉样式。
-- 对工作台式界面，出现大量留白时，先检查容器高度策略和 `flex-1 / h-full / min-h-*` 的叠加关系，再决定是否要缩控件。
-- 明细工作区的模式切换控件应尽量并入主工具条，避免再额外占一条底栏，把有效高度浪费在“说明式工具栏”上。
-- fullscreen 工作区不能只看内部面板是否紧凑，还要量外层 stage 到底部操作栏的真实 gap；否则容易把空白从面板里挪到面板外。
-
-### 2026-03-21 明细双模式数据源
-- 当用户描述两种互斥的数据源策略时，不要把一半配置放在页签行为、一半放在表格属性里；必须统一到一个“数据源”入口，否则后续员工配置时会失去全局理解。
-
-### 2026-03-21 模块设置舞台留白
-- 当用户指出第 5 步模块设置底部大片留白时，要优先检查外层 `stage` 是否用了固定高度、上下 pane 默认比例是否失衡，而不是继续压右侧卡片或局部控件。
-- 如果明细区使用紧凑表格画布，不能只给 `min-height`；要同时给父容器 `h-full / flex-1`，并把骨架行沿整个画布分布，否则视觉上会像内容缩在顶部、下半区整块发空。
-### 2026-03-22 明细配置体验
-- 如果用户明确指出“不要多出几排光影/骨架”，就不能再拿装饰性的 skeleton 充当表体密度；应回到干净表格面或真实占位行，而不是继续堆视觉效果。
-- 对高频配置场景，数据源入口必须收敛到一处；“页签行为里一套、整表属性里再一套”的设计会直接制造理解成本。
-- 当用户反馈“还是有一点延迟”时，不要默认继续用 transition/deferred；要优先回查是否把高频选中链路放进了低优先级更新。
-- 明细页签本身如果只是对象切换入口，就不该默认把右侧带到“页签行为”而不是“当前明细整表配置”；默认落点必须是用户当下最常改的数据源和整表属性。
-### 2026-03-22 明细类型入口位置
-- 对高频配置入口，用户已经形成稳定心智后，不要为了“视觉统一”把入口从原有位置挪走；尤其像明细类型这种模式切换，优先保留右下角这类历史位置，减少重新理解成本。
-### 2026-03-22 模块条件条收敛
-- 当主表条件和左表条件属于同一工作面里的高频配置时，不要把它们拆在左右各自工具条里；应统一收敛到模块顶部，通过轻量切换按钮管理当前作用域，避免视线来回跳。
-- “默认进入状态”不能只改一个初始 `useState`；还要排查后续 `useEffect`、打开向导入口和步骤切换里是否有强制覆盖状态的逻辑。
-### 2026-03-22 模块设置交互与非全屏布局
-- 列宽拖拽这类设计器能力，不能把最小宽度绑死在标题文案宽度上；如果用户明确需要拖到接近 `0px`，应把标题显示和列物理宽度解耦，用截断、悬浮提示或选中态处理可读性。
-- 当用户反馈“点击条件或左表后下方出现大片留白”时，不要只看单个面板高度，必须回查点击后整个上下 pane 分配、空态容器 `min-height`、以及不同 scope 下的 fallback 画布是否重新占满。
-- 非全屏模式下右侧检查器不能沿用全屏收窄逻辑；应让宽度按可用空间自适应到足够展示页签文案，避免通过换行牺牲可读性。
-### 2026-03-22 明细类型切换入口
-- 当用户已经接受“明细类型切换放在下方”的心智后，不要再把它做成贴在画布里的孤立悬浮控件；应收成独立底部 panel，让它成为工作台的一部分，而不是漂在内容上层。
-- 引入 `shadcn/ui` 风格时，不一定要先整库迁移；可以先把高频入口做成更克制的 segmented/panel 语法，先落在局部工作面上验证质感和顺手度。
-### 2026-03-22 条件工作台与底部类型 Panel
-- 当用户明确要求固定条件控件总宽度时，不要继续保留旧的按名字长度动态撑宽和拖拽调宽；应直接把名字展示与控件物理宽度解耦，收成统一宽度工作台。
-- 顶部条件区不能只支持“逐个字段配置”，还要支持“面板级总览配置”；像行数、分栏数、批量粘贴构建这类布局级能力，应该在右侧单独建一个总览分支，而不是塞进单个条件表单。
-- 当用户认可新的结构但不认可选中色和左侧介绍时，不要回退整体结构；应保留结构，只收掉信号层：颜色、摘要文案、信息密度。
-### 2026-03-22 条件条与布局稳定
-- 当用户先接受 `175px` 默认宽度、随后又明确要求恢复拖宽时，正确规则不是“继续把宽度写死”，而是“默认宽度固定、实际宽度可拖可改”。默认值和可调能力要解耦。
-- 顶部条件区属于高频排布区域，不要再做成明显卡片块；越像卡片，用户越难判断真实间距。应优先使用扁平行式 workbench 语法。
-- 上下工作区分隔条的位置不能依赖当前选中对象动态抬高，否则用户会直接感知成“点击时界面在抖”。pane 高度策略要尽量稳定，选中态只改内容，不改大框架。
-- 条件标签和控件的距离要先服务于读取与间距判断，说明性装饰和额外留白应后置。
-### 2026-03-22 条件工作台直接操作优先
-- 当用户已经明确要“拖入每一个控件行数中”时，不要继续保留“每行分栏”这类抽象数字配置；应回到直接操控模型，用真实行容器承接拖放。
-- 对高频排布区，布局模型只能保留一套。不能一边让用户按行拖放，一边又让 grid 分栏数继续主导布局，否则会制造理解冲突。
-- 条件宽度拖拽的“卡”通常不是视觉问题，而是每帧全量更新数组导致的；要优先优化更新链路和重渲染范围，而不是只改拖拽手柄样式。
-### 2026-03-22 右侧详情去冗余
-- 当用户明确要求“右侧详情整体优化”时，不要继续局部修一个分支；应优先收敛公共骨架、输入控件和 tabs 语法，让主表、列、条件、明细等检查器共用同一套视觉节奏。
-- 高频办公填写面板里，低价值说明文案会直接制造噪音。像“这里统一维护…”、“先从上面选择…”这类提示，若不承担关键决策信息，就应该删掉或压缩成最短状态文案。
-- shadcn/ui 风格迁移不等于必须整库安装；当项目还处在重构期时，先把现有壳层和表单控件收成 shadcn 的后台语法，往往比引入整套依赖更稳。
-- 当用户要求“右侧详情整体优化”时，不能只改输入框样式；必须一起收口 panel、tabs、badge、说明文案和技术映射呈现方式，否则看起来仍然像旧系统换了一层皮。
-- 对高频配置面板，技术表名和映射关系不该再用一串标签堆在最上面；更适合改成短卡片或计数入口，把注意力留给真正可填写的字段。
-- shadcn 化优先级应是：先统一公共基础语法，再迁高频分支；如果先逐个分支随手改 class，最终还是会回到“一页一种风格”。
-### 2026-03-22 顶部条件拖拽区
-- 顶部条件这种高频拖拽工作区，不要再额外放行序号、角标这类装饰信息；它们会直接干扰用户判断真实间距和拖拽落点。优先保留纯控件行。
-### 2026-03-22 单据主表与条件区统一
-- 当用户已经认可顶部条件区的新 workbench 语法后，单据主表这类同样是高频拖拽排布区的控件也要尽快收敛到同一套语言；不要让条件、主表、明细各自维持一套不同的视觉和交互规则。
-- 点击单据主表或明细对象后如果下半区会缩短或留白，优先检查上下 pane 的高度分配和容器 `flex/min-h/h-full` 关系，而不是继续往空白里塞占位块。
-### 2026-03-22 单据主表流式布局
-- 当用户明确要求单据主表“不再自由拖动、改成和条件区一样的流式布局”时，不能继续在自由坐标系统上修补；应直接把布局模型改成按行、按顺序、可插入的工作面。
-- 对流式工作台，拖到另一个控件前方的预期不是交换位置，也不是只改坐标；应该实现插入重排，让目标控件和其后续控件自动顺延。
-### 2026-03-22 单据主表行工作台补充
-- 单据主表这类高频排布区，一旦用户要求“和条件区一样的流式布局”，就不要再保留旧的自由坐标拖拽入口；布局模型和交互模型必须一起切换。
-- 流式排布里的拖放预期是“插入”而不是“覆盖”或“交换”，拖到某个控件前面时，目标及后续控件都要主动后移一位。
-- 流式工作台里若保留横向溢出能力，默认可见滚动条会被用户误判成多余灰线；应保留滚动能力，但隐藏滚动条本身。
-### 2026-03-22 基础档案条件插入式拖放
-- 当用户已经确认单据主表使用“拖到前面即插入、目标自动后移”的语义后，基础档案顶部条件区必须同步成同一套拖放规则，不能一个区域是插入式，另一个区域还是按行追加。
-- 条件区这类按行 workbench 的拖放状态，不能只记录“当前行”；要同时记录“当前行 + 前插目标控件”，否则落点只能到行尾，做不出真正的前插重排。
-### 2026-03-22 条件区拖放语义对齐
-- 只要用户已经确认某个高频排布区使用“前插即后移”的拖放语义，其它同类型 workbench 也要同步对齐，不能让基础档案条件区和单据主表出现两套不同的排序规则。
-### 2026-03-22 基础档案明细模块右侧详情
-- 当用户明确要求“基础档案点击明细模块，右侧详情参照某张历史表结构”时，不能继续沿用当前最小化配置分支；要回到历史数据模型，把右侧检查器按目标表的字段口径重建。
-- 对“明细模块”这种频繁填写的右侧详情，不要保留大段解释、视觉说明或概念性排版；优先保证字段直给、结构清楚、填写顺手。
-- shadcn 化不等于继续叠加说明卡片；这种场景更适合用共享的 shadcn inspector 骨架，直接组织输入项和开关。
-- 新增右侧检查器分支时，必须在浏览器里验证“真实点击入口”已经切到该分支；如果入口还落在旧分支，再完整的表单也等于不可用。
-### 2026-03-22 明细页签与内部视图职责分流
-- 当用户说“明细页签可以配一部分，里面控件也可以配一部分”时，优先检查是不是把“页签对象”和“内部视图对象”共用了同一个选中态；这类问题的根因通常不是单个表单太乱，而是选中模型没有拆层。
-- 底部类型切换属于“视图切换”，不应该默认等于“右侧详情切换”。只有用户真正点击到表格区域、图表预留区这类内部视图对象时，右侧才应该切到对应详情。
-- 图表视图的右侧配置不要重复承载数据来源、表格摘要、颜色/右键入口等整表级信息；图表面板只保留 `p_systemdlltabchart` 本身需要的字段，其余信息留在明细表配置里。
-## 2026-03-23 Document Split And Group Workbench
+- 鐢ㄦ埛瑕佹眰灏嗚鍒掋€侀獙璇併€佹暀璁矇娣€鍜屼紭闆呭疄鐜版寮忚惤鍒伴」鐩枃妗ｄ腑锛屽悗缁繀椤讳弗鏍兼墽琛屻€?- 褰撶敤鎴锋弿杩扳€滄斁涓嬮潰鈥濊繖绫诲竷灞€璇夋眰鏃讹紝蹇呴』鍏堝尯鍒嗘槸鍚屼竴姝ュ唴鐨勮瑙夊垎鍖猴紝杩樻槸鏂板涓€涓悗缃楠わ紝涓嶈兘鐩存帴鎸夐〉闈㈡帓鐗堢悊瑙ｃ€?- 鍋氱晫闈㈠彲瑙嗛珮搴﹀垽鏂椂锛屼笉鑳藉彧渚濊禆鏈湴鏀惧ぇ鍚庣殑瑙嗗彛鎴栨埅鍥剧缉鐣ュ浘锛屽繀椤绘寜鐢ㄦ埛鐪熷疄甯歌绐楀彛楂樺害楠岃瘉鏄惁瀹屾暣鍙銆?- 瀵瑰悗鍙伴厤缃伐浣滃彴锛屽厛璁捐婊氬姩褰掑睘鍜岄珮搴﹀垎閰嶏紝鍐嶅喅瀹氬瓧娈靛帇缂╂柟寮忥紱鍚﹀垯瀹规槗璇妸瀹瑰櫒灞傜骇闂褰撴垚瀛楁澶銆?- 褰撶敤鎴锋槑纭〃绀衡€滆繖涓尯鍩熷彲浠ヤ笉鐢ㄨ〃鏍尖€濇椂锛屼笉瑕佺户缁墽鐫€淇濈暀琛ㄦ牸闅愬柣锛屽簲鍥炲埌浠诲姟鏈川锛岄€夋洿閫傚悎鐨勪富浠庡崱鐗囥€佸垪琛ㄦ垨宸ヤ綔鍙扮粨鏋勩€?- 褰撶敤鎴风户缁寚鍑衡€滅暀鐧藉お澶氥€侀噸搴﹂厤缃笉椤烘墜鈥濇椂锛屼笉瑕佸彧闈犵缉灏忚緭鍏ユ楂樺害淇ˉ锛涘簲鐩存帴閲嶆瀯鎴愬崱鐗囧紡涓讳粠宸ヤ綔鍙帮紝璁╂憳瑕佹煡楠屽拰璇︽儏缂栬緫鍒嗗眰娓呮櫚銆?- 褰撳瓧娈靛彧鏄彧璇绘煡楠屼俊鎭€屼笉鏄彲缂栬緫閰嶇疆鏃讹紝涓嶈鏀捐繘鍙充晶閰嶇疆琛ㄥ崟锛涘簲浼樺厛鏀惧埌宸︿晶鍗＄墖鎴栨憳瑕佸尯灞曠ず銆?- 褰撴煇浜涢〉绛惧彧鏄ā鍨嬫槧灏勬垨鍙鏌ラ獙鍏ュ彛锛岃€屼笉鏄檺鍒舵帾鏂界殑鏍稿績閰嶇疆鏃讹紝涓嶈缁х画鐣欏湪绗?6 姝ラ噷鍗犵┖闂达紱搴旂洿鎺ヤ粠闄愬埗鎺柦椤电涓Щ闄ゃ€?- 褰撻檺鍒舵帾鏂介噷淇濈暀澶氫釜涓氬姟椤电鏃讹紝鍙充晶甯冨眬涓嶈兘涓€椤典竴濂楅鏍硷紱搴旂粺涓€涓哄悓涓€绫绘憳瑕佹潯 + 閰嶇疆鍗″伐浣滃彴锛岄伩鍏嶆煇浜涢〉绛剧户缁部鐢ㄨ€佸紡鍙屾爮绌洪潰鏉裤€?- 褰撶敤鎴峰弽棣堚€滅粨鏋勫彲浠ヤ絾鐪嬭捣鏉ヤ贡鈥濇椂锛岄棶棰橀€氬父涓嶅湪瀛楁澶氬皯锛岃€屽湪鍚屼竴淇℃伅琚噸澶嶆斁缃€佽鏄庢枃瀛楄繃澶氥€佸崱鐗囧眰绾т笉涓€鑷达紱浼樺厛缁熶竴楠ㄦ灦骞跺垹闄ら噸澶嶄俊鎭紝鑰屼笉鏄户缁彔鏍峰紡銆?# 2026-03-21 楂橀閰嶇疆琛ュ厖鏁欒
+- 瀵归珮棰戦厤缃晫闈紝鐢ㄦ埛璇粹€滃垏鎹笉涓濇粦鈥濇椂锛岃浼樺厛妫€鏌ユ槸鍚︽湁浜轰负寮曞叆 `deferred`銆佸娆℃棤鏁?setState 鎴栭噸澶嶆覆鏌擄紝鑰屼笉鏄彧鐩瑙夋牱寮忋€?- 瀵瑰伐浣滃彴寮忕晫闈紝鍑虹幇澶ч噺鐣欑櫧鏃讹紝鍏堟鏌ュ鍣ㄩ珮搴︾瓥鐣ュ拰 `flex-1 / h-full / min-h-*` 鐨勫彔鍔犲叧绯伙紝鍐嶅喅瀹氭槸鍚﹁缂╂帶浠躲€?- 鏄庣粏宸ヤ綔鍖虹殑妯″紡鍒囨崲鎺т欢搴斿敖閲忓苟鍏ヤ富宸ュ叿鏉★紝閬垮厤鍐嶉澶栧崰涓€鏉″簳鏍忥紝鎶婃湁鏁堥珮搴︽氮璐瑰湪鈥滆鏄庡紡宸ュ叿鏍忊€濅笂銆?- fullscreen 宸ヤ綔鍖轰笉鑳藉彧鐪嬪唴閮ㄩ潰鏉挎槸鍚︾揣鍑戯紝杩樿閲忓灞?stage 鍒板簳閮ㄦ搷浣滄爮鐨勭湡瀹?gap锛涘惁鍒欏鏄撴妸绌虹櫧浠庨潰鏉块噷鎸埌闈㈡澘澶栥€?
+### 2026-03-21 鏄庣粏鍙屾ā寮忔暟鎹簮
+- 褰撶敤鎴锋弿杩颁袱绉嶄簰鏂ョ殑鏁版嵁婧愮瓥鐣ユ椂锛屼笉瑕佹妸涓€鍗婇厤缃斁鍦ㄩ〉绛捐涓恒€佷竴鍗婃斁鍦ㄨ〃鏍煎睘鎬ч噷锛涘繀椤荤粺涓€鍒颁竴涓€滄暟鎹簮鈥濆叆鍙ｏ紝鍚﹀垯鍚庣画鍛樺伐閰嶇疆鏃朵細澶卞幓鍏ㄥ眬鐞嗚В銆?
+### 2026-03-21 妯″潡璁剧疆鑸炲彴鐣欑櫧
+- 褰撶敤鎴锋寚鍑虹 5 姝ユā鍧楄缃簳閮ㄥぇ鐗囩暀鐧芥椂锛岃浼樺厛妫€鏌ュ灞?`stage` 鏄惁鐢ㄤ簡鍥哄畾楂樺害銆佷笂涓?pane 榛樿姣斾緥鏄惁澶辫　锛岃€屼笉鏄户缁帇鍙充晶鍗＄墖鎴栧眬閮ㄦ帶浠躲€?- 濡傛灉鏄庣粏鍖轰娇鐢ㄧ揣鍑戣〃鏍肩敾甯冿紝涓嶈兘鍙粰 `min-height`锛涜鍚屾椂缁欑埗瀹瑰櫒 `h-full / flex-1`锛屽苟鎶婇鏋惰娌挎暣涓敾甯冨垎甯冿紝鍚﹀垯瑙嗚涓婁細鍍忓唴瀹圭缉鍦ㄩ《閮ㄣ€佷笅鍗婂尯鏁村潡鍙戠┖銆?### 2026-03-22 鏄庣粏閰嶇疆浣撻獙
+- 濡傛灉鐢ㄦ埛鏄庣‘鎸囧嚭鈥滀笉瑕佸鍑哄嚑鎺掑厜褰?楠ㄦ灦鈥濓紝灏变笉鑳藉啀鎷胯楗版€х殑 skeleton 鍏呭綋琛ㄤ綋瀵嗗害锛涘簲鍥炲埌骞插噣琛ㄦ牸闈㈡垨鐪熷疄鍗犱綅琛岋紝鑰屼笉鏄户缁爢瑙嗚鏁堟灉銆?- 瀵归珮棰戦厤缃満鏅紝鏁版嵁婧愬叆鍙ｅ繀椤绘敹鏁涘埌涓€澶勶紱鈥滈〉绛捐涓洪噷涓€濂椼€佹暣琛ㄥ睘鎬ч噷鍐嶄竴濂椻€濈殑璁捐浼氱洿鎺ュ埗閫犵悊瑙ｆ垚鏈€?- 褰撶敤鎴峰弽棣堚€滆繕鏄湁涓€鐐瑰欢杩熲€濇椂锛屼笉瑕侀粯璁ょ户缁敤 transition/deferred锛涜浼樺厛鍥炴煡鏄惁鎶婇珮棰戦€変腑閾捐矾鏀捐繘浜嗕綆浼樺厛绾ф洿鏂般€?- 鏄庣粏椤电鏈韩濡傛灉鍙槸瀵硅薄鍒囨崲鍏ュ彛锛屽氨涓嶈榛樿鎶婂彸渚у甫鍒扳€滈〉绛捐涓衡€濊€屼笉鏄€滃綋鍓嶆槑缁嗘暣琛ㄩ厤缃€濓紱榛樿钀界偣蹇呴』鏄敤鎴峰綋涓嬫渶甯告敼鐨勬暟鎹簮鍜屾暣琛ㄥ睘鎬с€?### 2026-03-22 鏄庣粏绫诲瀷鍏ュ彛浣嶇疆
+- 瀵归珮棰戦厤缃叆鍙ｏ紝鐢ㄦ埛宸茬粡褰㈡垚绋冲畾蹇冩櫤鍚庯紝涓嶈涓轰簡鈥滆瑙夌粺涓€鈥濇妸鍏ュ彛浠庡師鏈変綅缃尓璧帮紱灏ゅ叾鍍忔槑缁嗙被鍨嬭繖绉嶆ā寮忓垏鎹紝浼樺厛淇濈暀鍙充笅瑙掕繖绫诲巻鍙蹭綅缃紝鍑忓皯閲嶆柊鐞嗚В鎴愭湰銆?### 2026-03-22 妯″潡鏉′欢鏉℃敹鏁?- 褰撲富琛ㄦ潯浠跺拰宸﹁〃鏉′欢灞炰簬鍚屼竴宸ヤ綔闈㈤噷鐨勯珮棰戦厤缃椂锛屼笉瑕佹妸瀹冧滑鎷嗗湪宸﹀彸鍚勮嚜宸ュ叿鏉￠噷锛涘簲缁熶竴鏀舵暃鍒版ā鍧楅《閮紝閫氳繃杞婚噺鍒囨崲鎸夐挳绠＄悊褰撳墠浣滅敤鍩燂紝閬垮厤瑙嗙嚎鏉ュ洖璺炽€?- 鈥滈粯璁よ繘鍏ョ姸鎬佲€濅笉鑳藉彧鏀逛竴涓垵濮?`useState`锛涜繕瑕佹帓鏌ュ悗缁?`useEffect`銆佹墦寮€鍚戝鍏ュ彛鍜屾楠ゅ垏鎹㈤噷鏄惁鏈夊己鍒惰鐩栫姸鎬佺殑閫昏緫銆?### 2026-03-22 妯″潡璁剧疆浜や簰涓庨潪鍏ㄥ睆甯冨眬
+- 鍒楀鎷栨嫿杩欑被璁捐鍣ㄨ兘鍔涳紝涓嶈兘鎶婃渶灏忓搴︾粦姝诲湪鏍囬鏂囨瀹藉害涓婏紱濡傛灉鐢ㄦ埛鏄庣‘闇€瑕佹嫋鍒版帴杩?`0px`锛屽簲鎶婃爣棰樻樉绀哄拰鍒楃墿鐞嗗搴﹁В鑰︼紝鐢ㄦ埅鏂€佹偓娴彁绀烘垨閫変腑鎬佸鐞嗗彲璇绘€с€?- 褰撶敤鎴峰弽棣堚€滅偣鍑绘潯浠舵垨宸﹁〃鍚庝笅鏂瑰嚭鐜板ぇ鐗囩暀鐧解€濇椂锛屼笉瑕佸彧鐪嬪崟涓潰鏉块珮搴︼紝蹇呴』鍥炴煡鐐瑰嚮鍚庢暣涓笂涓?pane 鍒嗛厤銆佺┖鎬佸鍣?`min-height`銆佷互鍙婁笉鍚?scope 涓嬬殑 fallback 鐢诲竷鏄惁閲嶆柊鍗犳弧銆?- 闈炲叏灞忔ā寮忎笅鍙充晶妫€鏌ュ櫒涓嶈兘娌跨敤鍏ㄥ睆鏀剁獎閫昏緫锛涘簲璁╁搴︽寜鍙敤绌洪棿鑷€傚簲鍒拌冻澶熷睍绀洪〉绛炬枃妗堬紝閬垮厤閫氳繃鎹㈣鐗虹壊鍙鎬с€?### 2026-03-22 鏄庣粏绫诲瀷鍒囨崲鍏ュ彛
+- 褰撶敤鎴峰凡缁忔帴鍙椻€滄槑缁嗙被鍨嬪垏鎹㈡斁鍦ㄤ笅鏂光€濈殑蹇冩櫤鍚庯紝涓嶈鍐嶆妸瀹冨仛鎴愯创鍦ㄧ敾甯冮噷鐨勫绔嬫偓娴帶浠讹紱搴旀敹鎴愮嫭绔嬪簳閮?panel锛岃瀹冩垚涓哄伐浣滃彴鐨勪竴閮ㄥ垎锛岃€屼笉鏄紓鍦ㄥ唴瀹逛笂灞傘€?- 寮曞叆 `shadcn/ui` 椋庢牸鏃讹紝涓嶄竴瀹氳鍏堟暣搴撹縼绉伙紱鍙互鍏堟妸楂橀鍏ュ彛鍋氭垚鏇村厠鍒剁殑 segmented/panel 璇硶锛屽厛钀藉湪灞€閮ㄥ伐浣滈潰涓婇獙璇佽川鎰熷拰椤烘墜搴︺€?### 2026-03-22 鏉′欢宸ヤ綔鍙颁笌搴曢儴绫诲瀷 Panel
+- 褰撶敤鎴锋槑纭姹傚浐瀹氭潯浠舵帶浠舵€诲搴︽椂锛屼笉瑕佺户缁繚鐣欐棫鐨勬寜鍚嶅瓧闀垮害鍔ㄦ€佹拺瀹藉拰鎷栨嫿璋冨锛涘簲鐩存帴鎶婂悕瀛楀睍绀轰笌鎺т欢鐗╃悊瀹藉害瑙ｈ€︼紝鏀舵垚缁熶竴瀹藉害宸ヤ綔鍙般€?- 椤堕儴鏉′欢鍖轰笉鑳藉彧鏀寔鈥滈€愪釜瀛楁閰嶇疆鈥濓紝杩樿鏀寔鈥滈潰鏉跨骇鎬昏閰嶇疆鈥濓紱鍍忚鏁般€佸垎鏍忔暟銆佹壒閲忕矘璐存瀯寤鸿繖绫诲竷灞€绾ц兘鍔涳紝搴旇鍦ㄥ彸渚у崟鐙缓涓€涓€昏鍒嗘敮锛岃€屼笉鏄杩涘崟涓潯浠惰〃鍗曘€?- 褰撶敤鎴疯鍙柊鐨勭粨鏋勪絾涓嶈鍙€変腑鑹插拰宸︿晶浠嬬粛鏃讹紝涓嶈鍥為€€鏁翠綋缁撴瀯锛涘簲淇濈暀缁撴瀯锛屽彧鏀舵帀淇″彿灞傦細棰滆壊銆佹憳瑕佹枃妗堛€佷俊鎭瘑搴︺€?### 2026-03-22 鏉′欢鏉′笌甯冨眬绋冲畾
+- 褰撶敤鎴峰厛鎺ュ彈 `175px` 榛樿瀹藉害銆侀殢鍚庡張鏄庣‘瑕佹眰鎭㈠鎷栧鏃讹紝姝ｇ‘瑙勫垯涓嶆槸鈥滅户缁妸瀹藉害鍐欐鈥濓紝鑰屾槸鈥滈粯璁ゅ搴﹀浐瀹氥€佸疄闄呭搴﹀彲鎷栧彲鏀光€濄€傞粯璁ゅ€煎拰鍙皟鑳藉姏瑕佽В鑰︺€?- 椤堕儴鏉′欢鍖哄睘浜庨珮棰戞帓甯冨尯鍩燂紝涓嶈鍐嶅仛鎴愭槑鏄惧崱鐗囧潡锛涜秺鍍忓崱鐗囷紝鐢ㄦ埛瓒婇毦鍒ゆ柇鐪熷疄闂磋窛銆傚簲浼樺厛浣跨敤鎵佸钩琛屽紡 workbench 璇硶銆?- 涓婁笅宸ヤ綔鍖哄垎闅旀潯鐨勪綅缃笉鑳戒緷璧栧綋鍓嶉€変腑瀵硅薄鍔ㄦ€佹姮楂橈紝鍚﹀垯鐢ㄦ埛浼氱洿鎺ユ劅鐭ユ垚鈥滅偣鍑绘椂鐣岄潰鍦ㄦ姈鈥濄€俻ane 楂樺害绛栫暐瑕佸敖閲忕ǔ瀹氾紝閫変腑鎬佸彧鏀瑰唴瀹癸紝涓嶆敼澶ф鏋躲€?- 鏉′欢鏍囩鍜屾帶浠剁殑璺濈瑕佸厛鏈嶅姟浜庤鍙栦笌闂磋窛鍒ゆ柇锛岃鏄庢€ц楗板拰棰濆鐣欑櫧搴斿悗缃€?### 2026-03-22 鏉′欢宸ヤ綔鍙扮洿鎺ユ搷浣滀紭鍏?- 褰撶敤鎴峰凡缁忔槑纭鈥滄嫋鍏ユ瘡涓€涓帶浠惰鏁颁腑鈥濇椂锛屼笉瑕佺户缁繚鐣欌€滄瘡琛屽垎鏍忊€濊繖绫绘娊璞℃暟瀛楅厤缃紱搴斿洖鍒扮洿鎺ユ搷鎺фā鍨嬶紝鐢ㄧ湡瀹炶瀹瑰櫒鎵挎帴鎷栨斁銆?- 瀵归珮棰戞帓甯冨尯锛屽竷灞€妯″瀷鍙兘淇濈暀涓€濂椼€備笉鑳戒竴杈硅鐢ㄦ埛鎸夎鎷栨斁锛屼竴杈瑰張璁?grid 鍒嗘爮鏁扮户缁富瀵煎竷灞€锛屽惁鍒欎細鍒堕€犵悊瑙ｅ啿绐併€?- 鏉′欢瀹藉害鎷栨嫿鐨勨€滃崱鈥濋€氬父涓嶆槸瑙嗚闂锛岃€屾槸姣忓抚鍏ㄩ噺鏇存柊鏁扮粍瀵艰嚧鐨勶紱瑕佷紭鍏堜紭鍖栨洿鏂伴摼璺拰閲嶆覆鏌撹寖鍥达紝鑰屼笉鏄彧鏀规嫋鎷芥墜鏌勬牱寮忋€?### 2026-03-22 鍙充晶璇︽儏鍘诲啑浣?- 褰撶敤鎴锋槑纭姹傗€滃彸渚ц鎯呮暣浣撲紭鍖栤€濇椂锛屼笉瑕佺户缁眬閮ㄤ慨涓€涓垎鏀紱搴斾紭鍏堟敹鏁涘叕鍏遍鏋躲€佽緭鍏ユ帶浠跺拰 tabs 璇硶锛岃涓昏〃銆佸垪銆佹潯浠躲€佹槑缁嗙瓑妫€鏌ュ櫒鍏辩敤鍚屼竴濂楄瑙夎妭濂忋€?- 楂橀鍔炲叕濉啓闈㈡澘閲岋紝浣庝环鍊艰鏄庢枃妗堜細鐩存帴鍒堕€犲櫔闊炽€傚儚鈥滆繖閲岀粺涓€缁存姢鈥︹€濄€佲€滃厛浠庝笂闈㈤€夋嫨鈥︹€濊繖绫绘彁绀猴紝鑻ヤ笉鎵挎媴鍏抽敭鍐崇瓥淇℃伅锛屽氨搴旇鍒犳帀鎴栧帇缂╂垚鏈€鐭姸鎬佹枃妗堛€?- shadcn/ui 椋庢牸杩佺Щ涓嶇瓑浜庡繀椤绘暣搴撳畨瑁咃紱褰撻」鐩繕澶勫湪閲嶆瀯鏈熸椂锛屽厛鎶婄幇鏈夊３灞傚拰琛ㄥ崟鎺т欢鏀舵垚 shadcn 鐨勫悗鍙拌娉曪紝寰€寰€姣斿紩鍏ユ暣濂椾緷璧栨洿绋炽€?- 褰撶敤鎴疯姹傗€滃彸渚ц鎯呮暣浣撲紭鍖栤€濇椂锛屼笉鑳藉彧鏀硅緭鍏ユ鏍峰紡锛涘繀椤讳竴璧锋敹鍙?panel銆乼abs銆乥adge銆佽鏄庢枃妗堝拰鎶€鏈槧灏勫憟鐜版柟寮忥紝鍚﹀垯鐪嬭捣鏉ヤ粛鐒跺儚鏃х郴缁熸崲浜嗕竴灞傜毊銆?- 瀵归珮棰戦厤缃潰鏉匡紝鎶€鏈〃鍚嶅拰鏄犲皠鍏崇郴涓嶈鍐嶇敤涓€涓叉爣绛惧爢鍦ㄦ渶涓婇潰锛涙洿閫傚悎鏀规垚鐭崱鐗囨垨璁℃暟鍏ュ彛锛屾妸娉ㄦ剰鍔涚暀缁欑湡姝ｅ彲濉啓鐨勫瓧娈点€?- shadcn 鍖栦紭鍏堢骇搴旀槸锛氬厛缁熶竴鍏叡鍩虹璇硶锛屽啀杩侀珮棰戝垎鏀紱濡傛灉鍏堥€愪釜鍒嗘敮闅忔墜鏀?class锛屾渶缁堣繕鏄細鍥炲埌鈥滀竴椤典竴绉嶉鏍尖€濄€?### 2026-03-22 椤堕儴鏉′欢鎷栨嫿鍖?- 椤堕儴鏉′欢杩欑楂橀鎷栨嫿宸ヤ綔鍖猴紝涓嶈鍐嶉澶栨斁琛屽簭鍙枫€佽鏍囪繖绫昏楗颁俊鎭紱瀹冧滑浼氱洿鎺ュ共鎵扮敤鎴峰垽鏂湡瀹為棿璺濆拰鎷栨嫿钀界偣銆備紭鍏堜繚鐣欑函鎺т欢琛屻€?### 2026-03-22 鍗曟嵁涓昏〃涓庢潯浠跺尯缁熶竴
+- 褰撶敤鎴峰凡缁忚鍙《閮ㄦ潯浠跺尯鐨勬柊 workbench 璇硶鍚庯紝鍗曟嵁涓昏〃杩欑被鍚屾牱鏄珮棰戞嫋鎷芥帓甯冨尯鐨勬帶浠朵篃瑕佸敖蹇敹鏁涘埌鍚屼竴濂楄瑷€锛涗笉瑕佽鏉′欢銆佷富琛ㄣ€佹槑缁嗗悇鑷淮鎸佷竴濂椾笉鍚岀殑瑙嗚鍜屼氦浜掕鍒欍€?- 鐐瑰嚮鍗曟嵁涓昏〃鎴栨槑缁嗗璞″悗濡傛灉涓嬪崐鍖轰細缂╃煭鎴栫暀鐧斤紝浼樺厛妫€鏌ヤ笂涓?pane 鐨勯珮搴﹀垎閰嶅拰瀹瑰櫒 `flex/min-h/h-full` 鍏崇郴锛岃€屼笉鏄户缁線绌虹櫧閲屽鍗犱綅鍧椼€?### 2026-03-22 鍗曟嵁涓昏〃娴佸紡甯冨眬
+- 褰撶敤鎴锋槑纭姹傚崟鎹富琛ㄢ€滀笉鍐嶈嚜鐢辨嫋鍔ㄣ€佹敼鎴愬拰鏉′欢鍖轰竴鏍风殑娴佸紡甯冨眬鈥濇椂锛屼笉鑳界户缁湪鑷敱鍧愭爣绯荤粺涓婁慨琛ワ紱搴旂洿鎺ユ妸甯冨眬妯″瀷鏀规垚鎸夎銆佹寜椤哄簭銆佸彲鎻掑叆鐨勫伐浣滈潰銆?- 瀵规祦寮忓伐浣滃彴锛屾嫋鍒板彟涓€涓帶浠跺墠鏂圭殑棰勬湡涓嶆槸浜ゆ崲浣嶇疆锛屼篃涓嶆槸鍙敼鍧愭爣锛涘簲璇ュ疄鐜版彃鍏ラ噸鎺掞紝璁╃洰鏍囨帶浠跺拰鍏跺悗缁帶浠惰嚜鍔ㄩ『寤躲€?### 2026-03-22 鍗曟嵁涓昏〃琛屽伐浣滃彴琛ュ厖
+- 鍗曟嵁涓昏〃杩欑被楂橀鎺掑竷鍖猴紝涓€鏃︾敤鎴疯姹傗€滃拰鏉′欢鍖轰竴鏍风殑娴佸紡甯冨眬鈥濓紝灏变笉瑕佸啀淇濈暀鏃х殑鑷敱鍧愭爣鎷栨嫿鍏ュ彛锛涘竷灞€妯″瀷鍜屼氦浜掓ā鍨嬪繀椤讳竴璧峰垏鎹€?- 娴佸紡鎺掑竷閲岀殑鎷栨斁棰勬湡鏄€滄彃鍏モ€濊€屼笉鏄€滆鐩栤€濇垨鈥滀氦鎹⑩€濓紝鎷栧埌鏌愪釜鎺т欢鍓嶉潰鏃讹紝鐩爣鍙婂悗缁帶浠堕兘瑕佷富鍔ㄥ悗绉讳竴浣嶃€?- 娴佸紡宸ヤ綔鍙伴噷鑻ヤ繚鐣欐í鍚戞孩鍑鸿兘鍔涳紝榛樿鍙婊氬姩鏉′細琚敤鎴疯鍒ゆ垚澶氫綑鐏扮嚎锛涘簲淇濈暀婊氬姩鑳藉姏锛屼絾闅愯棌婊氬姩鏉℃湰韬€?### 2026-03-22 鍩虹妗ｆ鏉′欢鎻掑叆寮忔嫋鏀?- 褰撶敤鎴峰凡缁忕‘璁ゅ崟鎹富琛ㄤ娇鐢ㄢ€滄嫋鍒板墠闈㈠嵆鎻掑叆銆佺洰鏍囪嚜鍔ㄥ悗绉烩€濈殑璇箟鍚庯紝鍩虹妗ｆ椤堕儴鏉′欢鍖哄繀椤诲悓姝ユ垚鍚屼竴濂楁嫋鏀捐鍒欙紝涓嶈兘涓€涓尯鍩熸槸鎻掑叆寮忥紝鍙︿竴涓尯鍩熻繕鏄寜琛岃拷鍔犮€?- 鏉′欢鍖鸿繖绫绘寜琛?workbench 鐨勬嫋鏀剧姸鎬侊紝涓嶈兘鍙褰曗€滃綋鍓嶈鈥濓紱瑕佸悓鏃惰褰曗€滃綋鍓嶈 + 鍓嶆彃鐩爣鎺т欢鈥濓紝鍚﹀垯钀界偣鍙兘鍒拌灏撅紝鍋氫笉鍑虹湡姝ｇ殑鍓嶆彃閲嶆帓銆?### 2026-03-22 鏉′欢鍖烘嫋鏀捐涔夊榻?- 鍙鐢ㄦ埛宸茬粡纭鏌愪釜楂橀鎺掑竷鍖轰娇鐢ㄢ€滃墠鎻掑嵆鍚庣Щ鈥濈殑鎷栨斁璇箟锛屽叾瀹冨悓绫诲瀷 workbench 涔熻鍚屾瀵归綈锛屼笉鑳借鍩虹妗ｆ鏉′欢鍖哄拰鍗曟嵁涓昏〃鍑虹幇涓ゅ涓嶅悓鐨勬帓搴忚鍒欍€?### 2026-03-22 鍩虹妗ｆ鏄庣粏妯″潡鍙充晶璇︽儏
+- 褰撶敤鎴锋槑纭姹傗€滃熀纭€妗ｆ鐐瑰嚮鏄庣粏妯″潡锛屽彸渚ц鎯呭弬鐓ф煇寮犲巻鍙茶〃缁撴瀯鈥濇椂锛屼笉鑳界户缁部鐢ㄥ綋鍓嶆渶灏忓寲閰嶇疆鍒嗘敮锛涜鍥炲埌鍘嗗彶鏁版嵁妯″瀷锛屾妸鍙充晶妫€鏌ュ櫒鎸夌洰鏍囪〃鐨勫瓧娈靛彛寰勯噸寤恒€?- 瀵光€滄槑缁嗘ā鍧椻€濊繖绉嶉绻佸～鍐欑殑鍙充晶璇︽儏锛屼笉瑕佷繚鐣欏ぇ娈佃В閲娿€佽瑙夎鏄庢垨姒傚康鎬ф帓鐗堬紱浼樺厛淇濊瘉瀛楁鐩寸粰銆佺粨鏋勬竻妤氥€佸～鍐欓『鎵嬨€?- shadcn 鍖栦笉绛変簬缁х画鍙犲姞璇存槑鍗＄墖锛涜繖绉嶅満鏅洿閫傚悎鐢ㄥ叡浜殑 shadcn inspector 楠ㄦ灦锛岀洿鎺ョ粍缁囪緭鍏ラ」鍜屽紑鍏炽€?- 鏂板鍙充晶妫€鏌ュ櫒鍒嗘敮鏃讹紝蹇呴』鍦ㄦ祻瑙堝櫒閲岄獙璇佲€滅湡瀹炵偣鍑诲叆鍙ｂ€濆凡缁忓垏鍒拌鍒嗘敮锛涘鏋滃叆鍙ｈ繕钀藉湪鏃у垎鏀紝鍐嶅畬鏁寸殑琛ㄥ崟涔熺瓑浜庝笉鍙敤銆?### 2026-03-22 鏄庣粏椤电涓庡唴閮ㄨ鍥捐亴璐ｅ垎娴?- 褰撶敤鎴疯鈥滄槑缁嗛〉绛惧彲浠ラ厤涓€閮ㄥ垎锛岄噷闈㈡帶浠朵篃鍙互閰嶄竴閮ㄥ垎鈥濇椂锛屼紭鍏堟鏌ユ槸涓嶆槸鎶娾€滈〉绛惧璞♀€濆拰鈥滃唴閮ㄨ鍥惧璞♀€濆叡鐢ㄤ簡鍚屼竴涓€変腑鎬侊紱杩欑被闂鐨勬牴鍥犻€氬父涓嶆槸鍗曚釜琛ㄥ崟澶贡锛岃€屾槸閫変腑妯″瀷娌℃湁鎷嗗眰銆?- 搴曢儴绫诲瀷鍒囨崲灞炰簬鈥滆鍥惧垏鎹⑩€濓紝涓嶅簲璇ラ粯璁ょ瓑浜庘€滃彸渚ц鎯呭垏鎹⑩€濄€傚彧鏈夌敤鎴风湡姝ｇ偣鍑诲埌琛ㄦ牸鍖哄煙銆佸浘琛ㄩ鐣欏尯杩欑被鍐呴儴瑙嗗浘瀵硅薄鏃讹紝鍙充晶鎵嶅簲璇ュ垏鍒板搴旇鎯呫€?- 鍥捐〃瑙嗗浘鐨勫彸渚ч厤缃笉瑕侀噸澶嶆壙杞芥暟鎹潵婧愩€佽〃鏍兼憳瑕併€侀鑹?鍙抽敭鍏ュ彛绛夋暣琛ㄧ骇淇℃伅锛涘浘琛ㄩ潰鏉垮彧淇濈暀 `p_systemdlltabchart` 鏈韩闇€瑕佺殑瀛楁锛屽叾浣欎俊鎭暀鍦ㄦ槑缁嗚〃閰嶇疆閲屻€?## 2026-03-23 Document Split And Group Workbench
 - If both upper and lower panes are high-frequency work areas, do not keep a draggable divider by default; use a stable equal split so clicks in the lower area do not feel like the layout is collapsing.
 - Width resizing in high-frequency workbenches must share one implementation path: live preview, requestAnimationFrame throttling, and snap/tick feedback. Mixed resize patterns are immediately noticeable to users.
 - When a user asks for alignment guidance while resizing, a pixel HUD alone is not enough; expose snap tick cues so micro-adjustment feels intentional.
@@ -190,15 +88,14 @@
 - Central canvas surfaces and right-side inspectors must be tightened together. If only the right inspector becomes dense while the center still uses large cloudy shells, the whole screen still reads as loose and inconsistent.
 
 ## 2026-03-27 Single Table Table Edge Tightening
-- 表格区域“看起来还有一圈窄边距”时，不能只盯外层容器 padding；还要检查表格本体自己的宽度策略、壳层边框和圆角。哪怕外层贴边了，如果表格仍按内容宽度渲染或保留 wrapper border，视觉上还是会像留了一圈边距。
-
+- 琛ㄦ牸鍖哄煙鈥滅湅璧锋潵杩樻湁涓€鍦堢獎杈硅窛鈥濇椂锛屼笉鑳藉彧鐩灞傚鍣?padding锛涜繕瑕佹鏌ヨ〃鏍兼湰浣撹嚜宸辩殑瀹藉害绛栫暐銆佸３灞傝竟妗嗗拰鍦嗚銆傚摢鎬曞灞傝创杈逛簡锛屽鏋滆〃鏍间粛鎸夊唴瀹瑰搴︽覆鏌撴垨淇濈暀 wrapper border锛岃瑙変笂杩樻槸浼氬儚鐣欎簡涓€鍦堣竟璺濄€?
 ## 2026-03-23 Archive Main Layout Popup Workbench
 - If the user says the right inspector should only show summary information, do not leave the real layout editor embedded in that narrow side panel. Move dense layout editing into a dedicated popup workbench and keep the inspector read-oriented.
 - For archive main-table grouping, the draggable source must be the real main-table columns. Do not invent a second synthetic field source, or the user loses trust in what is actually being laid out.
 - Group layout editing should follow the same interaction language as other high-frequency workbenches: group list on one side, selected-group rows in the middle, draggable field palette on the other side, with direct row assignment and insert-style drag/drop.
 
 ## 2026-03-23 Archive Layout Canvas Workbench
-- If the user says the popup still feels too much like master-detail form editing, treat that as a structural correction, not a styling nit. Replace the “select one group, edit one group” flow with an all-groups canvas workbench.
+- If the user says the popup still feels too much like master-detail form editing, treat that as a structural correction, not a styling nit. Replace the 鈥渟elect one group, edit one group鈥?flow with an all-groups canvas workbench.
 - Layout editors must account for tall controls such as remarks/textareas. Do not assume every field is a single-line chip; field cards should be able to visually occupy more height so spacing and grouping still make sense.
 - For dense 1080p workbenches, shadcn-style polish should reduce ceremony, not add it. Fewer side lists and fewer redundant wrappers usually improve layout editing more than adding more summary panels.
 ## 2026-03-23 Archive Layout Canvas Polish
@@ -221,7 +118,7 @@
 - Previous-row alignment feedback must be obvious enough to use while dragging. Subtle tick marks are not sufficient; prefer full-height lane guides plus a stronger active edge guide for the dragged control.
 
 ## 2026-03-23 Table Canvas Panel Centering
-- When a table workbench includes an internal “click canvas to configure table” panel, do not bind that panel to the summed column widths. Column width feedback belongs to the header row and horizontal scroll area, not to the canvas card itself.
+- When a table workbench includes an internal 鈥渃lick canvas to configure table鈥?panel, do not bind that panel to the summed column widths. Column width feedback belongs to the header row and horizontal scroll area, not to the canvas card itself.
 - If both main-table and detail-table builders expose the same canvas interaction, keep them on one shared centered-panel presentation. Fixing only one branch will leave the product feeling visually inconsistent.
 
 ## 2026-03-23 Workspace Scrollbar Styling
@@ -239,18 +136,9 @@
 ## 2026-03-23 Archive Layout Blue Alignment Markers
 - Previous-row width guides in layout editors should not stay neutral gray once users are actively using them for alignment. When the guides carry alignment meaning, use the same clear blue accent language as the active edge so the relationship reads immediately.
 - If a guide is meant to show top/bottom correspondence, plain dashed lines are too weak. Add distinct endpoints or caps so the guide reads like a full alignment reference, not a leftover separator.
-## 2026-03-23 项目切换与残留进程排查
-- 当用户说“已经换了项目，但 VSCode / 运行结果看起来还是旧项目”时，不要只检查当前工作目录；还要同时检查旧仓库的 dev 进程是否仍占用默认端口。
-- 对 Vite + 本地 API 这类双进程项目，切换仓库后必须同时核对三件事：当前会话路径、VSCode 打开的工作区、3000/3001 等常用端口实际归属的进程命令行。
-- 如果当前仓库首次启动报 `vite` / `tsx` 不存在，优先确认 `node_modules` 是否缺失，而不是误判为脚本配置错误。
-- 清理旧项目残留进程后，要重新启动当前仓库并直接验证前端首页和健康检查接口，避免只看“进程存在”就误判为切换完成。
-
-## 2026-03-23 Java 后端联调与 AI 代理分流
-- 当前端同时依赖 Java 业务后端和本地 AI 代理时，不要把所有 `/api/*` 一股脑代理到同一个目标；应先用 Swagger 核对接口归属，再按 `/api/ai/*` 和其他业务接口分流。
-- 如果业务接口已迁到本地 Java 后端，默认 `VITE_API_BASE_URL`、`.env.example` 和 README 也要一起更新；只改 Vite 代理而保留旧默认地址，下一次重启仍会连回旧环境。
-- 联调验证不能只看首页能打开。至少要同时验证一个无鉴权业务接口和一个 AI 健康检查接口，确认两条代理链路都实际生效。
-- 如果公司列表已通但员工列表接口仍超时或报错，应明确标记为后端环境阻塞，而不是在前端继续堆兜底逻辑掩盖接口问题。
-## 2026-03-23 Resize Preview Commit Split
+## 2026-03-23 椤圭洰鍒囨崲涓庢畫鐣欒繘绋嬫帓鏌?- 褰撶敤鎴疯鈥滃凡缁忔崲浜嗛」鐩紝浣?VSCode / 杩愯缁撴灉鐪嬭捣鏉ヨ繕鏄棫椤圭洰鈥濇椂锛屼笉瑕佸彧妫€鏌ュ綋鍓嶅伐浣滅洰褰曪紱杩樿鍚屾椂妫€鏌ユ棫浠撳簱鐨?dev 杩涚▼鏄惁浠嶅崰鐢ㄩ粯璁ょ鍙ｃ€?- 瀵?Vite + 鏈湴 API 杩欑被鍙岃繘绋嬮」鐩紝鍒囨崲浠撳簱鍚庡繀椤诲悓鏃舵牳瀵逛笁浠朵簨锛氬綋鍓嶄細璇濊矾寰勩€乂SCode 鎵撳紑鐨勫伐浣滃尯銆?000/3001 绛夊父鐢ㄧ鍙ｅ疄闄呭綊灞炵殑杩涚▼鍛戒护琛屻€?- 濡傛灉褰撳墠浠撳簱棣栨鍚姩鎶?`vite` / `tsx` 涓嶅瓨鍦紝浼樺厛纭 `node_modules` 鏄惁缂哄け锛岃€屼笉鏄鍒や负鑴氭湰閰嶇疆閿欒銆?- 娓呯悊鏃ч」鐩畫鐣欒繘绋嬪悗锛岃閲嶆柊鍚姩褰撳墠浠撳簱骞剁洿鎺ラ獙璇佸墠绔椤靛拰鍋ュ悍妫€鏌ユ帴鍙ｏ紝閬垮厤鍙湅鈥滆繘绋嬪瓨鍦ㄢ€濆氨璇垽涓哄垏鎹㈠畬鎴愩€?
+## 2026-03-23 Java 鍚庣鑱旇皟涓?AI 浠ｇ悊鍒嗘祦
+- 褰撳墠绔悓鏃朵緷璧?Java 涓氬姟鍚庣鍜屾湰鍦?AI 浠ｇ悊鏃讹紝涓嶈鎶婃墍鏈?`/api/*` 涓€鑲¤剳浠ｇ悊鍒板悓涓€涓洰鏍囷紱搴斿厛鐢?Swagger 鏍稿鎺ュ彛褰掑睘锛屽啀鎸?`/api/ai/*` 鍜屽叾浠栦笟鍔℃帴鍙ｅ垎娴併€?- 濡傛灉涓氬姟鎺ュ彛宸茶縼鍒版湰鍦?Java 鍚庣锛岄粯璁?`VITE_API_BASE_URL`銆乣.env.example` 鍜?README 涔熻涓€璧锋洿鏂帮紱鍙敼 Vite 浠ｇ悊鑰屼繚鐣欐棫榛樿鍦板潃锛屼笅涓€娆￠噸鍚粛浼氳繛鍥炴棫鐜銆?- 鑱旇皟楠岃瘉涓嶈兘鍙湅棣栭〉鑳芥墦寮€銆傝嚦灏戣鍚屾椂楠岃瘉涓€涓棤閴存潈涓氬姟鎺ュ彛鍜屼竴涓?AI 鍋ュ悍妫€鏌ユ帴鍙ｏ紝纭涓ゆ潯浠ｇ悊閾捐矾閮藉疄闄呯敓鏁堛€?- 濡傛灉鍏徃鍒楄〃宸查€氫絾鍛樺伐鍒楄〃鎺ュ彛浠嶈秴鏃舵垨鎶ラ敊锛屽簲鏄庣‘鏍囪涓哄悗绔幆澧冮樆濉烇紝鑰屼笉鏄湪鍓嶇缁х画鍫嗗厹搴曢€昏緫鎺╃洊鎺ュ彛闂銆?## 2026-03-23 Resize Preview Commit Split
 - In hot workbench resizing, the key optimization is not changing drag libraries; it is separating live preview from committed business state. If drag math is correct but every mousemove still rewrites the full column array, users will still read the interaction as sticky.
 - Verification for resize smoothness should compare two signals at once: the canvas/header width must change during drag, while the inspector width input should stay on the old committed value until mouseup. That proves preview and commit are actually decoupled.
 - When starting to modularize a giant dashboard file, split the hottest interaction path first into a feature module. Pulling resize state and preview scheduling out of the monolith is a safer first enterprise-style refactor than trying to explode the whole screen in one pass.
@@ -266,12 +154,12 @@
 - If a design pass introduces bigger borders, extra titles, and explanatory paragraphs into a query bar, that is usually the wrong direction for admin/workbench UI. In dense business screens, the right move is often subtraction rather than more polish.
 
 ## 2026-03-23 Tab Restore And No Shell Border
-- When a user asks for tabs to go back to the previous style, do not interpret that as “make them smaller.” In workbench screens, “previous style” often means stronger active-state recognition and clearer hierarchy, not less UI.
+- When a user asks for tabs to go back to the previous style, do not interpret that as 鈥渕ake them smaller.鈥?In workbench screens, 鈥減revious style鈥?often means stronger active-state recognition and clearer hierarchy, not less UI.
 - Any dark or primary-filled tab/background must default to white text. Relying on inherited foreground colors is too fragile once tab styles are adjusted repeatedly.
-- For drag-heavy workspaces, the outer region should not look like a card if the user wants to “directly drag layout.” Keep the control items themselves styled, but remove the surrounding shell border/background chrome first.
+- For drag-heavy workspaces, the outer region should not look like a card if the user wants to 鈥渄irectly drag layout.鈥?Keep the control items themselves styled, but remove the surrounding shell border/background chrome first.
 
 ## 2026-03-23 Final UI Corrections Need Literal Reading
-- When users enumerate UI issues line by line, do not keep inferring “style direction.” Apply the literal corrections first: remove the exact extra elements they named.
+- When users enumerate UI issues line by line, do not keep inferring 鈥渟tyle direction.鈥?Apply the literal corrections first: remove the exact extra elements they named.
 - Resize HUDs and tick rulers are easy to over-justify, but if users want a plain workbench they should disappear from the visible UI even if the resize math stays intact.
 - If a tab is already color-filled, any non-white active text is a readability bug. Treat that as a correctness issue, not a design preference.
 - In drag-first workbenches, visible handle glyphs are optional. If the whole control is draggable and users say the dots are noisy, remove them.
@@ -292,7 +180,7 @@
 - When users complain about the second control looking too far away, treat it as a total-width issue first. Internal preview emptiness and inter-item gap both matter, but overshooting control width is usually the dominant reason the row reads stretched.
 
 ## 2026-03-23 Top Filter Needs Content-Driven Labels
-- If users still say “no change” after numeric density tweaks, the top filter label should stop depending on a tiny fixed-width slot. Let short and medium field names size to content up to a sane cap.
+- If users still say 鈥渘o change鈥?after numeric density tweaks, the top filter label should stop depending on a tiny fixed-width slot. Let short and medium field names size to content up to a sane cap.
 - For empty-shell condition previews, shrinking the preview body is more effective than endlessly trimming label padding. The tail of the control is what visually pushes the next control too far away.
 - When only the top filter row is wrong, isolate it. Reusing the same width formula as the lower workbench can keep reintroducing the same stretched feel in the visible header strip.
 
@@ -305,8 +193,8 @@
 - For a dense sortable workbench, drag feedback belongs inside the page: mirror element, insertion cue, and stable spacing. If those matter, isolate that branch and move it to a page-level drag system instead of stacking more fixes on top of `onDragStart/onDrop`.
 - Resize handles on compact controls should sit on the border edge, not inside the content box. Internal resize affordances read as wasted padding before they read as interaction.
 ## 2026-03-23 Fix The Exact Business Branch Before Polishing
-- When the user explicitly says “重点看看基础档案的条件”, stop broad visual tuning and isolate that exact branch first. Improvements on similar-looking rows elsewhere still count as a miss if the visible business area does not change.
-- In dense workbenches, “间距太大” usually means the combined result of item gap, trailing resize reserve, and drag affordance padding. Treat those three as one density problem instead of tuning only a single class.
+- When the user explicitly says 鈥滈噸鐐圭湅鐪嬪熀纭€妗ｆ鐨勬潯浠垛€? stop broad visual tuning and isolate that exact branch first. Improvements on similar-looking rows elsewhere still count as a miss if the visible business area does not change.
+- In dense workbenches, 鈥滈棿璺濆お澶р€?usually means the combined result of item gap, trailing resize reserve, and drag affordance padding. Treat those three as one density problem instead of tuning only a single class.
 ## 2026-03-23 Resize Can Be Broken Even After Sort Drag Is Fixed
 - Fixing reorder drag with `dnd-kit` does not mean width resize is solved. For workbench controls, verify resize separately with a real mousemove check; drag sorting and border resize are two different interaction chains.
 - If a resize handle sits inside a draggable item, explicitly exclude that handle from drag activation. Otherwise users will grab the border expecting width changes and instead trigger item dragging.
@@ -320,28 +208,26 @@
 ## 2026-03-23 Drag Overlay Can Be Visually Wrong Even If Sorting Works
 - If users say the dragged control floats to one side of the cursor, do not keep tuning spacing or activation distance first. Measure the actual pointer position against the rendered drag mirror and verify whether the overlay anchor is wrong.
 - In dense horizontal workbenches, a `DragOverlay` with fixed positioning can still feel detached inside complex shells. If the mirror anchor is off, prefer moving the dragged item itself with `dnd-kit` transform so the cursor and control stay visually attached.
-- When the user asks “是不是用的 dnd-kit”, answer concretely from the code and package state. For this branch, that means checking `@dnd-kit/core` plus the actual `DndContext/useDraggable` path, not guessing from behavior.
+- When the user asks 鈥滄槸涓嶆槸鐢ㄧ殑 dnd-kit鈥? answer concretely from the code and package state. For this branch, that means checking `@dnd-kit/core` plus the actual `DndContext/useDraggable` path, not guessing from behavior.
 ## 2026-03-24 Cross-Row Drag Can Accidentally Apply Scale
 - In `dnd-kit` workbenches, do not assume the drag transform is only translation. When the active drop target is a full-width row lane, `scaleX/scaleY` can appear in the transform and make the dragged control suddenly balloon.
 - If a dragged item becomes huge or seems to vanish only when crossing rows, inspect the live transform matrix first. A row-sized scale factor can create both symptoms at once.
 - For compact business controls, the safer default is to render drag movement with translate-only styling unless scaling is intentionally designed. That keeps cross-row movement stable and avoids giant row-width drag mirrors.
 ## 2026-03-24 Cross-Row Visibility Is A Separate Problem From Scale
-- Fixing cross-row scaling does not guarantee the dragged control stays visible. If users still say “dragging downward disappears,” inspect ancestor overflow clipping after the transform has already been corrected.
+- Fixing cross-row scaling does not guarantee the dragged control stays visible. If users still say 鈥渄ragging downward disappears,鈥?inspect ancestor overflow clipping after the transform has already been corrected.
 - In row workbenches, `overflow-x-auto` is risky for drag interactions because it can effectively clip vertical overflow while the item is being translated into another row. Keep drag lanes visually scrollable only if the dragged element itself is no longer clipped by that lane.
-- When users ask to make main-table and detail configuration “use the same style and effect as conditions,” treat that as a system-consistency request, not a local styling nit. Confirm whether those branches are still using native HTML5 drag before claiming the interaction language is unified.
+- When users ask to make main-table and detail configuration 鈥渦se the same style and effect as conditions,鈥?treat that as a system-consistency request, not a local styling nit. Confirm whether those branches are still using native HTML5 drag before claiming the interaction language is unified.
 
 ## 2026-03-24 Drag Hit Area, Main Form Parity And Detail UI Subtraction
 - When a user says a condition control can only be dragged from the leading text, treat that as a hit-area bug, not a styling preference. The whole control body should be draggable, and only the explicit resize strip should keep width-drag ownership.
-- If the user says the bill head controls must be “exactly the same” as the archive condition controls, do not settle for visual similarity. Reuse the same compact workbench language and interaction pattern instead of maintaining a second near-match branch.
-- For archive detail configuration screens, “too ugly / too flashy / too many unnecessary elements” means the fix is subtraction first: remove redundant badges, summary cards, decorative rails, and explanatory chrome before adding any new styling.
+- If the user says the bill head controls must be 鈥渆xactly the same鈥?as the archive condition controls, do not settle for visual similarity. Reuse the same compact workbench language and interaction pattern instead of maintaining a second near-match branch.
+- For archive detail configuration screens, 鈥渢oo ugly / too flashy / too many unnecessary elements鈥?means the fix is subtraction first: remove redundant badges, summary cards, decorative rails, and explanatory chrome before adding any new styling.
 ## 2026-03-24 Memo Hoisting Can Break Runtime Before Type Check Notices
 - In a giant function component, moving a `useMemo` earlier can trigger Temporal Dead Zone failures if the memoized code calls helpers backed by later `const` declarations. `tsc` and `vite build` can still pass while the page crashes at runtime.
 - For shared numeric helpers such as `clampValue`, prefer module-level function declarations before introducing early memoized derivations. That removes initialization-order risk and keeps later refactors safer.
 - After any performance refactor that reorders derivations, verify the real page in a browser. Static build success is not enough for this file.
 ## 2026-03-27 Lazy Module 500 Often Means Source Or Dependency Breakage
-- 如果 Vite 在浏览器里报 `Failed to fetch dynamically imported module`，不要先把它当成路由或后端问题。先直接检查对应懒加载 TSX 文件本身能否被解析，再核对它引用的第三方包是否真的装在 `node_modules` 里。
-- 懒加载分支的源码断裂和缺失依赖可以叠加出现：先修语法，再补依赖，再同时验证 `lint/build` 与 dev 模块 URL 是否返回 `200`，这样才能确认整条动态导入链恢复。
-
+- 濡傛灉 Vite 鍦ㄦ祻瑙堝櫒閲屾姤 `Failed to fetch dynamically imported module`锛屼笉瑕佸厛鎶婂畠褰撴垚璺敱鎴栧悗绔棶棰樸€傚厛鐩存帴妫€鏌ュ搴旀噿鍔犺浇 TSX 鏂囦欢鏈韩鑳藉惁琚В鏋愶紝鍐嶆牳瀵瑰畠寮曠敤鐨勭涓夋柟鍖呮槸鍚︾湡鐨勮鍦?`node_modules` 閲屻€?- 鎳掑姞杞藉垎鏀殑婧愮爜鏂鍜岀己澶变緷璧栧彲浠ュ彔鍔犲嚭鐜帮細鍏堜慨璇硶锛屽啀琛ヤ緷璧栵紝鍐嶅悓鏃堕獙璇?`lint/build` 涓?dev 妯″潡 URL 鏄惁杩斿洖 `200`锛岃繖鏍锋墠鑳界‘璁ゆ暣鏉″姩鎬佸鍏ラ摼鎭㈠銆?
 ## 2026-03-25 Login Route Must Not Eagerly Import Dashboard
 - When the login route and the dashboard route share one entry component, avoid statically importing the entire dashboard module at the top of `App.tsx`. A runtime failure anywhere in the dashboard dependency chain can blank the login page before it even gets a chance to render.
 - Protected or heavyweight workbench branches should be lazy-loaded and wrapped with a local error boundary. That keeps public entry screens recoverable even when downstream module-setting code is unstable.
@@ -353,12 +239,12 @@
 - Public entry screens should still keep lightweight `Array.isArray` guards around remote lists. Even with a normalized request layer, malformed or partially migrated endpoints should not be able to blank the whole page.
 
 ## 2026-03-25 Field Type Dropdown Must Follow Backend Options, Not Local Labels
-- If the backend already exposes `fieldsqltag-options`, the inspector dropdown should display those option rows directly. Keeping a separate local `文本/数字/下拉框` list for one branch creates immediate inconsistency.
+- If the backend already exposes `fieldsqltag-options`, the inspector dropdown should display those option rows directly. Keeping a separate local `鏂囨湰/鏁板瓧/涓嬫媺妗哷 list for one branch creates immediate inconsistency.
 - For condition configuration, current type recovery must read `controltype/controlType` in addition to `fieldsqltag/fieldSqlTag`; otherwise the dropdown cannot correctly show the persisted selection.
 - When both backend `showname` and local fallback labels exist, prefer the backend label first. Fallbacks should only cover missing or malformed option rows, not override valid server metadata.
 
 ## 2026-03-25 Detail Columns Can Already Be Loaded But Still Disappear At Render Time
-- When a user says 明细列接口已经有值但界面没全显示, do not stop at the fetch branch. For this workbench, detail columns were already loaded from `single-table/modules/{dllCoId}/fields`; the loss happened later in the table-builder render filter.
+- When a user says 鏄庣粏鍒楁帴鍙ｅ凡缁忔湁鍊间絾鐣岄潰娌″叏鏄剧ず, do not stop at the fetch branch. For this workbench, detail columns were already loaded from `single-table/modules/{dllCoId}/fields`; the loss happened later in the table-builder render filter.
 - `MemoTableBuilder` falls back to `helpers.isRenderableColumn(column)` unless a branch explicitly passes `renderableColumns`. That generic rule currently hides `visible=false` and `width<=0`, which is correct for the main table but wrong for detail screens that must expose all backend fields.
 - For branches that need to show every returned field, prefer passing explicit `renderableColumns` instead of weakening the shared global visibility rule. That keeps the fix scoped and avoids regressing the main table.
 
@@ -373,12 +259,12 @@
 - For this editor, the safest pattern is to load both sources together inside the module-settings feature and hydrate the editor state once on open. That keeps the modal internally consistent without turning the whole dashboard state tree into a special-case designer mode.
 
 ## 2026-03-25 Designer Group Fields Are Not Always The Real Membership Source
-- When the user explicitly says “控件属于哪个分组是通过位置计算的”, stop trusting `designer-groups.fields` as the authoritative membership list. That service-level nesting may be a convenience view, but the real source of truth for layout editors can still be the separate `designer-layout` coordinate table.
+- When the user explicitly says 鈥滄帶浠跺睘浜庡摢涓垎缁勬槸閫氳繃浣嶇疆璁＄畻鐨勨€? stop trusting `designer-groups.fields` as the authoritative membership list. That service-level nesting may be a convenience view, but the real source of truth for layout editors can still be the separate `designer-layout` coordinate table.
 - For Delphi-style layout data pulled via `select *`, treat group rectangles and control rectangles as separate datasets. Use `designer-groups` for the group boxes, `designer-layout` for placed controls, and derive membership from rectangle containment instead of assuming backend-attached children are correct.
 - When a backend table is exposed as raw records, build field-name readers that tolerate historical casing and synonyms (`left/top/width/height`, `controlLeft/controlTop`, etc.). Otherwise the logic can look correct in code but silently produce empty groups at runtime.
 
 ## 2026-03-26 Single-Table Module Settings Must Be Gated By Menu Persistence
-- In this wizard, “菜单信息已建好” is stronger than “当前在第 2 步点过保存”. The safe gate is whether a real menu node already exists and has a stable `menuId + purviewId/moduleCode`; otherwise users can jump from steps 3/4 into module settings with no durable module identity.
+- In this wizard, 鈥滆彍鍗曚俊鎭凡寤哄ソ鈥?is stronger than 鈥滃綋鍓嶅湪绗?2 姝ョ偣杩囦繚瀛樷€? The safe gate is whether a real menu node already exists and has a stable `menuId + purviewId/moduleCode`; otherwise users can jump from steps 3/4 into module settings with no durable module identity.
 - If the single-table parent record may not exist yet, do not let every child loader (`fields/conditions/details/menus/colors`) race ahead and fail independently. Add one module-level ensure step first, then start the child-resource effects only after that record is ready.
 - When a hook performs backend bootstrapping, avoid depending on unstable inline callbacks like a freshly recreated `showToast`. Either memoize the callback or keep it out of the effect dependency loop, or the bootstrap request can repeat unexpectedly.
 
@@ -392,7 +278,7 @@
 - In the latest confirmed rule, detail columns, detail colors, and detail menus all move to the related module root when `UnionModule` is present, using the main-module `fields/colors/menus` endpoints with `dllCoId = UnionModule`.
 - For branches the user re-explains with concrete endpoint lists, trust the explicit endpoint mapping over the earlier natural-language summary. Restating a rule loosely can easily drift from the real API contract.
 - Chart config is a separate branch from detail columns/colors/menus. Even when a detail has `UnionModule`, chart save still belongs to the current detail unless the user explicitly redefines that rule.
-- When the user says “先不管布局编辑器里的保存”, remove designer-layout from the current save scope instead of leaving it half-included in the plan. Partial inclusion is worse than explicit exclusion for a multi-resource save workflow.
+- When the user says 鈥滃厛涓嶇甯冨眬缂栬緫鍣ㄩ噷鐨勪繚瀛樷€? remove designer-layout from the current save scope instead of leaving it half-included in the plan. Partial inclusion is worse than explicit exclusion for a multi-resource save workflow.
 ## 2026-03-26 Merge Platform Entry Must Not Replace The Existing App Shell By Default
 - If the active branch is still a single-entry login/workbench product, do not let a merge silently replace `src/App.tsx` with a multi-platform router. Preserve the current product entry unless the user explicitly asks to migrate routes.
 - When a user reports the main page suddenly looks broken right after a merge, inspect the app entry and current browser path before touching component styles. A redirect from `/` to `/design` can look like a layout failure while the real issue is simply the wrong shell.
@@ -437,7 +323,7 @@
 - A save orchestrator that blindly `POST`s every current row is only half-finished, even if the backend supports upsert. Users will immediately notice unchanged resources still hitting write endpoints, and that noise makes later save debugging much harder.
 - For resources that already keep an entry baseline, compare the normalized POST body against the baseline body before writing. If they are identical, reuse the baseline row locally and skip the network request.
 - When building diff-by-body logic, define a stable identity key first (`id`, then durable business key like `fieldKey`). Without a stable match key, a harmless reorder or remap can look like a delete-and-recreate of every row.
-- Do not stop after fixing just one resource branch if the save orchestrator still uses the same unconditional-upsert pattern elsewhere. Once a user reports “nothing changed but save still posts”, audit the whole save path in the current page and convert the repeated resource loops together.
+- Do not stop after fixing just one resource branch if the save orchestrator still uses the same unconditional-upsert pattern elsewhere. Once a user reports 鈥渘othing changed but save still posts鈥? audit the whole save path in the current page and convert the repeated resource loops together.
 ## 2026-03-26 Existing AI Endpoints Must Follow The Same Auth Contract
 - Once the backend confirms `/api/ai/*` uses the existing login system, do not patch only the single button the user just reported. Audit every currently wired AI request in the shared client and bring them onto the same auth-aware request layer together.
 - In this project, the safest default is to route AI calls through `apiRequest(..., { auth: true })`, so `Authorization: Bearer <accessToken>` stays consistent with the rest of the app and the proxy/response unwrapping behavior does not diverge.
@@ -515,11 +401,11 @@
 ## 2026-03-28 Loaded Survey Records Must Preserve Persisted IDs Across List And Detail Reads
 - If the page first discovers a survey record from `GET /api/survey/mains` and then fetches the full row from `GET /api/survey/mains/{id}`, do not assume the second payload always repeats the same `id` field. Preserve the persisted id from the list row as a fallback, or the editor can display existing data but still save as a create.
 - Apply the same rule to detail ids and to mixed `number/string` legacy ids. Diff, hydrate, and delete logic should compare ids by normalized identity, not by a narrow numeric-only filter.
-- When a legacy API may serialize the primary key as `ID` or `Id`, normalize that casing at the API adapter boundary instead of hoping each page remembers to read all variants. Otherwise the same persisted row can look like “loaded but no id” in one screen and “has id” in another.
+- When a legacy API may serialize the primary key as `ID` or `Id`, normalize that casing at the API adapter boundary instead of hoping each page remembers to read all variants. Otherwise the same persisted row can look like 鈥渓oaded but no id鈥?in one screen and 鈥渉as id鈥?in another.
 
 ## 2026-03-28 Explicitly Added Child Rows Must Not Be Dropped Just Because They Are Still Blank
-- In editors where users can manually add child rows, do not reuse a pure “has meaningful content” filter as the only save gate. A user-added blank row is still an intentional row and should usually be persisted, or at minimum preserved through save.
-- Keep a small explicit-persist flag on newly added rows when the product expects “新增明细” to create real child records under the parent, even before the user fills every field.
+- In editors where users can manually add child rows, do not reuse a pure 鈥渉as meaningful content鈥?filter as the only save gate. A user-added blank row is still an intentional row and should usually be persisted, or at minimum preserved through save.
+- Keep a small explicit-persist flag on newly added rows when the product expects 鈥滄柊澧炴槑缁嗏€?to create real child records under the parent, even before the user fills every field.
 
 ## 2026-03-28 After Batch-Saving Child Rows, Reload The Whole Child Collection
 - When a parent page can save multiple child rows in one action, do not stop at stitching together the per-row save responses. The authoritative post-save state is the full child list under that parent, so reload it and rehydrate from the collection endpoint.
@@ -531,10 +417,10 @@
 
 ## 2026-03-28 Legacy Main DTOs Need The Same Full Field-Name Normalization And Semantic Mapping
 - For research-record main rows, do not stop after wiring `title/project`. Legacy responses can still use column names like `departid`, `surveydate`, `Address`, `ordernum`, `empnames`, `Positionsbak`, `operatedate`, and `operatorname`.
-- Normalize those names in the shared survey adapter, and keep the UI-to-backend semantic mapping explicit: `surveyUsers` belongs to the “调研工程师” field, while `operatorName/operateDate` belong to the output-confirmation signer/date fields.
+- Normalize those names in the shared survey adapter, and keep the UI-to-backend semantic mapping explicit: `surveyUsers` belongs to the 鈥滆皟鐮斿伐绋嬪笀鈥?field, while `operatorName/operateDate` belong to the output-confirmation signer/date fields.
 
 ## 2026-03-28 Survey Main Form Fields Must Follow Backend Semantics, Not Convenient Fallbacks
-- When a main form shows both “调研工程师” and “输出确认签字人”, do not fill both from the same `surveyUsers` source just because it makes old records look less empty. That creates silent write-back drift.
+- When a main form shows both 鈥滆皟鐮斿伐绋嬪笀鈥?and 鈥滆緭鍑虹‘璁ょ瀛椾汉鈥? do not fill both from the same `surveyUsers` source just because it makes old records look less empty. That creates silent write-back drift.
 - In this workbench, `surveyUsers` should own the overview engineer field, while `operatorName/operateDate` should own the output-confirmation signer/date. Any fallback between them must stay clearly secondary and only for backward compatibility during read.
 
 ## 2026-03-28 Department Pickers Must Persist Backend IDs, Not Just Display Names
@@ -543,19 +429,19 @@
 
 ## 2026-03-28 Search-Backed Department Fields Must Not Sneak In Login Defaults
 - Once a department field is changed to a real search picker, do not keep preselecting the login department id or the current menu name as a silent default. That makes the screen look filled even when the user never chose a department.
-- In this research-record workbench, a new record should leave “调研部门” empty until the user selects one, while existing records may still hydrate from the saved `departid`.
+- In this research-record workbench, a new record should leave 鈥滆皟鐮旈儴闂ㄢ€?empty until the user selects one, while existing records may still hydrate from the saved `departid`.
 
 ## 2026-03-27 Preview And Export Should Share One Research Word Template Source
-- When the user asks for Word export to match the right-side preview “一比一”, do not keep two separately maintained template trees and try to visually sync them by hand. That always drifts.
+- When the user asks for Word export to match the right-side preview 鈥滀竴姣斾竴鈥? do not keep two separately maintained template trees and try to visually sync them by hand. That always drifts.
 - In the research-record module, the durable fix is to extract one shared page builder and one shared CSS source, then let both the browser preview and the `.doc` export consume that same template.
-- This does not guarantee Microsoft Word’s rendering engine matches the browser pixel-for-pixel, but it removes the self-inflicted drift where preview and export already disagree before Word gets involved.
+- This does not guarantee Microsoft Word鈥檚 rendering engine matches the browser pixel-for-pixel, but it removes the self-inflicted drift where preview and export already disagree before Word gets involved.
 
 ## 2026-03-27 Export Fidelity Must Not Regress The Existing Preview
 - If the user says the right-side preview was changed by an export-fidelity refactor, stop optimizing the export path first and restore the preview. The visible in-app preview is the product surface; it must not regress just to make export plumbing cleaner.
-- In this research-record module, “shared template” is only acceptable if it preserves the original preview layout exactly. Once the user notices style drift, the safer approach is to restore the preview component and make the export template follow it.
+- In this research-record module, 鈥渟hared template鈥?is only acceptable if it preserves the original preview layout exactly. Once the user notices style drift, the safer approach is to restore the preview component and make the export template follow it.
 - For Word exports, border visibility is a separate compatibility problem. Solve it with Word-friendly table attributes/inline border styles instead of changing the preview DOM/CSS just to satisfy Office rendering quirks.
 ## 2026-03-28 Designer Workbenches Must Not Let Legacy Local State Block Authoritative Backend Layout Data
-- If a layout workbench is re-pointed to dedicated backend designer endpoints, do not keep the old “has local enabled state, so skip loading” guard. In this archive layout flow, `currentDetailBoard.enabled` was enough to prevent `designer-controls / designer-groups / designer-layout` from ever becoming the real initial state.
+- If a layout workbench is re-pointed to dedicated backend designer endpoints, do not keep the old 鈥渉as local enabled state, so skip loading鈥?guard. In this archive layout flow, `currentDetailBoard.enabled` was enough to prevent `designer-controls / designer-groups / designer-layout` from ever becoming the real initial state.
 - Query-side normalization and save-side serialization for designer data should live in one shared adapter. The same feature needed Delphi-era field identity matching, group-rectangle assignment, and absolute coordinate save bodies; scattering those rules across hooks and save functions makes regressions likely.
 - When backend only exposes group loading but not group persistence, control-layout saves must still account for unassigned fields explicitly. Parking unassigned controls outside every group rect is safer than omitting them and letting stale persisted positions pull them back into the wrong group on the next reload.
 ## 2026-03-28 Designer Workbenches Need Their Own Save Boundary
@@ -597,13 +483,13 @@
 ## 2026-03-28 Module-Setting Operation Buttons Should Reuse Grid Config And Inspector Boundaries
 - When a table-like workbench needs fixed operation-button settings such as add/delete/modify/save, render the button strip in the existing shell layer, but keep the editable properties inside the shared right-side inspector instead of inventing a second inline settings area.
 - For inherited detail modules, button enable flags belong to the same module-config contract as the main table. If a detail tab is really editing a related module, save those flags through the shared-module save path rather than only mutating the current tab's local grid config.
-- A non-configurable button like “保存” should still participate in the same selection model so the UI stays consistent, but its inspector state should be locked/read-only instead of pretending there is a backend field to save.
+- A non-configurable button like 鈥滀繚瀛樷€?should still participate in the same selection model so the UI stays consistent, but its inspector state should be locked/read-only instead of pretending there is a backend field to save.
 ## 2026-03-28 Enable Flags Must Be Normalized To Strict 1 Or 0 At The API Adapter Boundary
 - For backend flags like `addEnable/deleteEnable/modifyEnable`, do not let pages independently guess what empty strings, nulls, or odd numeric values mean. Normalize them once in the shared API adapter.
 - In this module-setting flow, the product rule is explicit: `1` means enabled, `0` means disabled, and missing/empty values should default to enabled. Saving should therefore always emit `1` or `0`, never blank and never alternative numeric values.
 ## 2026-03-28 Detail Save Rehydration Must Not Overwrite Freshly Edited Module Flags
 - When a detail save response is mapped back into local grid config, do not let broad `...mapped.gridConfig` hydration override user edits that belong to a different contract layer, such as inherited module-level enable flags.
-- In this module-setting flow, the right merge order is “backend detail config first, then current local table config, then normalized module-operation flags”. Otherwise a detail endpoint that knows nothing about `addEnable/deleteEnable/modifyEnable` can silently reset them back to default `1` before the shared-module save branch runs.
+- In this module-setting flow, the right merge order is 鈥渂ackend detail config first, then current local table config, then normalized module-operation flags鈥? Otherwise a detail endpoint that knows nothing about `addEnable/deleteEnable/modifyEnable` can silently reset them back to default `1` before the shared-module save branch runs.
 ## 2026-03-28 Inspector Copy For Small Setting Panels Should Prefer Local Stable Text Over Upstream Garbled Labels
 - If a narrow inspector panel only needs a small amount of copy, do not keep depending on upstream context titles/descriptions once you notice encoding drift or mojibake. A local, stable title/description can be safer than propagating broken strings through multiple layers.
 - For compact operation bars, status should be expressed mostly by selection and color, not by stacking more badges and helper text. Once the user asks for a denser control strip, reduce button height and trim secondary descriptions in the inspector at the same time.
@@ -619,19 +505,92 @@
 ## 2026-03-29 Reverse-Semantics Visibility Flags Need Explicit Read/Write Adapters
 - Do not let a legacy field like `isVisible` flow straight into shared `visible` booleans when the backend semantics are inverted. In this detail-grid contract, `0` means visible and `1` means hidden, so a generic `Boolean(isVisible)` mapper will always be wrong.
 - Save bodies must also prefer the current UI field (`visible`) over any stale raw backend field (`isVisible`) that may still be sitting on the row object. Otherwise the checkbox appears editable, but save keeps replaying the original backend value.
-- When only one endpoint family uses the reversed meaning, isolate that inversion to the specific read mapper and save builder for that family rather than “fixing” every visibility flag globally.
+- When only one endpoint family uses the reversed meaning, isolate that inversion to the specific read mapper and save builder for that family rather than 鈥渇ixing鈥?every visibility flag globally.
 
 ## 2026-03-29 Menu Deletion Should Treat The Menu Relation As The Primary Delete Boundary
 - A delete action launched from a second-level menu card should not be blocked just because the module type is unknown. The menu relation row in `subsystem-menu-config` is still a valid primary delete target even when the downstream module-config cleanup path is unavailable.
-- In this dashboard flow, the safer order is: require a real `menuId`, optionally delete known module config for recognized types, and always delete the menu relation when the user confirms. Using `moduleTypeProfile` as a hard gate makes “未指定” menus undeletable for no good reason.
-- If some module families still lack dedicated cleanup APIs, skip only that cleanup branch. Do not turn that into a blanket “cannot delete menu” decision.
+- In this dashboard flow, the safer order is: require a real `menuId`, optionally delete known module config for recognized types, and always delete the menu relation when the user confirms. Using `moduleTypeProfile` as a hard gate makes 鈥滄湭鎸囧畾鈥?menus undeletable for no good reason.
+- If some module families still lack dedicated cleanup APIs, skip only that cleanup branch. Do not turn that into a blanket 鈥渃annot delete menu鈥?decision.
 
 ## 2026-03-29 Detail Save Bodies Must Prefer Live Grid Config Over Legacy Raw DTO Fields
 - In module-setting detail saves, do not build the request body by preferring legacy raw fields like `detailsql` or `unioncond` ahead of the current `gridConfig.mainSql/sourceCondition`. That makes the editor appear editable while the save path silently replays the original backend values.
-- This is especially dangerous when the UI stores the live draft in a different object than the original tab DTO. Diff comparison will also misfire if both the “current” body and baseline body are normalized from the same stale raw field.
+- This is especially dangerous when the UI stores the live draft in a different object than the original tab DTO. Diff comparison will also misfire if both the 鈥渃urrent鈥?body and baseline body are normalized from the same stale raw field.
 - For detail SQL and related conditions, the durable rule is: use current grid config first, and only fall back to legacy DTO fields when the current grid config truly has no value.
 
 ## 2026-03-29 Closing A Wizard Does Not Automatically Refresh Page Data Unless The Load Effect Watches A Dedicated Signal
 - If a page list is loaded only from route or selection dependencies, simply closing a modal or config wizard will not refresh the list even when users expect to return to freshly updated cards. In this dashboard flow, the second-level menu page only reloaded on `activeFirstLevelMenu` or `selectedSubsystem` changes.
 - The minimal fix is often a small refresh nonce tied to the close action and included in the page-load effect dependencies. That keeps navigation behavior unchanged while still re-fetching the current page when the wizard closes.
-- Prefer this scoped refresh signal over broad “reset the whole page” logic when the user only needs the currently selected menu page to rehydrate.
+- Prefer this scoped refresh signal over broad 鈥渞eset the whole page鈥?logic when the user only needs the currently selected menu page to rehydrate.
+## 2026-04-01 Table-Like Previews Must Not Split Header And Body Into Separate DOM Trees
+- If a module-setting preview is supposed to feel like a real table, do not render the header in one standalone `<table>` and the body as a separate sibling flex/button block just because the canvas needs whole-table selection. That structure is visually fragile and immediately reads like a fake table once users look at the header/body seam.
+- In this repo's `table-builder`, the safer pattern is to keep `thead` and `tbody` inside the same table and place the selectable canvas inside a single `td[colSpan]`. Whole-table click behavior can stay on the button inside that cell without sacrificing table semantics.
+- Once a header cell already uses a full-cell selected background, avoid adding a second inner badge-style background to the label. Double-highlighting makes the header look like a floating chip pasted onto the table instead of a normal selected column header.
+## 2026-04-01 Local IP Changes Must Also Update The Checked-In Dev Env Override
+- If the machine's LAN IP changes, do not only restart the dev server and assume requests will follow the new host automatically. In this repo, local front-end API calls were still pinned by `.env.local`.
+- For `npm run dev:client`, the effective API target comes from `VITE_API_BASE_URL` in the Vite env layer, not from whatever IP the page is currently opened with.
+- After changing a local env override, restart the Vite dev server and verify the transformed `/src/lib/api-config.ts` output, because that shows the actual injected runtime value.
+## 2026-04-01 When Swapping A Custom Preview To Ant Design Table, Limit The Change To The Preview Branch
+- If users only complain about the visual credibility of a table preview, do not rewrite the whole builder/editor around a new UI library. In this repo, the safer move was to swap only the `backgroundSelectable` preview branch to `Ant Design Table` and leave the editing branch on the existing DOM and interaction model.
+- Ant Design can provide the shell, but the business interactions should stay in local logic. Header click, context menu, drag-reorder, and resize still belonged to the existing table-builder state machine, so the Antd integration only hosted those controls instead of replacing them.
+- When introducing `Antd Table` into an existing custom-styled workspace, add a narrow wrapper class to neutralize default cell padding, header separators, and container chrome. Otherwise the component library will visually fight the existing surface system.
+## 2026-04-01 Table Headers In Configuration Workbenches Should Express State, Not Decoration
+- In configuration-style tables, header design should stay utilitarian. If the user starts questioning whether the header is 鈥渄oing too much,鈥?gradients, pill backgrounds, and soft shadows have already crossed the line.
+- For this repo's `table-builder`, selected/delete/tree states are better expressed with light background shifts and text color changes than with layered chips and inset shadows. The header should still read like a table header first, and only secondarily like an editable control surface.
+- When a preview already moved onto `Ant Design Table`, keep the custom header styling even more restrained. Over-styling custom header content inside a standard table shell creates visual conflict immediately.
+## 2026-04-01 Ant Design Table Does Not Remove The Need For A Real Column DnD Strategy
+- Swapping a preview shell to `Ant Design Table` does not magically give the project stable column drag-reorder behavior. Antd's official Table docs still describe column drag sorting as an integration pattern via `components` + `dnd-kit`, not as a built-in one-prop feature.
+- If a project already has custom HTML5 drag/drop logic on raw `<th>` elements, simply rehosting that logic inside Antd header titles and `onHeaderCell` hooks is a transitional bridge, not a durable final solution.
+- When users start reporting that column dragging 鈥渇eels wrong鈥?after the Antd swap, treat that as a sign to choose one clear strategy: either keep the custom native-table builder for editable drag scenarios, or align with the official `dnd-kit` integration pattern instead of mixing shells and drag models.
+## 2026-04-01 React-Resizable Requires Its CSS And A Non-Blocked Start Event To Feel Alive
+- In this repo's `table-builder`, simply replacing a custom resize rail with `<Resizable>` was not enough. Without importing `react-resizable/css/styles.css` and aligning the custom handle to the library's expected handle class, the drag hot zone became unreliable.
+- Do not eagerly call `preventDefault/stopPropagation` in `onResizeStart` unless there is a proven conflict. On this screen, that extra blocking was more likely to make users feel the handle was dead than to solve any real bubbling problem.
+- If the selected-column style paints the entire resize hot zone, users will read it as a broken column seam rather than a resize affordance. Keep the heat zone mostly transparent by default and let only hover/resizing expose the rail.
+- For this table-builder preview, a plain `span` handle anchored to the column edge is safer than a full `button`-style interactive surface. The resize handle should behave like an invisible edge grab, not like a second header control fighting the main header button.
+
+## 2026-04-01 If The User Explicitly Wants Pure Antd Tables, Stop Patching The Custom Preview Chrome
+- Once the user says to delete the custom content layers and directly use a fresh Ant Design table, continuing to patch the fake canvas/body shell is the wrong optimization target. In this repo, the safer move was to route the actual render path back to a plain `Antd Table` for both main and detail previews.
+- When doing that reset, keep only the business-critical wiring: column labels, selection hooks, context menu hooks, and add-column entry. Drag, resize, and decorative overlay layers can be reintroduced later only after the table semantics are stable again.
+- If users then report that main and detail column widths still look different, first suspect Antd's width distribution behavior rather than the column data itself. When the total configured width is smaller than the container, Antd will visually stretch the table unless you explicitly let it render at `max-content`.
+- For this preview use case, `scroll.x = 'max-content'` plus forcing the internal header/body tables to `width: max-content` keeps widths faithful to the field config and avoids the 鈥渄etail table looks wider than main table鈥?illusion.
+
+## 2026-04-01 Table Preview Column Resize Should Use One Shared React-Resizable Header Shell
+- If the user explicitly asks for `react-resizable`, do not keep polishing a bespoke `mousedown + document mousemove` resize rail just because it already exists. In this repo's `table-builder`, the cleaner move was to introduce one reusable resizable header shell and let both main-table and detail-table previews share it.
+- Once a preview shell is already on `Ant Design Table`, split responsibilities cleanly: `dnd-kit` handles column order, `react-resizable` handles column width, and the header button keeps selection/context-menu behavior. Mixing a document-level resize listener into that stack keeps main/detail behavior inconsistent for longer.
+
+## 2026-04-01 Antd Table Preview Column Drag Should Use dnd-kit Through Header Components
+- If a table preview has already moved onto `Ant Design Table`, do not keep the old HTML5 `draggable/onDrop` chain attached to `title` spans and `onHeaderCell`. That hybrid path is exactly where drag stability starts breaking.
+- In this repo, the stable migration path is: keep the normal/native table branch as-is, and move only the Antd preview branch onto `DndContext + SortableContext + components.header.cell`.
+- Attach the drag activator to the header label area, not the whole `th`, so column resize rails and header click selection do not fight the drag sensor.
+- If users still say the drag feels 鈥渟low鈥?or 鈥渙ff-position鈥?after the first dnd-kit migration, do not stop at swapping APIs. For Antd-style headers, also align the interaction model: restrict movement to the horizontal axis, prefer pointer-based collision over center-only heuristics, and use `DragOverlay` so the dragged header follows the cursor instead of feeling like a lagging transformed table cell.
+- If main-table drag starts feeling fine but detail-table drag still feels wrong on the same screen, compare their preview density and minimum visible width before assuming the drag library is still wrong. In this repo, detail previews were compact and still allowed columns to collapse toward `1px`, which simultaneously shrank the drag hit area and made header text disappear.
+- If a preview table keeps fighting drag and resize even after tuning sensors and collision rules, inspect whether the table body is still a custom canvas disguised as a row. In this repo, the fastest way back to stable behavior was to remove the big placeholder panel entirely and let `Antd Table` render standard empty rows, so drag, width, and hit testing all operate against real table DOM again.
+- If main and detail previews are supposed to behave the same, do not leave one of them on a special compact density. Even if they share the same table-builder code, a different density still changes header height, body row height, and perceived drag hit area enough for users to call the behavior 鈥渄ifferent鈥?
+
+## 2026-04-01 Antd Rc-Table Width Stretch Needs An Explicit Numeric Width, Not Just max-content
+- In this repo's Antd preview tables, `scroll.x = 'max-content'` plus CSS `width: max-content` was not sufficient once `rc-table` entered horizontal-scroll mode. The inner header/body tables still received numeric width and `min-width` constraints that visually stretched columns.
+- When the user wants WinForms-like fixed-width tiling, the safer solution is to compute the total configured column width in the host, pass it down as one CSS variable, use the same numeric value for `scroll.x`, and force both inner header/body tables to `width` and `min-width` equal to that variable.
+- If a UI bug report says "娌℃敼" after a seemingly correct CSS change, treat that as a signal to inspect the component library's generated inline/layout styles rather than assuming the user cached the page.
+
+
+## 2026-04-02 Table Preview Fill Semantics Must Match The Workspace
+- When the user says the preview should feel like WinForms, do not only restyle the table itself. First check whether the preview host actually behaves like a filled layout container.
+- A table preview that renders a fixed 4/5 placeholder rows will always read as "shrunk into the top-left corner" even if the table component itself is Ant Design.
+- For these module-setting workbenches, the preview body height must follow the available panel height; otherwise users will correctly perceive that there is no outer layout control plus filled inner grid semantics.
+- Vertical fill alone is not enough. If the configured columns are narrower than the workspace, users will still perceive the preview as not filled unless the table shell also renders a horizontal remainder area inside the grid.
+
+## 2026-04-02 Resizable Table Width Logic Must Live On The Real Header Cell
+- If enabling drag/resize suddenly breaks visible column widths, inspect where resize is attached before tuning widths. Wrapping only the header title content in `react-resizable` is not equivalent to resizing the actual Antd header cell.
+- In Ant Design Table, the more stable pattern is to attach resize metadata through `onHeaderCell` and let the custom `components.header.cell` handle the real `th`. Otherwise header content width and table column width can drift apart even though the numeric width looks correct in code.
+- If a `react-resizable` drag only moves 1-2px and then stops, suspect that resize is committing parent column state on every mousemove and causing the header cell to remount mid-drag. Keep live resize width local to the header cell, then commit to the real column config on resize stop.
+- If users say the resize now works but still has no real-time animation, check whether only the local header shell width is changing. In this workbench, full-table live feedback comes from the shared `activeResize` preview state, so the `react-resizable` branch must drive `scheduleResizePreview/clearResizePreview` during drag instead of waiting until resize stop.
+- But do not route that live preview through a too-high owner like `Dashboard` if the preview is rendered by an Antd table with `react-resizable` header cells. In this repo, pushing every mousemove into the global resize state caused the whole table-builder runtime to re-evaluate and the current resize gesture started breaking again. For this preview branch, a local table-builder live-resize state is safer than a global preview state.
+- If the resize no longer breaks but still feels like it lags behind the cursor, inspect the active header cell's local width state update policy. In this repo's React 19 setup, letting `setLiveResizeWidth` stay in the normal batched path can make the handle feel delayed; for this very hot resize path, a narrowly scoped synchronous update is safer than assuming default batching will feel interactive enough.
+## 2026-04-02 Detail Workbench Polish Should Remove Redundant Prompt Rows Before Adding More Decoration
+- When the center workbench already has tabs, action buttons, and a full preview table, an extra "表格视图" label strip usually adds noise more than clarity. Removing that prompt row is a better first move than trying to style it harder.
+- If users say tab headers feel too tall, check both the component token height and the outer container padding. In this repo, the perceived height comes from Antd Tabs plus the wrapper's top padding, so both layers need to be tightened together.
+- For small creation actions like "新增明细" in a workbench header, a lighter pill-style primary action reads better than a plain utility button, but it still needs to stay compact so it does not make the tab bar taller again.
+## 2026-04-02 Antd Preview Scrollbars Should Have A Single Owner
+- If a preview shell wraps `Antd Table` in another `overflow-x-auto` container, do not assume both scroll layers will cooperate. In this repo, the outer workbench wrapper and the inner `ant-table-content` were competing to own horizontal scrolling, which made the visible bottom scrollbar disappear in the detail area.
+- For the Antd preview branch, let `Antd Table` own the horizontal scrollbar and keep the outer wrapper on `overflow-hidden` unless the non-Antd branch still truly needs container-level scrolling.
+- If you add a dedicated bottom scrollbar under a filled Antd preview, the host must be a real column flex layout. Otherwise the table can consume the available height first and the scrollbar may technically render but still be clipped below the visible workbench.
+- If the user explicitly asks to rely on Antd's built-in scrollbar, stop layering a second synced scrollbar under the table. On this screen, the extra bar solved one symptom but made the ownership model harder to reason about than simply restoring the library's native horizontal scroll.

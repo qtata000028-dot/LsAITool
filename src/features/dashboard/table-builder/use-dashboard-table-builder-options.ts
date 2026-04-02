@@ -152,7 +152,6 @@ export function useDashboardTableBuilderOptions({
     detailBoardConfig: activeDetailTableConfig?.detailBoard,
     renderableColumns: activeDetailTableColumns,
     canvasLabel: '点击配置明细表属性',
-    density: 'compact',
     surfaceVariant: 'solid',
     surfaceShape: 'square',
   }), [

@@ -30,7 +30,7 @@ export function DocumentTreePanel({
   return (
     <div
       style={workspaceThemeVars}
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#d9e2ec] bg-white shadow-none"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-[#d9e2ec] bg-white shadow-none"
     >
       <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
         <div

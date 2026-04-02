@@ -4804,6 +4804,7 @@
 - 刷新范围仍然只落在当前选中的一级菜单页面，不会把整个 Dashboard 重新初始化。
 - 现有退出导航行为没有变化，仍然只是关闭配置向导并回到菜单页。
 - 这轮没有代替用户做浏览器里的真实点击回归，剩余风险只在这一点：建议现场从配置向导退出一次，确认当前菜单卡片区会重新请求并刷新。
+<<<<<<< Updated upstream
 ## 2026-04-01 Clean Mother Migration Cost Assessment
 
 ### Requirement Spec
@@ -4833,3 +4834,421 @@
 
 ### Verification
 - Repository inspection only in this round; no new functional code was changed.
+=======
+
+## 2026-04-01 模块设置明细表预览表头不像真实表格
+
+### Requirement Spec
+- 目标：
+  - 修复模块设置里明细表预览“表头很奇怪、看起来不像真正表格”的问题。
+- 影响范围：
+  - `table-builder` 中主表/明细表预览的可点选整表模式
+  - 表头选中态样式
+- 关键约束：
+  - 不改动列拖拽、列缩放、整表点选和双击预览能力。
+  - 优先在现有 `table-builder` 能力内修正，不把实现堆回 `Dashboard.tsx`。
+- 不做什么：
+  - 暂不重做整套模块设置布局。
+  - 暂不改动详情布局设计器或其它非表格预览入口。
+- 验证标准：
+  - 明细表预览结构应保持为一张真实的表，而不是表头和表体分离的伪表格。
+  - 表头选中态看起来更接近标准表头，不再像一块浮层贴在表头上。
+
+### Checklist
+- [x] 定位明细表预览表头的真实渲染结构
+- [x] 修复可点选整表模式下表头与表体分离的问题
+- [x] 收敛表头选中态样式
+- [x] 跑 lint/build 验证
+- [x] 记录结果和复盘
+
+### Progress Notes
+- 用户反馈模块设置中的明细表预览“看起来不是真正的表格，表头很奇怪”，优先检查 `table-builder` 的预览结构和表头高亮样式。
+- 已确认根因之一是 `backgroundSelectable` 模式下表头和画布是分开渲染的：上方是单独的 `<thead>`，下方是独立按钮画布，因此视觉上像伪表格而不是真表。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- `backgroundSelectable` 模式下的表格预览现在也会用同一张 `<table>` 同时承载表头和表体，不再把表头和大画布拆成两段 DOM。
+- 明细表预览的列头选中态去掉了额外的内层胶囊底色，保留整列选中高亮，但视觉上更接近标准表头。
+- 这次改动只收敛在 `table-builder`，没有把新逻辑继续堆回 `Dashboard.tsx`。
+- 这轮没有代替用户做浏览器里的真实点击回归，剩余风险只在这一点：建议现场打开模块设置里的明细表预览，确认表头和表体滚动、列选中、加列按钮与整表点选行为都正常。
+
+## 2026-04-01 本地开发接口地址仍指向旧 IP
+
+### Requirement Spec
+- 目标：
+  - 修正本地开发环境的接口基地址，不再继续请求旧的 `192.168.0.55:9093`。
+- 影响范围：
+  - 本地开发环境变量
+  - 本地开发服务重启后的接口请求地址
+- 关键约束：
+  - 仅修正本地开发配置，不改生产同源 `/api` 规则。
+  - 变更后要能明确验证当前请求地址已切到新 IP。
+- 不做什么：
+  - 暂不改生产 `web.config` 反代目标。
+  - 暂不重构整套 API 配置体系。
+- 验证标准：
+  - 本地开发服务重启后，请求基地址不再是 `http://192.168.0.55:9093`。
+
+### Checklist
+- [x] 定位旧 IP 的实际配置来源
+- [x] 修正本地开发环境变量
+- [x] 重启本地开发服务并验证生效
+- [x] 记录结果
+
+### Progress Notes
+- 用户反馈本机 IP 已改成 `192.168.1.20`，但前端请求仍在打 `http://192.168.0.55:9093`。
+- 已确认当前本地开发实际来源是仓库根目录的 `.env.local`，其中 `VITE_API_BASE_URL` 仍写着旧地址 `http://192.168.0.55:9093`。
+
+### Verification
+- `http://127.0.0.1:3000/`：返回 `200`
+- 访问 `http://127.0.0.1:3000/src/lib/api-config.ts`，确认 dev 注入值已变为 `VITE_API_BASE_URL = "http://192.168.1.20:9093"`
+
+### Result Notes
+- 本地开发环境变量已改为 `VITE_API_BASE_URL="http://192.168.1.20:9093"`。
+- 已重启 `npm run dev:client`，当前前端监听在 `3000`，新的监听进程 PID 是 `20516`。
+- 这次只改了本地开发 `.env.local`，没有动生产同源 `/api` 和 `web.config` 规则。
+
+## 2026-04-01 模块设置表格预览改用 Ant Design Table
+
+### Requirement Spec
+- 目标：
+  - 将当前模块设置中的表格预览切换为 Ant Design 的表格控件展示，避免继续使用观感不佳的自制表头壳子。
+- 影响范围：
+  - `table-builder` 预览渲染
+  - 相关样式与依赖接入
+- 关键约束：
+  - 只在当前表格预览场景引入 `antd Table`，保留现有列选中、整表选中、加列、拖拽与缩放能力。
+  - 不把新实现堆回 `Dashboard.tsx`。
+- 不做什么：
+  - 暂不把整套工作台统一重构成 Ant Design 体系。
+  - 暂不改详情布局设计器等非当前预览入口。
+- 验证标准：
+  - 模块设置中的主表/明细表预览实际由 Ant Design Table 承载。
+  - 现有核心交互不回归，表头观感更接近标准表格。
+
+### Checklist
+- [x] 确认仓库是否已有 antd 依赖与接入点
+- [x] 在目标预览场景接入 Ant Design Table
+- [x] 对齐现有交互与样式
+- [x] 跑 lint/build 验证
+- [x] 记录结果和复盘
+
+### Progress Notes
+- 用户明确要求这里直接引用 `Ant Design` 控件库，并用它的表格控件来展示当前模块设置里的表格预览。
+- 当前先确认仓库里是否已有 `antd` 与全局样式接入，如果没有就按最小范围补齐。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 仓库原本没有 `antd`，这轮已补充依赖，并只在 `table-builder` 的整表可点选预览分支接入 `Ant Design Table`。
+- 主表/明细表预览现在由 `Antd Table` 承载表头与表体壳子，现有列选中、整表选中、加列、拖拽排序和列宽拖拽能力仍保留在原有逻辑里。
+- 额外补了一层 `.dashboard-table-builder-ant-table` 样式约束，把 Antd 默认 padding、分割线和背景收敛到当前工作台视觉里。
+- 这轮没有代替用户做浏览器里的真实点击回归，剩余风险只在这一点：建议现场打开模块设置里的主表/明细表预览，确认表头 hover、列拖拽、加列和整表点击都符合预期。
+
+## 2026-04-01 收敛表格表头的装饰性样式
+
+### Requirement Spec
+- 目标：
+  - 去掉模块设置表格表头上多余、装饰性过强的视觉设计，让它更像标准表格表头。
+- 影响范围：
+  - `table-builder` 表头按钮、标签、加列头、树字段标识样式
+- 关键约束：
+  - 保留必要状态表达：选中、待删、必填、树字段、可拖拽/可缩放。
+  - 不改动表格交互逻辑，只收敛视觉样式。
+- 不做什么：
+  - 暂不改表格内容区和整表预览卡片。
+  - 暂不重做主题色体系。
+- 验证标准：
+  - 表头不再出现明显的渐变、胶囊、重阴影等装饰效果。
+  - 选中/删除等状态仍可辨认。
+
+### Checklist
+- [x] 定位表头装饰样式来源
+- [x] 收敛主表与明细表头样式
+- [x] 跑 lint/build 验证
+- [x] 记录结果
+
+### Progress Notes
+- 用户明确要求把之前加在表格表头上的“无意义样式设计”去掉，优先收敛 `table-builder` 中表头的背景、标签和阴影。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 表头分割线、选中态、待删态、树字段态和加列头都改成了更扁平的样式，不再使用渐变、胶囊底色和明显阴影。
+- 现在表头只保留必要的状态差异：轻背景色、文字颜色和必填星号，不再堆过度装饰。
+- 这次只收敛了 `table-builder` 表头视觉，没有改动表格交互逻辑。
+- 这轮没有代替用户做浏览器里的真实点击回归，剩余风险只在这一点：建议现场看一下主表和明细表头，确认你想去掉的装饰感已经明显减弱。
+
+## 2026-04-01 排查 Ant Design 表头列拖动问题
+
+### Requirement Spec
+- 目标：
+  - 判断当前列拖动问题是 Ant Design 自带能力边界，还是我们现有接法的问题。
+- 影响范围：
+  - `table-builder` 里的 Antd 预览表头拖动
+  - 列拖动方案决策
+- 关键约束：
+  - 先给出准确结论，不贸然继续改实现。
+  - 需要同时结合本仓库代码和 Ant Design 官方能力边界判断。
+- 不做什么：
+  - 本轮先不直接改拖动实现。
+  - 暂不把拖动方案重写成另一套。
+- 验证标准：
+  - 能明确说明当前拖动是不是 Antd 官方内建能力。
+  - 能指出当前仓库这条拖动链路的真实实现方式。
+
+### Checklist
+- [x] 检查当前 `table-builder` 的列拖动接法
+- [x] 核对 Ant Design 官方对列拖动的支持边界
+- [x] 记录结论
+
+### Progress Notes
+- 用户反馈接入 Ant Design 后感觉列拖动有问题，并询问 Antd 是否有自己的实现。
+- 已确认当前仓库的列拖动仍然是我们自己的 HTML5 drag/drop：标题 `span` 上 `draggable/onDragStart`，表头单元格通过 `onHeaderCell` 继续接 `onDragOver/onDrop`，并不是 Antd 内建列拖动。
+
+### Result Notes
+- Ant Design Table 本身没有开箱即用的“列拖动排序”属性；官方文档给的是通过 `components` 集成 `dnd-kit` 实现列拖动的示例。
+- 当前我们把自定义拖动逻辑挂在 Antd 表头渲染层上，属于“Antd 承载表头壳子 + 本地自定义拖动”，因此一旦表头 DOM 结构、事件冒泡或 title 渲染层发生变化，交互就比原生 `<table>` 更脆。
+
+## 2026-04-01 将 Antd 预览列拖动切到 components + dnd-kit
+
+### Requirement Spec
+- 目标：
+  - 将模块设置中基于 `Ant Design Table` 的表格预览列拖动，从当前自定义 HTML5 drag/drop 改成官方推荐的 `components + dnd-kit` 方案。
+- 影响范围：
+  - `src/features/dashboard/table-builder/table-builder.tsx`
+  - Antd 预览分支的表头拖动交互
+- 关键约束：
+  - 只替换 `backgroundSelectable` 预览分支，不破坏原生 `<table>` 分支的现有交互。
+  - 保留当前列选中、右键、加列、列宽拖拽与整表点击行为。
+  - 不把实现堆回 `Dashboard.tsx`。
+- 不做什么：
+  - 暂不重写普通原生表格分支的拖动实现。
+  - 暂不顺手改其他 `dnd-kit` 工作台或明细布局编辑器。
+- 验证标准：
+  - Antd 预览分支不再使用 `draggable/onDragStart/onDrop` 这套 HTML5 事件。
+  - 列拖动改为 `dnd-kit` 驱动，拖动排序稳定，构建与类型检查通过。
+
+### Checklist
+- [x] 记录任务背景与边界
+- [x] 将 Antd 预览表头切到 `components + dnd-kit`
+- [x] 保留现有选中/右键/缩放/加列交互
+- [x] 跑 lint/build 验证
+- [x] 更新结果与复盘
+
+### Progress Notes
+- 用户已明确选择第二条方案，即保留 `Antd Table`，但把列拖动改成官方推荐的 `components + dnd-kit`。
+- 当前 `table-builder` 的 `backgroundSelectable` 分支仍然使用标题 `span` 的 `draggable/onDragStart` 与 `onHeaderCell` 的 `onDragOver/onDrop`，这是本轮需要替换的核心路径。
+- 已将 Antd 预览表头接入 `DndContext + SortableContext + components.header.cell`，并把拖拽激活点收口到标题文本，不再让整格 `th` 靠 HTML5 drag/drop 工作。
+- 用户补充反馈目前拖动“速度和位置都不正确”，说明当前 `dnd-kit` 接法虽然已切换，但传感器、碰撞或位移策略仍未对齐到 Antd 官方示例，需要继续修正。
+- 已继续把预览拖动校准为“仅横向位移 + 指针命中优先 + DragOverlay 跟手浮层”，收敛当前拖动发飘和落点偏移的问题。
+- 用户继续反馈主表拖动已经跟手，但明细表仍感觉不跟手，且窄列下文本会直接消失；这说明主表/明细在 `table-builder` 参数或窄列折叠策略上仍存在不一致，需要继续排查并统一。
+- 已确认主表与明细的核心差异是明细预览默认走 `density: 'compact'`，而列预览宽度仍允许按全局折叠地板压到接近 `0px`；这会直接缩小拖拽命中区，并让明细列文本更早消失。
+- 用户最新要求是“完全参照原版的行为模式进行复刻”，说明当前继续在 Antd 分支上微调手感已经偏离目标，需要回到改造前原版 `table-builder` 的真实交互模型重新对齐。
+- 用户随后进一步收口：两块表里的自定义内容层可以直接去掉，只保留数据接入和表格交互接线，整体换成更原生的 `Antd Table` 预览，并把列拖拽、列宽与位置逻辑重新做好。
+- 已将 Antd 预览分支里的大画布/占位卡片移除，改为标准表头 + 空行表体；主表和明细现在都走同一套原生表格语义，整表选择改为点击空行区域触发，避免再被自定义表体内容层干扰拖拽和列宽手感。
+- 用户继续反馈“明细的拖动还是不好”，结合当前实现排查，剩余最明显的不一致点是明细预览仍然单独走 `density: 'compact'`，这会让它和主表继续保留不同的表头高度、空行高度与最小宽度策略。
+- 已去掉明细预览独有的 `density: 'compact'`，让主表和明细重新走同一套 Antd 预览密度和最小可读宽度策略，不再天然保留两种不同的拖动手感。
+- 用户最新明确要求列宽拖动改用 `react-resizable`，说明继续保留当前自定义 `mousedown + document mousemove` 缩放链路已经不符合预期，需要把主表和明细预览统一到同一套现成缩放实现。
+- 已在 `table-builder` 中新增基于 `react-resizable` 的统一表头壳子，主表与明细预览现在都通过同一套 `Resizable` 句柄更新列宽；双击自动适配逻辑保留，Antd 预览分支的列顺序拖动仍由 `dnd-kit` 驱动。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- `backgroundSelectable` 预览分支现在改成了 `dnd-kit` 驱动的列拖动：`DndContext` 负责拖拽上下文，`SortableContext` 负责表头排序语义，自定义 `components.header.cell` 负责把拖拽位移落到 Antd 的 `th` 上。
+- 预览表头不再依赖 `draggable/onDragStart/onDrop` 这套 HTML5 事件，标题文本通过专门的 drag handle 参与拖动，列宽拖拽、列选中、右键和加列按钮仍保留在原来的交互位置。
+- 本轮只替换了 Antd 预览分支，普通原生 `<table>` 分支没有跟着重写，避免把已有稳定交互一并打散。
+- 在用户二次反馈后，又补了三层拖动校准：限制拖动只沿 X 轴移动、碰撞检测改成“指针命中优先，`closestCenter` 兜底”、拖动中的表头使用 `DragOverlay` 跟手浮层，不再只依赖原位 `th` 的位移。
+- 在用户继续反馈主表/明细手感不一致后，又把预览分支的可读宽度策略统一了：预览模式下不再沿用 `1px` 的折叠地板，主表至少按普通列宽展示，明细紧凑预览也会保留 `72px` 的最低可读宽度，并且不再在预览里触发“折叠表头”状态。
+- 在用户进一步要求“去掉两块表内容、直接换原生 Antd 表格”后，预览表体改成了标准空行而不是大卡片占位。这样列拖拽、列宽和落点逻辑都只围绕真实表格 DOM 工作，主表和明细的行为模型也重新统一。
+- 在用户继续反馈“明细还是不好”后，又移除了明细预览特有的紧凑密度。现在主表和明细不再因为一边是默认密度、一边是紧凑密度而保留两套表头高度和命中区大小。
+- 在用户最终要求“拖动使用 `react-resizable` 实现”后，主表和明细预览的列宽缩放都改成了 `react-resizable` 句柄，不再依赖旧的自定义 `startResize` 文档级鼠标监听。这样两块预览的列宽拖动命中区、跟手方式和落点更新都回到了同一条实现链路。
+- 用户反馈切到 react-resizable 后列宽句柄拖不动，下一步优先检查句柄命中区与 onResizeStart 事件链，再做最小修正。
+- 已补上 `react-resizable` 官方样式导入，并把自定义句柄对齐到 `react-resizable-handle-e` 约定类名，同时去掉 `onResizeStart/onResizeStop` 里多余的事件阻断。当前修正优先保证句柄能真正接住拖动，再继续观察手感细节。
+- 用户继续反馈明细列显示异常且列宽仍拖不动。已继续将 resize handle 收成贴边的纯 `span` 句柄，缩小热区并取消“激活列整条蓝带”的视觉反馈，先把异常显示和句柄命中区问题一起压住。
+- 用户最新明确要求直接删除这些表里的自定义内容层，改成全新的 Ant Design Table 预览。后续实现将不再继续修补当前预览壳子，而是统一切到纯 Antd 表格承载，只保留数据接入和基础字段交互。
+- 已将实际渲染链路收口成统一的纯 Antd Table：主表和明细都直接渲染标准表头与空行表体，不再显示自定义画布/假表体/列宽句柄。这样先确保界面回到正常表格语义，再决定后续是否要重新接回更稳的拖拽与缩放能力。
+- 已继续修正主表/明细列宽显示不一致：当前预览表格改成按 `max-content` 宽度渲染，不再在总列宽小于容器宽度时自动把列拉伸撑满。这样主表和明细的列宽展示会统一按字段自身宽度来算。
+- 用户反馈主表与明细的列宽显示明显不一致，当前优先排查 Antd Table 在列总宽小于容器宽度时是否自动拉伸列宽。
+- 用户确认上轮 max-content 方案在页面上没有生效，说明当前 Antd/rc-table 仍有更高优先级的宽度布局逻辑，需要继续定位真实原因。
+- 已确认真正挡住 `max-content` 的是 `rc-table` 在水平滚动模式下对内部 header/body table 注入的数值宽度和 `min-width` 约束；本轮已改成宿主提供列总宽 CSS 变量，并强制内部 table 直接使用这条固定宽度。
+- 现在预览表格的宽度策略已经进一步收口成“明确固定列宽平铺”：`scroll.x` 直接使用列总宽数值，宿主通过 `--dashboard-table-builder-width` 下发同一宽度，Antd 内部 header/body table 都按这条变量渲染，不再依赖 `max-content` 协商结果。
+
+## 2026-04-01 模块设置中间工作区改成纯 Antd 控件
+
+### Requirement Spec
+- 目标：
+  - 将模块设置界面中间工作区的主表/明细预览区域统一重做成 Ant Design 控件风格，不再继续使用现有自定义壳子。
+- 影响范围：
+  - `src/features/dashboard/table-builder/**`
+  - `src/features/dashboard/module-settings/detail-workbench.tsx`
+  - `src/features/dashboard/module-settings/detail-tabs-workspace.tsx`
+  - `src/features/dashboard/module-settings/grid-operation-config-bar.tsx`
+  - `src/features/dashboard/module-settings/module-setting-step-shell.tsx`
+- 关键约束：
+  - 右侧 inspector 和数据保存链路不改。
+  - 中间工作区可见控件优先使用 `Ant Design` 的 `Card/Table/Tabs/Button/Tag/Empty/Typography/Space/Flex`。
+  - 不把新实现继续堆回 `Dashboard.tsx`。
+- 不做什么：
+  - 暂不改右侧属性面板。
+  - 暂不重做接口、字段映射和保存逻辑。
+  - 暂不动非中间工作区的全局主题。
+- 验证标准：
+  - 中间工作区的主表/明细区域不再显示旧的自定义壳子样式。
+  - 主表、明细 tabs、操作按钮条、空态都变成 Antd 风格控件。
+  - `npm run lint` 和 `npm run build` 通过。
+
+### Checklist
+- [ ] 梳理中间工作区的真实渲染入口和边界
+- [ ] 用 Antd 重做主表/明细可见壳子与操作条
+- [ ] 收口 `table-builder` 预览空态与表头可见控件为 Antd 风格
+- [ ] 跑 lint/build 验证
+- [ ] 同步结果与复盘
+
+### Progress Notes
+- 用户最新明确要求停止继续修补当前中间预览区，直接把模块设置界面中间部分全部换成 Ant Design 控件，不要再混用现有自定义组件壳子。
+- 已确认中间工作区当前最明显的旧壳子集中在四块：明细 tabs、操作按钮条、主表上方筛选/快捷工具条，以及明细表/网页/空态面板。
+- 这轮先保留数据接入和保存链路不动，优先把这些可见控件收口成 Antd 风格；表格本身继续沿用当前已经接上的 Antd Table 预览链路。
+- 在实际落地时发现当前仓库编译配置下 `antd` 的 `Card` 类型在 JSX 里不稳定，会报 `TS2604`。因此壳子层改成普通容器 + Antd `Button/Tabs/Flex/Tag/Empty/Typography` 的组合，先保证中间区控件统一且可稳定构建。
+
+### Verification
+- `npm run lint`：通过
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`：通过，退出码 `0`
+
+### Result Notes
+- 中间工作区里最直观的交互控件已经统一成 Antd：明细 tabs 改成 `Tabs`，按钮条改成 `Button + Flex`，空态改成 `Empty`，文字与状态标签改成 `Typography/Tag`。
+- 主表上方的筛选/快捷工具条也已经从旧的 shadcn 按钮与 badge 收口成 Antd 按钮和标签，避免主表区域继续混着两套路子。
+- 这轮没有继续把新实现堆回 `Dashboard.tsx`，改动都落在 `module-settings` 和 `table-builder` 相关 feature 内。
+- 目前还保留了中间区的一部分普通容器壳子，没有强行全部替换成 Antd `Card`，原因是当前仓库里 `Card` 在 JSX 类型检查下不稳定。现阶段优先保证“用户能看到的控件都已切成 Antd 风格”以及 lint/build 全部通过。
+
+## 2026-04-02 Table Preview Fill Layout
+
+### Requirement Spec
+- Goal: make the module-settings center preview read like WinForms, with the outer area filled and the inner table body occupying the available panel height instead of shrinking to a 4/5-row natural block.
+- Scope: `src/features/dashboard/table-builder/table-builder.tsx`, `src/index.css`, and the shared main/detail table preview behavior.
+- Constraints:
+  - Keep right-side inspector selection/data flow unchanged.
+  - Keep the change inside `table-builder` and shared styles instead of moving logic back into `Dashboard.tsx`.
+  - Main table and detail table must use the same fill-style preview rules.
+  - Prefer a root-cause fix over decorative filler elements.
+- Out of scope:
+  - No backend contract changes.
+  - No full rewrite of column drag/resize in this round.
+
+### Checklist
+- [x] Confirm the current preview height / row-count / host-container chain.
+- [x] Rework the preview so row generation follows the available panel height.
+- [x] Tighten any CSS needed for the filled preview shell.
+- [x] Run `npm run lint` and `npm run build`.
+
+### Progress Summary
+- Confirmed that the current preview only rendered a fixed 4/5 rows, so its height never followed the center workspace height.
+- The fix stays inside `table-builder`: the preview host is now measured with `ResizeObserver`, and placeholder row count is derived from the available panel height instead of a hard-coded small number.
+- The existing Antd table shell and inspector selection path were kept intact, so this round changes fill behavior rather than data or panel wiring.
+- Follow-up correction: vertical fill alone was not enough. The preview also needed a right-side filler area inside the table shell so the workbench reads as horizontally filled without stretching the real column widths.
+
+### Verification
+- `npm run lint`: passed
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`: passed (`EXITCODE:0`)
+
+### Result Notes
+- The center preview should now read much closer to a WinForms-style filled area: the outer region stays large, and the inner table body fills it with enough placeholder rows instead of collapsing into the upper-left corner.
+- No extra decorative filler layer was added; the change came from making preview height follow the real workspace container.
+- Horizontal fill is now handled inside the table itself by appending a blank remainder column sized from the host width, so the table can occupy the full workbench width while keeping the configured columns at their real widths.
+
+## 2026-04-02 Table Preview Column Drag And Resize
+
+### Requirement Spec
+- Goal: restore column position drag and column width resize for the center table previews, following the official Ant Design `Table` extension pattern instead of a custom ad-hoc table shell.
+- Scope: `src/features/dashboard/table-builder/table-builder.tsx`, related shared styles, and the main/detail preview table interaction path.
+- Constraints:
+  - Reuse the current Ant Design preview and keep data/inspector wiring unchanged.
+  - Prefer Ant Design official `components` extension mode for drag sorting, and `react-resizable` for width handles.
+  - Main table and detail table must share the same behavior.
+  - Do not move new logic back into `Dashboard.tsx`.
+- Out of scope:
+  - No backend persistence changes in this round.
+  - No redesign of right-side inspector.
+
+### Checklist
+- [x] Cross-check official docs and current table-builder implementation.
+- [x] Switch the final rendered preview from static columns to draggable/resizable columns.
+- [x] Verify the horizontal fill behavior still works after enabling drag/resize.
+- [x] Run `npm run lint` and `npm run build`.
+
+### Progress Summary
+- Confirmed the current code already had most of the drag/resize building blocks (`dnd-kit`, `react-resizable`, sortable header cells, drag overlay), but the final Antd render path still used static plain columns.
+- Switched the final preview render back to the official Ant Design `Table.components` extension path, wrapping the preview in `DndContext` and rendering `previewTableColumnsResizable` instead of the static column list.
+- Kept the horizontal fill fix by adding the same remainder filler column into the resizable preview path, so drag/resize does not regress the WinForms-like filled shell.
+- Follow-up bug found by user: once drag logic was enabled, visible column widths became incorrect. Root cause was that resize was attached to the header title shell instead of the real Antd header cell.
+- Corrected the preview so resize metadata is now passed through `onHeaderCell` and consumed by the custom `components.header.cell`, keeping the rendered `th` width and the visible title shell aligned.
+- Follow-up bug found by user: resize could only move 1-2px before requiring a fresh drag. Root cause was that width changes were being committed into parent column state on every move, which disrupted the current resize interaction.
+- Adjusted the header-cell resize flow to keep a local live width during drag and only commit the real column width on resize stop.
+- Latest user feedback: width values are now correct, but the preview still lacks real-time resize animation because only the local header shell width changes during drag while the shared `activeResize` preview path stays idle.
+- This round will reuse the existing workbench resize preview state (`scheduleResizePreview/clearResizePreview`) so the full Antd table, not just the active header shell, responds continuously during a resize drag.
+- Implemented the preview-state hookup: `react-resizable` now reports live width changes through `onResizeWidth`, and the table-builder resize handlers drive the shared resize-preview state during drag while only committing real column width on resize stop.
+- Follow-up regression from the user: once the shared preview state was wired in, resize again became "drag a little, then must re-grab". That means the real-time preview path is still too high in the tree and is interrupting the current `react-resizable` gesture.
+- Replaced that high-level live preview with local DOM-driven preview variables on the table-builder host: drag-time width changes now update only CSS vars for the active column, filler width, and overall table width, while React column state is still committed only on resize stop.
+- Latest user feedback: the drag no longer hard-breaks, but the resize still does not follow the pointer closely enough. The remaining suspect is the header-cell local width state itself being deferred by React during rapid mousemove updates.
+- Follow-up UI regression from the user: the detail preview no longer shows a visible horizontal scrollbar. Current suspicion is that the preview wrapper and Antd table are both trying to own horizontal scrolling, so the detail workbench is effectively hiding the real scrollbar.
+- Root cause refinement: the dedicated bottom scrollbar was rendered after the Antd table inside an `h-full` preview shell, but that shell was not a column flex container. In practice the table could consume the available height first, leaving the bottom scrollbar clipped below the visible area.
+- The user then explicitly rejected the extra scrollbar approach and asked to use the built-in Ant Design Table horizontal scrollbar directly. This round should remove the custom bottom scrollbar and restore the native Antd scroll owner.
+
+### Verification
+- `npm run lint`: passed
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`: passed (`EXITCODE:0`)
+
+### Result Notes
+- Column position drag and width resize are now connected on the real Antd preview instead of living as dead code beside a static render branch.
+- The preview still preserves configured column widths and uses an internal blank remainder area to fill unused horizontal space instead of stretching the real columns.
+- The width regression after enabling drag logic should now be gone because the final preview no longer resizes an inner title wrapper while leaving the real header cell on a separate width path.
+- The resize interaction should now stay continuous because the active drag no longer rebuilds the parent column config every few pixels.
+- During resize drag, the full preview table now follows the live `activeResize` state instead of waiting for resize stop, so users should see a real-time width animation rather than only a final jump when releasing the handle.
+- Latest correction: the real-time animation no longer flows through the dashboard-level resize state. It is now local to the preview host, which should preserve continuous dragging while still letting the body and filler area animate during width changes.
+- Latest correction for the detail scrollbar: the preview host now owns a real column layout (`table` above, scrollbar below) so the dedicated bottom horizontal scrollbar cannot be pushed out of view by the filled Antd table.
+- Latest direction change: instead of keeping a custom synced bottom scrollbar, revert to Antd's own horizontal scrollbar and keep the preview shell simple. The custom bottom-scroll sync path is now considered over-engineering for this screen.
+
+## 2026-04-02 Detail Tabs Visual Polish
+
+### Requirement Spec
+- Goal: polish the module-setting detail workbench visuals by making the "新增明细" action more intentional, reducing the detail tab header height, and removing the extra "表格视图" prompt strip so the table area can use the saved vertical space.
+- Scope:
+  - `src/features/dashboard/module-settings/detail-workbench.tsx`
+  - `src/features/dashboard/module-settings/detail-tabs-workspace.tsx`
+  - `src/index.css`
+- Constraints:
+  - Keep data wiring and save behavior unchanged.
+  - Keep the implementation inside `module-settings` / shared style files instead of moving UI logic into `Dashboard.tsx`.
+  - Continue using Ant Design controls for the visible middle-workbench UI.
+- Out of scope:
+  - No right-side inspector redesign.
+  - No table-builder interaction or backend changes.
+
+### Checklist
+- [ ] Record the new visual feedback from the user
+- [ ] Restyle the add-detail action and reduce tab header height
+- [ ] Remove the extra table-view prompt row and reclaim its height
+- [ ] Run `npm run lint` and `npm run build`
+
+### Progress Summary
+- The user is now satisfied with the general Antd direction but wants the detail workbench to feel tighter and cleaner: the add-detail button should look better, tab headers should be shorter, and the extra "表格视图" strip should disappear.
+- Implemented the polish inside `module-settings` and shared CSS only: the detail tab strip now uses a lighter rounded action button, the wrapper top padding and Antd tab nav height are reduced, and the extra table-view prompt row has been removed from the document detail workbench.
+
+### Verification
+- `npm run lint`: passed
+- `cmd /d /c "npm run build & echo EXITCODE:%ERRORLEVEL%"`: passed (`EXITCODE:0`)
+
+### Result Notes
+- The "新增明细" action now reads like a compact primary workbench action instead of a plain utility button.
+- Detail tab headers are visually shorter because both the Antd tab padding and the outer wrapper top spacing were tightened.
+- The separate "表格视图" strip is gone, so the preview table starts closer to the tabs and gains that vertical space back.
+>>>>>>> Stashed changes
