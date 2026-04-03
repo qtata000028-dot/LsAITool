@@ -1,6 +1,6 @@
 import type { DesignRouteContext } from '../../../app/contracts/platform-routing';
 
-export type DesignWorkspaceWorkbench = 'modules' | 'research-record';
+export type DesignWorkspaceWorkbench = 'modules' | 'research-record' | 'tool-feedback';
 
 export type DesignWorkspaceUrlState = {
   configOpen: boolean;
@@ -31,7 +31,15 @@ function normalizeStep(value?: string | null) {
 }
 
 function normalizeWorkbench(value?: string | null): DesignWorkspaceWorkbench {
-  return value === 'research-record' ? 'research-record' : DEFAULT_WORKBENCH;
+  if (value === 'research-record') {
+    return 'research-record';
+  }
+
+  if (value === 'tool-feedback') {
+    return 'tool-feedback';
+  }
+
+  return DEFAULT_WORKBENCH;
 }
 
 function normalizeToken(value?: string | null) {

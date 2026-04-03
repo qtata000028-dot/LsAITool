@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { Button, Flex, Tag, Tabs } from 'antd';
 import { getDetailFillTypeBadgeMeta } from './dashboard-detail-fill-utils';
-import { TableWorkbenchPanel } from './table-workbench-panel';
+
+const DETAIL_ADD_TAB_KEY = '__detail_add_tab__';
 
 type DetailTab = {
   id: string;
@@ -15,8 +16,9 @@ type DetailTabStripProps = {
   onActivateTab: (tabId: string) => void;
   onAddTab: () => void;
   addLabel?: string;
-  addButtonPlacement?: 'inline-end' | 'centered';
+  addButtonPlacement?: 'inline-end' | 'centered' | 'tab-inline';
   compactAddButton?: boolean;
+  flushEdges?: boolean;
   showModeBadge?: boolean;
 };
 
@@ -41,14 +43,32 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
   addLabel,
   addButtonPlacement = 'inline-end',
   compactAddButton = false,
+  flushEdges = false,
   showModeBadge = true,
 }: DetailTabStripProps) {
   const activeTabMeta = getDetailFillTypeBadgeMeta(currentDetailFillType);
-  const tabItems = useMemo(() => detailTabs.map((tab) => ({
-    key: tab.id,
-    label: tab.name,
-    children: null,
-  })), [detailTabs]);
+  const tabItems = useMemo<Array<{ key: string; label: React.ReactNode; children: null; className?: string }>>(() => {
+    const baseItems: Array<{ key: string; label: React.ReactNode; children: null; className?: string }> = detailTabs.map((tab) => ({
+      key: tab.id,
+      label: tab.name,
+      children: null as null,
+    }));
+
+    if (addButtonPlacement === 'tab-inline') {
+      baseItems.push({
+        key: DETAIL_ADD_TAB_KEY,
+        label: (
+          <span className="dashboard-module-ant-add-detail-tab-label" title={addLabel ?? '新增页签'}>
+            <span className="material-symbols-outlined text-[16px]">add</span>
+          </span>
+        ),
+        children: null,
+        className: 'dashboard-module-ant-add-detail-tab',
+      });
+    }
+
+    return baseItems;
+  }, [addButtonPlacement, addLabel, detailTabs]);
   const addButtonClassName = compactAddButton
     ? '!h-7 !rounded-[10px] !px-3 !text-[12px]'
     : '!h-8 !rounded-full !px-3.5 !text-[12px]';
@@ -88,16 +108,31 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
           ),
         }
       : undefined;
+  const handleTabChange = (tabId: string) => {
+    if (tabId === DETAIL_ADD_TAB_KEY) {
+      return;
+    }
+    onActivateTab(tabId);
+  };
+  const handleTabClick = (tabId: string) => {
+    if (tabId === DETAIL_ADD_TAB_KEY) {
+      onAddTab();
+      return;
+    }
+    if (tabId === activeTab) {
+      onActivateTab(tabId);
+    }
+  };
 
   return (
     <div className="min-w-0">
       <Tabs
         activeKey={activeTab}
-        onChange={onActivateTab}
-        onTabClick={(tabId) => onActivateTab(tabId)}
+        onChange={handleTabChange}
+        onTabClick={handleTabClick}
         destroyOnHidden
         items={tabItems}
-        className="dashboard-module-ant-tabs min-w-0"
+        className={`dashboard-module-ant-tabs min-w-0 ${flushEdges ? 'dashboard-module-ant-tabs-flush' : ''}`}
         tabBarExtraContent={inlineExtraContent}
       />
       {addButtonPlacement === 'centered' ? (
@@ -131,24 +166,39 @@ export const MemoDocumentDetailWorkbench = React.memo(function DocumentDetailWor
   const activeDetailContentNode = currentDetailFillType === '表格' ? tableBuilderNode : fillPlaceholderNode;
 
   return (
-    <TableWorkbenchPanel
-      bodyStyle={{ backgroundColor: '#ffffff' }}
-      headerNode={(
-        <MemoDetailTabStrip
-          detailTabs={detailTabs}
-          activeTab={activeTab}
-          currentDetailFillType={currentDetailFillType}
-          onActivateTab={onActivateTab}
-          onAddTab={onAddTab}
-          addLabel="新增明细"
-          addButtonPlacement="inline-end"
-          compactAddButton
-          showModeBadge={false}
-        />
-      )}
-      bodyNode={activeDetailContentNode}
-      footerNode={footerNode}
-      onPaste={currentDetailFillType === '表格' ? onPasteTableColumns : undefined}
-    />
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-[#d6e2f1] bg-white shadow-none">
+      <div className="overflow-hidden rounded-t-[18px] border-b border-[#dbe7f7] bg-[linear-gradient(180deg,#f8fbff_0%,#f1f7ff_100%)]">
+        <div className="min-w-0 overflow-hidden">
+          <MemoDetailTabStrip
+            detailTabs={detailTabs}
+            activeTab={activeTab}
+            currentDetailFillType={currentDetailFillType}
+            onActivateTab={onActivateTab}
+            onAddTab={onAddTab}
+            addLabel="新增明细"
+            addButtonPlacement="tab-inline"
+            compactAddButton
+            flushEdges
+            showModeBadge={false}
+          />
+        </div>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-[18px] bg-white">
+        {currentDetailFillType === '表格' ? (
+          <div
+            className="min-h-0 flex-1 overflow-hidden bg-white outline-none"
+            tabIndex={0}
+            onPaste={onPasteTableColumns}
+          >
+            {activeDetailContentNode}
+          </div>
+        ) : (
+          <div className="min-h-0 flex-1 bg-white">
+            {activeDetailContentNode}
+          </div>
+        )}
+      </div>
+      {footerNode ? footerNode : null}
+    </div>
   );
 });

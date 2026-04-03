@@ -22,13 +22,19 @@ export function buildDashboardModuleScreenProps({
   expandedSubsystemId,
   handleFirstLevelMenuClick,
   handleSecondLevelMenuConfig,
+  isAdmin,
   isLoadingSecondLevelMenus,
   isLoadingSubsystemMenus,
   isResearchRecordActive,
+  isServerPermissionActive,
+  isSubsystemOpen,
+  isToolFeedbackActive,
   menuLoadError,
   onDeleteMenu,
   onLogout,
+  onOpenServerPermission,
   onOpenResearchRecord,
+  onOpenToolFeedback,
   onCreateModule,
   reloadSubsystemMenus,
   researchRecordStorageKey,
@@ -36,6 +42,7 @@ export function buildDashboardModuleScreenProps({
   secondLevelMenus,
   subsystemMenus,
   toggleSubsystemExpansion,
+  toggleSubsystemOpen,
 }: {
   activeFirstLevelMenuId: DashboardModuleScreenSidebarProps['activeFirstLevelMenuId'];
   activeFirstLevelMenuName: DashboardModuleScreenHeaderProps['activeFirstLevelMenuName'];
@@ -50,13 +57,19 @@ export function buildDashboardModuleScreenProps({
   expandedSubsystemId: DashboardModuleScreenSidebarProps['expandedSubsystemId'];
   handleFirstLevelMenuClick: DashboardModuleScreenSidebarProps['handleFirstLevelMenuClick'];
   handleSecondLevelMenuConfig: DashboardModuleScreenOverviewProps['onConfigureMenu'];
+  isAdmin: DashboardModuleScreenSidebarProps['isAdmin'];
   isLoadingSecondLevelMenus: DashboardModuleScreenOverviewProps['isLoadingSecondLevelMenus'];
   isLoadingSubsystemMenus: DashboardModuleScreenSidebarProps['isLoadingSubsystemMenus'];
   isResearchRecordActive: DashboardModuleScreenHeaderProps['isResearchRecordActive'];
+  isServerPermissionActive: DashboardModuleScreenHeaderProps['isServerPermissionActive'];
+  isSubsystemOpen: DashboardModuleScreenSidebarProps['isSubsystemOpen'];
+  isToolFeedbackActive: DashboardModuleScreenHeaderProps['isToolFeedbackActive'];
   menuLoadError: DashboardModuleScreenSidebarProps['menuLoadError'];
   onDeleteMenu: DashboardModuleScreenOverviewProps['onDeleteMenu'];
   onLogout: DashboardModuleScreenSidebarProps['onLogout'];
+  onOpenServerPermission: DashboardModuleScreenSidebarProps['onOpenServerPermission'];
   onOpenResearchRecord: DashboardModuleScreenSidebarProps['onOpenResearchRecord'];
+  onOpenToolFeedback: DashboardModuleScreenSidebarProps['onOpenToolFeedback'];
   onCreateModule: DashboardModuleScreenOverviewProps['onCreateModule'];
   reloadSubsystemMenus: DashboardModuleScreenSidebarProps['reloadSubsystemMenus'];
   researchRecordStorageKey: string;
@@ -64,13 +77,16 @@ export function buildDashboardModuleScreenProps({
   secondLevelMenus: DashboardModuleScreenOverviewProps['menus'];
   subsystemMenus: DashboardModuleScreenSidebarProps['subsystemMenus'];
   toggleSubsystemExpansion: DashboardModuleScreenSidebarProps['toggleSubsystemExpansion'];
+  toggleSubsystemOpen: DashboardModuleScreenSidebarProps['toggleSubsystemOpen'];
 }) {
   return {
-    contentKey: isResearchRecordActive ? `research-record:${researchRecordStorageKey}` : activeMenu,
+    contentKey: isResearchRecordActive || isToolFeedbackActive ? `workspace:${researchRecordStorageKey}` : activeMenu,
     headerProps: {
       activeFirstLevelMenuName,
       activeSubsystemName,
       isResearchRecordActive,
+      isServerPermissionActive,
+      isToolFeedbackActive,
     },
     overviewProps: {
       activeFirstLevelMenuName,
@@ -92,14 +108,21 @@ export function buildDashboardModuleScreenProps({
       currentUserName,
       expandedSubsystemId,
       handleFirstLevelMenuClick,
+      isAdmin,
       isLoadingSubsystemMenus,
       isResearchRecordActive,
+      isServerPermissionActive,
+      isSubsystemOpen,
+      isToolFeedbackActive,
       menuLoadError,
       onLogout,
+      onOpenServerPermission,
       onOpenResearchRecord,
+      onOpenToolFeedback,
       reloadSubsystemMenus,
       subsystemMenus,
       toggleSubsystemExpansion,
+      toggleSubsystemOpen,
     },
   };
 }

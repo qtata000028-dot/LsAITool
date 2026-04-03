@@ -217,6 +217,7 @@ import {
 import { useRestrictionWorkbenchState } from '../features/dashboard/module-settings/use-restriction-workbench-state';
 import { buildDashboardTableBuilderRuntimeBuilderConfig } from '../features/dashboard/table-builder/dashboard-table-builder-runtime-builder-config';
 import { useDashboardTableBuilderRuntime } from '../features/dashboard/table-builder/use-dashboard-table-builder-runtime';
+import { getStoredAuthSession } from '../lib/auth-session';
 import {
   updateCurrentDesignSearch,
 } from '../platforms/design/navigation/design-navigation';
@@ -227,7 +228,7 @@ interface DashboardWorkspaceState {
   initialDetailPreview?: boolean;
   initialModuleCode?: string;
   initialBusinessType?: string;
-  initialWorkbench?: 'modules' | 'research-record';
+  initialWorkbench?: 'modules' | 'research-record' | 'tool-feedback';
   initialWorkspaceTheme?: string;
   menuBridge?: {
     initialMenuCode?: string;
@@ -243,7 +244,7 @@ interface DashboardWorkspaceState {
     mode: string | null;
     moduleCode: string | null;
     theme: string | null;
-    workbench: 'modules' | 'research-record' | null;
+    workbench: 'modules' | 'research-record' | 'tool-feedback' | null;
   }>, options?: { replace?: boolean }) => void;
 }
 
@@ -284,6 +285,9 @@ export default function Dashboard({
   const initialWorkspaceTheme = DETAIL_BOARD_THEME_OPTIONS.some((option) => option.value === workspaceState?.initialWorkspaceTheme)
     ? String(workspaceState?.initialWorkspaceTheme)
     : 'aurora';
+  const authSession = useMemo(() => getStoredAuthSession(), []);
+  const isCurrentUserAdmin = Boolean(authSession?.isAdmin);
+  const [isServerPermissionWorkbenchActive, setIsServerPermissionWorkbenchActive] = useState(false);
   const {
     activeConfigMenu,
     activeWorkbench,
@@ -297,6 +301,7 @@ export default function Dashboard({
     isMenuInfoLoading,
     isMenuInfoSaving,
     isSingleTableFieldsLoading,
+    isSubsystemSidebarOpen,
     menuConfigDraft,
     menuInfoError,
     menuInfoTab,
@@ -322,6 +327,7 @@ export default function Dashboard({
     setMenuPinnedFields,
     setRestrictionActiveTab,
     toggleCommonFunc,
+    toggleSubsystemSidebarOpen,
   } = useDashboardConfigShellState({
     initialBusinessType,
     initialConfigOpen,
@@ -1422,6 +1428,7 @@ export default function Dashboard({
     activeMenuName,
     activeSubsystemName,
     isResearchRecordActive,
+    isToolFeedbackActive,
     researchCaptureModules,
     researchRecordStorageKey,
     secondLevelMenuCount,
@@ -1436,10 +1443,37 @@ export default function Dashboard({
   const {
     closeResearchRecordWorkbench,
     openResearchRecordWorkbench,
+    openToolFeedbackWorkbench,
   } = useDashboardWorkbenchNav({
     setActiveWorkbench,
     syncWorkspaceUrlState,
   });
+  const openServerPermissionWorkbench = useCallback(() => {
+    if (!isCurrentUserAdmin) {
+      return;
+    }
+
+    setIsServerPermissionWorkbenchActive(true);
+    setActiveWorkbench('modules');
+    if (syncWorkspaceUrlState) {
+      syncWorkspaceUrlState({ workbench: null }, { replace: true });
+      return;
+    }
+
+    updateCurrentDesignSearch({ workbench: null }, { replace: true });
+  }, [isCurrentUserAdmin, setActiveWorkbench, syncWorkspaceUrlState]);
+  const handleFirstLevelMenuClickWithWorkbenchReset = useCallback((subsystemId: string, menu: Parameters<typeof handleFirstLevelMenuClick>[1]) => {
+    setIsServerPermissionWorkbenchActive(false);
+    handleFirstLevelMenuClick(subsystemId, menu);
+  }, [handleFirstLevelMenuClick]);
+  const openResearchRecordWorkbenchWithReset = useCallback(() => {
+    setIsServerPermissionWorkbenchActive(false);
+    openResearchRecordWorkbench();
+  }, [openResearchRecordWorkbench]);
+  const openToolFeedbackWorkbenchWithReset = useCallback(() => {
+    setIsServerPermissionWorkbenchActive(false);
+    openToolFeedbackWorkbench();
+  }, [openToolFeedbackWorkbench]);
   const billDocumentWorkbenchNode = (
     <BillDocumentWorkbench
       state={{
@@ -1977,6 +2011,8 @@ export default function Dashboard({
         toastMessage,
       },
       isResearchRecordActive,
+      isServerPermissionActive: isServerPermissionWorkbenchActive,
+      isToolFeedbackActive,
       moduleScreenInput: {
         activeFirstLevelMenuId,
         activeFirstLevelMenuName,
@@ -1989,22 +2025,29 @@ export default function Dashboard({
         currentUserName,
         deletingMenuId,
         expandedSubsystemId,
-        handleFirstLevelMenuClick,
+        handleFirstLevelMenuClick: handleFirstLevelMenuClickWithWorkbenchReset,
         handleSecondLevelMenuConfig,
+        isAdmin: isCurrentUserAdmin,
         isLoadingSecondLevelMenus,
         isLoadingSubsystemMenus,
         isResearchRecordActive,
+        isServerPermissionActive: isServerPermissionWorkbenchActive,
+        isSubsystemOpen: isSubsystemSidebarOpen,
+        isToolFeedbackActive,
         menuLoadError,
         onCreateModule: openNewModuleGuide,
         onDeleteMenu: setPendingDeleteMenu,
         onLogout,
-        onOpenResearchRecord: openResearchRecordWorkbench,
+        onOpenServerPermission: openServerPermissionWorkbench,
+        onOpenResearchRecord: openResearchRecordWorkbenchWithReset,
+        onOpenToolFeedback: openToolFeedbackWorkbenchWithReset,
         reloadSubsystemMenus,
         researchRecordStorageKey,
         secondLevelMenuCount,
         secondLevelMenus,
         subsystemMenus,
         toggleSubsystemExpansion,
+        toggleSubsystemOpen: toggleSubsystemSidebarOpen,
       },
       researchRecordWorkbenchProps: {
         activeFirstLevelMenuName,
@@ -2014,6 +2057,14 @@ export default function Dashboard({
         onExit: closeResearchRecordWorkbench,
         onShowToast: showToast,
         storageKey: researchRecordStorageKey,
+      },
+      serverPermissionWorkbenchProps: {
+        currentUserName,
+      },
+      toolFeedbackWorkbenchProps: {
+        activeFirstLevelMenuName,
+        activeSubsystemName,
+        currentUserName,
       },
     },
     wizard: {

@@ -3,6 +3,11 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import type { AuthSession, EmployeeOption, ServerOption } from '../shared/api/auth';
 import { fetchEmployeeOptions, fetchServerOptions, loginWithPassword } from '../shared/api/auth';
+import {
+  clearRememberedLoginState,
+  getRememberedLoginState,
+  persistRememberedLoginState,
+} from '../shared/auth/remembered-login';
 import { persistAuthSession } from '../shared/auth/session';
 import { ApiError } from '../shared/api/http';
 
@@ -23,16 +28,18 @@ function getErrorMessage(error: unknown) {
 }
 
 export default function Login({ onLogin }: LoginProps) {
-  const [organizationKey, setOrganizationKey] = useState('');
+  const rememberedLoginState = useMemo(() => getRememberedLoginState(), []);
+  const [organizationKey, setOrganizationKey] = useState(rememberedLoginState?.organizationKey ?? '');
   const [organizations, setOrganizations] = useState<ServerOption[]>([]);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
-  const [employeeKeyword, setEmployeeKeyword] = useState('');
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
-  const [password, setPassword] = useState('');
+  const [employeeKeyword, setEmployeeKeyword] = useState(rememberedLoginState?.employeeName ?? '');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(rememberedLoginState?.employeeId ?? null);
+  const [password, setPassword] = useState(rememberedLoginState?.password ?? '');
+  const [rememberCredentials, setRememberCredentials] = useState(Boolean(rememberedLoginState));
   const [showPassword, setShowPassword] = useState(false);
   const [isOrganizationOpen, setIsOrganizationOpen] = useState(false);
   const [isEmployeeOpen, setIsEmployeeOpen] = useState(false);
-  const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(true);
+  const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(false);
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -54,10 +61,6 @@ export default function Login({ onLogin }: LoginProps) {
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, []);
 
-  const selectedOrganization = useMemo(() => {
-    return organizations.find((option) => option.companyKey === organizationKey) ?? null;
-  }, [organizationKey, organizations]);
-
   const selectedEmployee = useMemo(() => {
     if (selectedEmployeeId === null) {
       return null;
@@ -66,7 +69,13 @@ export default function Login({ onLogin }: LoginProps) {
     return employees.find((employee) => employee.employeeId === selectedEmployeeId) ?? null;
   }, [employees, selectedEmployeeId]);
 
-  const accountSuggestions = useMemo(() => {
+  const availableOrganizations = organizations;
+
+  const selectedOrganization = useMemo(() => {
+    return availableOrganizations.find((option) => option.companyKey === organizationKey) ?? null;
+  }, [availableOrganizations, organizationKey]);
+
+  const employeeSuggestions = useMemo(() => {
     const keyword = employeeKeyword.trim().toLowerCase();
     if (!keyword) {
       return employees.slice(0, 10);
@@ -81,62 +90,76 @@ export default function Login({ onLogin }: LoginProps) {
       .slice(0, 10);
   }, [employeeKeyword, employees]);
 
-  const accountHelperText = selectedOrganization
-    ? isLoadingEmployees
-      ? '正在加载该机构下的可登录人员...'
-      : employees.length > 0
-        ? `已加载 ${employees.length} 位可登录人员`
-        : '当前机构暂无可登录人员'
-    : '请先选择所属机构';
-
-  const loadOrganizations = async () => {
-    setIsLoadingOrganizations(true);
-    setErrorMessage(null);
-
-    try {
-      const data = await fetchServerOptions();
-      setOrganizations(Array.isArray(data) ? data : []);
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-      setOrganizations([]);
-    } finally {
-      setIsLoadingOrganizations(false);
-    }
-  };
-
   useEffect(() => {
-    void loadOrganizations();
-  }, []);
+    const keyword = employeeKeyword.trim().toLowerCase();
+    if (!keyword) {
+      return;
+    }
+
+    const matchedEmployee = employees.find((employee) => {
+      return [employee.employeeName, employee.loginAccount, employee.py]
+        .map((value) => value.trim().toLowerCase())
+        .includes(keyword);
+    }) ?? null;
+
+    if (!matchedEmployee) {
+      return;
+    }
+
+    if (matchedEmployee.employeeId !== selectedEmployeeId) {
+      setSelectedEmployeeId(matchedEmployee.employeeId);
+    }
+  }, [employeeKeyword, employees, selectedEmployeeId]);
+
+  const employeeHelperText = isLoadingEmployees
+    ? '正在加载公司人员列表...'
+    : employees.length > 0
+      ? `已从固定人员库加载 ${employees.length} 位可登录人员`
+      : '当前未获取到可登录人员';
+
+  const organizationHelperText = isLoadingOrganizations
+    ? '正在加载可选客户帐套...'
+    : selectedEmployee
+      ? availableOrganizations.length > 0
+        ? `已按 ${selectedEmployee.employeeName} 的权限展示 ${availableOrganizations.length} 个客户帐套`
+        : '当前员工没有可登录的客户帐套'
+      : availableOrganizations.length > 0
+        ? `当前展示全部 ${availableOrganizations.length} 个客户帐套，选择后仅用于登录后的业务模块和调研流向`
+        : '当前未获取到客户帐套';
 
   useEffect(() => {
     let isActive = true;
 
     const loadEmployees = async () => {
-      if (!selectedOrganization) {
-        setEmployees([]);
-        setEmployeeKeyword('');
-        setSelectedEmployeeId(null);
-        setPassword('');
-        setIsEmployeeOpen(false);
-        setIsLoadingEmployees(false);
-        return;
-      }
-
       setIsLoadingEmployees(true);
       setErrorMessage(null);
       setEmployees([]);
-      setEmployeeKeyword('');
-      setSelectedEmployeeId(null);
-      setPassword('');
       setIsEmployeeOpen(false);
 
       try {
-        const data = await fetchEmployeeOptions(selectedOrganization);
+        const data = await fetchEmployeeOptions();
         if (!isActive) {
           return;
         }
 
-        setEmployees(Array.isArray(data) ? data : []);
+        const nextEmployees = Array.isArray(data) ? data : [];
+        setEmployees(nextEmployees);
+
+        if (rememberedLoginState) {
+          const rememberedEmployee = nextEmployees.find((employee) => employee.employeeId === rememberedLoginState.employeeId) ?? null;
+          if (rememberedEmployee) {
+            setSelectedEmployeeId(rememberedEmployee.employeeId);
+            setEmployeeKeyword(rememberedEmployee.employeeName);
+            setPassword(rememberedLoginState.password);
+            setRememberCredentials(true);
+          }
+        } else {
+          setSelectedEmployeeId((prev) => (
+            prev !== null && nextEmployees.some((employee) => employee.employeeId === prev)
+              ? prev
+              : null
+          ));
+        }
       } catch (error) {
         if (!isActive) {
           return;
@@ -155,23 +178,70 @@ export default function Login({ onLogin }: LoginProps) {
     return () => {
       isActive = false;
     };
-  }, [selectedOrganization]);
+  }, [rememberedLoginState]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadOrganizationOptions = async () => {
+      try {
+        setIsLoadingOrganizations(true);
+        setErrorMessage(null);
+        setIsOrganizationOpen(false);
+        const data = await fetchServerOptions(selectedEmployee?.employeeId ?? undefined);
+        if (!isActive) {
+          return;
+        }
+
+        setOrganizations(Array.isArray(data) ? data : []);
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setErrorMessage(getErrorMessage(error));
+      } finally {
+        if (isActive) {
+          setIsLoadingOrganizations(false);
+        }
+      }
+    };
+
+    void loadOrganizationOptions();
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedEmployee]);
+
+  useEffect(() => {
+    if (availableOrganizations.length === 0) {
+      setOrganizationKey('');
+      return;
+    }
+
+    const hasCurrentSelection = availableOrganizations.some((option) => option.companyKey === organizationKey);
+    if (!hasCurrentSelection) {
+      const rememberedOrganizationKey = selectedEmployee && rememberedLoginState?.employeeId === selectedEmployee.employeeId
+        ? rememberedLoginState.organizationKey
+        : '';
+      const nextOrganization = availableOrganizations.find((option) => option.companyKey === rememberedOrganizationKey)
+        ?? availableOrganizations[0]
+        ?? null;
+      setOrganizationKey(nextOrganization?.companyKey ?? '');
+    }
+  }, [availableOrganizations, organizationKey, rememberedLoginState, selectedEmployee]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!selectedOrganization) {
-      setErrorMessage('请先选择所属机构。');
+      setErrorMessage('请先选择客户帐套。');
       return;
     }
 
     if (!selectedEmployee) {
       setErrorMessage('请选择有效的登录人员。');
-      return;
-    }
-
-    if (!password.trim()) {
-      setErrorMessage('请输入访问密码。');
       return;
     }
 
@@ -187,8 +257,26 @@ export default function Login({ onLogin }: LoginProps) {
         serverport: selectedOrganization.serverport,
       });
 
-      persistAuthSession(session, true);
-      onLogin(session);
+      const normalizedSession = {
+        ...session,
+        departmentId: selectedEmployee.departmentId || session.departmentId,
+        employeeId: selectedEmployee.employeeId,
+        employeeName: selectedEmployee.employeeName || session.employeeName,
+        username: selectedEmployee.loginAccount || session.username,
+      };
+
+      persistAuthSession(normalizedSession, rememberCredentials);
+      if (rememberCredentials) {
+        persistRememberedLoginState({
+          employeeId: selectedEmployee.employeeId,
+          employeeName: selectedEmployee.employeeName,
+          organizationKey: selectedOrganization.companyKey,
+          password,
+        });
+      } else {
+        clearRememberedLoginState();
+      }
+      onLogin(normalizedSession);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -277,7 +365,7 @@ export default function Login({ onLogin }: LoginProps) {
 
             <form className="space-y-5" onSubmit={handleSubmit}>
               <div className="space-y-1.5">
-                <label className="ml-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">所属机构</label>
+                <label className="ml-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">客户帐套</label>
                 <div ref={organizationRef} className="relative">
                   <input name="organization" type="hidden" value={organizationKey} />
                   <button
@@ -296,7 +384,7 @@ export default function Login({ onLogin }: LoginProps) {
                         <span className="material-symbols-outlined text-[20px]">domain</span>
                       </div>
                       <div className={`min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[0.01em] transition-colors ${selectedOrganization ? 'text-slate-900' : 'text-slate-500'}`}>
-                        {selectedOrganization?.title ?? (isLoadingOrganizations ? '正在加载所属机构...' : '请选择所属机构')}
+                        {selectedOrganization?.title ?? (isLoadingOrganizations ? '正在加载客户帐套...' : '请选择客户帐套')}
                       </div>
                     </div>
                     <div className={`pointer-events-none absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-2xl border border-white/80 bg-white/78 text-slate-500 shadow-[0_16px_30px_-22px_rgba(15,23,42,0.75)] transition-all duration-300 ${isOrganizationOpen ? 'scale-105 border-primary/35 bg-cyan-50/90 text-primary' : ''}`}>
@@ -307,7 +395,7 @@ export default function Login({ onLogin }: LoginProps) {
                   </button>
 
                   <AnimatePresence>
-                    {isOrganizationOpen && organizations.length > 0 && (
+                    {isOrganizationOpen && availableOrganizations.length > 0 ? (
                       <motion.div
                         initial={{ opacity: 0, y: -10, scale: 0.97 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -317,7 +405,7 @@ export default function Login({ onLogin }: LoginProps) {
                       >
                         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.18),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.72),rgba(248,250,252,0.62))]" />
                         <div className="relative p-2" role="listbox">
-                          {organizations.map((option) => {
+                          {availableOrganizations.map((option) => {
                             const isActive = option.companyKey === organizationKey;
 
                             return (
@@ -329,7 +417,6 @@ export default function Login({ onLogin }: LoginProps) {
                                 onClick={() => {
                                   setOrganizationKey(option.companyKey);
                                   setIsOrganizationOpen(false);
-                                  setIsEmployeeOpen(false);
                                   setErrorMessage(null);
                                 }}
                                 className={`flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-left transition-all duration-200 ${
@@ -353,9 +440,10 @@ export default function Login({ onLogin }: LoginProps) {
                           })}
                         </div>
                       </motion.div>
-                    )}
+                    ) : null}
                   </AnimatePresence>
                 </div>
+                <div className="ml-1 text-[11px] text-slate-400">{organizationHelperText}</div>
               </div>
 
               <div className="space-y-1.5">
@@ -366,8 +454,8 @@ export default function Login({ onLogin }: LoginProps) {
                   </div>
                   <input
                     className="h-12 w-full rounded-xl border border-slate-200/60 bg-white/50 pl-12 pr-10 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-slate-100/70"
-                    disabled={!selectedOrganization || isLoadingEmployees}
-                    placeholder={selectedOrganization ? '请输入或搜索人员名称' : '请先选择所属机构'}
+                    disabled={isLoadingEmployees}
+                    placeholder={isLoadingEmployees ? '正在加载人员列表...' : '请输入或搜索人员名称'}
                     type="text"
                     value={employeeKeyword}
                     onChange={(event) => {
@@ -376,15 +464,11 @@ export default function Login({ onLogin }: LoginProps) {
                       setIsEmployeeOpen(true);
                       setErrorMessage(null);
                     }}
-                    onFocus={() => {
-                      if (selectedOrganization) {
-                        setIsEmployeeOpen(true);
-                      }
-                    }}
+                    onFocus={() => setIsEmployeeOpen(true)}
                   />
                   <button
                     type="button"
-                    disabled={!selectedOrganization || isLoadingEmployees}
+                    disabled={isLoadingEmployees}
                     onClick={() => setIsEmployeeOpen((open) => !open)}
                     className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-2xl text-slate-400 transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -394,7 +478,7 @@ export default function Login({ onLogin }: LoginProps) {
                   </button>
 
                   <AnimatePresence>
-                    {isEmployeeOpen && selectedOrganization ? (
+                    {isEmployeeOpen ? (
                       <motion.div
                         initial={{ opacity: 0, y: -10, scale: 0.97 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -403,8 +487,8 @@ export default function Login({ onLogin }: LoginProps) {
                         className="absolute left-0 right-0 z-20 mt-3 overflow-hidden rounded-[24px] border border-white/70 bg-white/78 shadow-[0_28px_60px_-30px_rgba(15,23,42,0.45)] backdrop-blur-2xl"
                       >
                         <div className="max-h-72 overflow-y-auto p-2">
-                          {accountSuggestions.length > 0 ? (
-                            accountSuggestions.map((employee) => {
+                          {employeeSuggestions.length > 0 ? (
+                            employeeSuggestions.map((employee) => {
                               const isActive = selectedEmployeeId === employee.employeeId;
 
                               return (
@@ -444,7 +528,7 @@ export default function Login({ onLogin }: LoginProps) {
                     ) : null}
                   </AnimatePresence>
                 </div>
-                <div className="ml-1 text-[11px] text-slate-400">{accountHelperText}</div>
+                <div className="ml-1 text-[11px] text-slate-400">{employeeHelperText}</div>
               </div>
 
               <div className="space-y-1.5">
@@ -473,22 +557,23 @@ export default function Login({ onLogin }: LoginProps) {
                 </div>
               </div>
 
-              {!isLoadingOrganizations && organizations.length === 0 ? (
-                <div className="flex justify-end">
-                  <button
-                    className="text-xs font-semibold text-primary transition-colors hover:text-erp-blue"
-                    type="button"
-                    onClick={() => void loadOrganizations()}
-                  >
-                    重新加载机构
-                  </button>
+              <label className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white/50 px-4 py-3 text-sm text-slate-600">
+                <div className="flex items-center gap-3">
+                  <input
+                    checked={rememberCredentials}
+                    className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary/30"
+                    type="checkbox"
+                    onChange={(event) => setRememberCredentials(event.target.checked)}
+                  />
+                  <span className="font-medium text-slate-700">记住账号和密码</span>
                 </div>
-              ) : null}
+                <span className="text-[11px] text-slate-400">退出后下次自动带入</span>
+              </label>
 
               <div className="pt-2">
                 <button
                   className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary font-bold text-white shadow-lg shadow-primary/20 transition-all active:scale-[0.98] hover:bg-erp-blue disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
-                  disabled={isSubmitting || isLoadingOrganizations}
+                  disabled={isSubmitting || isLoadingEmployees || isLoadingOrganizations}
                   type="submit"
                 >
                   <span className="text-sm uppercase tracking-widest">{isSubmitting ? '登录中...' : '立即登录'}</span>

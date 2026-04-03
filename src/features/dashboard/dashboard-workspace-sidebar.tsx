@@ -12,14 +12,21 @@ export function DashboardWorkspaceSidebar({
   activeSubsystem,
   expandedSubsystemId,
   handleFirstLevelMenuClick,
+  isAdmin,
   isLoadingSubsystemMenus,
   isResearchRecordActive,
+  isServerPermissionActive,
+  isSubsystemOpen,
+  isToolFeedbackActive,
   menuLoadError,
   onLogout,
+  onOpenServerPermission,
   onOpenResearchRecord,
+  onOpenToolFeedback,
   reloadSubsystemMenus,
   subsystemMenus,
   toggleSubsystemExpansion,
+  toggleSubsystemOpen,
   currentUserName,
 }: {
   activeFirstLevelMenuId: string;
@@ -27,18 +34,25 @@ export function DashboardWorkspaceSidebar({
   currentUserName: string;
   expandedSubsystemId: string | null;
   handleFirstLevelMenuClick: (subsystemId: string, menu: BackendMenuNode) => void;
+  isAdmin: boolean;
   isLoadingSubsystemMenus: boolean;
   isResearchRecordActive: boolean;
+  isServerPermissionActive: boolean;
+  isSubsystemOpen: boolean;
+  isToolFeedbackActive: boolean;
   menuLoadError: string | null;
   onLogout: () => void;
+  onOpenServerPermission: () => void;
   onOpenResearchRecord: () => void;
+  onOpenToolFeedback: () => void;
   reloadSubsystemMenus: () => Promise<void>;
   subsystemMenus: BackendSubsystemNode[];
   toggleSubsystemExpansion: (subsystemId: string) => void;
+  toggleSubsystemOpen: () => void;
 }) {
-  const [isSubsystemOpen, setIsSubsystemOpen] = useState(true);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const currentUserAvatarText = currentUserName.trim().slice(0, 1) || '人';
+  const canBrowseSubsystemMenus = !isServerPermissionActive;
 
   return (
     <aside className="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0">
@@ -60,15 +74,25 @@ export function DashboardWorkspaceSidebar({
 
         <div className="space-y-1 pt-2">
           <button
-            onClick={() => setIsSubsystemOpen((prev) => !prev)}
-            className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-primary/10 text-primary transition-colors"
+            onClick={() => {
+              if (!canBrowseSubsystemMenus) {
+                return;
+              }
+
+              toggleSubsystemOpen();
+            }}
+            className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg transition-colors ${
+              canBrowseSubsystemMenus
+                ? 'bg-primary/10 text-primary'
+                : 'bg-slate-100 text-slate-400'
+            }`}
           >
             <div className="flex items-center gap-3">
               <span className="material-symbols-outlined text-xl">account_tree</span>
               <span className="text-sm font-bold">子系统配置</span>
             </div>
             <motion.span
-              animate={{ rotate: isSubsystemOpen ? 180 : 0 }}
+              animate={{ rotate: canBrowseSubsystemMenus && isSubsystemOpen ? 180 : 0 }}
               className="material-symbols-outlined text-sm"
             >
               keyboard_arrow_down
@@ -76,7 +100,7 @@ export function DashboardWorkspaceSidebar({
           </button>
 
           <AnimatePresence>
-            {isSubsystemOpen ? (
+            {canBrowseSubsystemMenus && isSubsystemOpen ? (
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
@@ -168,6 +192,21 @@ export function DashboardWorkspaceSidebar({
         </div>
 
         <div className="pt-2 space-y-1">
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={onOpenServerPermission}
+              className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
+                isServerPermissionActive
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+              }`}
+            >
+              <span className="material-symbols-outlined text-xl">shield_lock</span>
+              <span className="text-sm font-medium">权限配置</span>
+            </button>
+          ) : null}
+
           <button
             type="button"
             onClick={onOpenResearchRecord}
@@ -179,6 +218,19 @@ export function DashboardWorkspaceSidebar({
           >
             <span className="material-symbols-outlined text-xl">assignment</span>
             <span className="text-sm font-medium">调研记录</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenToolFeedback}
+            className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
+              isToolFeedbackActive
+                ? 'bg-primary text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+            }`}
+          >
+            <span className="material-symbols-outlined text-xl">lightbulb</span>
+            <span className="text-sm font-medium">意见上报</span>
           </button>
         </div>
 

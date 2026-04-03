@@ -27,7 +27,7 @@ export function useDashboardWorkspaceMeta({
   activeFirstLevelMenu: BackendMenuNode | null;
   activeFirstLevelMenuId: string;
   activeSubsystem: string;
-  activeWorkbench: 'modules' | 'research-record';
+  activeWorkbench: 'modules' | 'research-record' | 'tool-feedback';
   secondLevelMenus: BackendMenuNode[];
   selectedSubsystem: BackendSubsystemNode | null;
 }) {
@@ -44,6 +44,7 @@ export function useDashboardWorkspaceMeta({
   const activeSubsystemName = normalizeMenuTitle(selectedSubsystem?.title) || '未选择子系统';
   const activeFirstLevelMenuName = normalizeMenuTitle(activeFirstLevelMenu?.title);
   const isResearchRecordActive = activeWorkbench === 'research-record';
+  const isToolFeedbackActive = activeWorkbench === 'tool-feedback';
   const researchRecordStorageKey = [
     normalizeMenuCode(selectedSubsystem?.subsysCode ?? selectedSubsystem?.code) || activeSubsystem || 'subsystem',
     normalizeMenuCode(activeFirstLevelMenu?.code) || activeFirstLevelMenuId || 'workspace',
@@ -73,6 +74,7 @@ export function useDashboardWorkspaceMeta({
     activeMenuName,
     activeSubsystemName,
     isResearchRecordActive,
+    isToolFeedbackActive,
     researchCaptureModules,
     researchRecordStorageKey,
     secondLevelMenuCount: secondLevelMenus.length,

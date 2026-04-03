@@ -19,11 +19,16 @@ export function DesignWorkspaceRoutePresenter({
   context,
   urlState,
 }: DesignWorkspaceRoutePresenterProps) {
+  const workbenchLabel = urlState?.workbench === 'research-record'
+    ? '调研记录'
+    : urlState?.workbench === 'tool-feedback'
+      ? '意见上报'
+      : '模块设计';
   const routeContextItems = [
     buildContextLabel('子系统', context.subsystemCode),
     buildContextLabel('一级菜单', context.menuCode),
     buildContextLabel('模块', context.moduleCode || urlState?.moduleCode),
-    buildContextLabel('工作台', urlState?.workbench === 'research-record' ? '调研记录' : '模块设计'),
+    buildContextLabel('工作台', workbenchLabel),
     buildContextLabel('配置向导', urlState?.configOpen ? `已打开 · Step ${urlState.configStep}` : '未打开'),
     buildContextLabel('主题', urlState?.theme),
   ];

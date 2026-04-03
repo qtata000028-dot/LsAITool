@@ -1,5 +1,11 @@
 import { apiRequest } from './http';
 
+const FIXED_EMPLOYEE_DIRECTORY_QUERY = {
+  basename: 'lserp_yw_jt',
+  serverip: '114.116.152.217',
+  serverport: 16890,
+} as const;
+
 export interface ServerOption {
   basename: string;
   companyKey: string;
@@ -36,23 +42,27 @@ export interface AuthSession {
   tokenType: string;
   tokenVersion: number;
   username: string;
+  isAdmin?: boolean;
 }
 
-export async function fetchServerOptions() {
-  return apiRequest<ServerOption[]>('/api/system/all-servers', {
-    method: 'GET',
-  });
-}
-
-export async function fetchEmployeeOptions(server: Pick<ServerOption, 'basename' | 'serverip' | 'serverport'>) {
+async function requestEmployeeOptions() {
   return apiRequest<EmployeeOption[]>('/api/auth/employees', {
     method: 'GET',
+    query: FIXED_EMPLOYEE_DIRECTORY_QUERY,
+  });
+}
+
+export async function fetchServerOptions(employeeId?: number | null) {
+  return apiRequest<ServerOption[]>('/api/system/all-servers', {
+    method: 'GET',
     query: {
-      basename: server.basename,
-      serverip: server.serverip,
-      serverport: server.serverport,
+      employeeId,
     },
   });
+}
+
+export async function fetchEmployeeOptions() {
+  return requestEmployeeOptions();
 }
 
 export async function loginWithPassword(payload: LoginPayload) {

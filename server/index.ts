@@ -1,5 +1,17 @@
 import dotenv from 'dotenv';
 import express from 'express';
+import multer, { MulterError } from 'multer';
+import {
+  ToolFeedbackRequestError,
+  cleanupExpiredRejectedSuggestionImages,
+  createToolFeedbackSuggestion,
+  decideToolFeedbackSuggestion,
+  getToolFeedbackAttachmentFile,
+  getToolFeedbackWorkspace,
+  resubmitToolFeedbackSuggestion,
+  type ToolFeedbackCurrentUser,
+  type ToolFeedbackUploadFile,
+} from './tool-feedback-service';
 
 dotenv.config({ path: '.env.local' });
 dotenv.config();
@@ -10,6 +22,8 @@ const baseUrl = process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1';
 const model = process.env.MINIMAX_MODEL || 'MiniMax-M2.1';
 const translateModel = process.env.MINIMAX_TRANSLATE_MODEL || model;
 const businessApiBaseUrl = (process.env.BUSINESS_API_BASE_URL || process.env.VITE_API_BASE_URL || 'http://114.116.135.188:9093').replace(/\/+$/, '');
+const toolFeedbackMaxImageCount = Number(process.env.TOOL_FEEDBACK_MAX_IMAGE_COUNT || 8);
+const toolFeedbackMaxImageSize = Number(process.env.TOOL_FEEDBACK_MAX_IMAGE_SIZE || 10 * 1024 * 1024);
 
 const hopByHopHeaders = new Set([
   'connection',
@@ -67,6 +81,14 @@ type AiCreateMainTablePersistenceResult = {
   responseBody?: unknown;
   status: 'failed' | 'pending' | 'saved' | 'skipped';
   target: string;
+};
+
+type BusinessAuthMePayload = {
+  companyTitle?: string | null;
+  datasourceCode?: string | null;
+  employeeId?: number | string | null;
+  employeeName?: string | null;
+  username?: string | null;
 };
 
 app.use(express.json({ limit: '1mb' }));
@@ -235,6 +257,22 @@ const identifierDictionary: Array<[string, string]> = [
   ['\u5730\u5740', 'address'],
 ];
 
+const toolFeedbackUpload = multer({
+  fileFilter: (_req, file, callback) => {
+    if (!String(file.mimetype || '').toLowerCase().startsWith('image/')) {
+      callback(new ToolFeedbackRequestError('意见补充只能上传图片文件。', 400));
+      return;
+    }
+
+    callback(null, true);
+  },
+  limits: {
+    fileSize: toolFeedbackMaxImageSize,
+    files: toolFeedbackMaxImageCount,
+  },
+  storage: multer.memoryStorage(),
+});
+
 function guessIdentifierFromName(name: string, index: number) {
   const sortedDictionary = [...identifierDictionary].sort((left, right) => right[0].length - left[0].length);
   const tokens: string[] = [];
@@ -288,6 +326,226 @@ function buildBusinessProxyHeaders(req: express.Request) {
   return headers;
 }
 
+async function sendUpstreamResponse(upstream: Response, res: express.Response) {
+  res.status(upstream.status);
+
+  upstream.headers.forEach((value, key) => {
+    if (!hopByHopHeaders.has(key.toLowerCase())) {
+      res.setHeader(key, value);
+    }
+  });
+
+  const payload = Buffer.from(await upstream.arrayBuffer());
+  res.send(payload);
+}
+
+function buildBusinessAbsoluteUrl(pathname: string, query?: Record<string, string>) {
+  const url = new URL(`${businessApiBaseUrl}${pathname}`);
+  if (query) {
+    Object.entries(query).forEach(([key, value]) => {
+      if (value) {
+        url.searchParams.set(key, value);
+      }
+    });
+  }
+
+  return url.toString();
+}
+
+function extractBearerToken(req: express.Request) {
+  const authorizationHeader = typeof req.headers.authorization === 'string' ? req.headers.authorization.trim() : '';
+  if (authorizationHeader.toLowerCase().startsWith('bearer ')) {
+    return authorizationHeader.slice(7).trim();
+  }
+
+  return typeof req.headers.accesstoken === 'string' ? req.headers.accesstoken.trim() : '';
+}
+
+function decodeBase64UrlSegment(segment: string) {
+  const normalized = segment.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  return Buffer.from(padded, 'base64').toString('utf8');
+}
+
+function trimHeaderValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return String(value[0] || '').trim();
+  }
+
+  return String(value || '').trim();
+}
+
+function resolveToolFeedbackPublicBaseUrl(req: express.Request) {
+  const forwardedProto = trimHeaderValue(req.headers['x-forwarded-proto']);
+  const forwardedHost = trimHeaderValue(req.headers['x-forwarded-host']);
+  const protocol = forwardedProto || req.protocol || 'http';
+  const host = forwardedHost || trimHeaderValue(req.headers.host);
+
+  return host ? `${protocol}://${host}` : '';
+}
+
+function normalizeBusinessAuthMePayload(payload: unknown): BusinessAuthMePayload | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  const nestedData = record.data;
+  if (nestedData && typeof nestedData === 'object') {
+    return normalizeBusinessAuthMePayload(nestedData);
+  }
+
+  return {
+    companyTitle: typeof record.companyTitle === 'string' ? record.companyTitle : null,
+    datasourceCode: typeof record.datasourceCode === 'string' ? record.datasourceCode : null,
+    employeeId: typeof record.employeeId === 'number' || typeof record.employeeId === 'string' ? record.employeeId : null,
+    employeeName: typeof record.employeeName === 'string' ? record.employeeName : null,
+    username: typeof record.username === 'string' ? record.username : null,
+  };
+}
+
+function parseCurrentUserFromToken(token: string): ToolFeedbackCurrentUser | null {
+  const trimmedToken = token.trim();
+  if (!trimmedToken) {
+    return null;
+  }
+
+  const tokenParts = trimmedToken.split('.');
+  if (tokenParts.length < 2) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(decodeBase64UrlSegment(tokenParts[1])) as Record<string, unknown>;
+    const employeeId = Number(payload.employeeId);
+    if (!Number.isFinite(employeeId)) {
+      return null;
+    }
+
+    return {
+      companyTitle: typeof payload.companyTitle === 'string' ? payload.companyTitle : null,
+      datasourceCode: typeof payload.datasourceCode === 'string' ? payload.datasourceCode : null,
+      employeeId,
+      employeeName: typeof payload.employeeName === 'string' ? payload.employeeName : null,
+      username: typeof payload.sub === 'string'
+        ? payload.sub
+        : typeof payload.username === 'string'
+          ? payload.username
+          : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseCurrentUserFromHeaders(req: express.Request): ToolFeedbackCurrentUser | null {
+  const employeeIdHeader = trimHeaderValue(req.headers['x-ls-employee-id']);
+  const employeeId = Number(employeeIdHeader);
+  if (!Number.isFinite(employeeId)) {
+    return null;
+  }
+
+  return {
+    companyTitle: trimHeaderValue(req.headers['x-ls-company-title']) || null,
+    datasourceCode: trimHeaderValue(req.headers['x-ls-datasource-code']) || null,
+    employeeId,
+    employeeName: trimHeaderValue(req.headers['x-ls-employee-name']) || null,
+    username: trimHeaderValue(req.headers['x-ls-username']) || null,
+  };
+}
+
+async function fetchCurrentUserFromBusinessApi(req: express.Request) {
+  const headers = buildBusinessProxyHeaders(req);
+  const response = await fetch(buildBusinessAbsoluteUrl('/api/auth/me'), {
+    headers,
+    method: 'GET',
+  });
+  const payload = await parseUpstreamPayload(response);
+  if (!response.ok) {
+    throw new ToolFeedbackRequestError(
+      extractErrorMessage(payload) ?? `登录信息获取失败，状态码 ${response.status}`,
+      response.status,
+    );
+  }
+
+  const normalizedPayload = normalizeBusinessAuthMePayload(payload);
+  if (!normalizedPayload) {
+    throw new ToolFeedbackRequestError('登录信息返回格式不正确。', 502);
+  }
+
+  const employeeId = Number(normalizedPayload.employeeId);
+  if (!Number.isFinite(employeeId)) {
+    throw new ToolFeedbackRequestError('当前登录信息缺少员工编号。', 401);
+  }
+
+  return {
+    companyTitle: normalizedPayload.companyTitle,
+    datasourceCode: normalizedPayload.datasourceCode,
+    employeeId,
+    employeeName: normalizedPayload.employeeName,
+    username: normalizedPayload.username,
+  } satisfies ToolFeedbackCurrentUser;
+}
+
+async function resolveCurrentToolFeedbackUser(req: express.Request) {
+  const headerUser = parseCurrentUserFromHeaders(req);
+  if (headerUser) {
+    return headerUser;
+  }
+
+  const tokenUser = parseCurrentUserFromToken(extractBearerToken(req));
+  if (tokenUser) {
+    return tokenUser;
+  }
+
+  return fetchCurrentUserFromBusinessApi(req);
+}
+
+function getToolFeedbackErrorStatus(error: unknown) {
+  if (error instanceof MulterError) {
+    return 400;
+  }
+
+  if (error instanceof ToolFeedbackRequestError) {
+    return error.status;
+  }
+
+  return 500;
+}
+
+function getToolFeedbackErrorMessage(error: unknown) {
+  if (error instanceof MulterError) {
+    if (error.code === 'LIMIT_FILE_COUNT') {
+      return `最多只能上传 ${toolFeedbackMaxImageCount} 张图片。`;
+    }
+
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return `单张图片不能超过 ${(toolFeedbackMaxImageSize / 1024 / 1024).toFixed(0)}MB。`;
+    }
+
+    return error.message || '图片上传失败，请稍后重试。';
+  }
+
+  if (error instanceof ToolFeedbackRequestError || error instanceof Error) {
+    return error.message;
+  }
+
+  return '意见上报服务处理失败。';
+}
+
+function normalizeToolFeedbackUploadFiles(files: Express.Multer.File[] | undefined) {
+  if (!Array.isArray(files) || files.length === 0) {
+    return [] as ToolFeedbackUploadFile[];
+  }
+
+  return files.map((file) => ({
+    buffer: file.buffer,
+    mimetype: file.mimetype,
+    originalname: file.originalname,
+    size: file.size,
+  }));
+}
+
 async function forwardBusinessApi(req: express.Request, res: express.Response) {
   const method = req.method.toUpperCase();
   const headers = buildBusinessProxyHeaders(req);
@@ -312,17 +570,7 @@ async function forwardBusinessApi(req: express.Request, res: express.Response) {
       headers,
       body,
     });
-
-    res.status(upstream.status);
-
-    upstream.headers.forEach((value, key) => {
-      if (!hopByHopHeaders.has(key.toLowerCase())) {
-        res.setHeader(key, value);
-      }
-    });
-
-    const payload = Buffer.from(await upstream.arrayBuffer());
-    res.send(payload);
+    await sendUpstreamResponse(upstream, res);
   } catch (error) {
     res.status(502).json({
       message: error instanceof Error ? error.message : 'Business API proxy request failed.',
@@ -1031,6 +1279,130 @@ app.post('/api/ai/create-main-table', async (req, res) => {
   }
 });
 
+app.get('/api/system/tool-feedback/workspace', async (req, res) => {
+  try {
+    const currentUser = await resolveCurrentToolFeedbackUser(req);
+    const workspace = await getToolFeedbackWorkspace(currentUser, {
+      publicBaseUrl: resolveToolFeedbackPublicBaseUrl(req),
+    });
+    return res.json(workspace);
+  } catch (error) {
+    return res.status(getToolFeedbackErrorStatus(error)).json({
+      message: getToolFeedbackErrorMessage(error),
+    });
+  }
+});
+
+app.get('/api/system/tool-feedback/files/:storedFileName', async (req, res) => {
+  try {
+    const attachment = await getToolFeedbackAttachmentFile(req.params.storedFileName);
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename*=UTF-8''${encodeURIComponent(attachment.originalFileName)}`,
+    );
+    if (attachment.contentType) {
+      res.type(attachment.contentType);
+    }
+    return res.sendFile(attachment.absolutePath);
+  } catch (error) {
+    return res.status(getToolFeedbackErrorStatus(error)).json({
+      message: getToolFeedbackErrorMessage(error),
+    });
+  }
+});
+
+app.post('/api/system/tool-feedback', (req, res) => {
+  toolFeedbackUpload.array('images', toolFeedbackMaxImageCount)(req, res, async (uploadError) => {
+    if (uploadError) {
+      return res.status(getToolFeedbackErrorStatus(uploadError)).json({
+        message: getToolFeedbackErrorMessage(uploadError),
+      });
+    }
+
+    try {
+      const currentUser = await resolveCurrentToolFeedbackUser(req);
+      const workspace = await createToolFeedbackSuggestion(
+        currentUser,
+        req.body ?? {},
+        normalizeToolFeedbackUploadFiles(Array.isArray(req.files) ? req.files : undefined),
+        {
+          publicBaseUrl: resolveToolFeedbackPublicBaseUrl(req),
+        },
+      );
+      return res.json(workspace);
+    } catch (error) {
+      return res.status(getToolFeedbackErrorStatus(error)).json({
+        message: getToolFeedbackErrorMessage(error),
+      });
+    }
+  });
+});
+
+app.put('/api/system/tool-feedback/:suggestionId', (req, res) => {
+  const suggestionId = Number(req.params.suggestionId);
+  if (!Number.isFinite(suggestionId)) {
+    return res.status(400).json({
+      message: '意见编号不正确。',
+    });
+  }
+
+  toolFeedbackUpload.array('images', toolFeedbackMaxImageCount)(req, res, async (uploadError) => {
+    if (uploadError) {
+      return res.status(getToolFeedbackErrorStatus(uploadError)).json({
+        message: getToolFeedbackErrorMessage(uploadError),
+      });
+    }
+
+    try {
+      const currentUser = await resolveCurrentToolFeedbackUser(req);
+      const workspace = await resubmitToolFeedbackSuggestion(
+        currentUser,
+        suggestionId,
+        req.body ?? {},
+        normalizeToolFeedbackUploadFiles(Array.isArray(req.files) ? req.files : undefined),
+        {
+          publicBaseUrl: resolveToolFeedbackPublicBaseUrl(req),
+        },
+      );
+      return res.json(workspace);
+    } catch (error) {
+      return res.status(getToolFeedbackErrorStatus(error)).json({
+        message: getToolFeedbackErrorMessage(error),
+      });
+    }
+  });
+});
+
+app.put('/api/system/tool-feedback/:suggestionId/decision', async (req, res) => {
+  const suggestionId = Number(req.params.suggestionId);
+  if (!Number.isFinite(suggestionId)) {
+    return res.status(400).json({
+      message: '意见编号不正确。',
+    });
+  }
+
+  try {
+    const currentUser = await resolveCurrentToolFeedbackUser(req);
+    const workspace = await decideToolFeedbackSuggestion(currentUser, suggestionId, req.body ?? {}, {
+      publicBaseUrl: resolveToolFeedbackPublicBaseUrl(req),
+    });
+    return res.json(workspace);
+  } catch (error) {
+    return res.status(getToolFeedbackErrorStatus(error)).json({
+      message: getToolFeedbackErrorMessage(error),
+    });
+  }
+});
+
+app.get('/api/auth/employees', async (req, res) => {
+  return forwardBusinessApi(req, res);
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  return forwardBusinessApi(req, res);
+});
+
 app.use('/api', async (req, res) => {
   return forwardBusinessApi(req, res);
 });
@@ -1042,3 +1414,17 @@ app.listen(port, () => {
   console.log(`MiniMax translate model: ${translateModel}`);
   console.log(`Business API proxy target: ${businessApiBaseUrl}`);
 });
+
+void cleanupExpiredRejectedSuggestionImages().catch((error) => {
+  console.error('Initial tool feedback cleanup failed:', error);
+});
+
+const toolFeedbackCleanupTimer = setInterval(() => {
+  void cleanupExpiredRejectedSuggestionImages().catch((error) => {
+    console.error('Scheduled tool feedback cleanup failed:', error);
+  });
+}, 60 * 60 * 1000);
+
+if (typeof toolFeedbackCleanupTimer.unref === 'function') {
+  toolFeedbackCleanupTimer.unref();
+}

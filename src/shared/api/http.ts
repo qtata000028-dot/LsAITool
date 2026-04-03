@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../config/api';
 import { getAccessToken } from '../auth/session';
+import { getStoredAuthSession } from '../auth/session';
 
 type QueryValue = string | number | boolean | null | undefined;
 type ApiBody = BodyInit | object | null | undefined;
@@ -175,9 +176,20 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
   if (auth) {
     const accessToken = getAccessToken();
+    const authSession = getStoredAuthSession();
     if (accessToken) {
       requestHeaders.set('Authorization', `Bearer ${accessToken}`);
       requestHeaders.set('accessToken', accessToken);
+    }
+
+    if (authSession?.employeeId) {
+      requestHeaders.set('x-ls-employee-id', String(authSession.employeeId));
+    }
+    if (authSession?.username) {
+      requestHeaders.set('x-ls-username', authSession.username);
+    }
+    if (authSession?.datasourceCode) {
+      requestHeaders.set('x-ls-datasource-code', authSession.datasourceCode);
     }
   }
 

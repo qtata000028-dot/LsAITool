@@ -333,6 +333,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const tableSelected = options?.tableSelected ?? false;
   const onSelectTable = options?.onSelectTable;
   const onCanvasDoubleClick = options?.onCanvasDoubleClick;
+  const canvasLabel = options?.canvasLabel ?? '点击空白区域配置表格';
   const renderableCols = options?.renderableColumns ?? cols.filter((column) => helpers.isRenderableColumn(column));
   const density = options?.density ?? 'default';
   const surfaceVariant = options?.surfaceVariant ?? 'glass';
@@ -340,6 +341,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const surfaceShape = options?.surfaceShape ?? 'rounded';
   const useSquareSurface = useSolidSurface && surfaceShape === 'square';
   const isCompactCanvas = density === 'compact';
+  const showCanvasSelectionCard = backgroundSelectable;
   const selectedForDeleteSet = useMemo(() => new Set(selectedForDelete), [selectedForDelete]);
   const [previewDraggingColumnId, setPreviewDraggingColumnId] = useState<string | null>(null);
   const [resizingColumnId, setResizingColumnId] = useState<string | null>(null);
@@ -611,6 +613,10 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     setCols((prev) => updateItemWidthById(prev, id, nextWidth));
     setResizingColumnId((prev) => (prev === id ? null : prev));
   }, [applyLiveColumnResizePreview, clampColumnWidth, setCols]);
+  const handleCanvasDoubleClick = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
+    onCanvasDoubleClick?.();
+  }, [onCanvasDoubleClick]);
 
   const measurePreviewLayout = useCallback(() => {
     const hostElement = previewHostRef.current;
@@ -699,6 +705,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       ...workspaceThemeVars,
       ['--dashboard-table-builder-width' as string]: `${effectivePreviewTableWidth}px`,
       ['--dashboard-table-builder-preview-row-height' as string]: `${previewRowHeight}px`,
+      ['--dashboard-table-builder-placeholder-height' as string]: `${Math.max(previewAvailableBodyHeight || 0, previewRowHeight)}px`,
       [dashboardTableBuilderFillerWidthVar as string]: `${previewFillerWidth}px`,
     };
 
@@ -712,12 +719,30 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const handleAddColumn = useCallback(() => {
     setCols((prev) => [...prev, helpers.buildColumn(scope === 'detail' ? 'd_col' : `${scope}_col`, prev.length + 1)]);
   }, [helpers, scope, setCols]);
-
+  const canvasHintText = scope === 'left'
+    ? '点击画布即可切换到左侧表配置'
+    : scope === 'detail'
+      ? '点击画布即可切换到明细表配置'
+      : '点击画布即可切换到整表配置';
+  const canvasSelectionPanelTextNode = useMemo(() => (
+    <div className={cn(
+      'flex w-full max-w-[420px] flex-col items-center justify-center gap-2 px-6 text-center',
+      isCompactCanvas ? 'px-5' : '',
+    )}>
+      <div className="text-[14px] font-semibold tracking-[0.01em] text-slate-700">
+        {canvasLabel}
+      </div>
+      <div className="text-[11px] leading-5 text-slate-400">
+        {canvasHintText}
+      </div>
+    </div>
+  ), [canvasHintText, canvasLabel, isCompactCanvas]);
+  const canvasSelectionPanelShellClass = cn(
+    'flex h-full w-full items-center justify-center bg-white shadow-none',
+  );
 
   const tableWrapperClass = cn(
-    backgroundSelectable
-      ? 'workspace-scrollbar relative flex h-full min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden'
-      : 'workspace-scrollbar relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden',
+    'relative flex h-full min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden',
     tableSurfaceClass,
     backgroundSelectable && (isCompactCanvas ? 'min-h-[184px]' : 'min-h-[260px]'),
   );
@@ -791,16 +816,35 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       cell: TableBuilderAntdSortableHeaderCell,
     },
   }), [previewHeaderRowComponent]);
-  const previewPlaceholderRowCount = isCompactCanvas ? 18 : 24;
+  const previewPlaceholderRowCount = backgroundSelectable ? 1 : (isCompactCanvas ? 18 : 24);
   const previewTableDataSource = useMemo(
-    () => Array.from({ length: previewPlaceholderRowCount }, (_, index) => ({ key: `__preview__-${index}` })),
-    [previewPlaceholderRowCount],
+    () => (
+      backgroundSelectable
+        ? []
+        : Array.from({ length: previewPlaceholderRowCount }, (_, index) => ({ key: `__preview__-${index}` }))
+    ),
+    [backgroundSelectable, previewPlaceholderRowCount],
   );
+  const previewEmptyStateNode = useMemo(() => (
+    showCanvasSelectionCard ? (
+      <button
+        type="button"
+        onClick={onSelectTable}
+        onDoubleClick={handleCanvasDoubleClick}
+        className="flex h-full min-h-0 w-full items-center justify-center bg-white text-center"
+      >
+        {canvasSelectionPanelTextNode}
+      </button>
+    ) : null
+  ), [canvasSelectionPanelTextNode, handleCanvasDoubleClick, onSelectTable, showCanvasSelectionCard]);
   const previewCellSpacerClass = isCompactCanvas ? 'min-h-[34px]' : 'min-h-[40px]';
   const previewCellSpacerStyle = useMemo<React.CSSProperties>(() => ({
-    height: `${previewRowHeight}px`,
+    height: `${backgroundSelectable ? Math.max(previewAvailableBodyHeight || 0, previewRowHeight) : previewRowHeight}px`,
     minHeight: `${previewRowHeight}px`,
-  }), [previewRowHeight]);
+  }), [backgroundSelectable, previewAvailableBodyHeight, previewRowHeight]);
+  const previewCellBodyClass = backgroundSelectable
+    ? 'w-full bg-white'
+    : 'w-full border-t border-[#edf2f7] dark:border-slate-800/80';
   const previewTableColumnsResizable = useMemo(() => {
     const headerDrivenColumns = headerColumns.map(({ col, index, normalizedCol, headerWidth, isCollapsedHeader, isTreeRelation }) => {
       const isActive = selectedId === col.id;
@@ -864,7 +908,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
         }),
         render: () => (
           <div
-            className={cn('w-full border-t border-[#edf2f7] dark:border-slate-800/80', previewCellSpacerClass)}
+            className={cn(previewCellBodyClass, previewCellSpacerClass)}
             style={previewCellSpacerStyle}
           />
         ),
@@ -896,7 +940,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       }),
       render: () => (
         <div
-          className={cn('w-full border-t border-[#edf2f7] dark:border-slate-800/80', previewCellSpacerClass)}
+          className={cn(previewCellBodyClass, previewCellSpacerClass)}
           style={previewCellSpacerStyle}
         />
       ),
@@ -916,7 +960,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
         }),
         render: () => (
           <div
-            className={cn('w-full border-t border-[#edf2f7] dark:border-slate-800/80', previewCellSpacerClass)}
+            className={cn(previewCellBodyClass, previewCellSpacerClass)}
             style={previewCellSpacerStyle}
           />
         ),
@@ -950,6 +994,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     metrics.resizeMinWidth,
     previewCellSpacerClass,
     previewCellSpacerStyle,
+    previewCellBodyClass,
     previewDraggingColumnId,
     previewFillerWidth,
     resizingColumnId,
@@ -967,6 +1012,24 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   }, [onCanvasDoubleClick]);
 
   if (cols.length === 0) {
+    if (showCanvasSelectionCard) {
+      return (
+        <button
+          type="button"
+          onClick={onSelectTable}
+          onDoubleClick={handleCanvasDoubleClick}
+          className={cn(
+            'relative flex h-full min-h-0 w-full items-stretch justify-stretch overflow-hidden rounded-[18px] bg-[#fcfdff] text-center transition-colors hover:bg-[#f8fbff]',
+            isCompactCanvas ? 'min-h-[164px]' : 'min-h-[240px]',
+          )}
+        >
+          <div className={canvasSelectionPanelShellClass}>
+            {canvasSelectionPanelTextNode}
+          </div>
+        </button>
+      );
+    }
+
     return (
       <div className={`flex h-full min-h-0 items-center justify-center px-6 text-center text-slate-400 ${isCompactCanvas ? 'min-h-[164px] py-6' : 'min-h-[240px]'}`}>
         <div className="flex flex-col items-center gap-3">
@@ -992,30 +1055,32 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
         onDragCancel={handlePreviewColumnDragCancel}
         onDragEnd={handlePreviewColumnDragEnd}
       >
-        <Table
-          className="dashboard-table-builder-ant-table min-h-0 flex-1"
-          rowKey="key"
-          pagination={false}
-          dataSource={previewTableDataSource}
-          columns={previewTableColumnsResizable}
-          components={previewTableComponents}
-          tableLayout="fixed"
-          size={isCompactModuleSetting ? 'small' : 'middle'}
-          scroll={{
-            x: effectivePreviewTableWidth,
-            y: previewScrollY,
-          }}
-          locale={{ emptyText: null }}
-          onRow={() => ({
-            onClick: handlePreviewTableRowClick,
-            onDoubleClick: handlePreviewTableRowDoubleClick,
-            className: cn(
-              'dashboard-table-builder-ant-preview-row',
-              onSelectTable && 'cursor-pointer',
-              tableSelected && 'dashboard-table-builder-ant-preview-row-selected',
-            ),
-          })}
-        />
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <Table
+            className="dashboard-table-builder-ant-table min-h-0 flex-1"
+            rowKey="key"
+            pagination={false}
+            dataSource={previewTableDataSource}
+            columns={previewTableColumnsResizable}
+            components={previewTableComponents}
+            tableLayout="fixed"
+            size={isCompactModuleSetting ? 'small' : 'middle'}
+            scroll={{
+              x: effectivePreviewTableWidth,
+              y: previewScrollY,
+            }}
+            locale={{ emptyText: previewEmptyStateNode }}
+            onRow={() => ({
+              onClick: handlePreviewTableRowClick,
+              onDoubleClick: handlePreviewTableRowDoubleClick,
+              className: cn(
+                'dashboard-table-builder-ant-preview-row',
+                onSelectTable && 'cursor-pointer',
+                tableSelected && 'dashboard-table-builder-ant-preview-row-selected',
+              ),
+            })}
+          />
+        </div>
         <DragOverlay dropAnimation={null}>
           {previewDragOverlayNode}
         </DragOverlay>

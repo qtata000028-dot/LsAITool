@@ -31,12 +31,12 @@ export function TableWorkbenchPanel({
   return (
     <div
       className={cn(
-        `relative grid h-full min-h-0 min-w-0 overflow-hidden rounded-[18px] border border-[#dbe5f3] bg-white shadow-[0_18px_36px_-32px_rgba(15,23,42,0.16)] ${panelGridClass}`,
+        `relative grid h-full min-h-0 min-w-0 overflow-hidden rounded-[18px] border border-[#d6e2f1] bg-[#fcfdff] shadow-none ${panelGridClass}`,
         className,
       )}
     >
       {headerNode ? (
-        <div className="border-b border-[#edf2f7] bg-white px-4 pt-2">
+        <div className="border-b border-[#dbe7f7] bg-[linear-gradient(180deg,#f8fbff_0%,#f1f7ff_100%)] px-4 pt-1.5">
           <div className="min-w-0 overflow-hidden">{headerNode}</div>
         </div>
       ) : null}

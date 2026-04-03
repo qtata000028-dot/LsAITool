@@ -18,7 +18,7 @@ export type DashboardWorkspaceAdapterState = {
   initialDetailPreview: boolean;
   initialModuleCode?: string;
   initialBusinessType?: string;
-  initialWorkbench: 'modules' | 'research-record';
+  initialWorkbench: 'modules' | 'research-record' | 'tool-feedback';
   initialWorkspaceTheme?: string;
   menuBridge: {
     initialMenuCode?: string;
@@ -34,7 +34,7 @@ export type DashboardWorkspaceAdapterState = {
     mode: string | null;
     moduleCode: string | null;
     theme: string | null;
-    workbench: 'modules' | 'research-record' | null;
+    workbench: 'modules' | 'research-record' | 'tool-feedback' | null;
   }>, options?: { replace?: boolean }) => void;
 };
 

@@ -9,14 +9,14 @@ type SyncWorkspaceUrlState = (patch: Partial<{
   mode: string | null;
   moduleCode: string | null;
   theme: string | null;
-  workbench: 'modules' | 'research-record' | null;
+  workbench: 'modules' | 'research-record' | 'tool-feedback' | null;
 }>, options?: { replace?: boolean }) => void;
 
 export function useDashboardWorkbenchNav({
   setActiveWorkbench,
   syncWorkspaceUrlState,
 }: {
-  setActiveWorkbench: Dispatch<SetStateAction<'modules' | 'research-record'>>;
+  setActiveWorkbench: Dispatch<SetStateAction<'modules' | 'research-record' | 'tool-feedback'>>;
   syncWorkspaceUrlState?: SyncWorkspaceUrlState;
 }) {
   const openResearchRecordWorkbench = useCallback(() => {
@@ -39,8 +39,19 @@ export function useDashboardWorkbenchNav({
     updateCurrentDesignSearch({ workbench: null }, { replace: true });
   }, [setActiveWorkbench, syncWorkspaceUrlState]);
 
+  const openToolFeedbackWorkbench = useCallback(() => {
+    setActiveWorkbench('tool-feedback');
+    if (syncWorkspaceUrlState) {
+      syncWorkspaceUrlState({ workbench: 'tool-feedback' }, { replace: true });
+      return;
+    }
+
+    updateCurrentDesignSearch({ workbench: 'tool-feedback' }, { replace: true });
+  }, [setActiveWorkbench, syncWorkspaceUrlState]);
+
   return {
     closeResearchRecordWorkbench,
     openResearchRecordWorkbench,
+    openToolFeedbackWorkbench,
   };
 }

@@ -162,7 +162,7 @@ export function useDashboardTableBuilderOptions({
     backgroundSelectable: true,
     tableSelected: selectedTableConfigScope === 'left',
     onSelectTable: handleArchiveLeftTableSelect,
-    canvasLabel: '点击配置左侧树表',
+    canvasLabel: '点击配置左侧表',
     surfaceVariant: 'solid',
     surfaceShape: 'square',
   }), [handleArchiveLeftTableSelect, selectedTableConfigScope]);

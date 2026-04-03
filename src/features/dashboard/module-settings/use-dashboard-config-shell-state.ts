@@ -14,7 +14,7 @@ type UseDashboardConfigShellStateInput = {
   initialBusinessType: BusinessType;
   initialConfigOpen: boolean;
   initialConfigStep: number;
-  initialWorkbench?: 'modules' | 'research-record';
+  initialWorkbench?: 'modules' | 'research-record' | 'tool-feedback';
 };
 
 export function useDashboardConfigShellState({
@@ -23,8 +23,9 @@ export function useDashboardConfigShellState({
   initialConfigStep,
   initialWorkbench,
 }: UseDashboardConfigShellStateInput) {
-  const [activeWorkbench, setActiveWorkbench] = useState<'modules' | 'research-record'>(initialWorkbench ?? 'modules');
+  const [activeWorkbench, setActiveWorkbench] = useState<'modules' | 'research-record' | 'tool-feedback'>(initialWorkbench ?? 'modules');
   const [isConfigOpen, setIsConfigOpen] = useState(initialConfigOpen);
+  const [isSubsystemSidebarOpen, setIsSubsystemSidebarOpen] = useState(true);
   const [configStep, setConfigStep] = useState(initialConfigStep);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [menuPageRefreshNonce, setMenuPageRefreshNonce] = useState(0);
@@ -55,6 +56,10 @@ export function useDashboardConfigShellState({
     setMenuInfoError(null);
   }, []);
 
+  const toggleSubsystemSidebarOpen = useCallback(() => {
+    setIsSubsystemSidebarOpen((prev) => !prev);
+  }, []);
+
   const toggleCommonFunc = useCallback((id: string) => {
     setCommonFuncs((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
   }, []);
@@ -72,6 +77,7 @@ export function useDashboardConfigShellState({
     isMenuInfoLoading,
     isMenuInfoSaving,
     isSingleTableFieldsLoading,
+    isSubsystemSidebarOpen,
     menuConfigDraft,
     menuInfoError,
     menuInfoTab,
@@ -90,6 +96,7 @@ export function useDashboardConfigShellState({
     setIsMenuInfoLoading,
     setIsMenuInfoSaving,
     setIsSingleTableFieldsLoading,
+    setIsSubsystemSidebarOpen,
     setMenuConfigDraft,
     setMenuInfoError,
     setMenuInfoTab,
@@ -97,5 +104,6 @@ export function useDashboardConfigShellState({
     setMenuPinnedFields,
     setRestrictionActiveTab,
     toggleCommonFunc,
+    toggleSubsystemSidebarOpen,
   };
 }

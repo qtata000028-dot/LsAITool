@@ -2,22 +2,31 @@ import React from 'react';
 
 import { DashboardModuleScreen } from './dashboard-module-screen';
 import { DashboardResearchRecordScreen } from './dashboard-research-record-screen';
+import { DashboardServerPermissionScreen } from './dashboard-server-permission-screen';
 
 export function DashboardScreenRouter({
   configModalNode,
   deleteConfirmNode,
   isResearchRecordActive,
+  isServerPermissionActive,
+  isToolFeedbackActive,
   moduleScreenProps,
   researchRecordWorkbenchNode,
+  serverPermissionWorkbenchNode,
+  toolFeedbackWorkbenchNode,
 }: {
   configModalNode: React.ReactNode;
   deleteConfirmNode: React.ReactNode;
   isResearchRecordActive: boolean;
+  isServerPermissionActive: boolean;
+  isToolFeedbackActive: boolean;
   moduleScreenProps: Omit<
     React.ComponentProps<typeof DashboardModuleScreen>,
     'configModalNode' | 'deleteConfirmNode'
   >;
   researchRecordWorkbenchNode: React.ReactNode;
+  serverPermissionWorkbenchNode: React.ReactNode;
+  toolFeedbackWorkbenchNode: React.ReactNode;
 }) {
   const {
     contentKey,
@@ -32,6 +41,30 @@ export function DashboardScreenRouter({
         configModalNode={configModalNode}
         contentNode={researchRecordWorkbenchNode}
         deleteConfirmNode={deleteConfirmNode}
+      />
+    );
+  }
+
+  if (isServerPermissionActive) {
+    return (
+      <DashboardServerPermissionScreen
+        configModalNode={configModalNode}
+        contentNode={serverPermissionWorkbenchNode}
+        deleteConfirmNode={deleteConfirmNode}
+        headerProps={headerProps}
+        sidebarProps={sidebarProps}
+      />
+    );
+  }
+
+  if (isToolFeedbackActive) {
+    return (
+      <DashboardServerPermissionScreen
+        configModalNode={configModalNode}
+        contentNode={toolFeedbackWorkbenchNode}
+        deleteConfirmNode={deleteConfirmNode}
+        headerProps={headerProps}
+        sidebarProps={sidebarProps}
       />
     );
   }

@@ -25,7 +25,7 @@ export function DetailFillPlaceholder({
   return (
     <div
       onClick={onActivate}
-      className={`m-4 flex h-[calc(100%-2rem)] cursor-pointer items-center justify-center rounded-[16px] border ${isSelected ? 'border-[#91caff] bg-[#f6fbff]' : 'border-[#d9e2ec] bg-white'} shadow-none`}
+      className={`flex h-full w-full cursor-pointer items-center justify-center ${isSelected ? 'bg-[#f6fbff]' : 'bg-white'} shadow-none`}
     >
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -77,8 +77,8 @@ export function DetailTabsWorkspace({
   const activeTabLabel = detailTabs.find((tab) => tab.id === activeTab)?.name || '当前明细';
 
   return (
-    <div className="m-3 flex h-[calc(100%-1.5rem)] min-h-0 flex-col overflow-hidden rounded-[18px] border border-[#d9e2ec] bg-white shadow-none">
-      <div className="border-b border-[#edf2f7] bg-white px-4 pt-2">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
+      <div className="overflow-hidden border-b border-[#edf2f7] bg-[linear-gradient(180deg,#fdfefe_0%,#f5f9ff_100%)]">
         <MemoDetailTabStrip
           detailTabs={detailTabs}
           activeTab={activeTab}
@@ -86,6 +86,8 @@ export function DetailTabsWorkspace({
           onActivateTab={onActivateTab}
           onAddTab={onAddTab}
           addLabel="新增页签"
+          addButtonPlacement="tab-inline"
+          flushEdges
           showModeBadge={false}
         />
       </div>
@@ -109,7 +111,7 @@ export function DetailTabsWorkspace({
               </Flex>
             </Flex>
             <div
-              className="scrollbar-none min-h-0 flex-1 overflow-auto bg-white outline-none"
+              className="min-h-0 flex-1 overflow-hidden bg-white outline-none"
               tabIndex={0}
               onPaste={onPasteTableColumns}
             >

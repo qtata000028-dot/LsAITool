@@ -298,7 +298,7 @@ export function ModuleSettingStepShell({
             </div>
           </div>
             <div
-              className="scrollbar-none min-h-0 flex-1 overflow-auto outline-none"
+              className="min-h-0 flex-1 overflow-hidden outline-none"
               tabIndex={0}
               onPaste={tree.onPasteLeftColumns}
               style={{ backgroundColor: '#fcfdff' }}
@@ -400,7 +400,7 @@ export function ModuleSettingStepShell({
               startResize={tree.startResize}
             />
             <div
-              className="scrollbar-none min-h-0 flex-1 overflow-auto outline-none"
+              className="min-h-0 flex-1 overflow-hidden outline-none"
               tabIndex={0}
               onPaste={tree.onPasteMainColumns}
               style={{ backgroundColor: '#fcfdff' }}

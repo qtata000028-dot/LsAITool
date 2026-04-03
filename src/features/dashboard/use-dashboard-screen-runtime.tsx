@@ -13,8 +13,12 @@ export type UseDashboardScreenRuntimeInput = {
       'bodyNode' | 'footerNode' | 'overlayNodes' | 'sidebarNode'
     >;
     isResearchRecordActive: DashboardScreenRouterBuilderInput['isResearchRecordActive'];
+    isServerPermissionActive: DashboardScreenRouterBuilderInput['isServerPermissionActive'];
+    isToolFeedbackActive: DashboardScreenRouterBuilderInput['isToolFeedbackActive'];
     moduleScreenInput: DashboardScreenRouterBuilderInput['moduleScreenInput'];
     researchRecordWorkbenchProps: DashboardScreenRouterBuilderInput['researchRecordWorkbenchProps'];
+    serverPermissionWorkbenchProps: DashboardScreenRouterBuilderInput['serverPermissionWorkbenchProps'];
+    toolFeedbackWorkbenchProps: DashboardScreenRouterBuilderInput['toolFeedbackWorkbenchProps'];
   };
 };
 
@@ -33,8 +37,12 @@ export function useDashboardScreenRuntime({
     },
     deleteConfirmNode: dashboardConfigBridgeNodes.deleteConfirmNode,
     isResearchRecordActive: screen.isResearchRecordActive,
+    isServerPermissionActive: screen.isServerPermissionActive,
+    isToolFeedbackActive: screen.isToolFeedbackActive,
     moduleScreenInput: screen.moduleScreenInput,
     researchRecordWorkbenchProps: screen.researchRecordWorkbenchProps,
+    serverPermissionWorkbenchProps: screen.serverPermissionWorkbenchProps,
+    toolFeedbackWorkbenchProps: screen.toolFeedbackWorkbenchProps,
   });
 
   return <DashboardScreenRouter {...screenRouterProps} />;
