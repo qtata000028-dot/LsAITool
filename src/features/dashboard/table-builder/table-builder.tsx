@@ -33,6 +33,11 @@ export type TableBuilderOptions = {
   surfaceShape?: 'rounded' | 'square';
   previewReadableMinWidth?: number;
   layoutVersion?: string;
+  showCanvasOverlayCard?: boolean;
+  canvasOverlayVariant?: 'stacked' | 'inline';
+  canvasHelperText?: string;
+  canvasActionText?: string;
+  canvasIcon?: string;
 };
 
 export type TableBuilderHelpers = {
@@ -333,6 +338,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const tableSelected = options?.tableSelected ?? false;
   const onSelectTable = options?.onSelectTable;
   const onCanvasDoubleClick = options?.onCanvasDoubleClick;
+  const canvasLabel = options?.canvasLabel ?? '点击配置表格属性';
+  const showCanvasOverlayCard = options?.showCanvasOverlayCard ?? false;
+  const canvasOverlayVariant = options?.canvasOverlayVariant ?? 'stacked';
+  const canvasHelperText = options?.canvasHelperText ?? '';
+  const canvasActionText = options?.canvasActionText ?? '';
+  const canvasIcon = options?.canvasIcon ?? 'table_rows';
   const renderableCols = options?.renderableColumns ?? cols.filter((column) => helpers.isRenderableColumn(column));
   const density = options?.density ?? 'default';
   const surfaceVariant = options?.surfaceVariant ?? 'glass';
@@ -485,12 +496,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
 
   const getHeaderButtonClass = useCallback((isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => (
     isActive
-      ? 'bg-[#eff6ff] hover:bg-[#eff6ff] dark:bg-slate-800/75 dark:hover:bg-slate-800/75'
+      ? 'bg-[#f3f8ff] hover:bg-[#edf5ff] dark:bg-slate-800/75 dark:hover:bg-slate-800/75'
       : isMarkedForDelete
-        ? 'bg-[#fff1f2] hover:bg-[#fff1f2] dark:bg-rose-950/20 dark:hover:bg-rose-950/20'
+        ? 'bg-[#fff5f6] hover:bg-[#fff2f4] dark:bg-rose-950/20 dark:hover:bg-rose-950/20'
         : isTreeRelation
-          ? 'bg-[#f8fbff] hover:bg-[#f8fbff] dark:bg-slate-900/55 dark:hover:bg-slate-900/55'
-          : 'bg-white hover:bg-slate-50 dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
+          ? 'bg-[#fcfdff] hover:bg-[#f7fbff] dark:bg-slate-900/55 dark:hover:bg-slate-900/55'
+          : 'bg-white hover:bg-[#f8fbff] dark:bg-slate-900/55 dark:hover:bg-slate-800/65'
   ), []);
 
   const getHeaderLabelClass = useCallback((isActive: boolean, isMarkedForDelete: boolean, isTreeRelation: boolean) => {
@@ -742,12 +753,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
         <div
           className={cn(
             `relative flex items-center overflow-hidden text-left ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-1.5 py-0' : isCompactModuleSetting ? 'min-h-[32px] px-1.5 pr-3 py-0' : 'min-h-[38px] px-2 pr-3.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`,
-            'rounded-md border border-[#c9d7ea] bg-white shadow-[0_20px_36px_-22px_rgba(15,23,42,0.5)] dark:border-slate-700 dark:bg-slate-900',
+            'dashboard-table-builder-preview-header-button rounded-md border border-[#c9d7ea] bg-white shadow-[0_20px_36px_-22px_rgba(15,23,42,0.5)] dark:border-slate-700 dark:bg-slate-900',
           )}
         >
           <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
             <div
-              className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+              className={`dashboard-table-builder-preview-header-label inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
               title={normalizedCol.name}
             >
               <span className="truncate rounded-sm">{normalizedCol.name}</span>
@@ -814,19 +825,19 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
         dataIndex: String(col.id),
         width: previewColumnWidth,
         title: (
-            <button
-              type="button"
-              onClick={(event) => handleColumnHeaderClick(event, col.id)}
-              onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
-              className={cn(
-                `relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-1.5 py-0' : isCompactModuleSetting ? 'min-h-[32px] px-1.5 pr-3 py-0' : 'min-h-[38px] px-2 pr-3.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`,
-                isDragging && 'opacity-25',
-              )}
+                <button
+                  type="button"
+                  onClick={(event) => handleColumnHeaderClick(event, col.id)}
+                  onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
+                  className={cn(
+                    `dashboard-table-builder-preview-header-button relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-1.5 py-0' : isCompactModuleSetting ? 'min-h-[32px] px-1.5 pr-3 py-0' : 'min-h-[38px] px-2 pr-3.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`,
+                    isDragging && 'opacity-25',
+                  )}
               title="点击可选中字段"
             >
               <div className={`flex min-w-0 flex-1 items-center ${isCollapsedHeader ? 'justify-end' : ''}`}>
                 <div
-                  className={`inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
+                  className={`dashboard-table-builder-preview-header-label inline-flex max-w-full items-center font-semibold tracking-[0.01em] transition-all ${isCollapsedHeader ? 'px-0 py-0 opacity-0' : ''} ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'} ${getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation)}`}
                   title={normalizedCol.name}
                 >
                   <TableBuilderAntdSortableHandle
@@ -880,7 +891,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
           <button
             type="button"
             onClick={handleAddColumn}
-            className={`flex h-full w-full items-center justify-center transition-all ${isCompactModuleSetting ? 'min-h-[34px]' : 'min-h-[40px]'} hover:bg-white/55 dark:hover:bg-white/8`}
+            className={`dashboard-table-builder-add-column-button flex h-full w-full items-center justify-center transition-all ${isCompactModuleSetting ? 'min-h-[34px]' : 'min-h-[40px]'} hover:bg-white/55 dark:hover:bg-white/8`}
             title="新增字段"
           >
             <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
@@ -965,6 +976,59 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     event.stopPropagation();
     onCanvasDoubleClick?.();
   }, [onCanvasDoubleClick]);
+  const handleCanvasOverlayCardClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    onSelectTable?.();
+  }, [onSelectTable]);
+  const handleCanvasOverlayCardDoubleClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    onCanvasDoubleClick?.();
+  }, [onCanvasDoubleClick]);
+  const canvasOverlayCardNode = useMemo(() => {
+    if (!backgroundSelectable || !showCanvasOverlayCard) {
+      return null;
+    }
+
+    const cardClassName = canvasOverlayVariant === 'inline'
+      ? 'dashboard-table-builder-canvas-card dashboard-table-builder-canvas-card-inline'
+      : 'dashboard-table-builder-canvas-card dashboard-table-builder-canvas-card-stacked';
+
+    return (
+      <div className="dashboard-table-builder-canvas-overlay">
+        <button
+          type="button"
+          onClick={handleCanvasOverlayCardClick}
+          onDoubleClick={handleCanvasOverlayCardDoubleClick}
+          className={cardClassName}
+        >
+          <span className="dashboard-table-builder-canvas-card-main">
+            <span className="dashboard-table-builder-canvas-card-icon">
+              <span className="material-symbols-outlined text-[20px]">{canvasIcon}</span>
+            </span>
+            <span className="dashboard-table-builder-canvas-card-copy">
+              <span className="dashboard-table-builder-canvas-card-title">{canvasLabel}</span>
+              {canvasHelperText ? (
+                <span className="dashboard-table-builder-canvas-card-helper">{canvasHelperText}</span>
+              ) : null}
+            </span>
+          </span>
+          {canvasOverlayVariant === 'inline' && canvasActionText ? (
+            <span className="dashboard-table-builder-canvas-card-action">{canvasActionText}</span>
+          ) : null}
+        </button>
+      </div>
+    );
+  }, [
+    backgroundSelectable,
+    canvasActionText,
+    canvasHelperText,
+    canvasIcon,
+    canvasLabel,
+    canvasOverlayVariant,
+    handleCanvasOverlayCardClick,
+    handleCanvasOverlayCardDoubleClick,
+    showCanvasOverlayCard,
+  ]);
 
   if (cols.length === 0) {
     return (
@@ -1016,6 +1080,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
             ),
           })}
         />
+        {canvasOverlayCardNode}
         <DragOverlay dropAnimation={null}>
           {previewDragOverlayNode}
         </DragOverlay>

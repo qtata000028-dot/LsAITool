@@ -1,6 +1,137 @@
 ﻿# 浠诲姟寰呭姙
 
-<<<<<<< Updated upstream
+## 2026-04-03 单表设计页明细页签间距与激活标识位置微调
+
+### Requirement Spec
+- 用户目标：继续微调单表设计页的明细页签，让页签之间不要再有间隔，同时把当前蓝色激活标识从页签下方挪到页签上方。
+- 影响范围：
+  - `src/index.css`
+- 关键约束：
+  - 只调整明细页签视觉语言，不改现有页签点击逻辑和新增按钮位置。
+  - 保留上一轮已经修好的“每个页签独立圆角”和“首个页签与 panel 圆角连续”。
+- 不做什么：
+  - 不改主表区域。
+  - 不改明细表内部内容和右侧 inspector。
+- 成功标准：
+  - 明细页签之间无可见间隔。
+  - 蓝色活动标识显示在页签上沿。
+  - lint/typecheck/build 通过。
+
+### Checklist
+- [x] 回顾 `tasks/lessons.md` 并同步本轮反馈。
+- [x] 更新本轮任务文档。
+- [x] 调整明细页签间距与激活标识位置。
+- [x] 运行 `npm run lint`。
+- [x] 运行 `npm run typecheck`。
+- [x] 运行 `npm run build`。
+
+### Progress
+- [x] 已将明细页签之间的 `gap` 收口为 0，并通过边框重叠保持连续感。
+- [x] 已把明细页签的蓝色激活标识从下沿挪到上沿，保持动画条仍然跟随 active tab。
+- [x] 用户继续反馈“蓝条没有显示到页签前方”，已确认下一步要优先修正明细页签的层级与裁切关系，而不是继续只调 `top/bottom`。
+- [x] 用户最新反馈“激活蓝条长度不要超出头部边框区域”，已确认要把标识收回到激活页签本体内部，不再继续依赖全局 ink bar 的宽度计算。
+
+### Verification
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- `npm run build`：通过。
+- 说明：当前未做浏览器实机回归，因此最终视觉节奏仍需页面刷新后人工确认。
+
+### Result Notes
+- 明细页签现在不再有可见间隔，视觉上会更像一组紧密贴合的 tab。
+- 蓝色活动标识已改到页签上沿，不再是下方下划线式的表达。
+
+## 2026-04-03 单表设计页明细页签圆角与外框连续性修正
+
+### Requirement Spec
+- 用户目标：把单表设计页的明细页签头改得更整体，每个页签都具备独立的左右圆角，第一个页签的左圆角要和下方表格外框圆角连成一体，不再出现“页签一层、外框一层”的分裂感。
+- 影响范围：
+  - `src/features/dashboard/module-settings/detail-workbench.tsx`
+  - `src/features/dashboard/module-settings/table-workbench-panel.tsx`
+  - `src/index.css`
+- 关键约束：
+  - 只修明细页签头与其外层 panel 的衔接关系，不顺手改主表区域或右侧 inspector。
+  - 保留现有页签点击行为、右侧加号按钮位置和明细内容区接线。
+  - 样式要体现“每个 tab 独立成卡片”，不能继续是只有整体首尾带圆角的分段条。
+- 不做什么：
+  - 不改明细表内部列头和中部悬浮卡片。
+  - 不重做底部按钮条和右侧属性栏。
+- 成功标准：
+  - 每个明细 tab 都有独立左右圆角。
+  - 第一个 tab 与 panel 左上角视觉连续，不出现双层圆角壳。
+  - lint/typecheck/build 通过。
+
+### Checklist
+- [x] 回顾 `tasks/lessons.md` 并同步本轮反馈。
+- [x] 更新本轮任务文档。
+- [x] 定位明细页签头与外层 panel 的边框/内边距关系。
+- [x] 调整结构和样式，让 tab 与 panel 连成一个整体。
+- [x] 运行 `npm run lint`。
+- [x] 运行 `npm run typecheck`。
+- [x] 运行 `npm run build`。
+
+### Progress
+- [x] 已确认问题不只是 tab 本身圆角不够，而是明细页签仍被放在一个带内边距和下边框的通用 header 里，导致外框和 tab 变成两层视觉。
+- [x] 已给共享 `TableWorkbenchPanel` 增加 header 样式钩子，只对明细 workbench 打开贴边 header。
+- [x] 已把明细 tab 改成独立双圆角卡片，并让第一个 tab 向左上覆盖到 panel 外框圆角位置，避免双层壳感。
+
+### Verification
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- `npm run build`：通过。
+- 说明：当前未做浏览器实机回归，因此最终圆角衔接效果仍需页面刷新后人工确认。
+
+### Result Notes
+- `TableWorkbenchPanel` 现在支持给 header 和 header 内容区传入定制 class，明细工作区已改成贴边式 header，而主表等其它调用方不受影响。
+- 明细页签现在是“每个 tab 自己一张卡片”的结构，首个 tab 与 panel 左上圆角视觉连成一体，不再像一整条分段控件贴在另一张卡片上。
+
+## 2026-04-03 单表设计页主表/明细表头与悬浮配置卡片样式对齐
+
+### Requirement Spec
+- 用户目标：按截图调整单表设计页主表与明细表的中间悬浮配置卡片、明细页签头样式、列头分隔样式，以及明细新增按钮样式。
+- 影响范围：
+  - `src/features/dashboard/module-settings/detail-workbench.tsx`
+  - `src/features/dashboard/table-builder/table-builder.tsx`
+  - 相关全局/模块样式文件（优先 `src/index.css`）
+- 关键约束：
+  - 改动只针对单表设计页这套主表/明细预览模板，不扩散到无关表格页面。
+  - 主表和明细表应继续复用同一套 table builder 内核，只在文案和局部呈现上按 scope 区分。
+  - 明细页签头的新增按钮要贴着 tab 头右侧，风格接近截图里的小方形加号按钮。
+  - 列头样式需要更贴近截图里的白底、竖线分隔和轻边框，不破坏现有列拖拽/缩放能力。
+- 不做什么：
+  - 不重做右侧 inspector 逻辑。
+  - 不改动主表/明细表底部操作按钮语义。
+- 成功标准：
+  - 主表和明细表中部都有悬浮配置卡片。
+  - 明细 tab 头变为带圆角框的样式，右侧显示小型添加按钮。
+  - 列头显示清晰的竖线分隔，整体观感与截图接近。
+
+### Checklist
+- [x] 回顾 `tasks/lessons.md`。
+- [x] 更新本轮任务文档。
+- [x] 定位主表/明细浮层卡片、明细页签头和列头样式实现位置。
+- [x] 按截图调整结构和样式。
+- [x] 运行 `npm run lint`。
+- [x] 运行 `npm run typecheck`。
+- [x] 运行 `npm run build`。
+
+### Progress
+- [x] 已确认这轮只需要落在 `detail-workbench`、`table-builder` 和共享样式层，不需要把视觉逻辑回堆到 `Dashboard.tsx`。
+- [x] 已给主表和明细表都接入可点击的中部悬浮配置卡片，并按主表/明细分别区分堆叠式和横向式呈现。
+- [x] 已将明细 tab 头收成圆角框样式，并把新增明细按钮改成贴着 tab 头右侧的小型加号按钮。
+- [x] 已把列头调整为白底轻边框和竖线分隔风格，同时保留现有列拖拽、列缩放和加列入口。
+
+### Verification
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- `npm run build`：通过。
+- 说明：当前未做浏览器实机回归，因此最终视觉细节仍需页面刷新后人工确认。
+
+### Result Notes
+- `table-builder` 新增了可配置的画布悬浮卡片能力，主表与明细表复用同一套内核，只在文案、版式和交互文案上做 scope 级区分。
+- 明细页签头现在是圆角边框样式，右侧新增按钮收成图标加号，不再额外占一块按钮区。
+- 表头分隔和按钮样式已经收敛到更接近截图的白底轻边框风格，没有破坏当前交互链路。
+
 ## 2026-04-03 恢复设计工作区全屏直出
 
 ### Requirement Spec
@@ -113,7 +244,29 @@
 - [x] 更新本轮任务文档。
 - [x] 逐个分析 4 个冲突文件的冲突块与上下文。
 - [x] 完成冲突合并并清除标记。
-=======
+- [x] 运行 `npm run lint`。
+- [x] 运行 `npm run typecheck`。
+- [x] 运行 `npm run build`。
+
+### Progress
+- [x] 已确认当前仅有 4 个冲突文件需要处理。
+- [x] 已确认本轮重点是保住最近单表设计页、明细 workbench 和 inspector 收口行为，同时兼容上游大规模架构拆分。
+- [x] 已确认 `Dashboard.tsx` 的冲突本质是“本地旧内联逻辑”与“上游 hook/runtime 抽离”的冲突，最终按上游抽离结构合并。
+- [x] 已确认 `table-builder.tsx` 的冲突本质是“旧拖拽/旧预览头实现”与“上游新的 rc-table + Resizable 预览链”的冲突，最终保留上游实现并兼容当前调用方仍传入的 `startResize` prop。
+- [x] 已处理本地依赖滞后问题：合并后 `lint` 脚本已切换为 `eslint .`，因此先执行 `npm install` 同步新增 devDependencies，再做验证。
+
+### Verification
+- `npm install`：通过。用于同步合并后新增的 `eslint` 等 devDependencies，本地旧 `node_modules` 中原本缺少可执行 `eslint`。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- `npm run build`：通过。
+
+### Result Notes
+- `src/components/Dashboard.tsx`：保留上游 `useDashboardDetailBoardActions` 和 table-builder runtime builder 的装配方式，避免把已抽出的 detail board 行为又并回旧内联实现。
+- `src/features/dashboard/module-settings/detail-workbench.tsx`：保留最近单表设计页要求的明细页签点击同步、tab 头右侧新增按钮和紧凑布局，同时采用上游抽出的 `getDetailFillTypeBadgeMeta`。
+- `src/features/dashboard/module-settings/table-workbench-panel.tsx`：冲突仅在格式与新增文件归属，已收敛为当前共享 panel 版本。
+- `src/features/dashboard/table-builder/table-builder.tsx`：保留上游新的预览表头/列宽实现、动态测量和 `Resizable` 链路，同时兼容现有 renderer/runtime 仍传入的 `startResize` prop，避免连带改动更多非冲突文件。
+
 ## 2026-04-03 单表设计页右侧属性栏头部收口与列数据页签
 
 ### Requirement Spec
@@ -138,30 +291,10 @@
 - [x] 收紧 grid inspector 头部高度。
 - [x] 新增“列数据”页签类型与路由。
 - [x] 为“列数据”页签补上当前列数据内容入口。
->>>>>>> Stashed changes
 - [x] 运行 `npm run lint`。
 - [x] 运行 `npm run build`。
 
 ### Progress
-<<<<<<< Updated upstream
-- [x] 已确认当前仅有 4 个冲突文件需要处理。
-- [x] 已确认本轮重点是保住最近单表设计页、明细 workbench 和 inspector 收口行为，同时兼容上游大规模架构拆分。
-- [x] 已确认 `Dashboard.tsx` 的冲突本质是“本地旧内联逻辑”与“上游 hook/runtime 抽离”的冲突，最终按上游抽离结构合并。
-- [x] 已确认 `table-builder.tsx` 的冲突本质是“旧拖拽/旧预览头实现”与“上游新的 rc-table + Resizable 预览链”的冲突，最终保留上游实现并兼容当前调用方仍传入的 `startResize` prop。
-- [x] 已处理本地依赖滞后问题：合并后 `lint` 脚本已切换为 `eslint .`，因此先执行 `npm install` 同步新增 devDependencies，再做验证。
-
-### Verification
-- `npm install`：通过。用于同步合并后新增的 `eslint` 等 devDependencies，本地旧 `node_modules` 中原本缺少可执行 `eslint`。
-- `npm run lint`：通过。
-- `npm run typecheck`：通过。
-- `npm run build`：通过。
-
-### Result Notes
-- `src/components/Dashboard.tsx`：保留上游 `useDashboardDetailBoardActions` 和 table-builder runtime builder 的装配方式，避免把已抽出的 detail board 行为又并回旧内联实现。
-- `src/features/dashboard/module-settings/detail-workbench.tsx`：保留最近单表设计页要求的明细页签点击同步、tab 头右侧新增按钮和紧凑布局，同时采用上游抽出的 `getDetailFillTypeBadgeMeta`。
-- `src/features/dashboard/module-settings/table-workbench-panel.tsx`：冲突仅在格式与新增文件归属，已收敛为当前共享 panel 版本。
-- `src/features/dashboard/table-builder/table-builder.tsx`：保留上游新的预览表头/列宽实现、动态测量和 `Resizable` 链路，同时兼容现有 renderer/runtime 仍传入的 `startResize` prop，避免连带改动更多非冲突文件。
-=======
 - [x] 已回顾 `tasks/lessons.md`。
 - [x] 已确认本轮入口主要集中在：
   - `inspector-panel-router.tsx`
@@ -180,7 +313,6 @@
 - 右侧 document grid inspector 的顶部“主表配置 / 条件配置”按钮层已移除，头部现在改为“图标 + 标题 + 图标页签”的紧凑结构，既保留识别信息，也维持较低高度。
 - document grid inspector 原有 4 个页签已扩展为 5 个，新增 `列数据`，并纳入统一的 inspector tab 路由。
 - “列数据”页签当前提供列清单、标识/类型/宽度摘要，以及点击某列直接进入字段属性的入口；用户最新反馈要求这里不要再保留描述文案，因此已去掉标题下的辅助说明。
->>>>>>> Stashed changes
 
 ## 2026-04-02 单表设计页工作台按钮与页签交互收口
 
@@ -5170,7 +5302,7 @@
 - 刷新范围仍然只落在当前选中的一级菜单页面，不会把整个 Dashboard 重新初始化。
 - 现有退出导航行为没有变化，仍然只是关闭配置向导并回到菜单页。
 - 这轮没有代替用户做浏览器里的真实点击回归，剩余风险只在这一点：建议现场从配置向导退出一次，确认当前菜单卡片区会重新请求并刷新。
-<<<<<<< Updated upstream
+
 ## 2026-04-01 Clean Mother Migration Cost Assessment
 
 ### Requirement Spec
@@ -5200,7 +5332,6 @@
 
 ### Verification
 - Repository inspection only in this round; no new functional code was changed.
-=======
 
 ## 2026-04-01 模块设置明细表预览表头不像真实表格
 
@@ -5617,4 +5748,3 @@
 - The "新增明细" action now reads like a compact primary workbench action instead of a plain utility button.
 - Detail tab headers are visually shorter because both the Antd tab padding and the outer wrapper top spacing were tightened.
 - The separate "表格视图" strip is gone, so the preview table starts closer to the tabs and gains that vertical space back.
->>>>>>> Stashed changes

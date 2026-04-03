@@ -7,6 +7,8 @@ type TableWorkbenchPanelProps = {
   bodyStyle?: React.CSSProperties;
   className?: string;
   footerNode?: React.ReactNode;
+  headerClassName?: string;
+  headerContentClassName?: string;
   headerNode?: React.ReactNode;
   onPaste?: React.ClipboardEventHandler<HTMLDivElement>;
 };
@@ -17,6 +19,8 @@ export function TableWorkbenchPanel({
   bodyStyle,
   className,
   footerNode,
+  headerClassName,
+  headerContentClassName,
   headerNode,
   onPaste,
 }: TableWorkbenchPanelProps) {
@@ -36,8 +40,8 @@ export function TableWorkbenchPanel({
       )}
     >
       {headerNode ? (
-        <div className="border-b border-[#edf2f7] bg-white px-4 pt-2">
-          <div className="min-w-0 overflow-hidden">{headerNode}</div>
+        <div className={cn('border-b border-[#edf2f7] bg-white px-4 pt-2', headerClassName)}>
+          <div className={cn('min-w-0 overflow-hidden', headerContentClassName)}>{headerNode}</div>
         </div>
       ) : null}
       <div

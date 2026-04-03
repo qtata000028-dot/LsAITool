@@ -8,6 +8,10 @@ const SINGLE_TABLE_PREVIEW_MIN_COLUMN_WIDTH = 96;
 
 type SingleTablePreviewTemplateParams = {
   canvasLabel: string;
+  canvasActionText?: string;
+  canvasHelperText?: string;
+  canvasIcon?: string;
+  canvasOverlayVariant?: TableBuilderOptions['canvasOverlayVariant'];
   contextMenuConfig?: TableBuilderOptions['contextMenuConfig'];
   contextMenuScope?: TableBuilderOptions['contextMenuScope'];
   detailBoardConfig?: any;
@@ -16,11 +20,16 @@ type SingleTablePreviewTemplateParams = {
   onCanvasDoubleClick?: () => void;
   onSelectTable: () => void;
   renderableColumns?: any[];
+  showCanvasOverlayCard?: boolean;
   tableSelected: boolean;
 };
 
 function buildSingleTablePreviewTemplate({
   canvasLabel,
+  canvasActionText,
+  canvasHelperText,
+  canvasIcon,
+  canvasOverlayVariant,
   contextMenuConfig,
   contextMenuScope,
   detailBoardConfig,
@@ -29,6 +38,7 @@ function buildSingleTablePreviewTemplate({
   onCanvasDoubleClick,
   onSelectTable,
   renderableColumns,
+  showCanvasOverlayCard,
   tableSelected,
 }: SingleTablePreviewTemplateParams): TableBuilderOptions {
   return {
@@ -42,6 +52,11 @@ function buildSingleTablePreviewTemplate({
     renderableColumns,
     onCanvasDoubleClick,
     canvasLabel,
+    canvasActionText,
+    canvasHelperText,
+    canvasIcon,
+    canvasOverlayVariant,
+    showCanvasOverlayCard,
     surfaceVariant: 'solid',
     surfaceShape: 'square',
     previewReadableMinWidth: SINGLE_TABLE_PREVIEW_MIN_COLUMN_WIDTH,
@@ -146,6 +161,10 @@ export function useDashboardTableBuilderOptions({
     renderableColumns: mainRenderableColumns,
     onCanvasDoubleClick: handleArchiveMainTablePreview,
     canvasLabel: '点击配置基础档案主表',
+    canvasHelperText: '点击画布即可切换到整表配置',
+    canvasIcon: 'table_chart',
+    canvasOverlayVariant: 'stacked',
+    showCanvasOverlayCard: true,
     layoutVersion: detailTabsLength > 0 ? 'main-with-detail' : 'main-without-detail',
   }), [
     detailTabsLength,
@@ -198,6 +217,10 @@ export function useDashboardTableBuilderOptions({
     detailBoardConfig: activeDetailTableConfig?.detailBoard,
     renderableColumns: activeDetailTableColumns,
     canvasLabel: '点击配置明细表属性',
+    canvasActionText: '点击配置',
+    canvasIcon: 'table_chart',
+    canvasOverlayVariant: 'inline',
+    showCanvasOverlayCard: true,
     layoutVersion: `detail-tabs-${detailTabsLength}-footer-${showDetailGridActionBar ? 1 : 0}`,
   }), [
     activeDetailTableColumns,

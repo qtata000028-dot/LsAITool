@@ -1,4 +1,24 @@
-﻿## 2026-04-03 Dense Inspector Tabs Should Not Keep Explanatory Filler When The User Wants Pure Utility
+﻿## 2026-04-03 The Active Marker Should Belong To The Active Tab, Not Float Beyond The Header Border
+- In this single-table design screen, moving the blue active marker to the top edge is still wrong if its length extends past the active tab's own border box.
+- If the user says “激活蓝条长度不要超出头部边框区域”, stop relying on Ant's global ink bar geometry and anchor the marker inside the active tab itself.
+- For these detail tabs, the blue marker should be visually contained by the active tab header border, even if that means replacing the stock animated ink bar with a tab-local indicator.
+
+## 2026-04-03 Moving The Active Marker To The Top Is Not Enough If It Still Sits Behind The Tab
+- In this single-table design screen, changing the active marker from bottom to top can still fail visually if the ink bar remains under the active tab's own stacking layer.
+- If the user says “激活蓝条没有显示到页签前方”, inspect stacking context and overflow clipping first instead of continuing to tweak only `top/bottom`.
+- For these detail tabs, the top active marker must be rendered above the tab surface or the user will still perceive it as missing.
+
+## 2026-04-03 Detail Tabs Should Behave Like A Tight Joined Strip, With The Active Marker On Top
+- In this single-table design screen, users may still reject a tab style that is individually rounded if there is visible spacing between tabs and the active indicator still behaves like a bottom underline.
+- If the user says “页签与页签之间不要有间隔，然后标识的蓝色动画方块放到页签上方”, treat that as a structural tab-language correction, not a minor color tweak.
+- For this workbench, the detail tabs should read as tightly joined pieces, while the active blue marker should live on the top edge of the active tab instead of underneath it.
+
+## 2026-04-03 Detail Tabs Need Per-Tab Rounded Capsules And The First Tab Must Merge With The Panel Radius
+- In this single-table design screen, making the detail tabs look “more tab-like” is not enough if they still read as one continuous strip laid on top of a separate rounded card.
+- If the user says each detail tab should have its own left and right rounded corners, do not keep a shared segmented-strip treatment with only the first and last edges rounded.
+- The first detail tab must visually merge with the outer table panel radius; otherwise users perceive two stacked shells instead of one continuous workbench frame.
+
+## 2026-04-03 Dense Inspector Tabs Should Not Keep Explanatory Filler When The User Wants Pure Utility
 - In compact inspector work areas like “列数据”, users often want the title and the data itself, not another explanatory sentence that repeats the obvious.
 - If the user says “列数据标签不要描述”, remove the helper copy directly instead of trying to rephrase it shorter.
 - For dense admin inspectors, preserve only the controls and metadata that help action, not decorative explanations.

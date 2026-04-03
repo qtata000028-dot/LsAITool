@@ -17,6 +17,7 @@ type DetailTabStripProps = {
   addLabel?: string;
   addButtonPlacement?: 'inline-end' | 'centered';
   compactAddButton?: boolean;
+  iconOnlyAddButton?: boolean;
   showModeBadge?: boolean;
 };
 
@@ -41,6 +42,7 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
   addLabel,
   addButtonPlacement = 'inline-end',
   compactAddButton = false,
+  iconOnlyAddButton = false,
   showModeBadge = true,
 }: DetailTabStripProps) {
   const activeTabMeta = getDetailFillTypeBadgeMeta(currentDetailFillType);
@@ -49,9 +51,11 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
     label: tab.name,
     children: null,
   })), [detailTabs]);
-  const addButtonClassName = compactAddButton
-    ? '!h-7 !rounded-[10px] !px-3 !text-[12px]'
-    : '!h-8 !rounded-full !px-3.5 !text-[12px]';
+  const addButtonClassName = iconOnlyAddButton
+    ? '!size-7 !rounded-[10px] !p-0'
+    : compactAddButton
+      ? '!h-7 !rounded-[10px] !px-3 !text-[12px]'
+      : '!h-8 !rounded-full !px-3.5 !text-[12px]';
   const inlineExtraContent = addButtonPlacement === 'inline-end'
     ? {
         right: (
@@ -68,10 +72,12 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
               type="default"
               size="small"
               onClick={onAddTab}
-              className={`dashboard-module-ant-add-detail-btn !font-semibold !shadow-none ${addButtonClassName}`}
+              aria-label={addLabel ?? '新增页签'}
+              title={addLabel ?? '新增页签'}
+              className={`dashboard-module-ant-add-detail-btn ${iconOnlyAddButton ? 'dashboard-module-ant-add-detail-icon-btn' : ''} !font-semibold !shadow-none ${addButtonClassName}`}
             >
               <span className="material-symbols-outlined text-[16px]">add</span>
-              {addLabel ?? '新增页签'}
+              {iconOnlyAddButton ? null : (addLabel ?? '新增页签')}
             </Button>
           </Flex>
         ),
@@ -90,14 +96,14 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
       : undefined;
 
   return (
-    <div className="min-w-0">
+    <div className="dashboard-module-detail-tabstrip-shell min-w-0">
       <Tabs
         activeKey={activeTab}
         onChange={onActivateTab}
         onTabClick={(tabId) => onActivateTab(tabId)}
         destroyOnHidden
         items={tabItems}
-        className="dashboard-module-ant-tabs min-w-0"
+        className="dashboard-module-ant-tabs dashboard-module-detail-tabs min-w-0"
         tabBarExtraContent={inlineExtraContent}
       />
       {addButtonPlacement === 'centered' ? (
@@ -106,10 +112,12 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
               type="default"
               size="small"
               onClick={onAddTab}
-              className={`dashboard-module-ant-add-detail-btn !font-semibold !shadow-none ${addButtonClassName}`}
+              aria-label={addLabel ?? '新增页签'}
+              title={addLabel ?? '新增页签'}
+              className={`dashboard-module-ant-add-detail-btn ${iconOnlyAddButton ? 'dashboard-module-ant-add-detail-icon-btn' : ''} !font-semibold !shadow-none ${addButtonClassName}`}
             >
               <span className="material-symbols-outlined text-[16px]">add</span>
-              {addLabel ?? '新增页签'}
+              {iconOnlyAddButton ? null : (addLabel ?? '新增页签')}
             </Button>
         </div>
       ) : null}
@@ -133,6 +141,8 @@ export const MemoDocumentDetailWorkbench = React.memo(function DocumentDetailWor
   return (
     <TableWorkbenchPanel
       bodyStyle={{ backgroundColor: '#ffffff' }}
+      headerClassName="dashboard-module-detail-panel-header"
+      headerContentClassName="dashboard-module-detail-panel-header-inner"
       headerNode={(
         <MemoDetailTabStrip
           detailTabs={detailTabs}
@@ -143,6 +153,7 @@ export const MemoDocumentDetailWorkbench = React.memo(function DocumentDetailWor
           addLabel="新增明细"
           addButtonPlacement="inline-end"
           compactAddButton
+          iconOnlyAddButton
           showModeBadge={false}
         />
       )}
