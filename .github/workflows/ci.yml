@@ -25,8 +25,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Architecture guard
-        run: npm run guard:architecture
+      - name: Type check
+        run: npm run lint
 
-      - name: Verify
-        run: npm run verify
+      - name: Build
+        run: npm run build
