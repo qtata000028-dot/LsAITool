@@ -30,8 +30,22 @@ body {
 }
 
 .dashboard-table-builder-ant-table {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.dashboard-table-builder-ant-table .ant-spin-nested-loading,
+.dashboard-table-builder-ant-table .ant-spin-container,
+.dashboard-table-builder-ant-table .ant-table,
+.dashboard-table-builder-ant-table .ant-table-container {
+  display: flex;
   flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
+  flex-direction: column;
 }
 
 .dashboard-table-builder-ant-table .ant-table-container {
@@ -40,11 +54,23 @@ body {
 }
 
 .dashboard-table-builder-ant-table .ant-table-content,
+.dashboard-table-builder-ant-table .ant-table-body,
 .dashboard-table-builder-ant-table .ant-table-header {
   scrollbar-width: thin;
 }
 
 .dashboard-table-builder-ant-table .ant-table-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: thin;
+}
+
+.dashboard-table-builder-ant-table .ant-table-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-x: auto !important;
   overflow-y: hidden !important;
   scrollbar-width: thin;
@@ -55,6 +81,7 @@ body {
 }
 
 .dashboard-table-builder-ant-table .ant-table-content table,
+.dashboard-table-builder-ant-table .ant-table-body table,
 .dashboard-table-builder-ant-table .ant-table-header table {
   width: var(--dashboard-table-builder-width) !important;
   min-width: var(--dashboard-table-builder-width) !important;

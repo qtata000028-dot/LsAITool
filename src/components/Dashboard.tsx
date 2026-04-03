@@ -4154,6 +4154,12 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
       ? activeDetailBoardHeightResize.height
       : fallbackHeight
   );
+  const detailLayoutVersionTypeToken = String(detailTabConfigs[activeTab]?.detailType ?? '').trim();
+  const detailLayoutVersionRelatedModuleCode = String(detailTabConfigs[activeTab]?.relatedModule || '').trim();
+  const detailLayoutVersionShowsGridActionBar = (
+    Boolean(detailLayoutVersionRelatedModuleCode)
+    && !(/(chart|图|web|page|url|网页)/i.test(detailLayoutVersionTypeToken) || detailLayoutVersionTypeToken === '3')
+  );
 
   const {
     archiveMainTableBuilderNode,
@@ -4195,6 +4201,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         activateTableConfigSelection,
         detailTableColumns,
         detailTableConfigs,
+        detailTabsLength: detailTabs.length,
         inspectorTargetId: inspectorTarget.id,
         mainDetailBoardEnabled,
         mainDetailBoardGroupsLength: mainDetailBoardGroups.length,
@@ -4205,6 +4212,7 @@ export default function Dashboard({ currentUserName, onLogout, routeContext = DE
         selectedTableConfigScope,
         setDetailTableColumns,
         setSelectedArchiveNodeId,
+        showDetailGridActionBar: detailLayoutVersionShowsGridActionBar,
       },
       nodes: {
         archiveMain: {

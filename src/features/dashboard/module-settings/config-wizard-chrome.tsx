@@ -147,46 +147,46 @@ export function ConfigWizardFooter({
   showFullscreenToggle,
 }: ConfigWizardFooterProps) {
   return (
-    <div className="shrink-0 border-t border-slate-200 bg-white/92 px-6 shadow-[0_-8px_24px_rgba(15,23,42,0.04)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/88 lg:px-8">
-      <div className="flex h-20 items-center justify-between gap-4">
+    <div className="shrink-0 border-t border-slate-200 bg-white/92 px-5 shadow-[0_-6px_18px_rgba(15,23,42,0.04)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-950/88 lg:px-6">
+      <div className="flex h-16 items-center justify-between gap-3">
         <button
           onClick={onPrevious}
-          className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[12px] font-semibold transition-all ${
+          className={`inline-flex items-center gap-1.5 rounded-[11px] border px-3.5 py-1.5 text-[12px] font-semibold transition-all ${
             !canGoBack
               ? 'cursor-not-allowed border-slate-200/80 bg-slate-100/70 text-slate-300 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-600'
               : 'border-slate-200/80 bg-white/80 text-slate-600 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200'
           }`}
           disabled={!canGoBack}
         >
-          <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+          <span className="material-symbols-outlined text-[17px]">arrow_back</span>
           上一步
         </button>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
             type="button"
             disabled={saveDisabled}
             onClick={onSave}
-            className={`inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-4 py-2 text-[12px] font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition-all dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200 ${
+            className={`inline-flex items-center gap-1.5 rounded-[11px] border border-slate-200/80 bg-white px-3.5 py-1.5 text-[12px] font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition-all dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200 ${
               saveDisabled
                 ? 'cursor-not-allowed opacity-60'
                 : 'hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary'
             }`}
           >
-            <span className="material-symbols-outlined text-[20px]">save</span>
+            <span className="material-symbols-outlined text-[18px]">save</span>
             {saveLabel}
           </button>
 
           {showFullscreenToggle ? (
             <button
               onClick={onToggleFullscreen}
-              className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-[12px] font-semibold transition-all ${
+              className={`inline-flex items-center gap-1.5 rounded-[11px] border px-3.5 py-1.5 text-[12px] font-semibold transition-all ${
                 isConfigFullscreenActive
                   ? 'border-primary/30 bg-primary/10 text-primary shadow-[0_16px_36px_rgba(49,98,255,0.18)]'
                   : 'border-slate-200/80 bg-white/80 text-slate-600 shadow-[0_12px_32px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-primary/30 hover:text-primary dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200'
               }`}
             >
-              <span className="material-symbols-outlined text-[20px]">
+              <span className="material-symbols-outlined text-[18px]">
                 {isConfigFullscreenActive ? 'fullscreen_exit' : 'fullscreen'}
               </span>
               {isConfigFullscreenActive ? '退出全屏' : '全屏配置'}
@@ -197,14 +197,14 @@ export function ConfigWizardFooter({
             type="button"
             onClick={onNext}
             disabled={nextDisabled}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-5 py-2 text-[12px] font-semibold text-white shadow-[0_12px_24px_rgba(49,98,255,0.2)] transition-all ${
+            className={`inline-flex items-center gap-1.5 rounded-[11px] px-4 py-1.5 text-[12px] font-semibold text-white shadow-[0_12px_24px_rgba(49,98,255,0.2)] transition-all ${
               nextDisabled
                 ? 'cursor-not-allowed bg-primary/60'
                 : 'bg-primary hover:-translate-y-0.5 hover:bg-erp-blue'
             }`}
           >
             {nextLabel}
-            {nextLabel !== '完成配置' ? <span className="material-symbols-outlined text-[20px]">arrow_forward</span> : null}
+            {nextLabel !== '完成配置' ? <span className="material-symbols-outlined text-[18px]">arrow_forward</span> : null}
           </button>
         </div>
       </div>

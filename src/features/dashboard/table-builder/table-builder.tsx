@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Table } from 'antd';
 import { flushSync } from 'react-dom';
 import { DndContext, DragOverlay, PointerSensor, closestCenter, pointerWithin, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
@@ -31,6 +31,8 @@ export type TableBuilderOptions = {
   density?: 'default' | 'compact';
   surfaceVariant?: 'glass' | 'solid';
   surfaceShape?: 'rounded' | 'square';
+  previewReadableMinWidth?: number;
+  layoutVersion?: string;
 };
 
 export type TableBuilderHelpers = {
@@ -478,8 +480,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     if (!backgroundSelectable) {
       return metrics.collapsedRenderWidth;
     }
+    const configuredPreviewMinWidth = Number(options?.previewReadableMinWidth);
+    if (Number.isFinite(configuredPreviewMinWidth) && configuredPreviewMinWidth > 0) {
+      return Math.max(metrics.minWidth, Math.round(configuredPreviewMinWidth));
+    }
     return isCompactCanvas ? 72 : metrics.minWidth;
-  }, [backgroundSelectable, isCompactCanvas, metrics.collapsedRenderWidth, metrics.minWidth]);
+  }, [backgroundSelectable, isCompactCanvas, metrics.collapsedRenderWidth, metrics.minWidth, options?.previewReadableMinWidth]);
 
   const clearColumnDragState = useCallback(() => {
     setDraggingColumnId(null);
@@ -784,10 +790,18 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     [addColumnWidth, headerColumns],
   );
   const previewHostRef = useRef<HTMLDivElement | null>(null);
+  const layoutVersion = options?.layoutVersion ?? '';
   const [previewHostHeight, setPreviewHostHeight] = useState(0);
   const [previewHostWidth, setPreviewHostWidth] = useState(0);
+  const [previewMeasuredHeaderHeight, setPreviewMeasuredHeaderHeight] = useState(0);
   const previewHeaderHeight = isCompactModuleSetting ? 34 : 40;
+  const effectivePreviewHeaderHeight = previewMeasuredHeaderHeight > 0
+    ? previewMeasuredHeaderHeight
+    : previewHeaderHeight;
   const previewRowHeight = isCompactCanvas ? 40 : 44;
+  const previewHorizontalScrollbarReserve = backgroundSelectable
+    ? (isCompactCanvas ? 14 : 16)
+    : 0;
   const previewFillerWidth = useMemo(() => (
     backgroundSelectable
       ? Math.max(0, previewHostWidth - totalTableWidth)
@@ -796,10 +810,14 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const effectivePreviewTableWidth = totalTableWidth + previewFillerWidth;
   const previewAvailableBodyHeight = useMemo(() => (
     previewHostHeight > 0
-      ? Math.max(previewRowHeight, previewHostHeight - previewHeaderHeight - 2)
+      ? Math.max(previewRowHeight, previewHostHeight - effectivePreviewHeaderHeight - previewHorizontalScrollbarReserve - 2)
       : 0
-  ), [previewHeaderHeight, previewHostHeight, previewRowHeight]);
-
+  ), [effectivePreviewHeaderHeight, previewHostHeight, previewHorizontalScrollbarReserve, previewRowHeight]);
+  const previewScrollY = useMemo(() => (
+    backgroundSelectable && previewAvailableBodyHeight > 0
+      ? previewAvailableBodyHeight
+      : undefined
+  ), [backgroundSelectable, previewAvailableBodyHeight]);
   const applyLiveColumnResizePreview = useCallback((columnId: string, width: number) => {
     const hostElement = previewHostRef.current;
     if (!hostElement) {
@@ -836,38 +854,83 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     setResizingColumnId((prev) => (prev === id ? null : prev));
   }, [applyLiveColumnResizePreview, clampColumnWidth, setCols]);
 
-  useEffect(() => {
+  const measurePreviewLayout = useCallback(() => {
     const hostElement = previewHostRef.current;
-    if (!hostElement || typeof ResizeObserver === 'undefined') {
+    const measurementHost = (
+      hostElement?.closest('[data-table-workbench-body-slot="true"]') as HTMLDivElement | null
+    ) ?? hostElement;
+    if (!hostElement || !measurementHost) {
+      return;
+    }
+    const measurementRect = measurementHost.getBoundingClientRect();
+    const measuredHeaderElement = hostElement.querySelector('.ant-table-header') as HTMLDivElement | null;
+    const measuredHeaderHeight = measuredHeaderElement
+      ? Math.max(0, Math.round(measuredHeaderElement.getBoundingClientRect().height))
+      : previewHeaderHeight;
+    const normalizedWidth = Math.max(0, Math.round(measurementRect.width));
+    const normalizedHeight = Math.max(0, Math.round(measurementRect.height));
+
+    setPreviewHostWidth((previousWidth) => (
+      previousWidth === normalizedWidth ? previousWidth : normalizedWidth
+    ));
+    setPreviewHostHeight((previousHeight) => (
+      previousHeight === normalizedHeight ? previousHeight : normalizedHeight
+    ));
+    setPreviewMeasuredHeaderHeight((previousHeaderHeight) => (
+      previousHeaderHeight === measuredHeaderHeight ? previousHeaderHeight : measuredHeaderHeight
+    ));
+  }, [previewHeaderHeight]);
+
+  useLayoutEffect(() => {
+    const hostElement = previewHostRef.current;
+    const measurementHost = (
+      hostElement?.closest('[data-table-workbench-body-slot="true"]') as HTMLDivElement | null
+    ) ?? hostElement;
+    if (!measurementHost || typeof ResizeObserver === 'undefined') {
+      measurePreviewLayout();
       return undefined;
     }
 
-    const syncSize = (nextWidth: number, nextHeight: number) => {
-      const normalizedWidth = Math.max(0, Math.round(nextWidth));
-      const normalizedHeight = Math.max(0, Math.round(nextHeight));
-      setPreviewHostWidth((previousWidth) => (
-        previousWidth === normalizedWidth ? previousWidth : normalizedWidth
-      ));
-      setPreviewHostHeight((previousHeight) => (
-        previousHeight === normalizedHeight ? previousHeight : normalizedHeight
-      ));
-    };
+    measurePreviewLayout();
 
-    const initialRect = hostElement.getBoundingClientRect();
-    syncSize(initialRect.width, initialRect.height);
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      const [entry] = entries;
-      if (entry) {
-        syncSize(entry.contentRect.width, entry.contentRect.height);
-      }
+    let firstRafId = 0;
+    let secondRafId = 0;
+    firstRafId = window.requestAnimationFrame(() => {
+      measurePreviewLayout();
+      secondRafId = window.requestAnimationFrame(() => {
+        measurePreviewLayout();
+      });
     });
 
-    resizeObserver.observe(hostElement);
+    const resizeObserver = new ResizeObserver(() => {
+      measurePreviewLayout();
+    });
+
+    resizeObserver.observe(measurementHost);
+    if (hostElement && hostElement !== measurementHost) {
+      resizeObserver.observe(hostElement);
+    }
+
+    const measuredHeaderElement = hostElement?.querySelector('.ant-table-header') as HTMLDivElement | null;
+    if (measuredHeaderElement && measuredHeaderElement !== measurementHost && measuredHeaderElement !== hostElement) {
+      resizeObserver.observe(measuredHeaderElement);
+    }
+
+    const handleWindowLoad = () => {
+      measurePreviewLayout();
+    };
+
+    if (document.readyState !== 'complete') {
+      window.addEventListener('load', handleWindowLoad, { once: true });
+    }
+
     return () => {
+      window.cancelAnimationFrame(firstRafId);
+      window.cancelAnimationFrame(secondRafId);
+      window.removeEventListener('load', handleWindowLoad);
       resizeObserver.disconnect();
     };
-  }, []);
+  }, [layoutVersion, measurePreviewLayout]);
 
   const tableBuilderContentStyle = useMemo<React.CSSProperties>(() => ({
     width: `max(100%, ${totalTableWidth}px)`,
@@ -1247,10 +1310,10 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   ), [addColumnWidth, headerColumns]);
   const tableWrapperClass = cn(
     backgroundSelectable
-      ? 'workspace-scrollbar relative flex min-h-0 min-w-0 w-full flex-col overflow-hidden'
+      ? 'workspace-scrollbar relative flex h-full min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden'
       : 'workspace-scrollbar relative min-h-0 min-w-0 w-full overflow-x-auto overflow-y-hidden',
     tableSurfaceClass,
-    backgroundSelectable && (isCompactCanvas ? 'h-full min-h-[184px]' : 'h-full min-h-[260px]'),
+    backgroundSelectable && (isCompactCanvas ? 'min-h-[184px]' : 'min-h-[260px]'),
   );
   const tableBodyButtonClass = cn(
     'relative flex w-full overflow-hidden border-t px-4 text-center transition-all',
@@ -1330,20 +1393,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       cell: TableBuilderAntdSortableHeaderCell,
     },
   }), [previewHeaderRowComponent]);
-  const previewRowCount = useMemo(() => {
-    const fallbackRowCount = isCompactCanvas ? 4 : 5;
-    if (previewAvailableBodyHeight <= 0) {
-      return fallbackRowCount;
-    }
-
-    return Math.max(
-      fallbackRowCount,
-      Math.ceil(previewAvailableBodyHeight / previewRowHeight),
-    );
-  }, [isCompactCanvas, previewAvailableBodyHeight, previewRowHeight]);
+  const previewPlaceholderRowCount = isCompactCanvas ? 18 : 24;
   const previewTableDataSource = useMemo(
-    () => Array.from({ length: previewRowCount }, (_, index) => ({ key: `__preview__-${index}` })),
-    [previewRowCount],
+    () => Array.from({ length: previewPlaceholderRowCount }, (_, index) => ({
+      key: `__preview__-${index}`,
+    })),
+    [previewPlaceholderRowCount],
   );
   const previewCellSpacerClass = isCompactCanvas ? 'min-h-[34px]' : 'min-h-[40px]';
   const previewCellSpacerStyle = useMemo<React.CSSProperties>(() => ({
@@ -1499,12 +1554,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     metrics.resizeMaxWidth,
     metrics.resizeMinWidth,
     previewCellSpacerClass,
-    previewCellSpacerStyle,
     previewDraggingColumnId,
     selectedForDeleteSet,
     selectedId,
     setCols,
     startResize,
+    previewCellSpacerStyle,
   ]);
   const previewTableColumnsResizable = useMemo(() => {
     const headerDrivenColumns = headerColumns.map(({ col, index, normalizedCol, headerWidth, isCollapsedHeader, isTreeRelation }) => {
@@ -1662,125 +1717,6 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     selectedId,
     setCols,
   ]);
-  const plainAntdPreviewColumns = useMemo(() => {
-    const nextColumns = headerColumns.map(({ col, index, normalizedCol, headerWidth, isTreeRelation }) => {
-      const isActive = selectedId === col.id;
-      const isMarkedForDelete = selectedForDeleteSet.has(col.id);
-
-      return {
-        key: String(col.id),
-        dataIndex: String(col.id),
-        width: headerWidth,
-        title: (
-          <button
-            type="button"
-            onClick={(event) => handleColumnHeaderClick(event, col.id)}
-            onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
-            className={cn(
-              `relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCompactModuleSetting ? 'min-h-[34px] px-2 py-0' : 'min-h-[38px] px-2.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`,
-            )}
-            title="点击可选中字段"
-          >
-            <span
-              className={cn(
-                `inline-flex min-w-0 items-center gap-1 font-semibold tracking-[0.01em] ${isCompactModuleSetting ? 'text-[11px]' : 'text-[12px]'}`,
-                getHeaderLabelClass(isActive, isMarkedForDelete, isTreeRelation),
-              )}
-              title={normalizedCol.name}
-            >
-              <span className="truncate">{normalizedCol.name}</span>
-              {isTreeRelation && (
-                <span className="text-[10px] font-semibold leading-none text-[#2563eb] dark:text-sky-200">
-                  树
-                </span>
-              )}
-              <span className={cn('text-[10px] leading-none', getHeaderRequiredMarkClass(isActive, isMarkedForDelete, normalizedCol.required, isTreeRelation))}>*</span>
-            </span>
-          </button>
-        ),
-        onHeaderCell: () => ({
-          style: { width: headerWidth, minWidth: headerWidth, padding: 0, background: 'transparent' },
-          className: cn('dashboard-table-builder-ant-header-cell align-top', headerDividerClass),
-        }),
-        render: () => (
-          <div
-            className={cn('w-full border-t border-[#edf2f7] bg-white dark:border-slate-800/80 dark:bg-slate-950/94', previewCellSpacerClass)}
-            style={previewCellSpacerStyle}
-          />
-        ),
-      };
-    });
-
-    nextColumns.push({
-      key: '__add__',
-      dataIndex: '__add__',
-      width: addColumnWidth,
-      title: (
-        <div className="group relative h-full">
-          <button
-            type="button"
-            onClick={handleAddColumn}
-            className={`flex h-full w-full items-center justify-center transition-all ${isCompactModuleSetting ? 'min-h-[34px]' : 'min-h-[40px]'} hover:bg-white/70 dark:hover:bg-white/8`}
-            title="新增字段"
-          >
-            <div className={`inline-flex items-center justify-center rounded-md border ${addColumnButtonClass} ${isCompactModuleSetting ? 'size-8' : 'size-9'}`}>
-              <span className="material-symbols-outlined text-[17px]">add</span>
-            </div>
-          </button>
-        </div>
-      ),
-      onHeaderCell: () => ({
-        style: { width: addColumnWidth, minWidth: addColumnWidth, padding: 0, background: 'transparent' },
-        className: cn('dashboard-table-builder-ant-header-cell align-top', addColumnHeaderShellClass),
-      }),
-      render: () => (
-        <div
-          className={cn('w-full border-t border-[#edf2f7] bg-white dark:border-slate-800/80 dark:bg-slate-950/94', previewCellSpacerClass)}
-          style={previewCellSpacerStyle}
-        />
-      ),
-    });
-
-    if (previewFillerWidth > 0) {
-      nextColumns.push({
-        key: '__filler__',
-        dataIndex: '__filler__',
-        width: previewFillerWidth,
-        title: <div className="h-full w-full" />,
-        onHeaderCell: () => ({
-          style: { width: previewFillerWidth, minWidth: previewFillerWidth, padding: 0, background: 'transparent' },
-          className: 'dashboard-table-builder-ant-header-cell dashboard-table-builder-ant-filler-header-cell align-top',
-        }),
-        render: () => (
-          <div
-            className={cn('w-full border-t border-[#edf2f7] bg-white dark:border-slate-800/80 dark:bg-slate-950/94', previewCellSpacerClass)}
-            style={previewCellSpacerStyle}
-          />
-        ),
-      });
-    }
-
-    return nextColumns;
-  }, [
-    addColumnButtonClass,
-    addColumnHeaderShellClass,
-    addColumnWidth,
-    getHeaderButtonClass,
-    getHeaderCornerClass,
-    getHeaderLabelClass,
-    getHeaderRequiredMarkClass,
-    handleAddColumn,
-    handleColumnHeaderClick,
-    handleColumnHeaderContextMenu,
-    headerColumns,
-    headerDividerClass,
-    isCompactModuleSetting,
-    previewCellSpacerClass,
-    previewCellSpacerStyle,
-    previewFillerWidth,
-    selectedForDeleteSet,
-    selectedId,
-  ]);
   const handlePreviewTableRowClick = useCallback((event: React.MouseEvent) => {
     event.stopPropagation();
     onSelectTable?.();
@@ -1825,7 +1761,10 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
           components={previewTableComponents}
           tableLayout="fixed"
           size={isCompactModuleSetting ? 'small' : 'middle'}
-          scroll={{ x: effectivePreviewTableWidth }}
+          scroll={{
+            x: effectivePreviewTableWidth,
+            y: previewScrollY,
+          }}
           locale={{ emptyText: null }}
           onRow={() => ({
             onClick: handlePreviewTableRowClick,

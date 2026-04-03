@@ -1,7 +1,83 @@
-﻿## 2026-04-01 In This Repo, Favor Antd Controls Over Antd Card When JSX Types Start Fighting
+﻿## 2026-04-03 Detail Add Button Placement Should Follow The User's Header Mental Model
+- In this single-table design screen, users read the “新增明细” action as part of the tab header, not as a secondary block below it.
+- Even if a centered standalone button is visually clean, it can still feel structurally wrong when the user expects “在 tab 头上、垂直居中、靠右”.
+- For detail-tab actions, prefer keeping the button inside Ant Tabs' header extra-content area unless the user explicitly asks for a split layout.
+
+## 2026-04-02 Active Detail Tab Clicks Need An Explicit Inspector Sync Path
+- In this single-table design screen, users do not only switch between different detail tabs; they also click the already active tab header as a way to say “show me this detail’s properties”.
+- Ant `Tabs onChange` only covers key changes, so relying on it alone will miss the “click the current tab again” interaction and make the right inspector look like it only updates on tab switching.
+- When the user asks for “点击明细头的时候就加载右侧明细属性”, wire the detail-tab selection through a click-level event such as `onTabClick`, not only through active-key changes.
+
+## 2026-04-02 Screen-Level Action Bars Should Not Hardcode Every Available Operation
+- The grid action model can still keep a full action definition set for data compatibility, but the visible action bar on a specific workbench may intentionally expose only a subset.
+- When the user says the middle “保存” button should disappear, prefer hiding it at the rendered action-bar layer instead of mutating the underlying action-key model and risking side effects in inspector selection or saved state.
+- Treat the action definition list as capability metadata and the action bar as a screen-level presentation choice.
+
+## 2026-04-02 If Height Still Does Not Change, Stop Trusting Natural Stretch And Lock The Table With scroll.y
+- In this table-builder preview, fixing row count alone may stop the scrollbar from disappearing, but it does not guarantee the visible table area will actually grow to consume the remaining panel height.
+- If the user says “主表的高度没变，是不是他外部有什么容器”, assume the outer panel/flex chain may still be constraining the table and switch to an explicit Ant `scroll.y` budget instead of relying on natural stretch.
+- For this screen, `scroll.y` is the more reliable ownership boundary: it pins the usable height inside the table itself and makes leftover-space bugs much easier to reason about than nested flex growth alone.
+
+## 2026-04-02 Preview Row Count Must Reserve Space For The Horizontal Scrollbar
+- In this table-builder preview, the horizontal scrollbar can already be generated correctly yet still vanish visually if the filler preview rows are computed to exactly fill the host height.
+- A `ceil(previewAvailableBodyHeight / previewRowHeight)` style row-count strategy is risky here: once ResizeObserver measures the real host height, the extra preview row can push Ant's horizontal scrollbar below the clipped bottom edge.
+- If the user reports “滚动条会短暂出现然后消失，像被撑出了下页面”, inspect the preview row-count and bottom-space budget first. The fix is to reserve scrollbar height and keep the preview rows within the visible host, not keep chasing column width.
+
+## 2026-04-02 If Main And Detail Should Feel The Same, Unify The Template Instead Of Chasing Scrollbars Per Branch
+- In the single-table design screen, repeated scrollbar fixes kept failing because main and detail still diverged at both the workbench-shell layer and the `TableBuilderOptions` layer.
+- If the user says “他们应该使用同一个模板”, take that literally: reuse one shared panel shell and one shared preview-options template, then keep only business differences such as tabs, selected scope, and per-table data.
+- After that unification, remove abandoned experiments instead of leaving them latent in the codebase. Dead native-scroll or tab-content branches make later fixes drift back into inconsistent behavior.
+
+## 2026-04-01 In This Repo, Favor Antd Controls Over Antd Card When JSX Types Start Fighting
 - This repo's current `antd` setup accepted `Table`, `Tabs`, `Button`, `Flex`, `Tag`, `Empty`, and `Typography` cleanly, but `Card` became unstable under type checking in the module-setting workspace and triggered `TS2604` as a JSX element.
 - When the product goal is "make the visible controls feel uniformly Antd," do not get stuck forcing every shell layer to become `Card`. It is acceptable to keep a plain container div and move the visible controls onto Antd components first, especially when that lets lint/build stay green.
 - Treat this as a delivery rule for this codebase: prioritize the user's visible consistency target and compile stability over full component-purity if one specific Antd shell component proves unreliable in the current toolchain.
+
+## 2026-04-02 Detail Preview Horizontal Scroll Needs Its Own Threshold
+- In the single-table design workbench, do not assume the same preview min column width will trigger horizontal scrolling equally for the main table and the detail table.
+- The detail preview can still fully fit inside its wider viewport even after a modest readable-width bump, so a “main and detail share one threshold” fix may appear to work in code yet still fail in the detail area on screen.
+- When a user says “明细部分还是没有展示出横向滚动条”, treat that as evidence that the effective total width still does not exceed the detail viewport. Re-check the detail-specific options path and use a stronger detail-only threshold or a more explicit scrollbar visibility strategy.
+
+## 2026-04-02 Detail Scrollbars Can Be Neutralized By Filler Width Logic
+- In this table-builder preview, horizontal scrolling is not controlled by `scroll.x` alone. The `previewFillerWidth` branch can expand the preview width just enough to match the host width, which removes the actual overflow and therefore removes the scrollbar.
+- If the user reports “完全不显示滚动条，和列最小宽度应该无关”, do not keep tuning readable min width first. Inspect the `effectivePreviewTableWidth = totalTableWidth + previewFillerWidth` path and verify whether filler width is cancelling the overflow.
+- For branches that must visibly expose a horizontal scrollbar, keep a small guaranteed overflow budget in the computed preview width instead of letting filler width normalize everything back to an exact fit.
+
+## 2026-04-02 When The User Wants Ant's Built-In Scrollbar, Stop Styling Around It
+- If the user explicitly says “我需要你显示出 ant 自带的滚动条”, do not keep approximating the effect with custom overflow containers, filler columns, or forced overflow tricks.
+- In this repo's table-builder preview, custom width vars, filler columns, and `.ant-table-content/.ant-table-header` overrides can collectively replace or obscure the stock Ant Table horizontal scroll experience.
+- The correct fix in that case is to restore the Ant-managed scroll path for the target branch and remove the custom logic that visually substitutes for it, even if earlier patches were technically producing some horizontal movement.
+
+## 2026-04-02 Rc-Table Native Horizontal Scroll Needs Numeric Width Contracts
+- In this repo's table-builder preview, merely switching `scroll.x` to a native-looking value is not enough if the detail branch still feeds rc-table string CSS-variable widths like `var(--dashboard-table-builder-col-width-...)`.
+- For the Ant native branch, keep `column.width` and `scroll.x` on numeric widths so rc-table can compute `flattenScrollX` and real overflow correctly; otherwise the table can keep flattening to the viewport and the horizontal scrollbar still won't appear.
+- Also exclude that native branch from the repo's custom table-width override (`--dashboard-table-builder-width`). If the branch still inherits the old width forcing, it has not truly returned to Ant-managed scrolling.
+
+## 2026-04-02 Detail Tabs Are Not The Scrollbar Root Cause In This Screen
+- In `MemoDocumentDetailWorkbench`, Ant `Tabs` only renders the tab strip; the actual detail table is mounted below it as a sibling content area, and the repo even hides the default `ant-tabs-content-holder`.
+- So when the user asks “是不是因为明细表格在页签内”, do not treat the tab pane as the primary suspect. The more relevant comparison is main vs detail width budgeting: main overflows because its computed preview width exceeds the host, while detail native scrolling still needs a real overflow budget before Ant will render its scrollbar.
+- If the product goal is “show the native Ant scrollbar in design mode like the main table feels like it does”, give the detail native branch a small numeric overflow reserve based on the measured host width instead of only tweaking label min widths.
+
+## 2026-04-02 When Repeated Scrollbar Tuning Fails, Collapse The UI Back To One Native Scroll Owner
+- If a screen visually looks like “Tabs + table”, but the implementation has split that into “Tabs strip” and a separate sibling content container, repeated scrollbar tuning can keep failing because the visible ownership of the scroll area no longer matches the DOM ownership.
+- When the user proposes “直接把表格放到页签里”, treat that as a strong simplification hint, not just a cosmetic suggestion. In this repo, moving the detail table back into the real Ant `Tabs` content pane is a cleaner fix than stacking more width heuristics onto the split structure.
+- After doing that, keep the old “hide content holder” CSS only for strip-only usages, and let the content-bearing Tabs instance opt back into Ant’s normal content layout.
+
+## 2026-04-02 Tabs Content Needs A Full Flex Height Chain Or The Scroll Area Can Vanish Visually
+- Moving content into `Tabs` is not enough by itself. If `ant-tabs-content`, `ant-tabs-tabpane`, or the immediate content wrapper are not `display:flex` with a complete `min-height: 0 / height: 100%` chain, inner `flex-1 overflow-auto` scroll hosts may not receive a real height.
+- In that state, the table can render, but its scroll container will not behave like the main pane’s full-height work area, which makes horizontal scrollbar placement inconsistent or seemingly missing.
+- For the detail native branch, it is also acceptable to force `.ant-table-content` to `overflow-x: scroll` when the product explicitly wants the native scrollbar to stay visibly present.
+
+## 2026-04-02 If Native Scroll Recovery Breaks Column Drag, Fall Back To The Main Preview Path
+- In this table builder, the column drag interaction depends on the custom header component chain (`previewTableComponents` + sortable header cell). If the detail branch switches to a plain Ant column path to chase native scrolling, column drag can disappear even though the table still renders.
+- When the user reports “列的拖动功能也失效了”, treat that as a regression and prioritize restoring the same header/rendering path as the working main table before making further scrollbar tweaks.
+- A safer strategy for this screen is often: reuse the main preview path, then add a small forced overflow budget so Ant’s internal scroll area appears, rather than keeping a separate native-only branch that diverges in interaction behavior.
+
+## 2026-04-02 When Main And Detail Should Share One Template, Remove The Detail-Only Scroll Experiments
+- If the user says the single-table design page’s main table and detail table should use the same template, do not stop at matching the outer shell. They should also share the same `TableBuilderOptions` baseline and the same drag/resize/scroll path.
+- In this repo, detail-only scrollbar experiments created a misleading state where the UI looked similar but still behaved differently. Once that mismatch becomes the core problem, the right fix is to delete the experimental branch rather than keep tuning it.
+- Keep only the business differences between main and detail: selected scope, renderable columns, context menu, and detail-board config. Width budgeting and preview interaction behavior should stay shared.
+
 # 浠诲姟鏁欒
 
 ## 2026-03-28 AI Batch Actions Should Reuse The Real Page Save Instead Of Inventing Narrow Follow-Up Saves
@@ -594,3 +670,31 @@
 - For the Antd preview branch, let `Antd Table` own the horizontal scrollbar and keep the outer wrapper on `overflow-hidden` unless the non-Antd branch still truly needs container-level scrolling.
 - If you add a dedicated bottom scrollbar under a filled Antd preview, the host must be a real column flex layout. Otherwise the table can consume the available height first and the scrollbar may technically render but still be clipped below the visible workbench.
 - If the user explicitly asks to rely on Antd's built-in scrollbar, stop layering a second synced scrollbar under the table. On this screen, the extra bar solved one symptom but made the ownership model harder to reason about than simply restoring the library's native horizontal scroll.
+## 2026-04-02 If The Main Table Height Still Looks Unchanged, Inspect The Outer Grid Split Before Tweaking Rows Again
+- In this single-table design screen, the main preview table does not own the whole document workbench height. When details exist, `module-setting-step-shell.tsx` first splits the stage into two grid rows, and the main row was previously configured smaller than the detail row.
+- If the user says “主表的高度没变，是不是他外部有什么容器”, treat that as a real layout signal: the outer workbench grid and shared panel stretch chain may be capping the host height before the table builder ever measures it.
+- Fix the host allocation first by making the shared panel explicitly fill its parent and by rebalancing the default main/detail row split toward the main table. Only after that should you keep tuning preview row counts or inner Ant table height.
+## 2026-04-02 For This Design Preview, Do Not Mix scroll.y With Placeholder Row Height Budget
+- This table-builder preview already uses synthetic rows to consume the available body height. Adding Ant `scroll.y` on top of that creates a second height owner and makes the preview vulnerable to underfill or stray vertical scrolling.
+- If the user says “表格不要垂直滚动条，表格的高度在某些情况下还是没有铺满”, treat that as a sign that the preview should go back to one-axis ownership: keep horizontal scroll in Ant, but let the placeholder rows own the vertical fill.
+- In this screen, `scroll.y` is a useful diagnostic tool, not the final UX. Once the outer height chain is understood, remove it and let the preview height budget work without an Ant vertical scroll host.
+## 2026-04-02 In This Screen, Footer Ownership Must Live In The Workbench Panel, Not In TableBuilder Height Guessing
+- When the user says the layout should always read as “a table plus a bottom action bar,” treat that as a structural rule, not a styling tweak. The panel shell must own the split between body and footer.
+- If `TableBuilder` measures its own wrapper while the footer lives outside it, any failure in flex/grid stretch can make the table think it is shorter than the real body slot and leave a blank area above the buttons.
+- The robust fix is to give the shared workbench panel an explicit `header / body / footer` partition and let `TableBuilder` measure the body slot directly. Then hidden footers naturally give all remaining height back to the table area.
+## 2026-04-02 If Reload Fixes The Height, The Next Bug To Suspect Is Initial Measurement Timing
+- When the user says “最开始可能会错误，但是重新加载就会正确”, do not immediately keep changing final layout ratios. That symptom usually means the steady-state layout is mostly right and the first measurement simply happened too early.
+- In this preview screen, the risky points are the body-slot height and the Ant table header height. If either is sampled before the panel, fonts, or header DOM fully settle, the placeholder row budget can be off even though a later reload looks correct.
+- The safer fix is to move the first measurement into `useLayoutEffect`, observe both the body slot and the header, and schedule one or two post-paint re-measurements. Treat `window.load` as an additional catch-up point for first-entry cases.
+## 2026-04-02 If Placeholder Rows Still Do Not Feel Dynamic, Let Ant Own The Body Height Again But Hide Vertical Scroll
+- In this preview screen, dynamic re-measurement alone may still not be enough if Ant Table itself is not treating the body region as a fixed-height owner. The placeholder rows can update, yet the visible body area may still lag behind layout changes.
+- If the user summarizes the bug as “说白了就是不会动态调整”, that is a sign to separate two concerns: let Ant own the body height with `scroll.y`, but do not expose the vertical scrollbar in the UI.
+- The practical pattern here is: keep the measured `body slot` height, feed it back into `scroll.y`, and explicitly force `.ant-table-body` to `overflow-y: hidden` while retaining horizontal scrolling. This restores dynamic height coupling without reintroducing a visible vertical scroll bar.
+## 2026-04-02 When Parent Layout Modes Switch, Give The Preview An Explicit Layout Version
+- If a user can add or delete detail sections and that action changes the surrounding grid allocation, do not rely only on `ResizeObserver` to infer the semantic layout change. The DOM may resize too subtly or too asynchronously for the preview to feel reliable.
+- In this screen, “with details” vs “without details” is not just a size delta; it is a layout-mode switch. Treat it as explicit input to the table preview.
+- The practical fix is to thread a `layoutVersion` through `TableBuilderOptions` and include it in the preview measurement effect dependencies. That gives the main table and detail table a guaranteed re-measure point whenever the parent layout mode changes.
+## 2026-04-02 For WinForm-Like Fill, Do Not Drive Height From Dynamic Placeholder Row Count
+- In this design preview, deriving the number of synthetic rows from the measured body height created a second layout model on top of the real body slot. That made dynamic resizing fragile whenever the parent layout changed.
+- A more WinForm-like approach is to let the body slot own the height and let Ant own the visible body region via `scroll.y`. The placeholder rows should just be a sufficiently large fixed pool that can be clipped by the body height.
+- If the product goal is “像 WinForm 那种自己动态填充”, prefer `fixed placeholder rows + dynamic body height clipping` over `dynamic placeholder row count`. The former keeps one real height owner and reacts more predictably to parent layout changes.
