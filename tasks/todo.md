@@ -1,5 +1,6 @@
 ﻿# 浠诲姟寰呭姙
 
+<<<<<<< Updated upstream
 ## 2026-04-03 恢复设计工作区全屏直出
 
 ### Requirement Spec
@@ -112,10 +113,37 @@
 - [x] 更新本轮任务文档。
 - [x] 逐个分析 4 个冲突文件的冲突块与上下文。
 - [x] 完成冲突合并并清除标记。
+=======
+## 2026-04-03 单表设计页右侧属性栏头部收口与列数据页签
+
+### Requirement Spec
+- 用户目标：继续调整单表设计页右侧属性栏，去掉顶部按钮区、压缩头部高度，并在当前 4 个 grid inspector 页签基础上新增“列数据”标签。
+- 影响范围：`src/features/dashboard/module-settings/inspector-panel-router.tsx`、`grid-inspector-controller.tsx`、`grid-overview-sections.tsx`，以及 `Dashboard.tsx` 中 inspector 页签状态类型。
+- 关键约束：
+  - 只收当前右侧 grid inspector 的头部与页签，不顺手重做其它 inspector 分支。
+  - 顶部“主表配置 / 条件配置”这类按钮区要直接去掉，不能只是弱化样式。
+  - 新增“列数据”标签不能是空壳，至少要能承载当前列数据入口。
+  - 继续遵守 Dashboard 架构规则，不把实现细节继续堆回 `Dashboard.tsx`。
+- 不做什么：
+  - 不重做右侧字段表单内容结构。
+  - 不改动主表/明细/左表的业务配置语义。
+- 成功标准：
+  - 右侧 grid inspector 顶部按钮区移除，头部显著收矮。
+  - 原 4 个图标标签变成 5 个，并新增“列数据”。
+  - “列数据”页签能展示当前列数据入口。
+
+### Checklist
+- [x] 更新任务文档并记录本轮 inspector 新需求。
+- [x] 定位并移除右侧 grid inspector 顶部按钮区。
+- [x] 收紧 grid inspector 头部高度。
+- [x] 新增“列数据”页签类型与路由。
+- [x] 为“列数据”页签补上当前列数据内容入口。
+>>>>>>> Stashed changes
 - [x] 运行 `npm run lint`。
 - [x] 运行 `npm run build`。
 
 ### Progress
+<<<<<<< Updated upstream
 - [x] 已确认当前仅有 4 个冲突文件需要处理。
 - [x] 已确认本轮重点是保住最近单表设计页、明细 workbench 和 inspector 收口行为，同时兼容上游大规模架构拆分。
 - [x] 已确认 `Dashboard.tsx` 的冲突本质是“本地旧内联逻辑”与“上游 hook/runtime 抽离”的冲突，最终按上游抽离结构合并。
@@ -133,6 +161,26 @@
 - `src/features/dashboard/module-settings/detail-workbench.tsx`：保留最近单表设计页要求的明细页签点击同步、tab 头右侧新增按钮和紧凑布局，同时采用上游抽出的 `getDetailFillTypeBadgeMeta`。
 - `src/features/dashboard/module-settings/table-workbench-panel.tsx`：冲突仅在格式与新增文件归属，已收敛为当前共享 panel 版本。
 - `src/features/dashboard/table-builder/table-builder.tsx`：保留上游新的预览表头/列宽实现、动态测量和 `Resizable` 链路，同时兼容现有 renderer/runtime 仍传入的 `startResize` prop，避免连带改动更多非冲突文件。
+=======
+- [x] 已回顾 `tasks/lessons.md`。
+- [x] 已确认本轮入口主要集中在：
+  - `inspector-panel-router.tsx`
+  - `grid-inspector-controller.tsx`
+  - `grid-overview-sections.tsx`
+  - `Dashboard.tsx` 的 `inspectorPanelTab` 类型
+- [x] 已完成右侧 document grid inspector 头部收口：顶部标题/条件按钮区已移除，并收成“图标 + 标题 + 页签”的紧凑头部。
+- [x] 已完成 `columns` 页签接线，并提供当前列数据列表与字段属性跳转入口。
+
+### Verification
+- `npm run lint`：通过。
+- `npm run build`：通过。
+- 说明：当前环境未做浏览器实机回归，因此右侧头部收口后的最终视觉密度和“列数据”页签的图标布局仍需页面确认。
+
+### Result Notes
+- 右侧 document grid inspector 的顶部“主表配置 / 条件配置”按钮层已移除，头部现在改为“图标 + 标题 + 图标页签”的紧凑结构，既保留识别信息，也维持较低高度。
+- document grid inspector 原有 4 个页签已扩展为 5 个，新增 `列数据`，并纳入统一的 inspector tab 路由。
+- “列数据”页签当前提供列清单、标识/类型/宽度摘要，以及点击某列直接进入字段属性的入口；用户最新反馈要求这里不要再保留描述文案，因此已去掉标题下的辅助说明。
+>>>>>>> Stashed changes
 
 ## 2026-04-02 单表设计页工作台按钮与页签交互收口
 

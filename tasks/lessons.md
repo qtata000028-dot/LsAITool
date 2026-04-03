@@ -1,4 +1,19 @@
-﻿## 2026-04-03 Detail Add Button Placement Should Follow The User's Header Mental Model
+﻿## 2026-04-03 Dense Inspector Tabs Should Not Keep Explanatory Filler When The User Wants Pure Utility
+- In compact inspector work areas like “列数据”, users often want the title and the data itself, not another explanatory sentence that repeats the obvious.
+- If the user says “列数据标签不要描述”, remove the helper copy directly instead of trying to rephrase it shorter.
+- For dense admin inspectors, preserve only the controls and metadata that help action, not decorative explanations.
+
+## 2026-04-03 Tightening A Header Does Not Mean Removing Its Identity Marker
+- In this single-table design screen, users may want the right inspector header to become smaller, but they still rely on the title and icon together to recognize the current scope quickly.
+- If the user says the title should stay and then corrects with “还有图标”, keep the semantic icon in the compact header instead of interpreting “收口” as “strip the header to text only”.
+- For compact inspector headers, the right compromise is usually: icon + title + tabs, without reintroducing the larger button layer.
+
+## 2026-04-03 Grid Inspector Header Should Not Compete With The Real Tab Work Area
+- In this single-table design screen, once the user starts working inside the right-side grid inspector, the useful navigation is the icon tab row itself, not a second layer of title-like buttons stacked above it.
+- If the user says the top buttons should be removed and the header should be tighter, do not merely soften their styles. Collapse the header to the real control surface and let the content sections carry the semantic titles.
+- When adding a new grid inspector tab such as “列数据”, treat it as a real work area with content, not as a decorative extra icon.
+
+## 2026-04-03 Detail Add Button Placement Should Follow The User's Header Mental Model
 - In this single-table design screen, users read the “新增明细” action as part of the tab header, not as a secondary block below it.
 - Even if a centered standalone button is visually clean, it can still feel structurally wrong when the user expects “在 tab 头上、垂直居中、靠右”.
 - For detail-tab actions, prefer keeping the button inside Ant Tabs' header extra-content area unless the user explicitly asks for a split layout.

@@ -623,7 +623,7 @@ export default function Dashboard({
       | 'detail-context';
     id?: string | null;
   }>({ kind: 'main-grid' });
-  const [inspectorPanelTab, setInspectorPanelTab] = useState<'common' | 'advanced' | 'contextmenu' | 'color'>('common');
+  const [inspectorPanelTab, setInspectorPanelTab] = useState<'common' | 'advanced' | 'contextmenu' | 'color' | 'columns'>('common');
   const [selectedLeftContextMenuId, setSelectedLeftContextMenuId] = useState<string | null>(null);
   const [selectedMainContextMenuId, setSelectedMainContextMenuId] = useState<string | null>(null);
   const [selectedDetailContextMenuId, setSelectedDetailContextMenuId] = useState<string | null>(null);

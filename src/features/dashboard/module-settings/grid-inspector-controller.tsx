@@ -20,6 +20,7 @@ import { DetailBoardLayoutManagerContainer } from './detail-board-layout-manager
 import { DetailChartConfigSection } from './detail-chart-config-section';
 import {
   DocumentMainTableSetupSection,
+  GridColumnDataSection,
   GridConfigSummarySection,
   GridIdentifierTranslationSection,
   GridSqlConfigSection,
@@ -75,6 +76,7 @@ type GridInspectorControllerProps = {
   handleDetailModuleCodeChange: (tabId: string, moduleCode: string, options?: Record<string, any>) => void;
   inspectorTabsNode: React.ReactNode;
   inspectorTarget: any;
+  isColumnsPanelTab: boolean;
   isColorPanelTab: boolean;
   isCommonPanelTab: boolean;
   isContextMenuPanelTab: boolean;
@@ -142,7 +144,7 @@ type GridInspectorControllerProps = {
     };
     silent?: boolean;
   }) => Promise<boolean>;
-  setInspectorPanelTab: React.Dispatch<React.SetStateAction<'common' | 'contextmenu' | 'color'>>;
+  setInspectorPanelTab: React.Dispatch<React.SetStateAction<'common' | 'advanced' | 'contextmenu' | 'color' | 'columns'>>;
   syncDetailColumnsFromSqlById: (tabId: string, sql: string, options?: Record<string, any>) => void;
   tableTypeOptions: string[];
   treeRelationColumn: any;
@@ -180,6 +182,7 @@ export function GridInspectorController({
   gridColorRuleOperatorOptions,
   inspectorTabsNode,
   inspectorTarget,
+  isColumnsPanelTab,
   isColorPanelTab,
   isCommonPanelTab,
   isContextMenuPanelTab,
@@ -307,6 +310,11 @@ export function GridInspectorController({
   const colorRules = currentGridConfig.colorRules ?? [];
   const enabledColorRuleCount = colorRules.filter((rule: any) => !rule.disabled).length;
   const canManageDetailGridDecorations = isDocumentDetailGrid && !isDetailChartInspector;
+  const documentGridColumnDataTitle = isLeftGridConfig
+    ? '左表列数据'
+    : isDocumentDetailGrid
+      ? '明细列数据'
+      : '主表列数据';
   const activeContextMenuSelectionId = isLeftGridConfig
     ? selectedLeftContextMenuId
     : canManageDetailGridDecorations
@@ -333,6 +341,24 @@ export function GridInspectorController({
       ...prev,
       ...patch,
     }));
+  };
+
+  const openGridColumnInspector = (columnId: string) => {
+    if (!columnId) {
+      return;
+    }
+
+    if (isLeftGridConfig) {
+      activateColumnSelection('left', columnId);
+      return;
+    }
+
+    if (isDocumentDetailGrid || isBillDetailGridConfig) {
+      activateColumnSelection('detail', columnId);
+      return;
+    }
+
+    activateColumnSelection('main', columnId);
   };
 
   const updateActiveDetailTabConfig = (patch: Record<string, any>) => {
@@ -645,38 +671,63 @@ export function GridInspectorController({
 
   return (
     <div className={panelShellClass}>
-      <div className={panelHeaderClass}>
-        <div className="flex min-w-0 items-start gap-3">
-          <div className={`${panelIconShellClass} ${context.iconClass}`}>
-            <span className="material-symbols-outlined text-[18px]">{context.icon}</span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className={panelTitleClass}>{context.title}</h3>
-              {!useQuietDocumentInspector ? <span className={panelBadgeClass}>{isDocumentDetailGrid ? '明细页签' : '表格级配置'}</span> : null}
+      <div className={useQuietDocumentInspector ? 'shrink-0 border-b border-slate-200/80 bg-slate-50/60 px-3 py-2 dark:border-slate-800 dark:bg-slate-950' : panelHeaderClass}>
+        {useQuietDocumentInspector ? (
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className={`${panelIconShellClass} size-7 rounded-md ${context.iconClass}`}>
+                  <span className="material-symbols-outlined text-[16px]">{context.icon}</span>
+                </div>
+                <div className="min-w-0 text-[13px] font-semibold leading-5 text-slate-800 dark:text-slate-100">
+                  {context.title}
+                </div>
+              </div>
               {isDetailChartInspector ? (
-                <span className="inline-flex items-center rounded-full border border-[#1686e3]/18 bg-[#1686e3]/8 px-2.5 py-1 text-[10px] font-bold text-[#1686e3]">
+                <span className="inline-flex items-center rounded-full border border-[#1686e3]/18 bg-[#1686e3]/8 px-2 py-0.5 text-[10px] font-bold text-[#1686e3]">
                   p_systemdlltabchart
                 </span>
               ) : null}
             </div>
+            <div className="flex min-w-0 items-center">
+              {inspectorTabsNode}
+            </div>
           </div>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {isDocumentArchiveGrid ? (
-              <button
-                type="button"
-                onClick={() => onOpenConditionWorkbench(isLeftGridConfig ? 'left' : 'main')}
-                className={useQuietDocumentInspector ? quietDocumentInspectorActionClass : 'inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-slate-200/80 bg-white/92 px-3 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200'}
-              >
-                <span className="material-symbols-outlined text-[16px]">filter_alt</span>
-                条件配置
-              </button>
-            ) : null}
-          </div>
-        </div>
-        {inspectorTabsNode}
+        ) : (
+          <>
+            <div className="flex min-w-0 items-start gap-3">
+              <div className={`${panelIconShellClass} ${context.iconClass}`}>
+                <span className="material-symbols-outlined text-[18px]">{context.icon}</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className={panelTitleClass}>{context.title}</h3>
+                  {!useQuietDocumentInspector ? <span className={panelBadgeClass}>{isDocumentDetailGrid ? '明细页签' : '表格级配置'}</span> : null}
+                  {isDetailChartInspector ? (
+                    <span className="inline-flex items-center rounded-full border border-[#1686e3]/18 bg-[#1686e3]/8 px-2.5 py-1 text-[10px] font-bold text-[#1686e3]">
+                      p_systemdlltabchart
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {isDocumentArchiveGrid ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenConditionWorkbench(isLeftGridConfig ? 'left' : 'main')}
+                    className={useQuietDocumentInspector ? quietDocumentInspectorActionClass : 'inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-slate-200/80 bg-white/92 px-3 text-[12px] font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200'}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">filter_alt</span>
+                    条件配置
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {inspectorTabsNode}
+          </>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-0 py-0">
@@ -728,6 +779,15 @@ export function GridInspectorController({
               item.id === ruleId ? { ...item, ...patch } : item
             )))}
           />
+        ) : isColumnsPanelTab ? (
+          <div className="space-y-0">
+            <GridColumnDataSection
+              title={documentGridColumnDataTitle}
+              availableGridColumns={availableGridColumns}
+              normalizeColumn={normalizeColumn}
+              onSelectColumn={openGridColumnInspector}
+            />
+          </div>
         ) : isCommonPanelTab ? (
           isBillHeadGridConfig ? (
             <div className="space-y-0">

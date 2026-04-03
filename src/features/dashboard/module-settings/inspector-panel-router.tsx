@@ -16,7 +16,7 @@ import {
 } from './misc-inspectors';
 import { SourceGridInspector } from './source-grid-inspector';
 
-export type InspectorTabId = 'common' | 'advanced' | 'contextmenu' | 'color';
+export type InspectorTabId = 'common' | 'advanced' | 'contextmenu' | 'color' | 'columns';
 
 export type InspectorPanelRouterProps = {
   activeTab: string;
@@ -91,6 +91,7 @@ export function InspectorPanelRouter({
     : isDocumentScopedGridInspector
       ? [
           { id: 'common', label: documentScopedGridLabel, icon: 'dashboard_customize' },
+          { id: 'columns', label: '列数据', icon: 'table_rows' },
           { id: 'advanced', label: '布局', icon: 'view_stream' },
           { id: 'contextmenu', label: '右键', icon: 'right_click', count: documentScopedGridContextMenuCount },
           { id: 'color', label: '颜色', icon: 'palette', count: documentScopedGridColorRuleCount },
@@ -101,12 +102,13 @@ export function InspectorPanelRouter({
         ];
   const currentInspectorTab = inspectorTabs.some((tab) => tab.id === inspectorPanelTab) ? inspectorPanelTab : 'common';
   const isCommonPanelTab = currentInspectorTab === 'common';
+  const isColumnsPanelTab = currentInspectorTab === 'columns';
   const isContextMenuPanelTab = currentInspectorTab === 'contextmenu';
   const isColorPanelTab = currentInspectorTab === 'color';
   const useIconOnlyInspectorTabs = isDocumentScopedGridInspector;
   const inspectorCountBadgeClass = 'absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border border-white bg-[#e04f5f] px-1 text-[9px] font-black leading-none text-white shadow-[0_10px_18px_-14px_rgba(224,79,95,0.78)] dark:border-slate-950';
   const inspectorTabsNode = (
-    <div className={useIconOnlyInspectorTabs ? 'mt-2 inline-flex items-center gap-1 rounded-md border border-slate-200/80 bg-slate-100/90 p-0.5 dark:border-slate-800 dark:bg-slate-900' : shadcnTabListClass}>
+    <div className={useIconOnlyInspectorTabs ? 'inline-flex items-center gap-1 rounded-md border border-slate-200/80 bg-slate-100/90 p-0.5 dark:border-slate-800 dark:bg-slate-900' : shadcnTabListClass}>
       {inspectorTabs.map((tab) => {
         const isActive = currentInspectorTab === tab.id;
         const hasCountBadge = typeof tab.count === 'number' && tab.count > 0;
@@ -171,6 +173,7 @@ export function InspectorPanelRouter({
     return (
       <GridInspectorController
         {...(gridProps as any)}
+        isColumnsPanelTab={isColumnsPanelTab}
         inspectorTabsNode={inspectorTabsNode}
         isColorPanelTab={isColorPanelTab}
         isCommonPanelTab={isCommonPanelTab}
