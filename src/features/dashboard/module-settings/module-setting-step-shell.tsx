@@ -1,10 +1,11 @@
 import React from 'react';
 
 import { GridOperationConfigBar } from './grid-operation-config-bar';
-import { MemoDetailTabStrip, MemoDocumentDetailWorkbench } from './detail-workbench';
+import { MemoDocumentDetailWorkbench } from './detail-workbench';
 import { DetailFillPlaceholder, DetailTabsWorkspace } from './detail-tabs-workspace';
 import { DocumentGridToolbarBridge, DocumentTreePanel } from './document-workspace-panels';
 import { type GridOperationActionKey } from './grid-operation-config';
+import { TableWorkbenchPanel } from './table-workbench-panel';
 
 export type ModuleSettingStepShellProps = {
   billDocumentWorkbenchNode: React.ReactNode;
@@ -120,9 +121,8 @@ export function ModuleSettingStepShell({
   const stageShellClass = `flex min-h-0 overflow-hidden bg-[#f3f6fa] ${workspaceThemeStyles.tableSurface}`;
   const documentWorkspaceShellClass = 'flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-[linear-gradient(180deg,#fbfdff_0%,#f2f7fb_100%)] p-1.5 shadow-[0_24px_48px_-44px_rgba(96,165,250,0.22)]';
   const documentWorkspaceGridClass = hasDocumentDetails
-    ? 'grid-rows-[minmax(0,0.92fr)_minmax(300px,1.08fr)] gap-y-2.5'
+    ? 'grid-rows-[minmax(340px,1.08fr)_minmax(300px,0.92fr)] gap-y-2.5'
     : 'grid-rows-[minmax(0,1fr)_auto]';
-  const documentMainWorkbenchClass = 'relative flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-[#dbe5f3] bg-white shadow-[0_18px_36px_-32px_rgba(15,23,42,0.16)]';
   const workspacePanelClass = 'flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#d9e2ec] bg-white shadow-none';
   const workspacePanelHeaderClass = 'flex items-center justify-between border-b border-[#e6edf5] bg-[#f8fafc] px-4 py-3';
   const sectionIconClass = 'flex size-8 items-center justify-center rounded-[10px] border border-[#dbe5ef] bg-[#f6f9fc] text-[color:var(--workspace-accent-strong)]';
@@ -172,38 +172,27 @@ export function ModuleSettingStepShell({
               <div className="h-full min-h-0 min-w-0 flex-1">
                 <div className={documentWorkspaceShellClass}>
                   <div className={`grid h-full min-h-0 overflow-hidden ${documentWorkspaceGridClass}`}>
-                    <div className={documentMainWorkbenchClass}>
-                      <div
-                        className="scrollbar-none min-h-0 flex-1 overflow-auto outline-none dark:bg-slate-900/90"
-                        tabIndex={0}
-                        onPaste={document.onPasteMainTable}
-                        style={{ backgroundColor: '#ffffff' }}
-                      >
-                        {document.archiveMainTableBuilderNode}
-                      </div>
-                      <GridOperationConfigBar
+                    <TableWorkbenchPanel
+                      bodyNode={document.archiveMainTableBuilderNode}
+                      bodyStyle={{ backgroundColor: '#ffffff' }}
+                      footerNode={(
+                        <GridOperationConfigBar
                         config={document.mainGridActionConfig}
                         selectedActionKey={document.selectedMainGridAction}
                         onSelectAction={document.onSelectMainGridAction}
-                      />
-                    </div>
+                        />
+                      )}
+                      onPaste={document.onPasteMainTable}
+                    />
 
                     {hasDocumentDetails ? (
                       <div className="relative flex min-h-0 flex-col overflow-hidden before:pointer-events-none before:absolute before:inset-x-8 before:-top-1 before:h-px before:bg-[linear-gradient(90deg,transparent,rgba(148,163,184,0.58),transparent)]">
                         <MemoDocumentDetailWorkbench
-                          tableSurfaceClass=""
-                          detailTabStripNode={(
-                            <MemoDetailTabStrip
-                              detailTabs={document.detailTabs}
-                              activeTab={document.activeTab}
-                              currentDetailFillType={document.currentDetailFillType}
-                              onActivateTab={document.onActivateDetailTab}
-                              onAddTab={document.onAddDetailTab}
-                              addLabel="新增明细"
-                              showModeBadge={false}
-                            />
-                          )}
+                          detailTabs={document.detailTabs}
+                          activeTab={document.activeTab}
                           currentDetailFillType={document.currentDetailFillType}
+                          onActivateTab={document.onActivateDetailTab}
+                          onAddTab={document.onAddDetailTab}
                           footerNode={document.showDetailGridActionBar ? (
                             <GridOperationConfigBar
                               config={document.detailGridActionConfig}

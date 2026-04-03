@@ -6,7 +6,6 @@ import {
   shadcnPanelIconShellClass,
   shadcnPanelShellClass,
   shadcnPanelTitleClass,
-  shadcnSectionCardClass,
 } from '../../../components/ui/shadcn-inspector';
 import {
   buildContextMenuItem,
@@ -49,7 +48,6 @@ export const ContextMenuInspector = React.memo(function ContextMenuInspector({
   const panelTitleClass = shadcnPanelTitleClass;
   const panelBadgeClass = shadcnPanelBadgeClass;
   const panelIconShellClass = `${shadcnPanelIconShellClass} size-10 rounded-lg`;
-  const compactCardClass = shadcnSectionCardClass;
   const fieldClass = shadcnFieldClass;
   const currentConfig = context.column;
   const menuItems = React.useMemo(

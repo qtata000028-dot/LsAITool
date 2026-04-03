@@ -303,7 +303,8 @@ function areBodiesEqual(left: Record<string, unknown>, right: Record<string, unk
 }
 
 function getComparableBodyFingerprint(body: Record<string, unknown>) {
-  const { id: _ignoredId, ...rest } = body;
+  const rest = { ...body };
+  delete rest.id;
   return JSON.stringify(normalizeComparableValue(rest));
 }
 
@@ -1757,6 +1758,10 @@ export function useSingleTableModuleSettingsSave({
     mainTableConfig,
     mapColorRule,
     mapConditionRecordToField,
+    fetchAuthoritativeDetailColors,
+    fetchAuthoritativeDetailMenus,
+    fetchAuthoritativeModuleColors,
+    fetchAuthoritativeModuleMenus,
     mapContextMenuItem,
     mapDetailChartConfig,
     mapDetailGridFieldToColumn,

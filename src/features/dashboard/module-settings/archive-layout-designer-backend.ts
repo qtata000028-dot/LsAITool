@@ -817,10 +817,6 @@ function buildArchiveLayoutGroupSnapshots(
     const groupControlIds = (Array.isArray(group?.columnIds) ? group.columnIds : [])
       .map(String)
       .filter((columnId: string) => controlsById.has(columnId));
-    const columnsPerRow = Math.max(
-      1,
-      Number(group?.columnsPerRow) || sourceGroup?.configuredColumnsPerRow || 2,
-    );
     const rowBuckets = buildRowBucket(group, groupControlIds);
 
     let groupContentBottom = GROUP_HEADER_HEIGHT + GROUP_PADDING_TOP;
@@ -1003,7 +999,6 @@ export function buildArchiveLayoutSaveBodies(
     return [];
   }
 
-  const currentGroups = Array.isArray(detailBoardConfig?.groups) ? detailBoardConfig.groups : [];
   const formKey = stripBraces(source.formKey || fallbackFormKey || '');
   if (!formKey) {
     return [];

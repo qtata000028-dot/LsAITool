@@ -10,7 +10,11 @@ View your app in AI Studio: https://ai.studio/apps/a3c25e12-bfc6-41a0-ba01-00a09
 
 ## Team Collaboration
 
+Repository-level collaboration and AI rules are documented in [AGENTS.md](./AGENTS.md).
+
 Team workflow and branch rules are documented in [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+AI development rules and future evolution logic are documented in [docs/ai-development-rules.md](./docs/ai-development-rules.md).
 
 Dashboard architecture evolution rules are documented in [docs/dashboard-architecture-rules.md](./docs/dashboard-architecture-rules.md).
 
@@ -28,9 +32,24 @@ To preview the new process designer UI:
 GitHub collaboration files are available in:
 
 - `.github/CODEOWNERS`
+- `.github/copilot-instructions.md`
 - `.github/pull_request_template.md`
 - `.github/ISSUE_TEMPLATE/`
 - `.github/workflows/ci.yml`
+
+## Verification
+
+Standard frontend verification:
+
+```bash
+npm run verify
+```
+
+Architecture, AI governance, CI, scripts, or rule changes:
+
+```bash
+npm run verify:strict
+```
 
 ## Run Locally
 

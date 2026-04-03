@@ -1,41 +1,20 @@
-import { spawn } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { cleanupDevPorts } from './dev-stack-utils.mjs';
+import {
+  cleanupDevPorts,
+  clientEnvWithSubapp,
+  clientPort,
+  hostPort,
+  runForeground,
+  subappPort,
+} from './dev-stack-utils.mjs';
 import { ensureSimpleDesignerDependencies, simpleDesignerDevCommand } from './simple-designer-utils.mjs';
 
-const isWin = process.platform === 'win32';
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '..');
-const simpleDesignerClientEnv = {
-  ...process.env,
-  VITE_SIMPLE_PROCESS_DESIGNER_URL: 'http://127.0.0.1:5174',
-};
-
-function run(command, env = process.env) {
-  const child = spawn(isWin ? 'cmd.exe' : 'sh', isWin ? ['/d', '/c', command] : ['-lc', command], {
-    stdio: 'inherit',
-    env,
-    cwd: projectRoot,
-  });
-
-  child.on('exit', (code) => {
-    if (code && code !== 0) {
-      process.exit(code);
-    }
-  });
-
-  return child;
-}
-
-cleanupDevPorts(projectRoot, [3000, 3001, 5174]);
-ensureSimpleDesignerDependencies(projectRoot);
+cleanupDevPorts(process.cwd(), [clientPort, hostPort, subappPort]);
+ensureSimpleDesignerDependencies(process.cwd());
 
 const children = [
-  run('npm run dev:api'),
-  run('npm run dev:client', simpleDesignerClientEnv),
-  run(simpleDesignerDevCommand),
+  runForeground('npm run host'),
+  runForeground('npm run client', clientEnvWithSubapp),
+  runForeground(simpleDesignerDevCommand),
 ];
 
 function shutdown(signal) {

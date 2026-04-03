@@ -287,7 +287,7 @@ function summarizeFlow(node: SimpleFlowNode | undefined): FlowStats {
     visit(current.childNode)
   }
 
-  visit(posterSchema.value)
+  visit(node)
   return stats
 }
 

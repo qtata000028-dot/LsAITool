@@ -1,158 +1,102 @@
-﻿# 团队协作说明
+# 团队协作说明
 
-本项目当前使用 GitHub 进行协作开发，主仓库地址：
+主仓库：
 
-- https://github.com/qtata000028-dot/LsAITool
+- [qtata000028-dot/LsAITool](https://github.com/qtata000028-dot/LsAITool)
 
-## 基本规则
+本文件给人类同事和 AI 代理统一说明分支、提交流程和合并前检查。
 
-- `main` 仅保留稳定可用代码，不直接堆叠多人日常开发改动。
-- 每个需求或每位同事都使用独立分支开发，分支名建议使用 `codex/功能名`。
-- 改动完成后通过 Pull Request 合并到 `main`。
-- 合并前至少自行检查一遍受影响页面和基础构建。
-- 如果改动涉及 `src/components/Dashboard.tsx` 或 `src/features/dashboard/**`，提交前必须先阅读并遵守：
-  - [docs/dashboard-architecture-rules.md](/Users/apple/Desktop/未命名文件夹/LsSmartTool/LsAITool/docs/dashboard-architecture-rules.md)
-- 如果改动涉及“表格详情配置 / 详情布局编辑”，默认必须复用仓库内统一的 `detail-layout-designer` 能力，不允许新增第二套独立编辑器实现。
-- 如果改动涉及应用入口、平台边界、登录流或未来平台扩展，提交前必须先阅读：
-  - [docs/frontend-platform-architecture.md](./docs/frontend-platform-architecture.md)
+## 开发前先看
+
+- 仓库总规则：`AGENTS.md`
+- AI / 架构执行规则：`docs/ai-development-rules.md`
+- Dashboard 演进规则：`docs/dashboard-architecture-rules.md`
+- 平台边界规则：`docs/frontend-platform-architecture.md`
+
+## 分支规则
+
+- `main` 只保留稳定可用代码
+- 日常开发统一走功能分支
+- 分支名建议：`codex/功能名`
+- 不直接把日常开发改动推到 `main`
 
 ## 标准流程
 
-1. 切到主分支并同步最新代码
+1. 同步主分支
 
-```powershell
+```bash
 git checkout main
 git pull origin main
 ```
 
-2. 创建自己的开发分支
+2. 创建功能分支
 
-```powershell
+```bash
 git checkout -b codex/你的功能名
 ```
 
-3. 本地开发并自测
+3. 开发与验证
 
-```powershell
+```bash
 npm install
-npm run dev
-npm run lint
-npm run build
+npm run verify
+```
+
+如果改动涉及架构、协作规则、CI、AI 规则或 Dashboard 边界，再执行：
+
+```bash
+npm run verify:strict
 ```
 
 4. 提交代码
 
-```powershell
+```bash
 git add .
 git commit -m "feat: 你的改动说明"
 ```
 
-5. 首次推送分支
+5. 推送分支
 
-```powershell
+```bash
 git push -u origin codex/你的功能名
 ```
 
-6. 在 GitHub 发起 Pull Request，目标分支选择 `main`
+6. 发起 Pull Request 到 `main`
 
 ## 提交信息建议
 
 - `feat:` 新功能
-- `fix:` 修复问题
-- `refactor:` 重构
-- `style:` 样式调整
+- `fix:` 缺陷修复
+- `refactor:` 结构优化
 - `docs:` 文档更新
-- `chore:` 工具或配置变更
-
-示例：
-
-- `feat: 优化模块配置全屏布局`
-- `fix: 修复登录页机构下拉框圆角样式`
-- `docs: 增加团队协作说明`
-
-## 冲突处理
-
-如果你的分支开发时间较长，在提交前先同步主分支：
-
-```powershell
-git checkout main
-git pull origin main
-git checkout codex/你的功能名
-git rebase main
-```
-
-如果出现冲突，先手动处理冲突文件，再继续：
-
-```powershell
-git add .
-git rebase --continue
-```
+- `chore:` 工具、脚本、CI、配置
 
 ## 合并前检查
 
 - 页面能正常打开
-- 关键操作链路可用
-- 中文文案无乱码
-- `npm run lint` 通过
-- `npm run build` 通过
-- 未把 `node_modules`、`dist`、日志或本地密钥提交进仓库
-- Dashboard 相关改动没有把新功能重新堆回入口文件，符合 [docs/dashboard-architecture-rules.md](/Users/apple/Desktop/未命名文件夹/LsSmartTool/LsAITool/docs/dashboard-architecture-rules.md)
-- 表格详情布局相关改动没有另起一套编辑器，而是复用了统一的 `detail-layout-designer + adapter + shell` 模式
+- 关键链路可操作
+- `npm run verify` 通过
+- 架构类改动时 `npm run verify:strict` 通过
+- 没有把本地密钥、日志、`dist`、`node_modules` 提交进仓库
+- 没有把新功能重新堆回 `src/components/Dashboard.tsx`
+- 没有绕过 `detail-layout-designer` 再造第二套详情布局编辑器
 
-## 当前建议分工方式
+## AI 协作附加约束
 
-- `codex/登录页优化`
-- `codex/模块配置优化`
-- `codex/明细页签优化`
+如果你是用 AI 继续开发本项目，默认必须做到：
 
-如果多人同时开发同一模块，建议继续拆更细的分支名称，避免在同一文件同一区块频繁冲突。
+- 先读规则文件，再改代码
+- 一次只做一个主题
+- 先复用现有 feature / hook / runtime，再新增
+- 改动影响规则时，同步更新文档和守卫脚本
+- 没跑验证，不得声称完成
 
-## 在 Codex 里怎么操作
+## Codex / Copilot / 其他 AI 的推荐说法
 
-Codex 更适合你直接下达明确任务，让它在当前仓库里改代码、运行命令、提交变更。
+你可以直接下达这类任务：
 
-常见操作方式如下：
-
-### 1. 让 Codex 直接改功能
-
-你可以直接说：
-
-- `把登录页按钮改成蓝绿色渐变，并保持中文不变`
-- `修复模块配置全屏后底部错位的问题，并提交到当前分支`
-- `检查 Dashboard.tsx 有没有乱码并修掉`
-
-### 2. 让 Codex 帮你走 Git 流程
-
-你可以直接说：
-
-- `基于 main 创建分支 codex/登录页优化`
-- `把我当前改动提交一下，提交信息写 feat: 优化登录页样式`
-- `推送当前分支到 GitHub`
-- `同步 main 到我当前分支`
-
-### 3. 推荐的 Codex 协作节奏
-
-1. 先告诉 Codex 要改什么
-2. 改完后让 Codex 运行 `lint` 和 `build`
-3. 确认页面效果
-4. 让 Codex 提交并推送分支
-5. 去 GitHub 发 Pull Request
-
-### 4. 你对 Codex 最常用的几句话
-
-- `先拉最新 main，再建一个新分支开始改`
-- `只改这个页面，不要动别的模块`
-- `改完跑一下 lint 和 build`
-- `把这次改动提交并推送`
-- `先帮我看看这个问题出在哪，不要急着改`
-
-### 5. 什么时候不要直接让 Codex 推 main
-
-以下情况建议先走分支再发 PR：
-
-- 有同事也在同时开发
-- 改动超过一个页面
-- 涉及布局、表单、模块配置等核心区域
-- 你还没最终确认效果
-
-如果只是非常小的文案修正或文档修正，可以按团队习惯决定是否直接进 `main`。
+- `先读 AGENTS.md 和 docs/ai-development-rules.md，再开始改`
+- `只改这个功能域，不要扩散到别的模块`
+- `改完必须跑 npm run verify`
+- `如果动了 Dashboard 架构或规则文件，再跑 npm run verify:strict`
+- `如果你突破了原来的边界，顺手把文档和守卫脚本也改掉`

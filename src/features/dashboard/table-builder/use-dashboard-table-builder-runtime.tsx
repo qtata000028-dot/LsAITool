@@ -62,14 +62,26 @@ export function useDashboardTableBuilderRuntime({
     isTreeRelationFieldColumn: helpers.isTreeRelationFieldColumn,
     normalizeColumn: helpers.normalizeColumn,
     normalizeDetailBoardConfig: helpers.normalizeDetailBoardConfig,
-  }), []);
+  }), [
+    helpers.buildColumn,
+    helpers.getDetailBoardTheme,
+    helpers.isRenderableMainColumn,
+    helpers.isTreeRelationFieldColumn,
+    helpers.normalizeColumn,
+    helpers.normalizeDetailBoardConfig,
+  ]);
 
   const tableBuilderColumnMetrics = useMemo(() => createTableBuilderMetrics({
     collapsedRenderWidth: metrics.collapsedRenderWidth,
     minWidth: metrics.minWidth,
     resizeMaxWidth: metrics.resizeMaxWidth,
     resizeMinWidth: metrics.resizeMinWidth,
-  }), []);
+  }), [
+    metrics.collapsedRenderWidth,
+    metrics.minWidth,
+    metrics.resizeMaxWidth,
+    metrics.resizeMinWidth,
+  ]);
 
   const renderTableBuilder = useTableBuilderRenderer({
     activeResize: runtime.activeResize,

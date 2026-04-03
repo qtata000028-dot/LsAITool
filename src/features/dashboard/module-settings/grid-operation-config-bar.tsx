@@ -18,10 +18,12 @@ export function GridOperationConfigBar({
   onSelectAction,
   selectedActionKey,
 }: GridOperationConfigBarProps) {
+  const visibleActions = GRID_OPERATION_DEFINITIONS.filter((action) => action.key !== 'save');
+
   return (
     <div className="border-t border-[#e6edf5] bg-white px-4 py-3">
       <Flex wrap gap={10} justify="flex-end">
-        {GRID_OPERATION_DEFINITIONS.map((action) => {
+        {visibleActions.map((action) => {
           const isActive = selectedActionKey === action.key;
           const isEnabled = getGridOperationEnabled(config, action.key);
           const buttonClass = !isEnabled

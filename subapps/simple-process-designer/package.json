@@ -4,9 +4,12 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "node ./node_modules/vite/bin/vite.js --port 5174 --host 0.0.0.0",
+    "subapp": "node ./node_modules/vite/bin/vite.js --port 5174 --host 0.0.0.0 --strictPort",
+    "dev": "npm run subapp",
     "build": "node ./node_modules/vite/bin/vite.js build",
-    "preview": "node ./node_modules/vite/bin/vite.js preview --port 4174 --host 0.0.0.0"
+    "preview": "node ./node_modules/vite/bin/vite.js preview --port 4174 --host 0.0.0.0",
+    "lint": "eslint src --ext .ts,.tsx,.vue",
+    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

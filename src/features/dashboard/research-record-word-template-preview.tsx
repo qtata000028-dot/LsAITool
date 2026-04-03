@@ -165,12 +165,12 @@ export function ResearchRecordWordTemplatePreview({
   draft,
   focusKey,
   selectedContentItemId,
-  templateUrl: _templateUrl,
 }: ResearchRecordWordTemplatePreviewProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
   const [fitScale, setFitScale] = useState(1);
+  const effectiveScale = Math.max(scale, Math.min(0.9, fitScale + 0.01));
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -207,19 +207,13 @@ export function ResearchRecordWordTemplatePreview({
     const target = page.querySelector(selector) as HTMLElement | null;
     if (!target) return;
 
-    const preferredScale = Math.min(0.9, fitScale + 0.01);
-    const nextScale = scale < preferredScale ? preferredScale : scale;
-    if (nextScale !== scale) {
-      setScale(nextScale);
-    }
-
     const allTargets = Array.from(page.querySelectorAll('.research-preview-focus-target')) as HTMLElement[];
     allTargets.forEach((node) => node.classList.remove('research-preview-focus-target'));
     target.classList.add('research-preview-focus-target');
 
-    const top = Math.max(0, target.offsetTop * nextScale - 28);
+    const top = Math.max(0, target.offsetTop * effectiveScale - 28);
     viewport.scrollTo({ top, behavior: 'smooth' });
-  }, [activeStep, fitScale, focusKey, scale, selectedContentItemId]);
+  }, [activeStep, effectiveScale, focusKey, selectedContentItemId]);
 
   return (
     <aside className="flex min-h-0 flex-col overflow-hidden border-l border-slate-200 bg-[#f6f6f4]">

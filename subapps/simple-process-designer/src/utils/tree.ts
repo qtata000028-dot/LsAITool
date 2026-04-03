@@ -18,7 +18,8 @@ export function handleTree<T extends TreeNode>(nodes: T[], idKey = 'id', parentK
   nodeMap.forEach((item) => {
     const parentId = item[parentKey];
     if (parentId && nodeMap.has(parentId)) {
-      nodeMap.get(parentId)[childrenKey].push(item);
+      const parent = nodeMap.get(parentId);
+      parent?.[childrenKey].push(item);
     } else {
       roots.push(item);
     }

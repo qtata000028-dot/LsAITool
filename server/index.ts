@@ -1036,7 +1036,8 @@ app.use('/api', async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`MiniMax API server listening on http://127.0.0.1:${port}`);
+  console.log(`Host server listening on http://127.0.0.1:${port}`);
+  console.log('Responsibilities: AI relay + business API proxy.');
   console.log(`MiniMax primary model: ${model}`);
   console.log(`MiniMax translate model: ${translateModel}`);
   console.log(`Business API proxy target: ${businessApiBaseUrl}`);

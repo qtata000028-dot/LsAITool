@@ -47,7 +47,7 @@ export function DetailItemRenderer({ className, content, item, mode, onSelect, s
         mode === 'design' ? 'cursor-default' : 'pointer-events-none',
         className,
       )}
-      onMouseDown={(event) => {
+      onMouseDown={() => {
         onSelect?.(item.id);
       }}
     >

@@ -29,7 +29,6 @@ import {
   buildUniformLineColorMap,
   getLineIndexFromSelection,
   getLineTextByIndex,
-  normalizeLineColorMap,
   normalizeMultilineValue,
   type ResearchLineColorMap,
   type ResearchLineColorTone,
@@ -313,18 +312,6 @@ function getRecordText(record: Record<string, unknown>, ...keys: string[]) {
   return '';
 }
 
-function escapeHtml(input: string) {
-  return input
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function renderValue(value: string, fallback = '未填写') {
-  return value.trim() || fallback;
-}
 
 function normalizeWorkspaceLabel(value: string) {
   const trimmed = value.trim();
@@ -399,15 +386,6 @@ function getContentItemDisplayName(item: ResearchContentItem, index: number) {
   return item.businessTheme.trim() || getContentItemSceneLabel(item) || `明细 ${index + 1}`;
 }
 
-function getContentItemSubheading(item: ResearchContentItem) {
-  const sceneName = getContentItemSceneLabel(item);
-  const businessTheme = item.businessTheme.trim();
-  if (!sceneName || !businessTheme || sceneName === businessTheme || businessTheme.includes(sceneName)) {
-    return '';
-  }
-  return sceneName;
-}
-
 function getContentItemFilledCount(item: ResearchContentItem) {
   return [
     item.formsProvided,
@@ -419,12 +397,6 @@ function getContentItemFilledCount(item: ResearchContentItem) {
 
 function isContentItemReady(item: ResearchContentItem) {
   return Boolean(item.businessTheme.trim() && getContentItemSceneLabel(item) && getContentItemFilledCount(item) >= 3);
-}
-
-function getContentItemStatusText(item: ResearchContentItem) {
-  const baseLabel = item.linkedModuleCode ? '已关联模块' : '手工明细';
-  const filledCount = getContentItemFilledCount(item);
-  return filledCount > 0 ? `${baseLabel} · ${filledCount}/4 项事项` : baseLabel;
 }
 
 function normalizeResearchScope(value: unknown): ResearchRecordScope {
@@ -702,77 +674,6 @@ function buildDefaultDraft(input: {
   };
 }
 
-function normalizeContentLineColors(raw: unknown): ResearchContentLineColors {
-  if (!raw || typeof raw !== 'object') {
-    return {};
-  }
-
-  const record = raw as Partial<Record<ResearchContentMultilineFieldKey, unknown>>;
-  return {
-    formsProvided: normalizeLineColorMap(record.formsProvided),
-    painPoints: normalizeLineColorMap(record.painPoints),
-    suggestions: normalizeLineColorMap(record.suggestions),
-    workDescription: normalizeLineColorMap(record.workDescription),
-  };
-}
-
-function normalizeDraftLineColors(raw: unknown): ResearchDraftLineColors {
-  if (!raw || typeof raw !== 'object') {
-    return {};
-  }
-
-  const record = raw as Partial<Record<ResearchDraftMultilineFieldKey, unknown>>;
-  return {
-    extraNotes: normalizeLineColorMap(record.extraNotes),
-    overallPainPoints: normalizeLineColorMap(record.overallPainPoints),
-    specialDiscussion: normalizeLineColorMap(record.specialDiscussion),
-  };
-}
-
-function normalizeContentMaster(raw: unknown, fallback: ResearchContentMaster): ResearchContentMaster {
-  if (!raw || typeof raw !== 'object') {
-    return fallback;
-  }
-
-  const record = raw as Partial<ResearchContentMaster>;
-  return {
-    objective: toText(record.objective),
-    processOwner: toText(record.processOwner),
-    summary: toText(record.summary),
-    title: toText(record.title) || fallback.title,
-  };
-}
-
-function normalizeContentItem(raw: unknown, index: number): ResearchContentItem {
-  const fallback = createResearchContentItem(index + 1);
-  if (!raw || typeof raw !== 'object') {
-    return fallback;
-  }
-
-  const record = raw as Partial<ResearchContentItem>;
-  return {
-    backendBillNo: toText(record.backendBillNo),
-    backendId: hasPersistedId(record.backendId) ? record.backendId : null,
-    businessTheme: toText(record.businessTheme),
-    capturedDetailNames: Array.isArray(record.capturedDetailNames) ? record.capturedDetailNames.map((item) => toText(item)).filter(Boolean) : [],
-    capturedFieldNames: Array.isArray(record.capturedFieldNames) ? record.capturedFieldNames.map((item) => toText(item)).filter(Boolean) : [],
-    formsProvided: normalizeMultilineValue(toText(record.formsProvided)),
-    id: toText(record.id) || fallback.id,
-    jobRole: toText(record.jobRole),
-    lineColors: normalizeContentLineColors(record.lineColors),
-    linkedModuleCode: toText(record.linkedModuleCode),
-    linkedModuleName: toText(record.linkedModuleName),
-    linkedModuleQuerySql: toText(record.linkedModuleQuerySql),
-    linkedModuleTable: toText(record.linkedModuleTable),
-    painPoints: normalizeMultilineValue(toText(record.painPoints)),
-    sceneName: toText(record.sceneName),
-    shouldPersistEvenIfBlank: Boolean(record.shouldPersistEvenIfBlank),
-    suggestions: normalizeMultilineValue(toText(record.suggestions)),
-    timeShare: toText(record.timeShare),
-    workDescription: normalizeMultilineValue(toText(record.workDescription)),
-  };
-}
-
 function toDelimitedInlineParts(value: string, delimiters: RegExp = /[、,，;；\n]+/) {
   return value
     .split(delimiters)
@@ -791,33 +692,6 @@ function normalizeDelimitedInlineInput(value: string, delimiters: RegExp = /[、
   }
 
   return /[、,，;；\n]\s*$/.test(value) ? `${normalized}、` : normalized;
-}
-
-function normalizeDraft(raw: unknown, fallback: ResearchRecordDraft): ResearchRecordDraft {
-  if (!raw || typeof raw !== 'object') {
-    return fallback;
-  }
-
-  const record = raw as Partial<ResearchRecordDraft>;
-  const contentItems = Array.isArray(record.contentItems)
-    ? record.contentItems.map((item, index) => normalizeContentItem(item, index))
-    : fallback.contentItems;
-
-  return {
-    ...fallback,
-    ...record,
-    departmentPosts: normalizeDelimitedInlineValue(toText(record.departmentPosts)) || fallback.departmentPosts,
-    departmentName: normalizeWorkspaceLabel(toText(record.departmentName)) || fallback.departmentName,
-    contentItems: Array.isArray(record.contentItems) ? contentItems : fallback.contentItems,
-    contentMaster: normalizeContentMaster(record.contentMaster, fallback.contentMaster),
-    extraNotes: normalizeMultilineValue(toText(record.extraNotes)),
-    lineColors: normalizeDraftLineColors(record.lineColors),
-    overallPainPoints: normalizeMultilineValue(toText(record.overallPainPoints)),
-    projectName: normalizeWorkspaceLabel(toText(record.projectName)) || fallback.projectName,
-    specialDiscussion: normalizeMultilineValue(toText(record.specialDiscussion)),
-    surveyScope: record.surveyScope === '全员' || record.surveyScope === '单独' ? record.surveyScope : '部门',
-    workTools: normalizeDelimitedInlineValue(toText(record.workTools)) || fallback.workTools,
-  };
 }
 
 function buildCapturedWorkDescription(snapshot: CapturedModuleSnapshot) {
@@ -1184,7 +1058,6 @@ export function ResearchRecordWorkbench({
   currentUserName,
   onExit,
   onShowToast,
-  storageKey: _storageKey,
 }: ResearchRecordWorkbenchProps) {
   const authSession = useMemo(() => getStoredAuthSession(), []);
   const defaultDraft = useMemo(
@@ -1402,7 +1275,7 @@ export function ResearchRecordWorkbench({
     return () => window.clearTimeout(timer);
   }, [statusMessage]);
 
-  const scrollPreviewTo = useCallback((key: string, _behavior: ScrollBehavior = 'smooth') => {
+  const scrollPreviewTo = useCallback((key: string) => {
     setPreviewFocusKey(key);
   }, []);
 
@@ -2299,7 +2172,7 @@ export function ResearchRecordWorkbench({
   }, [
     activeOverviewQuickTarget,
     activeSubsystemName,
-    draft.documentNo,
+    currentUserName,
     draft.engineers,
     draft.respondents,
     draft.signerDate,
@@ -2414,7 +2287,6 @@ export function ResearchRecordWorkbench({
     draft.extraNotes,
     draft.overallPainPoints,
     draft.respondents,
-    draft.signerDate,
     draft.specialDiscussion,
     draft.surveyDate,
     updateDraft,
@@ -2534,7 +2406,7 @@ export function ResearchRecordWorkbench({
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className={`block truncate text-[11px] font-black tracking-tight ${isActive ? 'text-sky-700' : 'text-slate-900'}`}>
-                            {item.title.replace(/^.\、/, '')}
+                            {item.title.replace(/^.、/, '')}
                           </span>
                         </span>
                       </button>

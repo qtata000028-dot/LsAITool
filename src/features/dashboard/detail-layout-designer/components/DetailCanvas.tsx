@@ -1,7 +1,7 @@
 import { useDroppable } from '@dnd-kit/core';
 import clsx from 'clsx';
 import { Rnd } from 'react-rnd';
-import { Fragment, memo, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { Fragment, memo, type ReactNode, useMemo, useState } from 'react';
 
 import { DETAIL_LAYOUT_REGISTRY } from '../registry';
 import { buildDetailDropTargetData } from '../hooks/useDetailDnD';
@@ -59,26 +59,25 @@ const MemoDetailCanvasNode = memo(function DetailCanvasNode({
   const registryItem = DETAIL_LAYOUT_REGISTRY[item.type];
   const selected = selectedId === item.id;
   const [interactionMode, setInteractionMode] = useState<'idle' | 'dragging' | 'resizing'>('idle');
+  const itemRect = useMemo<DetailLayoutRect>(() => ({
+    h: item.h,
+    w: item.w,
+    x: item.x,
+    y: item.y,
+  }), [item.h, item.w, item.x, item.y]);
   const [liveRect, setLiveRect] = useState<DetailLayoutRect>({
     h: item.h,
     w: item.w,
     x: item.x,
     y: item.y,
   });
-
-  useEffect(() => {
-    setLiveRect({
-      h: item.h,
-      w: item.w,
-      x: item.x,
-      y: item.y,
-    });
-  }, [item.h, item.w, item.x, item.y]);
-
-  const snappedLiveRect = useMemo(() => snapRectToGrid(liveRect, document.gridSize), [document.gridSize, liveRect]);
+  const activeRect = interactionMode === 'idle' ? itemRect : liveRect;
+  const snappedLiveRect = useMemo(() => snapRectToGrid(activeRect, document.gridSize), [activeRect, document.gridSize]);
   const showSnapOverlay = mode === 'design' && interactionMode !== 'idle';
-
-  const groupDrop = useDroppable({
+  const {
+    isOver: isGroupDropOver,
+    setNodeRef: setGroupDropNodeRef,
+  } = useDroppable({
     data: buildDetailDropTargetData(item.id, item.id),
     disabled: item.type !== 'groupbox' || mode !== 'design',
     id: `detail-layout-groupbox-drop:${item.id}`,
@@ -89,11 +88,11 @@ const MemoDetailCanvasNode = memo(function DetailCanvasNode({
       <GroupBoxRenderer
         childCount={(childrenMap.get(item.id) ?? []).length}
         bodyClassName={clsx(
-          hoveringId === item.id || groupDrop.isOver ? 'border-[color:var(--workspace-accent-border,#8fb0ff)] bg-[color:var(--workspace-accent-soft,rgba(49,98,255,0.08))]' : '',
+          hoveringId === item.id || isGroupDropOver ? 'border-[color:var(--workspace-accent-border,#8fb0ff)] bg-[color:var(--workspace-accent-soft,rgba(49,98,255,0.08))]' : '',
         )}
-        bodyRef={item.type === 'groupbox' ? groupDrop.setNodeRef : undefined}
+        bodyRef={setGroupDropNodeRef}
         dropHintText="把字段或控件拖进这个分组框"
-        isDropActive={Boolean(groupDrop.isOver)}
+        isDropActive={Boolean(isGroupDropOver)}
         item={item}
         mode={mode}
         onSelect={onSelectItem}
@@ -130,9 +129,8 @@ const MemoDetailCanvasNode = memo(function DetailCanvasNode({
   ), [
     childrenMap,
     document,
-    groupDrop.isOver,
-    groupDrop.setNodeRef,
     hoveringId,
+    isGroupDropOver,
     item,
     mode,
     onBeginDragging,
@@ -141,6 +139,7 @@ const MemoDetailCanvasNode = memo(function DetailCanvasNode({
     onEndInteraction,
     onSelectItem,
     renderItemContent,
+    setGroupDropNodeRef,
     selected,
     selectedId,
   ]);
@@ -196,6 +195,7 @@ const MemoDetailCanvasNode = memo(function DetailCanvasNode({
       onDragStart={(event) => {
         event.stopPropagation();
         onSelectItem?.(item.id);
+        setLiveRect(itemRect);
         setInteractionMode('dragging');
         onBeginDragging?.(item.id);
       }}
@@ -223,6 +223,7 @@ const MemoDetailCanvasNode = memo(function DetailCanvasNode({
       onResizeStart={(event) => {
         event.stopPropagation();
         onSelectItem?.(item.id);
+        setLiveRect(itemRect);
         setInteractionMode('resizing');
         onBeginResizing?.(item.id);
       }}
@@ -240,13 +241,13 @@ const MemoDetailCanvasNode = memo(function DetailCanvasNode({
         onEndInteraction?.(item.id);
       }}
       position={{
-        x: liveRect.x,
-        y: liveRect.y,
+        x: activeRect.x,
+        y: activeRect.y,
       }}
       resizeGrid={[document.gridSize, document.gridSize]}
       size={{
-        height: liveRect.h,
-        width: liveRect.w,
+        height: activeRect.h,
+        width: activeRect.w,
       }}
     >
       <div
@@ -295,7 +296,10 @@ export function DetailCanvas({
   const childrenMap = useMemo(() => buildDetailLayoutChildrenMap(document.items), [document.items]);
   const rootItems = childrenMap.get(null) ?? [];
   const hasCanvasInteraction = mode === 'design' && Boolean(draggingId || resizingId);
-  const rootDrop = useDroppable({
+  const {
+    isOver: isRootDropOver,
+    setNodeRef: setRootDropNodeRef,
+  } = useDroppable({
     data: buildDetailDropTargetData(null, null),
     disabled: mode !== 'design',
     id: 'detail-layout-root-drop',
@@ -303,10 +307,10 @@ export function DetailCanvas({
 
   return (
     <div
-      ref={rootDrop.setNodeRef}
+      ref={setRootDropNodeRef}
       className={clsx(
         'relative min-h-[640px] overflow-hidden rounded-[24px] border border-slate-200/80 bg-white/88 shadow-[0_28px_48px_-40px_rgba(15,23,42,0.32)]',
-        (rootDrop.isOver && mode === 'design') ? 'border-[color:var(--workspace-accent-border,#8fb0ff)] bg-[color:var(--workspace-accent-soft,rgba(49,98,255,0.04))]' : '',
+        (isRootDropOver && mode === 'design') ? 'border-[color:var(--workspace-accent-border,#8fb0ff)] bg-[color:var(--workspace-accent-soft,rgba(49,98,255,0.04))]' : '',
         className,
       )}
       onMouseDown={(event) => {
@@ -335,12 +339,12 @@ export function DetailCanvas({
           <div
             className={clsx(
               'rounded-full border px-3 py-1.5 text-[11px] font-semibold shadow-[0_10px_20px_-18px_rgba(15,23,42,0.3)] transition-colors',
-              rootDrop.isOver
+              isRootDropOver
                 ? 'border-[color:var(--workspace-accent-border,#8fb0ff)] bg-[color:var(--workspace-accent-soft,rgba(49,98,255,0.12))] text-[color:var(--workspace-accent-strong,#3152c8)]'
                 : 'border-white/80 bg-white/88 text-slate-500',
             )}
           >
-            {rootDrop.isOver ? '释放到根画布' : '拖控件到画布或 GroupBox'}
+            {isRootDropOver ? '释放到根画布' : '拖控件到画布或 GroupBox'}
           </div>
         </div>
       ) : null}

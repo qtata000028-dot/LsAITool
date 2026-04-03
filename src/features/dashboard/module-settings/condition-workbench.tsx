@@ -431,7 +431,13 @@ export const MemoDocumentConditionWorkbench = React.memo(function DocumentCondit
   }, []);
 
   useEffect(() => {
-    clearConditionWorkbenchDragState();
+    const frameId = window.requestAnimationFrame(() => {
+      clearConditionWorkbenchDragState();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [clearConditionWorkbenchDragState, currentScope]);
 
   const updateConditionWorkbenchDropTarget = useCallback((nextTarget: { row: number; beforeId: string | null } | null) => {

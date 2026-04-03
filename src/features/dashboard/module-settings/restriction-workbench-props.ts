@@ -79,9 +79,8 @@ export function buildRestrictionWorkbenchProps(
 
   const handleDuplicateRestrictionItem = () => {
     if (input.restrictionActiveTab === 'guard' && selectedGuardRule) {
-      const { id, ...rest } = selectedGuardRule;
       const next = input.buildRestrictionMeasure(input.restrictionMeasures.length + 1, {
-        ...rest,
+        ...selectedGuardRule,
         description: `${selectedGuardRule.description || '限制措施'} 副本`,
         order: input.restrictionMeasures.length,
       });
@@ -90,9 +89,8 @@ export function buildRestrictionWorkbenchProps(
       return;
     }
     if (input.restrictionActiveTab === 'number' && selectedNumberRule) {
-      const { id, ...rest } = selectedNumberRule;
       const next = input.buildRestrictionNumberRule(input.restrictionNumberRules.length + 1, {
-        ...rest,
+        ...selectedNumberRule,
         sortOrder: input.restrictionNumberRules.length + 1,
       });
       input.setRestrictionNumberRules((prev) => [...prev, next]);
@@ -100,9 +98,8 @@ export function buildRestrictionWorkbenchProps(
       return;
     }
     if (input.restrictionActiveTab === 'structure' && selectedTopStructure) {
-      const { id, ...rest } = selectedTopStructure;
       const next = input.buildRestrictionTopStructure(input.restrictionTopStructures.length + 1, {
-        ...rest,
+        ...selectedTopStructure,
         tableDesc: `${selectedTopStructure.tableDesc || '结构'} 副本`,
         rowId: selectedTopStructure.rowId + 1,
       });
@@ -111,9 +108,8 @@ export function buildRestrictionWorkbenchProps(
       return;
     }
     if (input.restrictionActiveTab === 'process' && selectedProcessDesign) {
-      const { id, legacyFlowTypeId, planValue, ...rest } = selectedProcessDesign;
       const next = input.buildRestrictionProcessDesign(input.restrictionProcessDesigns.length + 1, {
-        ...rest,
+        ...selectedProcessDesign,
         legacyFlowTypeId: undefined,
         planValue: '',
         schemeName: `${selectedProcessDesign.schemeName || '流程方案'} 副本`,

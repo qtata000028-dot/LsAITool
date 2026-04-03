@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   createSingleTableModuleConfig,
@@ -30,23 +30,15 @@ export function useEnsureSingleTableModule({
   isActive,
   onShowToast,
 }: UseEnsureSingleTableModuleOptions) {
+  const moduleCode = useMemo(() => currentModuleCode.trim(), [currentModuleCode]);
+  const isReadyToEnsure = isActive && moduleCode.length > 0;
   const [state, setState] = useState<EnsureSingleTableModuleState>('idle');
   const [moduleConfig, setModuleConfig] = useState<SingleTableModuleConfigDto | null>(null);
   const ensuredModuleCodeRef = useRef<string>('');
 
   useEffect(() => {
-    if (!isActive) {
+    if (!isReadyToEnsure) {
       ensuredModuleCodeRef.current = '';
-      setState('idle');
-      setModuleConfig(null);
-      return;
-    }
-
-    const moduleCode = currentModuleCode.trim();
-    if (!moduleCode) {
-      ensuredModuleCodeRef.current = '';
-      setState('idle');
-      setModuleConfig(null);
       return;
     }
 
@@ -125,12 +117,15 @@ export function useEnsureSingleTableModule({
     return () => {
       isActiveRequest = false;
     };
-  }, [currentModuleCode, currentModuleName, isActive, onShowToast]);
+  }, [currentModuleName, isReadyToEnsure, moduleCode, onShowToast]);
+
+  const ensureState = isReadyToEnsure ? state : 'idle';
+  const resolvedModuleConfig = isReadyToEnsure ? moduleConfig : null;
 
   return {
-    ensureState: state,
-    isReady: state === 'ready',
-    isLoading: state === 'checking' || state === 'creating',
-    moduleConfig,
+    ensureState,
+    isReady: ensureState === 'ready',
+    isLoading: ensureState === 'checking' || ensureState === 'creating',
+    moduleConfig: resolvedModuleConfig,
   };
 }

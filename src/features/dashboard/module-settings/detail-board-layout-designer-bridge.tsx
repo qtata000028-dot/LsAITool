@@ -8,9 +8,7 @@ type DetailBoardLayoutDesignerBridgeProps = {
   emptyFieldsNode: React.ReactNode;
   normalizeColumn: (column: Record<string, any>) => Record<string, any>;
   onOpenDetailBoardPreview: (previewRows?: number, sortColumnId?: string | null) => void;
-  onShowToast: (message: string) => void;
   onUpdateDetailBoard: (patch: Record<string, any> | ((current: any) => any)) => void;
-  renderFieldPreview: (column: Record<string, any>, index: number, scope: string) => React.ReactNode;
   selectedDetailBoardGroupId: string | null;
   setSelectedDetailBoardGroupId: (groupId: string | null) => void;
 };
@@ -21,9 +19,7 @@ export const DetailBoardLayoutDesignerBridge = React.memo(function DetailBoardLa
   emptyFieldsNode,
   normalizeColumn,
   onOpenDetailBoardPreview,
-  onShowToast,
   onUpdateDetailBoard,
-  renderFieldPreview,
   selectedDetailBoardGroupId,
   setSelectedDetailBoardGroupId,
 }: DetailBoardLayoutDesignerBridgeProps) {

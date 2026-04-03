@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState, useTransition, type PointerEvent 
 import {
   buildDetailBoardGroup,
   createSuggestedDetailBoardGroups,
-  getDetailBoardGroupRows,
 } from './detail-board-config';
 
 type LayoutPresetKey = 'balanced' | 'dense' | 'guided';
@@ -364,7 +363,7 @@ function buildFlowRows(columnIds: string[], columnsPerRow: number) {
   };
 }
 
-function useStackedFieldPreview(field: PreviewFieldLayout) {
+function isStackedFieldPreview(field: PreviewFieldLayout) {
   return field.height >= (FIELD_HEIGHT_PRESETS[2]?.value ?? 132);
 }
 
@@ -559,13 +558,11 @@ function RangeField({
 export function LegacyDefinitionLayoutWorkbench({
   availableColumns,
   currentDetailBoard,
-  moduleCode: _moduleCode = '',
   normalizeColumn,
   onOpenPreview,
   onUpdateDetailBoard,
   selectedGroupId,
   setSelectedGroupId,
-  title: _title = '详情布局',
 }: LegacyDefinitionLayoutWorkbenchProps) {
   const defaultPreset = getPresetDefinition('balanced');
   const [selectedPreset, setSelectedPreset] = useState<LayoutPresetKey>(defaultPreset.key);
@@ -587,17 +584,21 @@ export function LegacyDefinitionLayoutWorkbench({
     startHeight: number;
     startY: number;
   }>(null);
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const normalizedFields = useMemo(
     () => buildNormalizedFields(availableColumns, normalizeColumn),
     [availableColumns, normalizeColumn],
   );
-  const groups = Array.isArray(currentDetailBoard?.groups) ? currentDetailBoard.groups : [];
-  const hiddenFieldIds = Array.isArray(currentDetailBoard?.hiddenColumnIds)
-    ? currentDetailBoard.hiddenColumnIds.map(String)
-    : [];
+  const groups = useMemo(
+    () => (Array.isArray(currentDetailBoard?.groups) ? currentDetailBoard.groups : []),
+    [currentDetailBoard],
+  );
+  const hiddenFieldIds = useMemo(
+    () => (Array.isArray(currentDetailBoard?.hiddenColumnIds) ? currentDetailBoard.hiddenColumnIds.map(String) : []),
+    [currentDetailBoard],
+  );
   const hiddenFieldIdSet = useMemo(
     () => new Set(hiddenFieldIds),
     [hiddenFieldIds],
@@ -623,33 +624,39 @@ export function LegacyDefinitionLayoutWorkbench({
     : (selectedGroupId && groupIdSet.has(selectedGroupId) ? selectedGroupId : (groupIds[0] ?? null));
 
   useEffect(() => {
-    if (groupIds.length === 0) {
-      if (selectedGroupId !== null) {
-        setSelectedGroupId(null);
-      }
-      if (pendingSelectedGroupId !== null) {
-        setPendingSelectedGroupId(null);
-      }
-      return;
-    }
-
-    if (pendingSelectedGroupId) {
-      if (groupIdSet.has(pendingSelectedGroupId)) {
-        if (selectedGroupId !== pendingSelectedGroupId) {
-          setSelectedGroupId(pendingSelectedGroupId);
+    const frameId = window.requestAnimationFrame(() => {
+      if (groupIds.length === 0) {
+        if (selectedGroupId !== null) {
+          setSelectedGroupId(null);
         }
-        setPendingSelectedGroupId(null);
+        if (pendingSelectedGroupId !== null) {
+          setPendingSelectedGroupId(null);
+        }
+        return;
       }
-      return;
-    }
 
-    const firstGroupId = groupIds[0] ?? null;
-    if (selectedGroupId && groupIdSet.has(selectedGroupId)) {
-      return;
-    }
-    if (selectedGroupId !== firstGroupId) {
-      setSelectedGroupId(firstGroupId);
-    }
+      if (pendingSelectedGroupId) {
+        if (groupIdSet.has(pendingSelectedGroupId)) {
+          if (selectedGroupId !== pendingSelectedGroupId) {
+            setSelectedGroupId(pendingSelectedGroupId);
+          }
+          setPendingSelectedGroupId(null);
+        }
+        return;
+      }
+
+      const firstGroupId = groupIds[0] ?? null;
+      if (selectedGroupId && groupIdSet.has(selectedGroupId)) {
+        return;
+      }
+      if (selectedGroupId !== firstGroupId) {
+        setSelectedGroupId(firstGroupId);
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [groupIdSet, groupIds, pendingSelectedGroupId, selectedGroupId, setSelectedGroupId]);
 
   const selectedGroup = groups.find((group: any) => group.id === activeGroupId) ?? null;
@@ -669,7 +676,10 @@ export function LegacyDefinitionLayoutWorkbench({
   const previewSelectedGroup = previewGroups.find((group) => group.id === activeGroupId) ?? previewGroups[0] ?? null;
   const lastGroup = previewGroups[previewGroups.length - 1] ?? null;
   const canvasHeight = lastGroup ? lastGroup.y + lastGroup.height + 28 : 420;
-  const selectedGroupFieldIds = Array.isArray(selectedGroup?.columnIds) ? selectedGroup.columnIds.map(String) : [];
+  const selectedGroupFieldIds = useMemo(
+    () => (Array.isArray(selectedGroup?.columnIds) ? selectedGroup.columnIds.map(String) : []),
+    [selectedGroup],
+  );
   const selectedGroupFields = selectedGroupFieldIds
     .map((fieldId) => fieldMap.get(fieldId))
     .filter(Boolean) as NormalizedLayoutField[];
@@ -689,16 +699,28 @@ export function LegacyDefinitionLayoutWorkbench({
   const previewSelectedField = previewSelectedGroup?.fields.find((field) => field.id === activeFieldId) ?? null;
 
   useEffect(() => {
-    if (activeFieldId !== selectedFieldId) {
-      setSelectedFieldId(activeFieldId);
-    }
+    const frameId = window.requestAnimationFrame(() => {
+      if (activeFieldId !== selectedFieldId) {
+        setSelectedFieldId(activeFieldId);
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [activeFieldId, selectedFieldId]);
 
   useEffect(() => {
-    setCheckedFieldIds((current) => {
-      const next = current.filter((fieldId) => selectedGroupFieldIds.includes(fieldId) || unassignedFieldIds.has(fieldId));
-      return next.length === current.length && next.every((fieldId, index) => fieldId === current[index]) ? current : next;
+    const frameId = window.requestAnimationFrame(() => {
+      setCheckedFieldIds((current) => {
+        const next = current.filter((fieldId) => selectedGroupFieldIds.includes(fieldId) || unassignedFieldIds.has(fieldId));
+        return next.length === current.length && next.every((fieldId, index) => fieldId === current[index]) ? current : next;
+      });
     });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [selectedGroupFieldIds, unassignedFieldIds]);
 
   const selectGroup = (groupId: string | null) => {
@@ -756,7 +778,7 @@ export function LegacyDefinitionLayoutWorkbench({
         y: 0,
       })
     : null;
-  const selectedFieldPreviewStacked = selectedFieldPreview ? useStackedFieldPreview(selectedFieldPreview) : false;
+  const selectedFieldPreviewStacked = selectedFieldPreview ? isStackedFieldPreview(selectedFieldPreview) : false;
   const selectedFieldControlHeight = selectedFieldPreview
     ? (
         selectedFieldPreviewStacked
@@ -764,9 +786,10 @@ export function LegacyDefinitionLayoutWorkbench({
           : Math.max(40, selectedFieldPreview.height - 16)
       )
     : 0;
+  const selectedGroupStableId = selectedGroup?.id ?? null;
 
   const handleUpdateFieldHeight = (fieldId: string, nextHeight: number) => {
-    if (!selectedGroup) {
+    if (!selectedGroupStableId) {
       return;
     }
 
@@ -776,7 +799,7 @@ export function LegacyDefinitionLayoutWorkbench({
       ...current,
       enabled: true,
       groups: (Array.isArray(current?.groups) ? current.groups : []).map((group: any) => {
-        if (group.id !== selectedGroup.id) {
+        if (group.id !== selectedGroupStableId) {
           return group;
         }
 
@@ -792,13 +815,35 @@ export function LegacyDefinitionLayoutWorkbench({
   };
 
   useEffect(() => {
-    if (!heightDragState || !selectedGroup) {
+    if (!heightDragState || !selectedGroupStableId) {
       return;
     }
 
     const handlePointerMove = (event: PointerEvent) => {
       const deltaY = event.clientY - heightDragState.startY;
-      handleUpdateFieldHeight(heightDragState.fieldId, heightDragState.startHeight + deltaY);
+      const nextHeight = clampValue(
+        Math.round(heightDragState.startHeight + deltaY),
+        FIELD_HEIGHT_MIN,
+        FIELD_HEIGHT_MAX,
+      );
+
+      onUpdateDetailBoard((current: any) => ({
+        ...current,
+        enabled: true,
+        groups: (Array.isArray(current?.groups) ? current.groups : []).map((group: any) => {
+          if (group.id !== selectedGroupStableId) {
+            return group;
+          }
+
+          return {
+            ...group,
+            columnHeights: {
+              ...(group?.columnHeights ?? {}),
+              [heightDragState.fieldId]: nextHeight,
+            },
+          };
+        }),
+      }));
     };
 
     const handlePointerUp = () => {
@@ -812,7 +857,7 @@ export function LegacyDefinitionLayoutWorkbench({
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [heightDragState, selectedGroup]);
+  }, [heightDragState, onUpdateDetailBoard, selectedGroupStableId]);
 
   useEffect(() => {
     if (!marqueeSelection || !canvasRef.current || !previewSelectedGroup) {
@@ -1491,7 +1536,7 @@ export function LegacyDefinitionLayoutWorkbench({
 
                     {group.fields.map((field) => (
                       (() => {
-                        const isStacked = useStackedFieldPreview(field);
+                        const isStacked = isStackedFieldPreview(field);
                         const isActiveField = activeFieldId === field.id && isActive;
                         const isCheckedField = isActive && checkedFieldIdSet.has(field.id);
                         const controlHeight = isStacked
