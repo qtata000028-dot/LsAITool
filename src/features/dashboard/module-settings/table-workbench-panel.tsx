@@ -41,7 +41,10 @@ export function TableWorkbenchPanel({
         </div>
       ) : null}
       <div
-        className={cn('scrollbar-none flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none dark:bg-slate-900/90', bodyClassName)}
+        className={cn(
+          'scrollbar-none flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none dark:bg-slate-900/90',
+          bodyClassName,
+        )}
         tabIndex={0}
         onPaste={onPaste}
         style={bodyStyle}

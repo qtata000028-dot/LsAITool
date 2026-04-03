@@ -1,5 +1,53 @@
 ﻿# 浠诲姟寰呭姙
 
+## 2026-04-03 GitHub 更新后冲突解决
+
+### Requirement Spec
+- 用户目标：解决本地在同步 GitHub 最新更新后产生的合并冲突，保留当前单表设计页与 inspector 收口改动，同时兼容上游新增的架构拆分。
+- 影响范围：当前 `git` 标记为冲突的 4 个文件：
+  - `src/components/Dashboard.tsx`
+  - `src/features/dashboard/module-settings/detail-workbench.tsx`
+  - `src/features/dashboard/module-settings/table-workbench-panel.tsx`
+  - `src/features/dashboard/table-builder/table-builder.tsx`
+- 关键约束：
+  - 先确认冲突块语义，再决定保留 `ours / theirs / merge`，不能机械选一边。
+  - 不回退最近已完成的单表设计页交互和 inspector 调整。
+  - 继续遵守 `docs/dashboard-architecture-rules.md`，避免把 feature 逻辑重新堆回 `Dashboard.tsx`。
+  - 合并后必须完成至少 `npm run lint` 与 `npm run build` 验证。
+- 不做什么：
+  - 不顺手清理本次冲突之外的大量非冲突文件。
+  - 不把“解决冲突”扩展成新的页面重构主题。
+- 成功标准：
+  - 4 个冲突文件全部清除冲突标记并通过类型检查/构建。
+  - 最近单表设计页相关行为不被误回退。
+
+### Checklist
+- [x] 回顾 `tasks/lessons.md` 与 Dashboard 架构约束。
+- [x] 更新本轮任务文档。
+- [x] 逐个分析 4 个冲突文件的冲突块与上下文。
+- [x] 完成冲突合并并清除标记。
+- [x] 运行 `npm run lint`。
+- [x] 运行 `npm run build`。
+
+### Progress
+- [x] 已确认当前仅有 4 个冲突文件需要处理。
+- [x] 已确认本轮重点是保住最近单表设计页、明细 workbench 和 inspector 收口行为，同时兼容上游大规模架构拆分。
+- [x] 已确认 `Dashboard.tsx` 的冲突本质是“本地旧内联逻辑”与“上游 hook/runtime 抽离”的冲突，最终按上游抽离结构合并。
+- [x] 已确认 `table-builder.tsx` 的冲突本质是“旧拖拽/旧预览头实现”与“上游新的 rc-table + Resizable 预览链”的冲突，最终保留上游实现并兼容当前调用方仍传入的 `startResize` prop。
+- [x] 已处理本地依赖滞后问题：合并后 `lint` 脚本已切换为 `eslint .`，因此先执行 `npm install` 同步新增 devDependencies，再做验证。
+
+### Verification
+- `npm install`：通过。用于同步合并后新增的 `eslint` 等 devDependencies，本地旧 `node_modules` 中原本缺少可执行 `eslint`。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- `npm run build`：通过。
+
+### Result Notes
+- `src/components/Dashboard.tsx`：保留上游 `useDashboardDetailBoardActions` 和 table-builder runtime builder 的装配方式，避免把已抽出的 detail board 行为又并回旧内联实现。
+- `src/features/dashboard/module-settings/detail-workbench.tsx`：保留最近单表设计页要求的明细页签点击同步、tab 头右侧新增按钮和紧凑布局，同时采用上游抽出的 `getDetailFillTypeBadgeMeta`。
+- `src/features/dashboard/module-settings/table-workbench-panel.tsx`：冲突仅在格式与新增文件归属，已收敛为当前共享 panel 版本。
+- `src/features/dashboard/table-builder/table-builder.tsx`：保留上游新的预览表头/列宽实现、动态测量和 `Resizable` 链路，同时兼容现有 renderer/runtime 仍传入的 `startResize` prop，避免连带改动更多非冲突文件。
+
 ## 2026-04-02 单表设计页工作台按钮与页签交互收口
 
 ### Requirement Spec

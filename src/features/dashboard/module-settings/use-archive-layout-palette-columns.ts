@@ -42,6 +42,7 @@ export function useArchiveLayoutPaletteColumns({
 }: UseArchiveLayoutPaletteColumnsOptions) {
   const [designerPayload, setDesignerPayload] = useState<ArchiveLayoutDesignerPayload | null>(null);
   const loadTokenRef = useRef<string | null>(null);
+  const requestedModuleCodeRef = useRef<string>('');
   const onShowToastRef = useRef(onShowToast);
   const onUpdateDetailBoardRef = useRef(onUpdateDetailBoard);
 
@@ -53,24 +54,17 @@ export function useArchiveLayoutPaletteColumns({
     onUpdateDetailBoardRef.current = onUpdateDetailBoard;
   }, [onUpdateDetailBoard]);
 
-  useEffect(() => {
-    if (!isOpen) {
-      loadTokenRef.current = null;
-      setDesignerPayload(null);
-    }
-  }, [isOpen]);
+  const moduleCode = currentModuleCode.trim();
+  const shouldLoadDesigner = isOpen && Boolean(moduleCode);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!shouldLoadDesigner) {
+      loadTokenRef.current = null;
+      requestedModuleCodeRef.current = '';
       return;
     }
 
-    const moduleCode = currentModuleCode.trim();
-    if (!moduleCode) {
-      loadTokenRef.current = null;
-      setDesignerPayload(null);
-      return;
-    }
+    requestedModuleCodeRef.current = moduleCode;
 
     let isActive = true;
 
@@ -110,31 +104,43 @@ export function useArchiveLayoutPaletteColumns({
     return () => {
       isActive = false;
     };
-  }, [currentModuleCode, isOpen]);
+  }, [moduleCode, shouldLoadDesigner]);
+
+  const effectiveDesignerPayload = useMemo(() => {
+    if (!shouldLoadDesigner) {
+      return null;
+    }
+
+    if (designerPayload?.moduleCode === moduleCode) {
+      return designerPayload;
+    }
+
+    return null;
+  }, [designerPayload, moduleCode, shouldLoadDesigner]);
 
   const designerState = useMemo(() => {
-    if (!designerPayload) {
+    if (!effectiveDesignerPayload) {
       return null;
     }
 
     return buildArchiveLayoutDesignerState(
-      designerPayload.moduleCode,
-      designerPayload.controlRows,
-      designerPayload.groupRows,
-      designerPayload.layoutRows,
+      effectiveDesignerPayload.moduleCode,
+      effectiveDesignerPayload.controlRows,
+      effectiveDesignerPayload.groupRows,
+      effectiveDesignerPayload.layoutRows,
       mainTableColumns,
     );
-  }, [designerPayload, mainTableColumns]);
+  }, [effectiveDesignerPayload, mainTableColumns]);
 
   useEffect(() => {
-    if (!isOpen || !designerState || !designerPayload) {
+    if (!isOpen || !designerState || !effectiveDesignerPayload) {
       return;
     }
 
     onUpdateDetailBoardRef.current((current: any) => {
       const hasSameModuleDirtyLayout = Boolean(
         current?.archiveLayoutDirty
-        && current?.archiveLayoutSource?.moduleCode === designerPayload.moduleCode,
+        && current?.archiveLayoutSource?.moduleCode === effectiveDesignerPayload.moduleCode,
       );
 
       if (hasSameModuleDirtyLayout) {
@@ -146,7 +152,7 @@ export function useArchiveLayoutPaletteColumns({
         ...designerState.detailBoardPatch,
       };
     });
-  }, [designerPayload, designerState, isOpen]);
+  }, [effectiveDesignerPayload, designerState, isOpen]);
 
   return useMemo(
     () => (designerState?.mappedColumns && designerState.mappedColumns.length > 0 ? designerState.mappedColumns : mainTableColumns),

@@ -55,6 +55,25 @@ export function DetailLayoutDesigner({
     defaultDocument,
     mode,
   });
+  const {
+    addItem,
+    beginDragging,
+    beginResizing,
+    clearSelection,
+    commitItemRect,
+    deleteSelectedItem,
+    document: layoutDocument,
+    endInteraction,
+    history,
+    replaceDocument,
+    selectItem,
+    selectedId,
+    selectedItem,
+    setActiveParentId,
+    setHoveringId,
+    ui,
+    updateSelectedItem,
+  } = layoutState;
   const onDocumentChangeRef = useRef(onDocumentChange);
   const onSelectedItemChangeRef = useRef(onSelectedItemChange);
 
@@ -85,15 +104,15 @@ export function DetailLayoutDesigner({
         return;
       }
 
-      if ((event.key === 'Delete' || event.key === 'Backspace') && layoutState.selectedId) {
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedId) {
         event.preventDefault();
-        layoutState.deleteSelectedItem();
+        deleteSelectedItem();
         return;
       }
 
-      if (event.key === 'Escape' && layoutState.selectedId) {
+      if (event.key === 'Escape' && selectedId) {
         event.preventDefault();
-        layoutState.clearSelection();
+        clearSelection();
       }
     };
 
@@ -101,47 +120,47 @@ export function DetailLayoutDesigner({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [layoutState.clearSelection, layoutState.deleteSelectedItem, layoutState.selectedId, mode]);
+  }, [clearSelection, deleteSelectedItem, mode, selectedId]);
 
   useEffect(() => {
-    if (document && !areDetailLayoutDocumentsEqual(document, layoutState.document)) {
-      layoutState.replaceDocument(document);
+    if (document && !areDetailLayoutDocumentsEqual(document, layoutDocument)) {
+      replaceDocument(document);
     }
-  }, [document, layoutState.document, layoutState.replaceDocument]);
+  }, [document, layoutDocument, replaceDocument]);
 
   useEffect(() => {
-    onSelectedItemChangeRef.current?.(layoutState.selectedItem);
-  }, [layoutState.selectedItem]);
+    onSelectedItemChangeRef.current?.(selectedItem);
+  }, [selectedItem]);
 
   const handleAddPaletteItem = (paletteItem: DetailLayoutPaletteItem) => {
-    layoutState.addItem(paletteItem.type, paletteItem.template);
+    addItem(paletteItem.type, paletteItem.template);
   };
   const resolvedToolbarActions = typeof toolbarActions === 'function'
     ? toolbarActions({
         addPaletteItem: handleAddPaletteItem,
-        itemCount: layoutState.document.items.length,
-        selectedId: layoutState.selectedId,
-        selectedItem: layoutState.selectedItem,
+        itemCount: layoutDocument.items.length,
+        selectedId,
+        selectedItem,
       })
     : toolbarActions;
 
   const detailDnD = useDetailDnD({
     enabled: mode === 'design',
-    gridSize: layoutState.document.gridSize,
+    gridSize: layoutDocument.gridSize,
     mode,
     onAddItem: (paletteItem, overrides) => {
-      layoutState.addItem(paletteItem.type, {
+      addItem(paletteItem.type, {
         ...(paletteItem.template ?? {}),
         ...(overrides ?? {}),
       });
     },
-    onSetActiveParentId: layoutState.setActiveParentId,
-    onSetHoveringId: layoutState.setHoveringId,
+    onSetActiveParentId: setActiveParentId,
+    onSetHoveringId: setHoveringId,
   });
 
   useEffect(() => {
-    onDocumentChangeRef.current?.(layoutState.document);
-  }, [layoutState.document]);
+    onDocumentChangeRef.current?.(layoutDocument);
+  }, [layoutDocument]);
 
   return (
     <DndContext
@@ -167,12 +186,12 @@ export function DetailLayoutDesigner({
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Designer</div>
                 <div className="mt-1 text-sm font-semibold text-slate-900">
-                  画布控件 {layoutState.document.items.length} 个
+                  画布控件 {layoutDocument.items.length} 个
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
                   {detailDnD.activePaletteType
                     ? `正在拖入：${DETAIL_LAYOUT_REGISTRY[detailDnD.activePaletteType].label}`
-                    : layoutState.ui.draggingId || layoutState.ui.resizingId
+                    : ui.draggingId || ui.resizingId
                       ? '正在编辑控件位置或尺寸'
                       : '点击控件后，在右侧统一调整标题、绑定和尺寸'}
                 </div>
@@ -186,24 +205,24 @@ export function DetailLayoutDesigner({
                 {resolvedToolbarActions}
                 <button
                   className="rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-xs font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={!layoutState.history.canUndo}
-                  onClick={layoutState.history.undo}
+                  disabled={!history.canUndo}
+                  onClick={history.undo}
                   type="button"
                 >
                   撤销
                 </button>
                 <button
                   className="rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-xs font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={!layoutState.history.canRedo}
-                  onClick={layoutState.history.redo}
+                  disabled={!history.canRedo}
+                  onClick={history.redo}
                   type="button"
                 >
                   重做
                 </button>
                 <button
                   className="rounded-xl border border-rose-200/80 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={!layoutState.selectedId}
-                  onClick={layoutState.deleteSelectedItem}
+                  disabled={!selectedId}
+                  onClick={deleteSelectedItem}
                   type="button"
                 >
                   删除选中
@@ -213,18 +232,18 @@ export function DetailLayoutDesigner({
 
             <DetailCanvas
               className="min-h-[720px] flex-1"
-              document={layoutState.document}
-              draggingId={layoutState.ui.draggingId}
-              hoveringId={layoutState.ui.hoveringId}
-              mode={layoutState.ui.mode}
-              onBeginDragging={layoutState.beginDragging}
-              onBeginResizing={layoutState.beginResizing}
-              onCommitItemRect={layoutState.commitItemRect}
-              onEndInteraction={layoutState.endInteraction}
+              document={layoutDocument}
+              draggingId={ui.draggingId}
+              hoveringId={ui.hoveringId}
+              mode={ui.mode}
+              onBeginDragging={beginDragging}
+              onBeginResizing={beginResizing}
+              onCommitItemRect={commitItemRect}
+              onEndInteraction={endInteraction}
               renderItemContent={renderItemContent}
-              resizingId={layoutState.ui.resizingId}
-              onSelectItem={layoutState.selectItem}
-              selectedId={layoutState.selectedId}
+              resizingId={ui.resizingId}
+              onSelectItem={selectItem}
+              selectedId={selectedId}
             />
           </div>
 
@@ -233,9 +252,9 @@ export function DetailLayoutDesigner({
             allowParentIdEdit={allowParentIdEdit}
             className="min-h-0"
             fieldOptions={fieldOptions}
-            item={layoutState.selectedItem}
-            mode={layoutState.ui.mode}
-            onChange={layoutState.updateSelectedItem}
+            item={selectedItem}
+            mode={ui.mode}
+            onChange={updateSelectedItem}
           />
         </div>
       </section>

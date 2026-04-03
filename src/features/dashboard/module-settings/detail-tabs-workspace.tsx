@@ -1,20 +1,8 @@
 import React from 'react';
 import { Button, Empty, Flex, Typography } from 'antd';
 
+import { getDetailFillTypePlaceholderMeta } from './dashboard-detail-fill-utils';
 import { MemoDetailTabStrip } from './detail-workbench';
-
-function getDetailFillTypeMeta(fillType?: string) {
-  switch (fillType) {
-    case '树表格':
-      return { label: '树表格', actionLabel: '配置树表格' };
-    case '图表':
-      return { label: '图表', actionLabel: '配置图表' };
-    case '网页':
-      return { label: '网页', actionLabel: '配置网页' };
-    default:
-      return { label: '表格', actionLabel: '配置明细表格' };
-  }
-}
 
 type DetailTab = {
   id: string;
@@ -32,7 +20,7 @@ export function DetailFillPlaceholder({
   isSelected,
   onActivate,
 }: DetailFillPlaceholderProps) {
-  const fillTypeMeta = getDetailFillTypeMeta(currentDetailFillType);
+  const fillTypeMeta = getDetailFillTypePlaceholderMeta(currentDetailFillType);
 
   return (
     <div

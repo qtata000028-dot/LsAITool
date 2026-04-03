@@ -127,12 +127,14 @@ export function useModuleIntroEditor({
     });
   }, [ensureModuleIntroImageStructure]);
 
-  const clearModuleIntroImageSelection = useCallback(() => {
+  const clearModuleIntroImageSelection = useCallback((shouldSyncWidth = true) => {
     if (moduleIntroSelectedImageRef.current) {
       moduleIntroSelectedImageRef.current.dataset.selected = 'false';
     }
     moduleIntroSelectedImageRef.current = null;
-    setModuleIntroSelectedImageWidth(null);
+    if (shouldSyncWidth) {
+      setModuleIntroSelectedImageWidth(null);
+    }
   }, []);
 
   const syncModuleIntroSelectedImageWidth = useCallback(() => {
@@ -386,20 +388,22 @@ export function useModuleIntroEditor({
     clearModuleIntroImageSelection();
   }, [clearModuleIntroImageSelection, selectModuleIntroImage]);
 
-  useEffect(() => {
-    if (isActive) return;
-    setIsFullscreenEditor(false);
-    moduleIntroImageResizeRef.current = null;
-    clearModuleIntroImageSelection();
-  }, [clearModuleIntroImageSelection, isActive]);
+  const isFullscreenEditorEnabled = isActive && isFullscreenEditor;
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive) {
+      moduleIntroImageResizeRef.current = null;
+      const frameId = window.requestAnimationFrame(() => {
+        clearModuleIntroImageSelection(false);
+        setModuleIntroSelectedImageWidth(null);
+      });
+      return () => window.cancelAnimationFrame(frameId);
+    }
     const frameId = window.requestAnimationFrame(() => {
       hydrateModuleIntroEditor();
     });
     return () => window.cancelAnimationFrame(frameId);
-  }, [hydrateModuleIntroEditor, isActive, isFullscreenEditor]);
+  }, [clearModuleIntroImageSelection, hydrateModuleIntroEditor, isActive, isFullscreenEditorEnabled]);
 
   useEffect(() => {
     const handleSelectionChange = () => {
@@ -430,7 +434,7 @@ export function useModuleIntroEditor({
   }, [applyModuleIntroImageWidth, syncModuleIntroDraft]);
 
   return {
-    isFullscreenEditor,
+    isFullscreenEditor: isFullscreenEditorEnabled,
     moduleIntroActions: {
       onApplyCommand: applyModuleIntroCommand,
       onEditorMouseDown: handleModuleIntroEditorMouseDown,

@@ -3,6 +3,28 @@ import path from 'node:path';
 import vue from '@vitejs/plugin-vue';
 import AutoImport from 'unplugin-auto-import/vite';
 
+function buildManualChunks(id: string) {
+  if (!id.includes('node_modules')) {
+    return undefined;
+  }
+
+  const normalizedId = id.replace(/\\/g, '/');
+
+  if (/\/node_modules\/(vue|@vue)\//.test(normalizedId)) {
+    return 'vue-vendor';
+  }
+
+  if (/\/node_modules\/(element-plus|@element-plus)\//.test(normalizedId)) {
+    return 'element-plus-vendor';
+  }
+
+  if (/\/node_modules\/lodash-es\//.test(normalizedId)) {
+    return 'lodash-vendor';
+  }
+
+  return 'vendor';
+}
+
 export default defineConfig(({ mode }) => {
   const envRoot = path.resolve(__dirname, '../..');
   const rootEnv = loadEnv(mode, envRoot, '');
@@ -29,6 +51,13 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, 'src'),
+      },
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: buildManualChunks,
+        },
       },
     },
     server: {

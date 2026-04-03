@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import type { DetailLayoutItem, DetailLayoutSelectionState } from '../types';
 
@@ -6,22 +6,20 @@ export function useDetailSelection(items: DetailLayoutItem[], initialSelectedId:
   const [selection, setSelection] = useState<DetailLayoutSelectionState>({
     selectedId: initialSelectedId,
   });
+  const selectedId = useMemo(() => {
+    if (!selection.selectedId) {
+      return null;
+    }
+
+    return items.some((item) => item.id === selection.selectedId)
+      ? selection.selectedId
+      : null;
+  }, [items, selection.selectedId]);
 
   const selectedItem = useMemo(
-    () => items.find((item) => item.id === selection.selectedId) ?? null,
-    [items, selection.selectedId],
+    () => items.find((item) => item.id === selectedId) ?? null,
+    [items, selectedId],
   );
-
-  useEffect(() => {
-    if (!selection.selectedId) {
-      return;
-    }
-
-    const stillExists = items.some((item) => item.id === selection.selectedId);
-    if (!stillExists) {
-      setSelection({ selectedId: null });
-    }
-  }, [items, selection.selectedId]);
 
   const selectItem = useCallback((itemId: string | null) => {
     setSelection({ selectedId: itemId });
@@ -32,7 +30,7 @@ export function useDetailSelection(items: DetailLayoutItem[], initialSelectedId:
   }, []);
 
   return {
-    selectedId: selection.selectedId,
+    selectedId,
     selectedItem,
     clearSelection,
     selectItem,

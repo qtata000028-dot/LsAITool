@@ -2,11 +2,9 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  type DragCancelEvent,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
-  type UniqueIdentifier,
 } from '@dnd-kit/core';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -160,7 +158,7 @@ export function useDetailDnD(options: UseDetailDnDOptions) {
     clearDnDState(setActivePaletteType, options.onSetActiveParentId, options.onSetHoveringId);
   }, [enabled, options]);
 
-  const onDragCancel = useCallback((_event: DragCancelEvent) => {
+  const onDragCancel = useCallback(() => {
     clearDnDState(setActivePaletteType, options.onSetActiveParentId, options.onSetHoveringId);
   }, [options]);
 

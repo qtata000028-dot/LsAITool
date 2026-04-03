@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../../../lib/utils';
 import { type ProcessDesignerDocument, type ProcessDesignerEdge, type ProcessDesignerNode, getProcessDesignerCanvasSize } from './process-designer-types';
 
@@ -42,7 +42,6 @@ const EDGE_PRESETS = [
 const createId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 const createEdge = (sourceNodeId: string, targetNodeId: string, properties: ProcessDesignerEdge['properties'] = {}): ProcessDesignerEdge => ({ id: createId('edge'), type: 'sequence-flow', sourceNodeId, targetNodeId, properties });
 const nextStepCode = (doc: ProcessDesignerDocument) => ((Math.max(0, ...doc.nodes.map((node) => node.properties.stepCode ?? 0))) + 100);
-const isTextInputTarget = (target: EventTarget | null) => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable);
 
 function createTaskNode(type: 'user-task' | 'approver-task', textValue: string, x: number, y: number, stepCode: number): ProcessDesignerNode {
   const isUserTask = type === 'user-task';
@@ -124,75 +123,90 @@ export function ProcessDesignerStudio({ className, onToast, onChange, value }: P
   const selectedEdge = useMemo(() => value.edges.find((edge) => edge.id === selectedEdgeId) ?? null, [selectedEdgeId, value.edges]);
   const canvasSize = useMemo(() => getProcessDesignerCanvasSize(value), [value]);
 
-  const closeDrawer = () => { setSelectedNodeId(null); setSelectedEdgeId(null); };
-  const getCanvasPoint = (clientX: number, clientY: number) => {
+  const closeDrawer = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+  }, []);
+  const getCanvasPoint = useCallback((clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     const viewport = viewportRef.current;
     if (!rect || !viewport) return { x: clientX, y: clientY };
     return { x: clientX - rect.left + viewport.scrollLeft, y: clientY - rect.top + viewport.scrollTop };
-  };
+  }, []);
 
-  const updateNode = (nodeId: string, patch: Partial<Omit<ProcessDesignerNode, 'properties'>> & { properties?: Partial<ProcessDesignerNode['properties']> }) => onChange({ ...value, nodes: value.nodes.map((node) => node.id === nodeId ? { ...node, ...patch, properties: { ...node.properties, ...(patch.properties ?? {}) } } : node) });
-  const updateEdge = (edgeId: string, patch: Partial<Omit<ProcessDesignerEdge, 'properties'>> & { properties?: Partial<ProcessDesignerEdge['properties']> }) => onChange({ ...value, edges: value.edges.map((edge) => edge.id === edgeId ? { ...edge, ...patch, properties: { ...edge.properties, ...(patch.properties ?? {}) } } : edge) });
+  const updateNode = (nodeId: string, patch: Partial<Omit<ProcessDesignerNode, 'properties'>> & { properties?: Partial<ProcessDesignerNode['properties']> }) => onChange({ ...value, nodes: value.nodes.map((node) => (node.id === nodeId ? { ...node, ...patch, properties: { ...node.properties, ...(patch.properties ?? {}) } } : node)) });
+  const updateEdge = (edgeId: string, patch: Partial<Omit<ProcessDesignerEdge, 'properties'>> & { properties?: Partial<ProcessDesignerEdge['properties']> }) => onChange({ ...value, edges: value.edges.map((edge) => (edge.id === edgeId ? { ...edge, ...patch, properties: { ...edge.properties, ...(patch.properties ?? {}) } } : edge)) });
 
-  const deleteNode = (nodeId: string) => {
+  const deleteNode = useCallback((nodeId: string) => {
     const currentNode = value.nodes.find((node) => node.id === nodeId);
     if (!currentNode) return;
-    if (currentNode.type === 'start-node' || currentNode.type === 'end-node') { onToast?.('开始和结束节点暂不允许删除。'); return; }
+    if (currentNode.type === 'start-node' || currentNode.type === 'end-node') {
+      onToast?.('开始和结束节点暂不允许删除。');
+      return;
+    }
     const next = reconnectAfterNodeDelete(value, nodeId);
-    onChange({ ...value, nodes: next.nodes, edges: next.edges });
+    const nextValue = { ...value, nodes: next.nodes, edges: next.edges };
+    onChange(nextValue);
     closeDrawer();
     setInsertMenu(null);
     onToast?.('已删除节点。');
-  };
+  }, [closeDrawer, onChange, onToast, value]);
 
-  const deleteEdge = (edgeId: string) => {
-    onChange({ ...value, edges: value.edges.filter((edge) => edge.id !== edgeId) });
+  const deleteEdge = useCallback((edgeId: string) => {
+    const nextValue = { ...value, edges: value.edges.filter((edge) => edge.id !== edgeId) };
+    onChange(nextValue);
     setSelectedEdgeId(null);
     setInsertMenu(null);
     onToast?.('已删除连线。');
-  };
+  }, [onChange, onToast, value]);
 
-  const insertAfterNode = (nodeId: string, kind: 'approver' | 'branch' | 'parallel') => {
+  const insertByKind = useCallback((kind: 'approver' | 'branch' | 'parallel', edgeId: string) => {
+    const inserted = kind === 'approver' ? insertApproval(value, edgeId) : kind === 'branch' ? insertBranch(value, edgeId) : insertParallel(value, edgeId);
+    if (!inserted) {
+      onToast?.('当前连线无法插入新的流程节点。');
+      return;
+    }
+    const nextValue = { ...value, nodes: inserted.nodes, edges: inserted.edges };
+    onChange(nextValue);
+    setSelectedNodeId(inserted.selectedNodeId);
+    setSelectedEdgeId(null);
+    setInsertMenu(null);
+    onToast?.(kind === 'approver' ? '已插入审批节点。' : kind === 'branch' ? '已插入条件分支。' : '已插入并行会签。');
+  }, [onChange, onToast, value]);
+
+  const insertAfterNode = useCallback((nodeId: string, kind: 'approver' | 'branch' | 'parallel') => {
     const outgoing = value.edges.filter((edge) => edge.sourceNodeId === nodeId);
     if (outgoing.length !== 1) {
       onToast?.('当前节点不是单出口，暂时不能直接从节点工具条插入。');
       return;
     }
     insertByKind(kind, outgoing[0].id);
-  };
+  }, [insertByKind, onToast, value]);
 
   useEffect(() => {
     if (!dragState) return undefined;
     const handleMouseMove = (event: MouseEvent) => {
       const point = getCanvasPoint(event.clientX, event.clientY);
-      onChange({ ...value, nodes: value.nodes.map((node) => node.id === dragState.nodeId ? { ...node, properties: { ...node.properties, x: Math.max(MIN_POS, Math.round(point.x - dragState.offsetX)), y: Math.max(MIN_POS, Math.round(point.y - dragState.offsetY)) } } : node) });
+      const nextNodes = value.nodes.map((node) => (node.id === dragState.nodeId ? {
+        ...node,
+        properties: {
+          ...node.properties,
+          x: Math.max(MIN_POS, Math.round(point.x - dragState.offsetX)),
+          y: Math.max(MIN_POS, Math.round(point.y - dragState.offsetY)),
+        },
+      } : node));
+      onChange({ ...value, nodes: nextNodes });
     };
     const handleMouseUp = () => setDragState(null);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-    return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp); };
-  }, [dragState, onChange, value]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.key !== 'Delete' && event.key !== 'Backspace') || isTextInputTarget(event.target)) return;
-      if (selectedNodeId) { event.preventDefault(); deleteNode(selectedNodeId); return; }
-      if (selectedEdgeId) { event.preventDefault(); deleteEdge(selectedEdgeId); }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, selectedEdgeId, value]);
+  }, [dragState, getCanvasPoint, onChange, value]);
 
-  const insertByKind = (kind: 'approver' | 'branch' | 'parallel', edgeId: string) => {
-    const inserted = kind === 'approver' ? insertApproval(value, edgeId) : kind === 'branch' ? insertBranch(value, edgeId) : insertParallel(value, edgeId);
-    if (!inserted) { onToast?.('当前连线无法插入新的流程节点。'); return; }
-    onChange({ ...value, nodes: inserted.nodes, edges: inserted.edges });
-    setSelectedNodeId(inserted.selectedNodeId);
-    setSelectedEdgeId(null);
-    setInsertMenu(null);
-    onToast?.(kind === 'approver' ? '已插入审批节点。' : kind === 'branch' ? '已插入条件分支。' : '已插入并行会签。');
-  };
+
 
   return (
     <section className={cn('relative min-h-0 overflow-hidden rounded-[24px] border border-slate-200/80 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_45%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-4 shadow-sm dark:border-slate-700 dark:bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.16),transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(15,23,42,0.92))]', className)}>

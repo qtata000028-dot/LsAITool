@@ -17,7 +17,7 @@ export const DESIGN_FIXED_ROUTE_META: readonly DesignRouteMeta[] = [
       'Continue reducing orchestration logic inside Dashboard.tsx.',
       'Use this route as the compatibility entry while feature pages are carved out.',
     ],
-    summary: '旧工作区兼容入口，仅用于保留历史路由。',
+    summary: '通过 Design 平台迁移壳承接旧 Dashboard，统一入口状态与遗留工作台边界。',
     title: '旧工作区',
   },
   {

@@ -132,7 +132,7 @@ export function useBillHeaderWorkbench({
   ) => {
     const metaIdSet = new Set(billMetaFields.map((field) => field.id));
     const currentFields = getOrderedBillHeaderFields(billMetaFields, mainTableColumns, rowCount)
-      .map(({ __scope, ...field }) => ({ ...field }));
+      .map(({ ...field }) => ({ ...field }));
     const nextRaw = typeof updater === 'function' ? updater(currentFields) : updater;
     const nextFields = nextRaw.map((field, index) => {
       const normalized = normalizeColumn(field);

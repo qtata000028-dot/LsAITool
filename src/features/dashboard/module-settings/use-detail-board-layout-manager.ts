@@ -123,7 +123,6 @@ export function useDetailBoardLayoutManager({
     onShowToast('已应用推荐详情分组布局');
   }, [
     availableGridColumns,
-    createSuggestedDetailBoardGroups,
     currentDetailBoard,
     onShowToast,
     onUpdateDetailBoard,
@@ -166,7 +165,6 @@ export function useDetailBoardLayoutManager({
   }, [
     availableGridColumns,
     currentDetailBoard.groups,
-    getDetailBoardGroupRows,
     onResetMainSelection,
     onShowToast,
     updateDetailGroup,
@@ -233,7 +231,6 @@ export function useDetailBoardLayoutManager({
       ),
     }));
   }, [
-    getDetailBoardGroupColumnRow,
     selectedDetailGroup,
     updateDetailGroup,
   ]);
@@ -269,7 +266,7 @@ export function useDetailBoardLayoutManager({
         },
       };
     });
-  }, [getDetailBoardGroupColumnRow, getDetailBoardGroupRows, updateDetailGroup]);
+  }, [updateDetailGroup]);
 
   const clearDetailBoardWorkbenchDragState = useCallback(() => {
     setDetailBoardWorkbenchDrag(null);

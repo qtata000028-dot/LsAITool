@@ -128,7 +128,11 @@ function isBillHeaderRowDragData(value: unknown): value is BillHeaderRowDragData
 
 export function BillDocumentWorkbench({
   state,
-  refs,
+  refs: {
+    billDocumentPaperRef,
+    billDocumentViewportRef,
+    billHeaderCanvasRef,
+  },
   nodes,
   actions,
   helpers,
@@ -195,7 +199,7 @@ export function BillDocumentWorkbench({
     }
   };
 
-  const handleBillFieldSelect = (event: React.MouseEvent<HTMLDivElement>, columnId: string, scope: BillCanvasFieldScope) => {
+  const handleBillFieldSelect = (event: React.MouseEvent<HTMLDivElement>, columnId: string) => {
     actions.setBuilderSelectionContextMenu(null);
     if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
@@ -208,7 +212,7 @@ export function BillDocumentWorkbench({
     actions.activateColumnSelection('main', columnId);
   };
 
-  const handleBillFieldContextMenu = (event: React.MouseEvent<HTMLDivElement>, columnId: string, scope: BillCanvasFieldScope) => {
+  const handleBillFieldContextMenu = (event: React.MouseEvent<HTMLDivElement>, columnId: string) => {
     event.preventDefault();
     event.stopPropagation();
     const nextSelectedIds = buildSelectedIds(columnId, event.ctrlKey || event.metaKey);
@@ -381,10 +385,10 @@ export function BillDocumentWorkbench({
       className={`flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-slate-50/55 ${state.isConfigFullscreenActive ? 'shadow-none' : 'shadow-[0_28px_64px_-48px_rgba(15,23,42,0.22)]'} ${state.workspaceThemeTableSurfaceClass}`}
     >
       {billHeaderRuntimeRules ? <style>{billHeaderRuntimeRules}</style> : null}
-      <div ref={refs.billDocumentViewportRef} className={`min-h-0 flex-1 overflow-hidden ${billViewportPaddingClass}`}>
+      <div ref={billDocumentViewportRef} className={`min-h-0 flex-1 overflow-hidden ${billViewportPaddingClass}`}>
         <div className={`flex h-full min-h-0 items-stretch overflow-hidden ${billPaperWrapClass}`}>
           <div
-            ref={refs.billDocumentPaperRef}
+            ref={billDocumentPaperRef}
             className="flex h-full min-h-full w-full shrink-0 flex-col max-w-none"
             style={{ zoom: state.billDocumentScale } as React.CSSProperties}
           >
@@ -437,7 +441,7 @@ export function BillDocumentWorkbench({
               <div className={`flex min-h-0 flex-1 ${billBodyPaddingClass}`}>
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                   <div
-                    ref={refs.billHeaderCanvasRef}
+                    ref={billHeaderCanvasRef}
                     tabIndex={0}
                     style={{ ...documentGuideStyle, minHeight: headerWorkbenchHeight }}
                     onClick={() => {
@@ -515,9 +519,9 @@ export function BillDocumentWorkbench({
                                           }}
                                           onClick={(event: React.MouseEvent<HTMLDivElement>) => {
                                             event.stopPropagation();
-                                            handleBillFieldSelect(event, column.id, columnScope);
+                                            handleBillFieldSelect(event, column.id);
                                           }}
-                                          onContextMenu={(event: React.MouseEvent<HTMLDivElement>) => handleBillFieldContextMenu(event, column.id, columnScope)}
+                                          onContextMenu={(event: React.MouseEvent<HTMLDivElement>) => handleBillFieldContextMenu(event, column.id)}
                                           onKeyDown={(event: React.KeyboardEvent<HTMLDivElement>) => {
                                             if (event.key === 'Enter' || event.key === ' ') {
                                               event.preventDefault();

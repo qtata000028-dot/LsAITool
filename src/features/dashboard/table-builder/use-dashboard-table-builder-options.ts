@@ -89,7 +89,7 @@ export function useDashboardTableBuilderOptions({
   setSelectedArchiveNodeId,
   showDetailGridActionBar,
 }: UseDashboardTableBuilderOptionsParams) {
-  const activeDetailTableColumns = detailTableColumns[activeTab] || [];
+  const activeDetailTableColumns = useMemo(() => detailTableColumns[activeTab] || [], [activeTab, detailTableColumns]);
   const activeDetailTableConfig = detailTableConfigs[activeTab];
   const isDetailGridTableSelected = selectedTableConfigScope === 'detail' && inspectorTargetId === '表格';
 

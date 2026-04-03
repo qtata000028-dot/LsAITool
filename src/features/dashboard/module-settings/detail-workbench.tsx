@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Button, Flex, Tag, Tabs } from 'antd';
+import { getDetailFillTypeBadgeMeta } from './dashboard-detail-fill-utils';
 import { TableWorkbenchPanel } from './table-workbench-panel';
 
 type DetailTab = {
@@ -31,19 +32,6 @@ type DocumentDetailWorkbenchProps = {
   fillPlaceholderNode: React.ReactNode;
 };
 
-function getDetailFillTypeMeta(fillType?: string) {
-  switch (fillType) {
-    case '树表格':
-      return { icon: 'account_tree', label: '树表格视图' };
-    case '图表':
-      return { icon: 'monitoring', label: '图表视图' };
-    case '网页':
-      return { icon: 'language', label: '网页视图' };
-    default:
-      return { icon: 'table_view', label: '表格视图' };
-  }
-}
-
 export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
   detailTabs,
   activeTab,
@@ -55,7 +43,7 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
   compactAddButton = false,
   showModeBadge = true,
 }: DetailTabStripProps) {
-  const activeTabMeta = getDetailFillTypeMeta(currentDetailFillType);
+  const activeTabMeta = getDetailFillTypeBadgeMeta(currentDetailFillType);
   const tabItems = useMemo(() => detailTabs.map((tab) => ({
     key: tab.id,
     label: tab.name,
@@ -114,15 +102,15 @@ export const MemoDetailTabStrip = React.memo(function DetailTabStrip({
       />
       {addButtonPlacement === 'centered' ? (
         <div className="flex items-center justify-center pb-2 pt-1">
-          <Button
-            type="default"
-            size="small"
-            onClick={onAddTab}
-            className={`dashboard-module-ant-add-detail-btn !font-semibold !shadow-none ${addButtonClassName}`}
-          >
-            <span className="material-symbols-outlined text-[16px]">add</span>
-            {addLabel ?? '新增页签'}
-          </Button>
+            <Button
+              type="default"
+              size="small"
+              onClick={onAddTab}
+              className={`dashboard-module-ant-add-detail-btn !font-semibold !shadow-none ${addButtonClassName}`}
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              {addLabel ?? '新增页签'}
+            </Button>
         </div>
       ) : null}
     </div>

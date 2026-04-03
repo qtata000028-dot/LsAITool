@@ -40,7 +40,7 @@ export function GroupBoxRenderer({
         mode === 'design' ? 'cursor-default' : 'pointer-events-none',
         className,
       )}
-      onMouseDown={(event) => {
+      onMouseDown={() => {
         onSelect?.(item.id);
       }}
     >

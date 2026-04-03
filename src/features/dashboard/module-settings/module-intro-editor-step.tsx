@@ -46,7 +46,11 @@ export function ModuleIntroEditorStep({
   isFullscreenEditor,
   moduleIntroBlockType,
   moduleIntroSelectedImageWidth,
-  refs,
+  refs: {
+    editorRef,
+    fileInputRef,
+    titleEditorRef,
+  },
 }: ModuleIntroEditorStepProps) {
   return (
     <motion.div
@@ -58,7 +62,7 @@ export function ModuleIntroEditorStep({
       }`}
     >
       <input
-        ref={refs.fileInputRef}
+        ref={fileInputRef}
         type="file"
         accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
         className="hidden"
@@ -147,7 +151,7 @@ export function ModuleIntroEditorStep({
             <div className="min-w-0 flex-1">
               <div className="module-intro-eyebrow">模块介绍</div>
               <h1
-                ref={refs.titleEditorRef}
+                ref={titleEditorRef}
                 className="module-intro-title"
                 contentEditable
                 suppressContentEditableWarning
@@ -159,7 +163,7 @@ export function ModuleIntroEditorStep({
           </div>
 
           <div
-            ref={refs.editorRef}
+            ref={editorRef}
             className="module-intro-prose"
             contentEditable
             suppressContentEditableWarning

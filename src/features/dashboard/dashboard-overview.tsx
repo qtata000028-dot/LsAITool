@@ -1,31 +1,61 @@
 import React from 'react';
 
+import { type BackendMenuNode } from '../../lib/backend-menus';
+import { getMenuModuleTypeProfile } from './module-settings/dashboard-menu-config-helpers';
+
+const DASHBOARD_OVERVIEW_CARD_STYLES = [
+  {
+    icon: 'account_balance',
+    iconClass:
+      'bg-primary/5 text-primary border-primary/10 group-hover:bg-primary group-hover:text-white',
+    actionClass: 'hover:text-primary',
+  },
+  {
+    icon: 'groups',
+    iconClass:
+      'bg-indigo-50 text-indigo-500 dark:bg-indigo-950/30 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50 group-hover:bg-indigo-500 group-hover:text-white',
+    actionClass: 'hover:text-indigo-600',
+  },
+  {
+    icon: 'inventory_2',
+    iconClass:
+      'bg-cyan-50 text-cyan-500 dark:bg-cyan-950/30 dark:text-cyan-400 border-cyan-100 dark:border-cyan-900/50 group-hover:bg-cyan-500 group-hover:text-white',
+    actionClass: 'hover:text-cyan-600',
+  },
+] as const;
+
+function normalizeMenuTitle(value?: string) {
+  return value?.trim() || '';
+}
+
+function normalizeMenuCode(value?: string) {
+  return value?.trim() || '';
+}
+
+function isUseflagEnabled(useflag: number | string | undefined, enabled: boolean) {
+  if (useflag === 1 || useflag === '1') {
+    return true;
+  }
+
+  if (useflag === 0 || useflag === '0') {
+    return false;
+  }
+
+  return enabled !== false;
+}
+
 type DashboardOverviewProps = {
   activeFirstLevelMenuName: string;
   activeMenuCode: string;
   activeMenuCodePrefix: string;
   activeMenuName: string;
   activeSubsystemName: string;
-  cardStyles: ReadonlyArray<{
-    actionClass: string;
-    icon: string;
-    iconClass: string;
-  }>;
   deletingMenuId: string | null;
-  getMenuModuleTypeProfile: (moduleType: any) => {
-    badgeClass?: string;
-    businessType?: string;
-    icon?: string;
-    label: string;
-  } | null;
   isLoadingSecondLevelMenus: boolean;
-  isUseflagEnabled: (useflag: any, enabled: any) => boolean;
-  menus: any[];
-  normalizeMenuCode: (value: any) => string;
-  normalizeMenuTitle: (value: any) => string;
-  onConfigureMenu: (menu: any) => void;
+  menus: BackendMenuNode[];
+  onConfigureMenu: (menu: BackendMenuNode) => void;
   onCreateModule: () => void;
-  onDeleteMenu: (menu: any) => void;
+  onDeleteMenu: (menu: BackendMenuNode) => void;
   secondLevelMenuCount: number;
 };
 
@@ -35,14 +65,9 @@ export function DashboardOverview({
   activeMenuCodePrefix,
   activeMenuName,
   activeSubsystemName,
-  cardStyles,
   deletingMenuId,
-  getMenuModuleTypeProfile,
   isLoadingSecondLevelMenus,
-  isUseflagEnabled,
   menus,
-  normalizeMenuCode,
-  normalizeMenuTitle,
   onConfigureMenu,
   onCreateModule,
   onDeleteMenu,
@@ -72,7 +97,7 @@ export function DashboardOverview({
           </div>
         ) : secondLevelMenuCount > 0 ? (
           menus.map((menu, index) => {
-            const cardStyle = cardStyles[index % cardStyles.length];
+            const cardStyle = DASHBOARD_OVERVIEW_CARD_STYLES[index % DASHBOARD_OVERVIEW_CARD_STYLES.length];
             const isDeletingMenu = deletingMenuId === menu.id;
             const isMenuEnabled = isUseflagEnabled(menu.useflag, menu.enabled);
             const menuCodeLabel = normalizeMenuCode(menu.code) || `${activeMenuCodePrefix}-${index + 1}`;

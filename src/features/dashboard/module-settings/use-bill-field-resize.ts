@@ -132,9 +132,22 @@ export function useBillFieldResize({
 
   useEffect(() => {
     const activeResizeId = billFieldResizeRef.current?.id ?? activeBillResizeId;
-    if (!activeResizeId) return;
-    if (billCanvasFieldsRef.current.some((column) => column.id === activeResizeId)) return;
-    resetBillFieldResize();
+    if (!activeResizeId) {
+      return;
+    }
+
+    const hasActiveField = billCanvasFieldsRef.current.some((column) => column.id === activeResizeId);
+    if (hasActiveField) {
+      return;
+    }
+
+    const cleanupId = window.setTimeout(() => {
+      resetBillFieldResize();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(cleanupId);
+    };
   }, [activeBillResizeId, billMetaFields, mainTableColumns, resetBillFieldResize]);
 
   useEffect(() => {

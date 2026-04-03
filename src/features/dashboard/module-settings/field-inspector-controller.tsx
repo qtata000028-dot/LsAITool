@@ -76,7 +76,6 @@ export function FieldInspectorController({
   fieldClass,
   fieldSqlTagLabelFallbacks,
   fieldSqlTagOptions,
-  fieldTypeOptions,
   getFieldSqlTagOptionLabel,
   isCommonPanelTab,
   isTreeRelationFieldColumn,
@@ -189,10 +188,6 @@ export function FieldInspectorController({
     ? mainTableColumns.find((column) => isTreeRelationFieldColumn(column)) ?? null
     : null;
   const hasOtherTreeRelationField = Boolean(existingTreeRelationColumn && existingTreeRelationColumn.id !== currentColumn.id);
-  const availableFieldTypes = isConditionConfig
-    ? fieldTypeOptions.filter((type) => type !== '树形节点关联')
-    : fieldTypeOptions;
-
   const selectableFieldSqlTagOptions = isConditionConfig
     ? availableFieldSqlTagOptions.filter((option) => {
         const optionLabel = getFieldSqlTagOptionLabel(option);
