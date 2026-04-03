@@ -3,6 +3,16 @@
 - Even if a centered standalone button is visually clean, it can still feel structurally wrong when the user expects “在 tab 头上、垂直居中、靠右”.
 - For detail-tab actions, prefer keeping the button inside Ant Tabs' header extra-content area unless the user explicitly asks for a split layout.
 
+## 2026-04-03 If The User Says The Page “Originally Was Fullscreen”, Remove The Shell Instead Of Only Hiding Pieces
+- On route-based platform pages, “把上面去掉” can still be the wrong fix if the original product model was not “page with a shell” but “workbench as the page itself”.
+- When the user clarifies “最开始应该是个全屏的，没有上面部分只有下面部分”, treat that as a routing/presentation correction, not a spacing tweak.
+- In that case, restore a direct full-screen entry for that route and stop patching individual shell sections one by one.
+
+## 2026-04-03 When The User Says “上面这一坨不要”, Check The Page Shell Before Touching Business Content
+- On design-platform pages, a large visual block at the top may come from the shared route shell rather than the actual workbench content.
+- If the user points to “上面这一坨” in a screenshot, verify whether the page-level shell header is the real source before editing the inner dashboard/workbench modules.
+- Prefer a route-level hide/show switch so one page can drop the hero block without unintentionally flattening every fixed-route page.
+
 ## 2026-04-02 Active Detail Tab Clicks Need An Explicit Inspector Sync Path
 - In this single-table design screen, users do not only switch between different detail tabs; they also click the already active tab header as a way to say “show me this detail’s properties”.
 - Ant `Tabs onChange` only covers key changes, so relying on it alone will miss the “click the current tab again” interaction and make the right inspector look like it only updates on tab switching.

@@ -1,5 +1,91 @@
 ﻿# 浠诲姟寰呭姙
 
+## 2026-04-03 恢复设计工作区全屏直出
+
+### Requirement Spec
+- 用户目标：将设计平台里的工作区页面恢复成原本的全屏工作区，不再保留任何平台页头、路由概览或外层玻璃壳，只显示真正的工作区内容。
+- 影响范围：
+  - `src/platforms/design/workspace/design-workspace-page.tsx`
+  - `src/platforms/design/workspace/design-workspace-container.tsx`
+- 关键约束：
+  - 恢复的是 `/design/workspace` 这一页的路由呈现方式，不改 Dashboard 内部工作台逻辑。
+  - 不影响其他设计平台固定路由页面继续使用共享壳层。
+  - 尽量复用现有工作区 state/controller 适配，不重复实现一套入口组装。
+- 不做什么：
+  - 不顺手重构其他设计页。
+  - 不改动 `Dashboard.tsx` 里的业务交互。
+- 成功标准：
+  - 工作区页直接以全屏工作区呈现，不再显示平台外壳或路由说明层。
+  - lint/typecheck/build 通过。
+
+### Checklist
+- [x] 回顾 `tasks/lessons.md`。
+- [x] 更新本轮任务文档。
+- [x] 确认当前工作区页可复用的全屏入口与 state 适配。
+- [x] 将工作区页恢复为全屏直出。
+- [x] 运行 `npm run lint`。
+- [x] 运行 `npm run typecheck`。
+- [x] 运行 `npm run build`。
+
+### Progress
+- [x] 已确认当前问题不是“头部还有一点没藏住”，而是工作区页仍然经过了设计平台壳层。
+- [x] 已确认 `Dashboard` 本身就是完整工作区入口，因此恢复方式应为“工作区路由直接渲染 Dashboard 适配容器”，而不是继续保留 `DesignFixedRouteShell`。
+
+### Verification
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- `npm run build`：通过。
+- 说明：当前未做浏览器实机回归，因此最终视觉效果仍需刷新页面人工确认。
+
+### Result Notes
+- `DesignWorkspacePage` 不再经过 `DesignFixedRouteShell`，而是直接渲染工作区容器。
+- `DesignWorkspaceContainer` 新增 `immersive` 模式；该模式下直接渲染 `Dashboard`，不再带路由承接说明卡和外层白色玻璃容器。
+- 其他设计平台固定路由页面仍可继续使用共享壳层，本次只恢复工作区页的全屏直出行为。
+
+## 2026-04-03 设计平台工作区顶部壳头部移除
+
+### Requirement Spec
+- 用户目标：移除设计平台工作区页面最上方那整块标题/说明/路由信息头部，让工作区内容直接上移。
+- 影响范围：
+  - `src/app/shells/platform-placeholder-shell.tsx`
+  - `src/platforms/design/design-fixed-route-shell.tsx`
+  - `src/platforms/design/workspace/design-workspace-page.tsx`
+- 关键约束：
+  - 只移除用户截图里“上面这一坨”的平台壳头部，不顺手改下方工作区卡片内容。
+  - 尽量做成可控开关，避免影响其他设计平台固定路由页面。
+  - 改动后下方内容容器间距要自然，不留下明显空白。
+- 不做什么：
+  - 不重做设计平台整体视觉风格。
+  - 不改动具体 Dashboard 工作台内部内容。
+- 成功标准：
+  - `/design/workspace/...` 页面不再显示顶部大块标题/说明/路由信息。
+  - 下方工作区内容直接顶上来，布局保持稳定。
+
+### Checklist
+- [x] 回顾 `tasks/lessons.md`。
+- [x] 更新本轮任务文档。
+- [x] 定位顶部大块头部的真实组件层级。
+- [x] 移除或隐藏该头部并保持页面间距稳定。
+- [x] 运行 `npm run lint`。
+- [x] 运行 `npm run typecheck`。
+- [x] 运行 `npm run build`。
+
+### Progress
+- [x] 已定位顶部大块头部来自 `PlatformPlaceholderShell`，并由 `DesignFixedRouteShell` 包住工作区页面。
+- [x] 已确认用户截图里的“上面这一坨”不只是一层平台标题壳，还包括工作区页自身的“遗留工作台 + 路由卡片”概览层。
+- [x] 已将这两层都改成可控开关，并只在工作区页关闭，避免影响其他设计平台固定路由页面。
+
+### Verification
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- `npm run build`：通过。
+- 说明：当前未做浏览器实机截图回归，因此最终视觉效果仍需页面刷新后人工确认。
+
+### Result Notes
+- `PlatformPlaceholderShell` 新增 `showHeader` 开关，工作区页已关闭顶部平台标题/说明/路由信息头部。
+- `DesignFixedRouteShell` 新增 `showRouteOverview` 开关，工作区页已关闭“遗留工作台”说明卡和下方三张路由卡片。
+- `DesignWorkspacePage` 只对工作区路由关闭这两层壳，其他设计平台固定页面仍保持原有头部与概览结构。
+
 ## 2026-04-03 GitHub 更新后冲突解决
 
 ### Requirement Spec

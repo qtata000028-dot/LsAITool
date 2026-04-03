@@ -7,6 +7,7 @@ import type { DesignWorkspaceState } from './design-workspace-state';
 
 type DesignWorkspaceContainerProps = {
   currentUserName: string;
+  immersive?: boolean;
   onLogout: () => void;
   state: DesignWorkspaceState;
 };
@@ -58,6 +59,7 @@ function buildDashboardWorkspaceAdapterState(
 
 export function DesignWorkspaceContainer({
   currentUserName,
+  immersive = false,
   onLogout,
   state,
 }: DesignWorkspaceContainerProps) {
@@ -66,6 +68,16 @@ export function DesignWorkspaceContainer({
     syncMenuIntent: controller.syncMenuIntent,
     syncUrlState: controller.syncUrlState,
   });
+
+  if (immersive) {
+    return (
+      <Dashboard
+        currentUserName={currentUserName}
+        onLogout={onLogout}
+        workspaceState={dashboardState}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
