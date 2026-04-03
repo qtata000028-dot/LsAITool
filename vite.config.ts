@@ -9,36 +9,25 @@ function buildManualChunks(id: string) {
   }
 
   const normalizedId = id.replace(/\\/g, '/');
+  const isReactRuntimeModule =
+    /\/node_modules\/react\//.test(normalizedId) ||
+    /\/node_modules\/react-dom\//.test(normalizedId) ||
+    /\/node_modules\/scheduler\//.test(normalizedId);
 
-  if (
-    /\/node_modules\/(react|react-dom|scheduler)\//.test(normalizedId)
-  ) {
+  if (isReactRuntimeModule) {
     return 'react-vendor';
   }
 
-  if (/\/node_modules\/@dnd-kit\//.test(normalizedId)) {
+  if (id.includes('@dnd-kit')) {
     return 'dnd-vendor';
   }
 
-  if (
-    /\/node_modules\/(framer-motion|motion)\//.test(normalizedId) ||
-    /\/node_modules\/@emotion\//.test(normalizedId)
-  ) {
+  if (id.includes('framer-motion') || id.includes('motion')) {
     return 'motion-vendor';
   }
 
-  if (/\/node_modules\/lucide-react\//.test(normalizedId)) {
+  if (id.includes('lucide-react')) {
     return 'icon-vendor';
-  }
-
-  if (/\/node_modules\/(antd|@ant-design|rc-[^/]+)\//.test(normalizedId)) {
-    return 'antd-vendor';
-  }
-
-  if (
-    /\/node_modules\/(jszip|docx-preview|@xmldom|@onlyoffice)\//.test(normalizedId)
-  ) {
-    return 'doc-vendor';
   }
 
   return 'vendor';
