@@ -1,5 +1,371 @@
 ﻿# 浠诲姟寰呭姙
 
+<<<<<<< Updated upstream
+## 2026-04-03 恢复设计工作区全屏直出
+
+### Requirement Spec
+- 用户目标：将设计平台里的工作区页面恢复成原本的全屏工作区，不再保留任何平台页头、路由概览或外层玻璃壳，只显示真正的工作区内容。
+- 影响范围：
+  - `src/platforms/design/workspace/design-workspace-page.tsx`
+  - `src/platforms/design/workspace/design-workspace-container.tsx`
+- 关键约束：
+  - 恢复的是 `/design/workspace` 这一页的路由呈现方式，不改 Dashboard 内部工作台逻辑。
+  - 不影响其他设计平台固定路由页面继续使用共享壳层。
+  - 尽量复用现有工作区 state/controller 适配，不重复实现一套入口组装。
+- 不做什么：
+  - 不顺手重构其他设计页。
+  - 不改动 `Dashboard.tsx` 里的业务交互。
+- 成功标准：
+  - 工作区页直接以全屏工作区呈现，不再显示平台外壳或路由说明层。
+  - lint/typecheck/build 通过。
+
+### Checklist
+- [x] 回顾 `tasks/lessons.md`。
+- [x] 更新本轮任务文档。
+- [x] 确认当前工作区页可复用的全屏入口与 state 适配。
+- [x] 将工作区页恢复为全屏直出。
+- [x] 运行 `npm run lint`。
+- [x] 运行 `npm run typecheck`。
+- [x] 运行 `npm run build`。
+
+### Progress
+- [x] 已确认当前问题不是“头部还有一点没藏住”，而是工作区页仍然经过了设计平台壳层。
+- [x] 已确认 `Dashboard` 本身就是完整工作区入口，因此恢复方式应为“工作区路由直接渲染 Dashboard 适配容器”，而不是继续保留 `DesignFixedRouteShell`。
+
+### Verification
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- `npm run build`：通过。
+- 说明：当前未做浏览器实机回归，因此最终视觉效果仍需刷新页面人工确认。
+
+### Result Notes
+- `DesignWorkspacePage` 不再经过 `DesignFixedRouteShell`，而是直接渲染工作区容器。
+- `DesignWorkspaceContainer` 新增 `immersive` 模式；该模式下直接渲染 `Dashboard`，不再带路由承接说明卡和外层白色玻璃容器。
+- 其他设计平台固定路由页面仍可继续使用共享壳层，本次只恢复工作区页的全屏直出行为。
+
+## 2026-04-03 设计平台工作区顶部壳头部移除
+
+### Requirement Spec
+- 用户目标：移除设计平台工作区页面最上方那整块标题/说明/路由信息头部，让工作区内容直接上移。
+- 影响范围：
+  - `src/app/shells/platform-placeholder-shell.tsx`
+  - `src/platforms/design/design-fixed-route-shell.tsx`
+  - `src/platforms/design/workspace/design-workspace-page.tsx`
+- 关键约束：
+  - 只移除用户截图里“上面这一坨”的平台壳头部，不顺手改下方工作区卡片内容。
+  - 尽量做成可控开关，避免影响其他设计平台固定路由页面。
+  - 改动后下方内容容器间距要自然，不留下明显空白。
+- 不做什么：
+  - 不重做设计平台整体视觉风格。
+  - 不改动具体 Dashboard 工作台内部内容。
+- 成功标准：
+  - `/design/workspace/...` 页面不再显示顶部大块标题/说明/路由信息。
+  - 下方工作区内容直接顶上来，布局保持稳定。
+
+### Checklist
+- [x] 回顾 `tasks/lessons.md`。
+- [x] 更新本轮任务文档。
+- [x] 定位顶部大块头部的真实组件层级。
+- [x] 移除或隐藏该头部并保持页面间距稳定。
+- [x] 运行 `npm run lint`。
+- [x] 运行 `npm run typecheck`。
+- [x] 运行 `npm run build`。
+
+### Progress
+- [x] 已定位顶部大块头部来自 `PlatformPlaceholderShell`，并由 `DesignFixedRouteShell` 包住工作区页面。
+- [x] 已确认用户截图里的“上面这一坨”不只是一层平台标题壳，还包括工作区页自身的“遗留工作台 + 路由卡片”概览层。
+- [x] 已将这两层都改成可控开关，并只在工作区页关闭，避免影响其他设计平台固定路由页面。
+
+### Verification
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- `npm run build`：通过。
+- 说明：当前未做浏览器实机截图回归，因此最终视觉效果仍需页面刷新后人工确认。
+
+### Result Notes
+- `PlatformPlaceholderShell` 新增 `showHeader` 开关，工作区页已关闭顶部平台标题/说明/路由信息头部。
+- `DesignFixedRouteShell` 新增 `showRouteOverview` 开关，工作区页已关闭“遗留工作台”说明卡和下方三张路由卡片。
+- `DesignWorkspacePage` 只对工作区路由关闭这两层壳，其他设计平台固定页面仍保持原有头部与概览结构。
+
+## 2026-04-03 GitHub 更新后冲突解决
+
+### Requirement Spec
+- 用户目标：解决本地在同步 GitHub 最新更新后产生的合并冲突，保留当前单表设计页与 inspector 收口改动，同时兼容上游新增的架构拆分。
+- 影响范围：当前 `git` 标记为冲突的 4 个文件：
+  - `src/components/Dashboard.tsx`
+  - `src/features/dashboard/module-settings/detail-workbench.tsx`
+  - `src/features/dashboard/module-settings/table-workbench-panel.tsx`
+  - `src/features/dashboard/table-builder/table-builder.tsx`
+- 关键约束：
+  - 先确认冲突块语义，再决定保留 `ours / theirs / merge`，不能机械选一边。
+  - 不回退最近已完成的单表设计页交互和 inspector 调整。
+  - 继续遵守 `docs/dashboard-architecture-rules.md`，避免把 feature 逻辑重新堆回 `Dashboard.tsx`。
+  - 合并后必须完成至少 `npm run lint` 与 `npm run build` 验证。
+- 不做什么：
+  - 不顺手清理本次冲突之外的大量非冲突文件。
+  - 不把“解决冲突”扩展成新的页面重构主题。
+- 成功标准：
+  - 4 个冲突文件全部清除冲突标记并通过类型检查/构建。
+  - 最近单表设计页相关行为不被误回退。
+
+### Checklist
+- [x] 回顾 `tasks/lessons.md` 与 Dashboard 架构约束。
+- [x] 更新本轮任务文档。
+- [x] 逐个分析 4 个冲突文件的冲突块与上下文。
+- [x] 完成冲突合并并清除标记。
+=======
+## 2026-04-03 单表设计页右侧属性栏头部收口与列数据页签
+
+### Requirement Spec
+- 用户目标：继续调整单表设计页右侧属性栏，去掉顶部按钮区、压缩头部高度，并在当前 4 个 grid inspector 页签基础上新增“列数据”标签。
+- 影响范围：`src/features/dashboard/module-settings/inspector-panel-router.tsx`、`grid-inspector-controller.tsx`、`grid-overview-sections.tsx`，以及 `Dashboard.tsx` 中 inspector 页签状态类型。
+- 关键约束：
+  - 只收当前右侧 grid inspector 的头部与页签，不顺手重做其它 inspector 分支。
+  - 顶部“主表配置 / 条件配置”这类按钮区要直接去掉，不能只是弱化样式。
+  - 新增“列数据”标签不能是空壳，至少要能承载当前列数据入口。
+  - 继续遵守 Dashboard 架构规则，不把实现细节继续堆回 `Dashboard.tsx`。
+- 不做什么：
+  - 不重做右侧字段表单内容结构。
+  - 不改动主表/明细/左表的业务配置语义。
+- 成功标准：
+  - 右侧 grid inspector 顶部按钮区移除，头部显著收矮。
+  - 原 4 个图标标签变成 5 个，并新增“列数据”。
+  - “列数据”页签能展示当前列数据入口。
+
+### Checklist
+- [x] 更新任务文档并记录本轮 inspector 新需求。
+- [x] 定位并移除右侧 grid inspector 顶部按钮区。
+- [x] 收紧 grid inspector 头部高度。
+- [x] 新增“列数据”页签类型与路由。
+- [x] 为“列数据”页签补上当前列数据内容入口。
+>>>>>>> Stashed changes
+- [x] 运行 `npm run lint`。
+- [x] 运行 `npm run build`。
+
+### Progress
+<<<<<<< Updated upstream
+- [x] 已确认当前仅有 4 个冲突文件需要处理。
+- [x] 已确认本轮重点是保住最近单表设计页、明细 workbench 和 inspector 收口行为，同时兼容上游大规模架构拆分。
+- [x] 已确认 `Dashboard.tsx` 的冲突本质是“本地旧内联逻辑”与“上游 hook/runtime 抽离”的冲突，最终按上游抽离结构合并。
+- [x] 已确认 `table-builder.tsx` 的冲突本质是“旧拖拽/旧预览头实现”与“上游新的 rc-table + Resizable 预览链”的冲突，最终保留上游实现并兼容当前调用方仍传入的 `startResize` prop。
+- [x] 已处理本地依赖滞后问题：合并后 `lint` 脚本已切换为 `eslint .`，因此先执行 `npm install` 同步新增 devDependencies，再做验证。
+
+### Verification
+- `npm install`：通过。用于同步合并后新增的 `eslint` 等 devDependencies，本地旧 `node_modules` 中原本缺少可执行 `eslint`。
+- `npm run lint`：通过。
+- `npm run typecheck`：通过。
+- `npm run build`：通过。
+
+### Result Notes
+- `src/components/Dashboard.tsx`：保留上游 `useDashboardDetailBoardActions` 和 table-builder runtime builder 的装配方式，避免把已抽出的 detail board 行为又并回旧内联实现。
+- `src/features/dashboard/module-settings/detail-workbench.tsx`：保留最近单表设计页要求的明细页签点击同步、tab 头右侧新增按钮和紧凑布局，同时采用上游抽出的 `getDetailFillTypeBadgeMeta`。
+- `src/features/dashboard/module-settings/table-workbench-panel.tsx`：冲突仅在格式与新增文件归属，已收敛为当前共享 panel 版本。
+- `src/features/dashboard/table-builder/table-builder.tsx`：保留上游新的预览表头/列宽实现、动态测量和 `Resizable` 链路，同时兼容现有 renderer/runtime 仍传入的 `startResize` prop，避免连带改动更多非冲突文件。
+=======
+- [x] 已回顾 `tasks/lessons.md`。
+- [x] 已确认本轮入口主要集中在：
+  - `inspector-panel-router.tsx`
+  - `grid-inspector-controller.tsx`
+  - `grid-overview-sections.tsx`
+  - `Dashboard.tsx` 的 `inspectorPanelTab` 类型
+- [x] 已完成右侧 document grid inspector 头部收口：顶部标题/条件按钮区已移除，并收成“图标 + 标题 + 页签”的紧凑头部。
+- [x] 已完成 `columns` 页签接线，并提供当前列数据列表与字段属性跳转入口。
+
+### Verification
+- `npm run lint`：通过。
+- `npm run build`：通过。
+- 说明：当前环境未做浏览器实机回归，因此右侧头部收口后的最终视觉密度和“列数据”页签的图标布局仍需页面确认。
+
+### Result Notes
+- 右侧 document grid inspector 的顶部“主表配置 / 条件配置”按钮层已移除，头部现在改为“图标 + 标题 + 图标页签”的紧凑结构，既保留识别信息，也维持较低高度。
+- document grid inspector 原有 4 个页签已扩展为 5 个，新增 `列数据`，并纳入统一的 inspector tab 路由。
+- “列数据”页签当前提供列清单、标识/类型/宽度摘要，以及点击某列直接进入字段属性的入口；用户最新反馈要求这里不要再保留描述文案，因此已去掉标题下的辅助说明。
+>>>>>>> Stashed changes
+
+## 2026-04-02 单表设计页工作台按钮与页签交互收口
+
+### Requirement Spec
+- 用户目标：调整单表设计页中部表格工具栏、明细页签点按行为、底部上一步/下一步区域高度，以及“新增明细”按钮的布局样式。
+- 影响范围：`src/features/dashboard/module-settings/**` 下的 workbench shell、detail tab strip、grid action bar、config wizard footer，以及 `Dashboard.tsx` 中与明细页签选中态相关的桥接。
+- 关键约束：
+  - 不把新的交互实现继续堆回 `Dashboard.tsx`，能落在 `module-settings` 组件层的尽量落在组件层。
+  - 明细头点击要覆盖“点击当前已激活页签”场景，不能只依赖 `Tabs onChange`。
+  - 中部按钮栏只去掉“保存”展示，不破坏既有 grid action 配置结构。
+  - 底部向导栏和“新增明细”按钮仅做当前需求范围内的密度收紧，不顺手重做整页样式。
+- 不做什么：
+  - 不改动右侧 inspector 的字段结构和业务配置语义。
+  - 不扩展到其他无关步骤页或其他业务模块的整体视觉重做。
+- 成功标准：
+  - 中部表格按钮栏只保留“增加 / 删除 / 修改”。
+  - 点击明细页签头时，无论是否切换到新页签，右侧都立即进入对应明细属性。
+  - 底部“上一步 / 保存本页 / 全屏配置 / 下一步”区域明显收矮。
+  - “新增明细”按钮改为更紧凑、更小圆角，并按需求居中展示。
+
+### Checklist
+- [x] 更新任务文档并记录本轮 4 个需求。
+- [x] 调整 grid operation bar，隐藏中部“保存”按钮。
+- [x] 修正明细页签头点击行为，让点击当前页签也能切换右侧 inspector。
+- [x] 调整底部向导 footer 高度与按钮尺寸。
+- [x] 调整“新增明细”按钮位置与圆角样式。
+- [x] 运行 `npm run lint`。
+- [x] 运行 `npm run build`。
+
+### Progress
+- [x] 已回顾 `tasks/lessons.md`。
+- [x] 已定位本轮 4 个需求对应代码入口：
+  - `grid-operation-config-bar.tsx`
+  - `detail-workbench.tsx`
+  - `config-wizard-chrome.tsx`
+  - `Dashboard.tsx` 明细页签激活链路
+- [x] 已确认无需继续把逻辑堆回 `Dashboard.tsx`：明细页签点击问题可在 `MemoDetailTabStrip` 层通过 `onTabClick` 补齐。
+- [x] 已完成中部按钮栏收口、明细页签点击同步、底部 footer 收矮和“新增明细”按钮居中改造。
+
+### Verification
+- `npm run lint`：通过。
+- `npm run build`：通过。
+- 说明：当前环境未做浏览器实机回归，因此“新增明细”按钮的最终视觉位置与底部 footer 的主观紧凑度仍依赖用户界面确认。
+
+### Result Notes
+- 中部 grid action bar 仍保留完整 action model，但在当前 workbench 展示层只渲染 `增加 / 删除 / 修改`，不再显示“保存”。
+- 明细页签不再只依赖 `Tabs onChange`；现在点击当前已激活页签头也会重新同步右侧 inspector 到对应 `detail-tab`。
+- 用户最新反馈明确要求“新增明细”按钮应留在 tab 头内部，因此当前单表设计页已改为头部同一行靠右展示，同时保留更小圆角和更紧凑尺寸。
+- 底部向导 footer 通过收窄高度、间距、按钮内边距和图标尺寸，整体视觉密度已下调，但不改动既有功能入口和按钮顺序。
+
+## 2026-04-02 单表设计页上下表格横向滚动条缺失排查
+
+### Requirement Spec
+- 用户目标：解释截图中“朗速演示模块 - 单表设计”页面上下两个表格在列超出区域后为什么没有出现 Ant 表格横向滚动条。
+- 影响范围：截图对应的单表设计页面、上下两个表格组件、表格外层容器样式与 `scroll.x` 配置链路。
+- 关键约束：
+  - 先定位真实代码路径和组件关系，不凭截图猜测。
+  - 需要区分是 Ant Table 自身未开启横向滚动，还是外层布局把滚动区域裁掉/拉伸掉。
+  - 本轮先做根因排查与结论说明，不默认扩展到无关表格重构。
+- 不做什么：
+  - 不在未确认根因前直接改样式碰运气。
+  - 不把其他模块表格问题混入本次结论。
+- 成功标准：
+  - 能指出具体页面组件、关键配置或样式原因。
+  - 能说明为什么当前不会显示横向滚动条，以及如果修复应改哪里。
+
+### Checklist
+- [x] 从截图标题或按钮文案定位页面组件。
+- [x] 检查上下两个表格是否使用 Ant Table，以及 `scroll.x`/列宽/容器宽度策略。
+- [x] 检查是否有外层 `overflow`、`flex`、`min-width`、自定义样式影响滚动条显示。
+- [x] 汇总结论并给出修复建议。
+
+### Progress
+- [x] 已回顾 `tasks/lessons.md`。
+- [x] 已新增本次排查任务。
+- [x] 已定位页面与表格实现。
+- [x] 已确认根因。
+- [x] 已记录用户反馈“明细部分仍未展示横向滚动条”，准备做明细专项修复。
+- [x] 已记录用户最新反馈“明细完全不显示滚动条，问题不只是列最小宽度”，准备改补宽逻辑。
+- [x] 已记录用户最新要求“需要显示 Ant 自带的滚动条”，准备移除明细分支对 Ant 滚动的自定义接管。
+- [x] 已记录用户最新反馈“还是不行”，转为检查 rc-table 原生滚动是否仍被 CSS 变量列宽和自定义表宽覆盖截断。
+- [x] 已记录用户最新追问“是不是因为明细表格在页签内”，准备对比主表/明细容器并排除页签假设。
+- [x] 已记录用户最新要求“直接把表格放到页签里”，准备调整明细工作台结构而不是继续调滚动参数。
+- [x] 已记录用户最新反馈“完全不行，而且列的拖动功能也失效了”，准备优先恢复拖拽并回看 native 分支带来的回归。
+- [x] 已记录用户最新要求“主表和明细应该使用同一个模板”，准备把外层 workbench 和内层 table-builder 预览配置一起收敛。
+- [x] 已完成主表/明细统一模板收敛，并清理明细专属滚动试验分支。
+- [x] 已记录用户最新判断“滚动条短暂出现后消失，更像是表格高度把滚动条挤出可视区”，准备转查预览行数和底部高度预算。
+- [x] 已完成预览高度预算修正，给横向滚动条预留底部空间并收紧占位行数计算。
+- [x] 已完成预览表内部拉满与尾行补齐，消除滚动条下方残余空白。
+- [x] 已记录用户最新反馈“主表高度看起来没变，怀疑外层容器仍在吃高度”，准备改为显式 `scroll.y` 锁定表格内部可视高度。
+- [x] 已定位主表高度仍受外层 `documentWorkspaceGridClass` 上下分配与 panel 拉伸链影响，准备把主表默认分配调高并让共享 panel 显式吃满父容器。
+- [x] 已记录用户最新反馈“不要垂直滚动条，且某些情况下表格高度仍未铺满”，准备移除预览表 `scroll.y`，恢复由占位行自行吃满高度。
+- [x] 已记录用户最新规格“主表/明细都应是表格区铺满 + 独立按钮栏，占位区不应侵入按钮栏”，准备把 panel 分区与 table 测量宿主彻底对齐。
+- [x] 已记录用户最新反馈“首次进入高度偶发错误，重新加载后恢复正常”，准备修正首屏测量时机与首次稳定重测。
+- [x] 已记录用户最新反馈“说白了就是不会动态调整，前面的动态重测仍不够”，准备把 Ant `scroll.y` 重新作为内部高度 owner 接回来，但继续隐藏纵向滚动条。
+- [x] 已记录用户最新反馈“增删明细会让表格区域变大变小，但表格高度仍不随动”，准备引入显式 `layoutVersion`，在父布局换挡时强制表格重测。
+
+### Verification
+- 源码定位：
+  - 单表设计页壳层在 `src/features/dashboard/module-settings/module-setting-step-shell.tsx`，上下两个表格分别挂载在主表 `archiveMainTableBuilderNode` 与明细 `documentDetailTableBuilderNode`。
+  - 两个节点都走 `src/features/dashboard/table-builder/use-dashboard-table-builder-options.ts` 的 `backgroundSelectable: true` 分支。
+  - 实际表格组件是 `src/features/dashboard/table-builder/table-builder.tsx` 内的 Ant `Table`，带有 `scroll={{ x: effectivePreviewTableWidth }}`。
+  - 相关样式在 `src/index.css`，其中外层与 Ant 内部滚动区域都做了自定义覆盖。
+- 运行态验证：
+  - 本地已启动项目并确认页面链路属于单表设计工作台。
+  - 当前环境尝试使用 Playwright 做浏览器截图验证，但系统缺少 `libnspr4.so`，Chromium 无法启动；因此本轮视觉结论仍基于源码链路与构建验证确认。
+- 交付验证：
+  - `npm run lint`：通过。
+  - `npm run build`：通过。
+  - 本轮统一模板收敛后再次执行 `npm run lint`：通过。
+  - 本轮统一模板收敛后再次执行 `npm run build`：通过。
+  - 本轮高度预算修正后再次执行 `npm run lint`：通过。
+  - 本轮高度预算修正后再次执行 `npm run build`：通过。
+- 本轮表格铺满修正后再次执行 `npm run lint`：通过。
+- 本轮表格铺满修正后再次执行 `npm run build`：通过。
+- 本轮外层高度链修正后再次执行 `npm run lint`：通过。
+- 本轮外层高度链修正后再次执行 `npm run build`：通过。
+- 本轮动态测量链修正后再次执行 `npm run lint`：通过。
+- 本轮动态测量链修正后再次执行 `npm run build`：通过。
+- 本轮重新引入 `scroll.y` 作为内部动态高度 owner 后再次执行 `npm run lint`：通过。
+- 本轮重新引入 `scroll.y` 作为内部动态高度 owner 后再次执行 `npm run build`：通过。
+- 本轮引入显式 `layoutVersion` 强制表格在增删明细等父布局换挡时重测后再次执行 `npm run lint`：通过。
+- 本轮引入显式 `layoutVersion` 强制表格在增删明细等父布局换挡时重测后再次执行 `npm run build`：通过。
+- 本轮将预览高度从“动态占位行数”重构为“固定占位行 + `scroll.y` 裁切”后再次执行 `npm run lint`：通过。
+- 本轮将预览高度从“动态占位行数”重构为“固定占位行 + `scroll.y` 裁切”后再次执行 `npm run build`：通过。
+
+### Result Notes
+- 这两个区域虽然用了 Ant `Table`，但不是标准数据表容器，而是“表格设计预览画布”。
+- 该画布分支会把表格外层设为 `overflow-hidden`，并把剩余宽度补成 filler 宽度；因此只有当“计算后的总列宽”真正大于宿主宽度时，Ant 内部 body 区才会出现横向滚动。
+- 同时样式里显式把 `.ant-table-header` 的横向滚动隐藏，只保留 `.ant-table-content` 的横向滚动，因此视觉上不会表现为普通 Ant 表格那种明显的整表横向滚动条。
+- 如果用户想要标准 Ant 横向滚动体验，需要把这条设计画布分支改回标准表格容器策略，而不是只看 `scroll.x` 是否配置。
+- 本轮修复没有重做整条设计画布，而是在单表设计页主表/明细预览里增加 `previewReadableMinWidth`，把可读最小列宽提高到 `96px`。
+- 调整后当列较多时，总列宽会更稳定地超过宿主宽度，从而触发 Ant 表格自身的横向滚动，而不是继续把字段标题压缩在当前区域里。
+- 用户回归反馈表明该阈值对明细区域仍然偏保守，说明明细工作台的实际可用宽度足以容纳这组列；后续修复应改成明细专项阈值，而不是继续假设主表与明细共用同一阈值。
+- 最新排查确认：主表高度并不只由 `TableBuilder` 内部控制，外层 `module-setting-step-shell.tsx` 还会先用上下 `grid` 行比例分配主表/明细空间，且主表原先拿到的默认比例低于明细。
+- 本轮修复把共享 `TableWorkbenchPanel` 明确设为 `h-full`，并把默认上下分配改为“主表略大于明细”，这样主表预览宿主高度会先变大，再由内部 `scroll.y` 接手可视区高度。
+- 用户最新反馈说明 `scroll.y` 这条纵向滚动链并不符合设计预览诉求：预览表本来就用占位行模拟高度，再叠加 Ant 的纵向滚动宿主，会在部分场景下造成高度未铺满和多余纵向滚动条。
+- 本轮修复将预览表改回“仅横向滚动 + 占位行撑满高度”的模式，移除 `scroll.y`，并显式隐藏预览体的纵向滚动。
+- 用户进一步明确了布局规格：主表和明细的按钮栏都应是 panel 自己的 footer 区，不应被表格预览算进可用高度；按钮栏隐藏时，表格应继续铺满整个 body slot。
+- 本轮修复将共享 `TableWorkbenchPanel` 改为显式 `header / body / footer` 网格分区，并让 `TableBuilder` 直接测量 `body slot` 的真实高度，而不是继续拿自身可能未拉满的 wrapper 做高度基准。
+- 用户最新反馈表明问题已从“最终布局错误”收敛为“首屏初始化测量偶发偏早”：重新加载后恢复正常，说明布局规格本身大体成立，但第一次进入时测量发生在宿主和表头尚未完全稳定之前。
+- 本轮修复将预览测量切到 `useLayoutEffect`，并补充 `requestAnimationFrame` / `window.load` 重测，同时改为读取真实表头高度，降低首次进入时的偶发测量偏差。
+- 用户进一步说明本质是“不会动态调整”，说明仅靠预览行数在外层变化后重算仍不足以稳定驱动 Ant 表格视觉高度。
+- 本轮修复重新把 `scroll.y` 接回到预览表，但只作为内部高度约束使用；同时把 `.ant-table-body` 的纵向滚动显式隐藏，仅保留横向滚动与动态高度同步。
+- 用户进一步给出精确触发场景：增删明细会切换上下工作区的布局分配，但表格高度没有跟着变。这说明问题不只是观察 DOM 尺寸，而是表格没有感知到“父布局模式已切换”。
+- 本轮修复给主表和明细表分别引入显式 `layoutVersion`，让“是否存在明细 / 明细数量 / 明细按钮栏可见性”直接参与表格重测依赖，确保父布局换挡时强制重算一次高度。
+- 本轮重构进一步移除了“根据可用高度动态决定占位行数”的旧思路，改成固定数量的占位行始终覆盖预览体，再由 Ant `scroll.y` 根据 body slot 高度决定可见区域。
+- 这样表格高度变化时，不再需要先算出“当前该补几行空行”才能铺满；父布局只要变动，Ant body 的可视高度就会直接变化，更接近 WinForm 式单一填充 owner。
+- 第二轮修复把主表和明细阈值拆开：主表保留 `96px`，明细提高到 `128px`，避免明细列数较多但仍刚好塞进容器。
+- 同时给明细预览增加“强制保留横向滚动容器”的样式开关，避免浏览器把明细表格的横向滚动条继续折叠得过于不明显。
+- 用户最新截图表明明细区域完全没有出现滚动条，因此后续修复需要直接处理 `previewFillerWidth / effectivePreviewTableWidth`，保证明细分支存在真实横向溢出，而不是继续只调列宽阈值。
+- 第三轮修复在明细分支保留固定的额外横向溢出量，避免 `previewFillerWidth` 把表格宽度刚好补齐到宿主宽度，从而把滚动条完全吃掉。
+- 最新验证结果：`npm run lint`、`npm run build` 继续通过；当前仍缺少浏览器实机复核。
+- 用户最终要求不是“能横向滚动”而是“显示 Ant 自带的滚动条”，因此下一轮应直接恢复明细分支的标准 Ant 横向滚动路径，而不是继续保留自定义补宽和伪滚动策略。
+- 最新修复已把明细分支切到 Ant 原生横向滚动路径：关闭该分支的 filler 补宽，保留列宽变量用于交互，但让 `scroll.x` 回到 `max-content`，并用专用 class 覆盖表宽规则为 `max-content`。
+- 最新验证结果：`npm run lint`、`npm run build` 通过；仍待用户在浏览器强刷后确认明细是否已出现 Ant 自带横向滚动条。
+- 进一步修正了原生滚动分支的表宽规则：保持 `width: max-content`，但把 `min-width` 提到 `calc(100% + 24px)`，避免明细表格缩成内容宽不再平铺，同时仍由 Ant 自己管理横向滚动条。
+- 新一轮排查确认：明细所谓 native 分支仍在沿用 `previewTableColumnsResizable` 的字符串 CSS 变量列宽，以及全局 `--dashboard-table-builder-width` 表宽覆盖，这意味着 rc-table 并没有真正拿到数值列宽去计算原生横向溢出。
+- 本轮修复改成让明细 native 分支直接使用数值列宽的 `plainAntdPreviewColumns`，并把 `scroll.x` 改为 `totalTableWidth` 数值，交回 rc-table 的标准宽度计算链路。
+- 同时把 `src/index.css` 里的表宽强制覆盖限定在旧预览分支，不再作用于 `dashboard-table-builder-ant-table-native-horizontal-scroll`，避免 native 分支继续被 `--dashboard-table-builder-width` 接管。
+- 调试补充：尝试安装 Playwright 浏览器依赖做真实 DOM 复核时，当前环境因 `sudo` 口令限制无法完成 `npx playwright install-deps chromium`；因此本轮仍以源码链路和构建验证为主。
+- 新一轮对比确认：明细并不真正渲染在 Ant Tabs 的内容页里。`MemoDocumentDetailWorkbench` 只是把 Tabs 用作页签条，真正的表格内容在下方独立容器里，而且项目样式还主动隐藏了 `ant-tabs-content-holder`，所以“因为在页签内导致滚动条不显示”不是这页的主因。
+- 主表之所以更容易看到滚动条，是因为它当前仍走旧预览宽度链路；明细切到 native 分支后，只有当 `scroll.x` 的数值宽度真实超过宿主宽度时，Ant 才会画出原生横向滚动条。
+- 为了让明细在设计态里也稳定出现 Ant 原生滚动条，本轮给 native 明细分支增加了基于宿主宽度的最小横向溢出预算，确保 `scroll.x` 至少比当前宿主宽度大出一小段，而不是只依赖字段本身的列宽总和刚好超过容器。
+- 最新验证结果：`npm run lint`、`npm run build` 继续通过；仍待浏览器强刷后复核明细区是否已显示 Ant 原生横向滚动条。
+- 用户进一步要求“直接把表格放到页签里”，因此本轮不再继续围绕拆分结构调滚动参数，而是把明细工作台改回由 Ant `Tabs` 同时承载页签条和内容区。
+- 结构调整后，`MemoDocumentDetailWorkbench` 不再接收一个已经渲染好的页签条节点，而是直接把当前明细内容作为 `Tabs` 的 pane children；同时开启 `destroyOnHidden`，避免同一份表格内容在多个隐藏页签里重复挂载。
+- `src/index.css` 里的 `ant-tabs-content-holder` 隐藏规则也改成只影响“仅页签条”场景；对带内容的 `dashboard-module-ant-tabs-with-content` 分支恢复 Ant 的正常内容容器，并补上 `min-height/flex/overflow` 约束。
+- 最新验证结果：`npm run lint`、`npm run build` 继续通过；当前仍需你在浏览器强刷后确认明细区这次是否终于出现了预期的 Ant 原生横向滚动条。
+- 继续排查后又补了一轮内容区高度链路：`Tabs` 的内容 wrapper、`ant-tabs-content`、`ant-tabs-tabpane` 和内部承载层都改成了完整的 `flex + min-height: 0 + height: 100%`，避免明细的实际滚动宿主拿不到有效高度。
+- 同时给 native 明细分支的 `.ant-table-content` 改成显式 `overflow-x: scroll`，不再让浏览器继续把原生横向滚动槽位折叠成不可见状态。
+- 最新验证结果：`npm run lint`、`npm run build` 继续通过；仍待浏览器强刷复核。
+- 用户随后反馈“完全不行，而且列的拖动功能也失效了”，这说明明细 native 分支虽然尝试逼近 Ant 原生滚动，但已经破坏了和主表一致的列拖拽交互。
+- 因此本轮把明细重新对齐到主表同一条预览链路：恢复可拖拽的自定义表头组件，只保留一个 `previewForcedOverflowPx` 让设计态表格宽度至少比宿主宽一点，从而优先兼顾“滚动条出现”和“列拖动恢复”。
+- 最新验证结果：`npm run lint`、`npm run build` 继续通过；仍待浏览器强刷后确认。
+- 用户最终又明确要求“他们应该使用同一个模板”，因此本轮不再保留明细专项补丁，而是把主表和明细真正收回到同一模板。
+- 外层上，主表和明细现在都走 `TableWorkbenchPanel`，并且明细表格态不再额外包一层非满高容器，避免滚动宿主和高度链路继续与主表分叉。
+- 内层上，单表设计页主表/明细的 `TableBuilderOptions` 已改成由同一个 `buildSingleTablePreviewTemplate` 生成，统一了 `backgroundSelectable / surfaceVariant / surfaceShape / previewReadableMinWidth` 这条预览模板链路。
+- 同时移除了本轮排障遗留的 detail native-scroll 试验分支和 Tabs content 试验样式，避免后续问题继续只在明细分支复现。
+- 最新验证结果：`npm run lint`、`npm run build` 通过；当前仍缺少浏览器实机复核，因此剩余风险只在视觉层面，而不是编译或结构一致性层面。
+- 用户最新反馈提供了更准确的现象描述：横向滚动条会短暂出现，然后像被表格高度撑到可视区外一样消失；这说明根因可能不在列宽，而在预览表为了铺满工作区而把占位行数算得过多。
+- 最新修复已把预览表的占位行数从“向上取整铺满高度”改成“给横向滚动条预留底部空间后再向下取整”，并把默认可见行数收窄为更保守的 3/4 行，避免 ResizeObserver 回填高度后把 Ant 横向滚动条挤到裁切区外。
+- 在此基础上又补了一层“铺满”修正：让表格内部 Ant 容器本身撑满预览高度，同时让最后一条占位行自动吃掉剩余高度，这样空白会留在表格内部最后一行而不是滚动条下方，视觉上恢复成完整铺满的表格区。
+- 用户最新截图表明主表高度看起来仍未明显变化，因此下一轮不再继续赌外层 flex 自然拉伸，而是直接把预览区可视高度收口到 Ant `scroll.y`，验证是否确实还有外层容器在吃掉高度。
+
 ## 2026-03-23 鏂囨。宸ヤ綔鍙板垎鍖轰笌鍩虹妗ｆ涓昏〃鍒嗙粍鏀圭増
 
 ### Requirement Spec

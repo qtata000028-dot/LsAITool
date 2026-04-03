@@ -66,6 +66,15 @@ export type TableBuilderProps = {
   businessType: 'document' | 'table' | 'tree';
   activateColumnSelection: (scope: 'left' | 'main' | 'detail', columnId: string | null) => void;
   setBuilderSelectionContextMenu: React.Dispatch<React.SetStateAction<any>>;
+  startResize: (
+    event: React.MouseEvent,
+    colId: string,
+    cols: any[],
+    setCols: React.Dispatch<React.SetStateAction<any[]>>,
+    minWidth?: number,
+    maxWidth?: number,
+    mode?: WorkbenchResizeMode,
+  ) => void;
   autoFitColumnWidth: (
     event: React.MouseEvent,
     colId: string,
@@ -567,7 +576,6 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       ? previewAvailableBodyHeight
       : undefined
   ), [backgroundSelectable, previewAvailableBodyHeight]);
-
   const applyLiveColumnResizePreview = useCallback((columnId: string, width: number) => {
     const hostElement = previewHostRef.current;
     if (!hostElement) {
@@ -660,7 +668,6 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     const resizeObserver = new ResizeObserver(() => {
       measurePreviewLayout();
     });
-
     resizeObserver.observe(measurementHost);
     if (hostElement && hostElement !== measurementHost) {
       resizeObserver.observe(hostElement);

@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import { Button, Flex, Tag, Tabs } from 'antd';
-
 import { getDetailFillTypeBadgeMeta } from './dashboard-detail-fill-utils';
 import { TableWorkbenchPanel } from './table-workbench-panel';
 

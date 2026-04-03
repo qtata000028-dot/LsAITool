@@ -27,6 +27,13 @@ type GridIdentifierTranslationSectionProps = {
   translatableColumnCount: number;
 };
 
+type GridColumnDataSectionProps = {
+  availableGridColumns: any[];
+  normalizeColumn: (column: any) => any;
+  onSelectColumn: (columnId: string) => void;
+  title?: string;
+};
+
 type GridSqlConfigSectionProps = {
   conditionValue: string;
   conditionLabel?: string;
@@ -406,6 +413,103 @@ export const GridIdentifierTranslationSection = React.memo(function GridIdentifi
       <div className={quietDocumentInspectorSummaryClass}>
         当前列数 {availableGridColumnCount} 个，待翻译 {translatableColumnCount} 个。
       </div>
+    </section>
+  );
+});
+
+export const GridColumnDataSection = React.memo(function GridColumnDataSection({
+  availableGridColumns,
+  normalizeColumn,
+  onSelectColumn,
+  title = '列数据',
+}: GridColumnDataSectionProps) {
+  const normalizedColumns = React.useMemo(
+    () => availableGridColumns.map((column) => normalizeColumn(column)),
+    [availableGridColumns, normalizeColumn],
+  );
+
+  return (
+    <section className={`${quietDocumentInspectorCardClass} space-y-3`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className={shadcnSectionTitleClass}>
+          <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">table_rows</span>
+          <h4>{title}</h4>
+        </div>
+        <span className="inline-flex h-7 shrink-0 items-center rounded-md border border-slate-200/80 bg-white px-2.5 text-[11px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+          {normalizedColumns.length} 列
+        </span>
+      </div>
+
+      {normalizedColumns.length > 0 ? (
+        <div className="grid gap-2">
+          {normalizedColumns.map((column, index) => {
+            const columnName = String(column.name || '').trim() || `字段 ${index + 1}`;
+            const sourceField = String(column.sourceField || '').trim();
+            const columnType = String(column.type || '').trim() || '文本';
+            const columnWidth = Number(column.width || 0);
+            const isVisible = !(column.visible === false || column.visible === 0 || column.visible === '0');
+            const isReadonly = Boolean(column.readonly || column.readOnly);
+            const isRequired = Boolean(column.required);
+
+            return (
+              <button
+                key={column.id || `${columnName}-${index}`}
+                type="button"
+                onClick={() => {
+                  if (column.id) {
+                    onSelectColumn(column.id);
+                  }
+                }}
+                className="flex items-start justify-between gap-3 rounded-md border border-slate-200/80 bg-white px-3 py-2.5 text-left transition-colors hover:border-[color:var(--workspace-accent-border)] hover:bg-[color:var(--workspace-accent-tint)] dark:border-slate-800 dark:bg-slate-950 dark:hover:border-[color:var(--workspace-accent-border)] dark:hover:bg-slate-900"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                      {index + 1}
+                    </span>
+                    <span className="truncate text-[12px] font-semibold text-slate-700 dark:text-slate-100">{columnName}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-slate-500 dark:text-slate-300">
+                    <span className="rounded-full border border-slate-200/80 bg-slate-50 px-2 py-0.5 dark:border-slate-700 dark:bg-slate-900">
+                      {sourceField || '未配置标识'}
+                    </span>
+                    <span className="rounded-full border border-slate-200/80 bg-slate-50 px-2 py-0.5 dark:border-slate-700 dark:bg-slate-900">
+                      {columnType}
+                    </span>
+                    {columnWidth > 0 ? (
+                      <span className="rounded-full border border-slate-200/80 bg-slate-50 px-2 py-0.5 dark:border-slate-700 dark:bg-slate-900">
+                        {Math.round(columnWidth)}px
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {isRequired ? (
+                    <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:bg-rose-500/10 dark:text-rose-200">
+                      必填
+                    </span>
+                  ) : null}
+                  {!isVisible ? (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:bg-amber-500/10 dark:text-amber-200">
+                      隐藏
+                    </span>
+                  ) : null}
+                  {isReadonly ? (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                      只读
+                    </span>
+                  ) : null}
+                  <span className="material-symbols-outlined text-[16px] text-slate-300 dark:text-slate-600">chevron_right</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className={quietDocumentInspectorSummaryClass}>
+          当前还没有列数据，先在中间表格区增加字段。
+        </div>
+      )}
     </section>
   );
 });
