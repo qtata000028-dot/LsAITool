@@ -267,13 +267,13 @@ export function FieldInspectorController({
                 ) : null}
               </div>
               {legacyTableMeta ? (
-                <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-300">{legacyTableMeta.hint}</p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">{legacyTableMeta.hint}</p>
               ) : null}
             </div>
           </div>
           <button
             onClick={removeCurrentColumn}
-            className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-rose-200/70 bg-white text-rose-400 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-500 dark:border-rose-500/20 dark:bg-slate-900 dark:text-rose-300"
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-rose-200/70 bg-white text-rose-400 shadow-sm transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-500 dark:border-rose-500/20 dark:bg-slate-900 dark:text-rose-300"
             title={context.removeLabel}
           >
             <span className="material-symbols-outlined text-[16px]">delete</span>
@@ -282,53 +282,36 @@ export function FieldInspectorController({
         {renderInspectorTabsNode}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className={compactInfoCardClass}>
-            <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{itemKeyLabel}</div>
-            <div className="mt-1 break-all font-mono text-[12px] leading-5 text-slate-600 dark:text-slate-200">{currentColumn.sourceField || '未设置'}</div>
-          </div>
-          <div className={compactInfoCardClass}>
-            <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{itemTypeLabel}</div>
-            <div className="mt-1 break-words text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">{currentTypeDisplayLabel}</div>
-          </div>
-          <div className={compactInfoCardClass}>
-            <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{itemWidthLabel}</div>
-            <div className="mt-1 break-words text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">{Math.round(currentColumn.width)}px</div>
-          </div>
-          <div className={compactInfoCardClass}>
-            <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">{secondaryMetricLabel}</div>
-            <div className="mt-1 break-words text-[13px] font-bold leading-5 text-slate-700 dark:text-slate-100">{secondaryMetricValue}</div>
-          </div>
-        </div>
-
-        <div className="mt-5 space-y-5">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+        <div className="space-y-5">
           {isCommonPanelTab ? (
             <>
               <section className={compactCardClass}>
                 <div className={sectionTitleClass}>
-                  <span className="material-symbols-outlined text-[18px] text-primary">view_list</span>
+                  <span className="material-symbols-outlined text-[16px] text-primary">view_list</span>
                   <h4>{definitionSectionTitle}</h4>
                 </div>
                 <div className="grid gap-4">
-                  <div>
-                    <label className={mutedLabelClass}>{itemNameLabel}</label>
-                    <input
-                      type="text"
-                      value={currentColumn.name}
-                      onChange={(e) => updateColumn({ name: e.target.value })}
-                      className={fieldClass}
-                    />
-                  </div>
-                  <div>
-                    <label className={mutedLabelClass}>{itemKeyLabel}</label>
-                    <input
-                      type="text"
-                      value={currentColumn.sourceField || ''}
-                      onChange={(e) => updateColumn({ sourceField: e.target.value })}
-                      placeholder={isConditionConfig ? '例如：status_keyword' : '例如：material_code'}
-                      className={`${fieldClass} font-mono text-[12px]`}
-                    />
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className={mutedLabelClass}>{itemNameLabel}</label>
+                      <input
+                        type="text"
+                        value={currentColumn.name}
+                        onChange={(e) => updateColumn({ name: e.target.value })}
+                        className={fieldClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={mutedLabelClass}>{itemKeyLabel}</label>
+                      <input
+                        type="text"
+                        value={currentColumn.sourceField || ''}
+                        onChange={(e) => updateColumn({ sourceField: e.target.value })}
+                        placeholder={isConditionConfig ? '例如：status_keyword' : '例如：material_code'}
+                        className={`${fieldClass} font-mono text-[12px]`}
+                      />
+                    </div>
                   </div>
                   {!isConditionConfig ? (
                     <div>
@@ -491,7 +474,7 @@ export function FieldInspectorController({
               {isBillHeaderField ? (
                 <section className={compactCardClass}>
                   <div className={sectionTitleClass}>
-                    <span className="material-symbols-outlined text-[18px] text-primary">database</span>
+                    <span className="material-symbols-outlined text-[16px] text-primary">database</span>
                     <h4>来源绑定</h4>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -513,7 +496,7 @@ export function FieldInspectorController({
                         <button
                           type="button"
                           onClick={activateSourceGridSelection}
-                          className="inline-flex shrink-0 items-center gap-1 rounded-[14px] border border-[color:var(--workspace-accent-border)] px-3 text-[12px] font-bold text-[color:var(--workspace-accent)]"
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[color:var(--workspace-accent-border)] bg-white px-3 text-[12px] font-bold text-[color:var(--workspace-accent)] shadow-sm transition-colors hover:bg-[color:var(--workspace-accent-soft)]"
                         >
                           <span className="material-symbols-outlined text-[14px]">tune</span>
                           来源
@@ -541,23 +524,24 @@ export function FieldInspectorController({
 
               <section className={compactCardClass}>
                 <div className={sectionTitleClass}>
-                  <span className="material-symbols-outlined text-[18px] text-primary">toggle_on</span>
+                  <span className="material-symbols-outlined text-[16px] text-primary">toggle_on</span>
                   <h4>{isConditionConfig ? '条件属性' : '交互属性'}</h4>
                 </div>
-                <div className="grid gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   {commonPropertySwitches.map((item) => (
                     <label
                       key={item.key}
-                      className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-3.5 py-3 transition-colors hover:border-primary/20 hover:bg-white dark:border-slate-700 dark:bg-slate-900/35 dark:hover:bg-slate-900/55"
+                      className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200/60 bg-slate-50/50 px-3.5 py-3 transition-all hover:border-[color:var(--workspace-accent-soft)] hover:bg-white hover:shadow-sm dark:border-slate-700 dark:bg-slate-900/35 dark:hover:bg-slate-900/55"
                     >
                       <input
                         type="checkbox"
-                        className="mt-0.5 rounded border-slate-300 text-primary focus:ring-primary"
+                        className="mt-0.5 size-4 rounded border-slate-300 text-primary focus:ring-primary"
                         checked={Boolean(currentColumn[item.key])}
                         onChange={(e) => updateColumn({ [item.key]: e.target.checked })}
                       />
                       <div>
-                        <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">{item.label}</div>
+                        <div className="text-[12px] font-bold text-slate-700 dark:text-slate-100">{item.label}</div>
+                        <div className="mt-0.5 text-[10px] text-slate-400">{item.desc}</div>
                       </div>
                     </label>
                   ))}
@@ -568,26 +552,29 @@ export function FieldInspectorController({
             <>
               <section className={compactCardClass}>
                 <div className={sectionTitleClass}>
-                  <span className="material-symbols-outlined text-[18px] text-primary">toggle_on</span>
+                  <span className="material-symbols-outlined text-[16px] text-primary">toggle_on</span>
                   <h4>高级属性</h4>
                 </div>
-                <div className="grid gap-3">
-                  {advancedPropertySwitches.map((item) => (
-                    <label
-                      key={item.key}
-                      className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-3.5 py-3 transition-colors hover:border-primary/20 hover:bg-white dark:border-slate-700 dark:bg-slate-900/35 dark:hover:bg-slate-900/55"
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-0.5 rounded border-slate-300 text-primary focus:ring-primary"
-                        checked={Boolean(currentColumn[item.key])}
-                        onChange={(e) => updateColumn({ [item.key]: e.target.checked })}
-                      />
-                      <div>
-                        <div className="text-[13px] font-bold text-slate-700 dark:text-slate-100">{item.label}</div>
-                      </div>
-                    </label>
-                  ))}
+                <div className="grid gap-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {advancedPropertySwitches.map((item) => (
+                      <label
+                        key={item.key}
+                        className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200/60 bg-slate-50/50 px-3.5 py-3 transition-all hover:border-[color:var(--workspace-accent-soft)] hover:bg-white hover:shadow-sm dark:border-slate-700 dark:bg-slate-900/35 dark:hover:bg-slate-900/55"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 size-4 rounded border-slate-300 text-primary focus:ring-primary"
+                          checked={Boolean(currentColumn[item.key])}
+                          onChange={(e) => updateColumn({ [item.key]: e.target.checked })}
+                        />
+                        <div>
+                          <div className="text-[12px] font-bold text-slate-700 dark:text-slate-100">{item.label}</div>
+                          <div className="mt-0.5 text-[10px] text-slate-400">{item.desc}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
                   <div>
                     <label className={mutedLabelClass}>帮助文案</label>
                     <textarea
@@ -595,7 +582,7 @@ export function FieldInspectorController({
                       value={currentColumn.helpText}
                       onChange={(e) => updateColumn({ helpText: e.target.value })}
                       placeholder="输入字段说明"
-                      className={fieldClass}
+                      className={textareaClass}
                     />
                   </div>
                 </div>
@@ -603,7 +590,7 @@ export function FieldInspectorController({
 
               <section className={compactCardClass}>
                 <div className={sectionTitleClass}>
-                  <span className="material-symbols-outlined text-[18px] text-primary">hub</span>
+                  <span className="material-symbols-outlined text-[16px] text-primary">hub</span>
                   <h4>{isConditionConfig ? '查询联动' : '业务联动'}</h4>
                 </div>
                 <div className="grid gap-4">

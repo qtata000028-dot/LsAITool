@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   shadcnFieldClass,
   shadcnMutedLabelClass,
@@ -26,17 +26,7 @@ const popupMenuParamFields = Array.from({ length: 10 }, (_, index) => ({
   label: `参数 ${index + 1}`,
 }));
 
-const managerSectionClass = 'rounded-md border border-slate-200/80 bg-white px-3 py-3 dark:border-slate-800 dark:bg-slate-950';
-const managerHeaderClass = 'mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-2.5 dark:border-slate-800';
-const managerTitleWrapClass = 'flex min-w-0 items-center gap-3';
-const managerTitleIconClass = 'inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]';
-const managerActionButtonClass = 'inline-flex h-9 items-center gap-1 rounded-md border border-[color:var(--workspace-accent)] bg-[color:var(--workspace-accent)] px-3.5 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-[color:var(--workspace-accent-strong)]';
-const managerListSurfaceClass = 'space-y-2 rounded-md border border-slate-200/80 bg-slate-50/70 p-2 dark:border-slate-800 dark:bg-slate-900/60';
-const managerDetailNameClass = 'inline-flex max-w-full items-center rounded-md border border-slate-200/80 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300';
-const managerMetricCardClass = 'min-w-[58px] rounded-md border border-slate-200/80 bg-slate-50 px-2.5 py-1.5 text-right dark:border-slate-800 dark:bg-slate-900';
-const detailCardClass = 'rounded-md border border-slate-200/80 bg-slate-50/55 p-3 dark:border-slate-800 dark:bg-slate-900/55';
-const detailSectionTitleClass = 'mb-4 flex items-center justify-between gap-3';
-const detailSectionLabelClass = 'text-[12px] font-semibold tracking-[0.04em] text-slate-500 dark:text-slate-300';
+const managerHeaderToolsClass = 'ml-auto flex flex-wrap items-center justify-end gap-2';
 
 function getPopupMenuIconName(value: unknown) {
   if (typeof value !== 'string') return 'right_click';
@@ -47,6 +37,234 @@ function getPopupMenuIconName(value: unknown) {
 function getPopupMenuParamPreview(value: string) {
   const normalized = value.replace(/\s+/g, ' ').trim();
   return normalized.length > 22 ? `${normalized.slice(0, 22)}...` : normalized;
+}
+
+function PopupMenuEditModal({
+  item,
+  onClose,
+  onSelectParamKey,
+  onUpdateItem,
+  selectedParamKey,
+}: {
+  item: PopupMenuItem;
+  onClose: () => void;
+  onSelectParamKey: (paramKey: string) => void;
+  onUpdateItem: (patch: Record<string, any>) => void;
+  selectedParamKey: string;
+}) {
+  const displayName = item.menuname || item.label || '未命名菜单';
+  const activeParamField = popupMenuParamFields.find((f) => f.key === selectedParamKey) ?? popupMenuParamFields[0];
+  const activeParamValue = String(item[activeParamField.key] ?? '');
+  const configuredParamCount = popupMenuParamFields.filter((f) => String(item[f.key] ?? '').trim().length > 0).length;
+  const updateNumber = (key: string, value: string, fallback = 0) => {
+    onUpdateItem({ [key]: value === '' ? fallback : normalizePopupMenuNumber(value, fallback) });
+  };
+
+  const handleBackdropClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) onClose();
+  }, [onClose]);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30 backdrop-blur-[3px]"
+      onClick={handleBackdropClick}
+    >
+      <div className="relative mx-4 flex max-h-[90vh] w-full max-w-[1080px] flex-col overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-[0_25px_50px_-12px_rgba(0,0,0,0.2)] dark:border-slate-700 dark:bg-slate-900">
+        {/* 顶栏：标题 + 关闭 */}
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-xl border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]">
+              <span className="material-symbols-outlined text-[16px]">{getPopupMenuIconName(item.defailtimage)}</span>
+            </div>
+            <div>
+              <h3 className="text-[15px] font-bold text-slate-800 dark:text-slate-100">编辑右键菜单</h3>
+              <p className="mt-0.5 text-[11px] text-slate-400">{displayName}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+
+        {/* 内容区 — 统一滚动 */}
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          <div className="mx-auto grid w-full grid-cols-3 gap-6">
+            
+            {/* 1. 核心配置区 */}
+            <section className="flex flex-col">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex size-6 items-center justify-center rounded-md bg-slate-100 text-[11px] font-black text-slate-500 dark:bg-slate-800 dark:text-slate-400">1</span>
+                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">核心配置</h4>
+              </div>
+              <div className="flex flex-1 flex-col gap-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-800/30">
+                <div>
+                  <label className={shadcnMutedLabelClass}>菜单名称</label>
+                  <input
+                    type="text"
+                    value={item.menuname ?? item.label ?? ''}
+                    onChange={(event) => onUpdateItem({ menuname: event.target.value })}
+                    placeholder="菜单名称"
+                    className={shadcnFieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={shadcnMutedLabelClass}>调用模板名</label>
+                  <input
+                    type="text"
+                    value={item.dllname ?? ''}
+                    onChange={(event) => onUpdateItem({ dllname: event.target.value })}
+                    placeholder="例如：open_archive_detail"
+                    className={`${shadcnFieldClass} font-mono text-[12px]`}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={shadcnMutedLabelClass}>右键类型</label>
+                    <input type="number" value={item.menuType ?? 0} onChange={(e) => updateNumber('menuType', e.target.value, 0)} className={shadcnFieldClass} />
+                  </div>
+                  <div>
+                    <label className={shadcnMutedLabelClass}>加载方式</label>
+                    <input type="number" value={item.showMode ?? 0} onChange={(e) => updateNumber('showMode', e.target.value, 0)} className={shadcnFieldClass} />
+                  </div>
+                  <div>
+                    <label className={shadcnMutedLabelClass}>添加方式</label>
+                    <input type="number" value={item.addShowMode ?? 0} onChange={(e) => updateNumber('addShowMode', e.target.value, 0)} className={shadcnFieldClass} />
+                  </div>
+                  <div>
+                    <label className={shadcnMutedLabelClass}>事件类型</label>
+                    <input type="number" value={item.actiontype ?? 0} onChange={(e) => updateNumber('actiontype', e.target.value, 0)} className={shadcnFieldClass} />
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* 2. 参数配置区 */}
+            <section className="flex flex-col">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-6 items-center justify-center rounded-md bg-slate-100 text-[11px] font-black text-slate-500 dark:bg-slate-800 dark:text-slate-400">2</span>
+                  <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">参数配置</h4>
+                </div>
+                {configuredParamCount > 0 && (
+                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
+                    已配置 {configuredParamCount} 项
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-1 flex-col gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-800/30">
+                {/* 顶部：参数列表 (2行5列) */}
+                <div className="grid grid-cols-5 gap-1.5">
+                  {popupMenuParamFields.map((field, index) => {
+                    const hasValue = Boolean(String(item[field.key] ?? '').trim());
+                    const isActive = activeParamField.key === field.key;
+                    return (
+                      <button
+                        key={field.key}
+                        type="button"
+                        onClick={() => onSelectParamKey(field.key)}
+                        className={`flex h-8 items-center justify-center gap-1.5 rounded-md text-[11px] transition-all ${
+                          isActive
+                            ? 'bg-[color:var(--workspace-accent)] font-bold text-white shadow-sm'
+                            : hasValue
+                              ? 'bg-white font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+                              : 'text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>P{index + 1}</span>
+                        {hasValue && !isActive && <span className="size-1.5 rounded-full bg-emerald-400" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* 底部：选中参数的编辑器 */}
+                <div className="flex min-h-[200px] min-w-0 flex-1 flex-col rounded-lg border border-slate-200/60 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-[12px] font-bold text-slate-700 dark:text-slate-100">{activeParamField.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateItem({ [activeParamField.key]: '' })}
+                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 transition-colors hover:text-rose-500"
+                    >
+                      <span className="material-symbols-outlined text-[12px]">ink_eraser</span>
+                      清空
+                    </button>
+                  </div>
+                  <textarea
+                    value={activeParamValue}
+                    onChange={(event) => onUpdateItem({ [activeParamField.key]: event.target.value })}
+                    placeholder={`输入 ${activeParamField.label} 值`}
+                    className={`${shadcnTextareaClass} h-full min-h-0 flex-1 resize-none font-mono text-[12px]`}
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* 3. 脚本与提示区 */}
+            <section className="flex flex-col">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex size-6 items-center justify-center rounded-md bg-slate-100 text-[11px] font-black text-slate-500 dark:bg-slate-800 dark:text-slate-400">3</span>
+                <h4 className="text-[13px] font-bold text-slate-800 dark:text-slate-100">事件脚本与提示</h4>
+              </div>
+              <div className="flex flex-1 flex-col gap-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-800/30">
+                <div className="flex-1">
+                  <label className={shadcnMutedLabelClass}>事件脚本</label>
+                  <textarea
+                    value={item.action ?? ''}
+                    onChange={(event) => onUpdateItem({ action: event.target.value })}
+                    placeholder="脚本 / 事件表达式"
+                    className={`${shadcnTextareaClass} h-full min-h-[120px] font-mono text-[12px]`}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={shadcnMutedLabelClass}>执行前提示</label>
+                    <textarea rows={2} value={item.beforeMsg ?? ''} onChange={(e) => onUpdateItem({ beforeMsg: e.target.value })} className={`${shadcnTextareaClass} text-[11px]`} />
+                  </div>
+                  <div>
+                    <label className={shadcnMutedLabelClass}>成功提示</label>
+                    <textarea rows={2} value={item.msgSuccess ?? ''} onChange={(e) => onUpdateItem({ msgSuccess: e.target.value })} className={`${shadcnTextareaClass} text-[11px]`} />
+                  </div>
+                  <div>
+                    <label className={shadcnMutedLabelClass}>错误提示</label>
+                    <textarea rows={2} value={item.msgError ?? ''} onChange={(e) => onUpdateItem({ msgError: e.target.value })} className={`${shadcnTextareaClass} text-[11px]`} />
+                  </div>
+                  <div>
+                    <label className={shadcnMutedLabelClass}>补充说明</label>
+                    <textarea rows={2} value={item.Fremark ?? ''} onChange={(e) => onUpdateItem({ Fremark: e.target.value })} className={`${shadcnTextareaClass} text-[11px]`} />
+                  </div>
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </div>
+
+        {/* 底栏 */}
+        <div className="flex shrink-0 items-center justify-end border-t border-slate-100 px-5 py-3 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[color:var(--workspace-accent)] px-6 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+          >
+            <span className="material-symbols-outlined text-[14px]">check</span>
+            完成
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export const PopupMenuManager = React.memo(function PopupMenuManager({
@@ -61,346 +279,129 @@ export const PopupMenuManager = React.memo(function PopupMenuManager({
   selectedItem,
   selectedParamKey,
 }: PopupMenuManagerProps) {
-  const popupMenuDisplayName = selectedItem?.menuname || selectedItem?.label || '未命名菜单';
-  const activePopupMenuParamField = popupMenuParamFields.find((field) => field.key === selectedParamKey) ?? popupMenuParamFields[0];
-  const activePopupMenuParamValue = selectedItem ? String(selectedItem[activePopupMenuParamField.key] ?? '') : '';
-  const configuredPopupMenuParamCount = selectedItem
-    ? popupMenuParamFields.filter((field) => String(selectedItem[field.key] ?? '').trim().length > 0).length
-    : 0;
-  const updateSelectedPopupMenuNumber = (key: string, value: string, fallback = 0) => {
-    onUpdateSelectedItem({ [key]: value === '' ? fallback : normalizePopupMenuNumber(value, fallback) });
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const editingItem = editingItemId ? contextMenuItems.find((i) => i.id === editingItemId) ?? null : null;
+
+  const handleItemClick = (itemId: string) => {
+    onSelectItem(itemId);
+    setEditingItemId(itemId);
   };
 
   return (
-    <div className="space-y-4">
-      <section className={managerSectionClass}>
-        <div className={managerHeaderClass}>
-          <div className={managerTitleWrapClass}>
-            <span className={managerTitleIconClass}>
-              <span className="material-symbols-outlined text-[18px]">list_alt</span>
-            </span>
-            <div>
-              <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-100">菜单列表</h4>
+    <div className="space-y-0">
+      <section className="px-3 py-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-8 items-center justify-center rounded-lg border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]">
+              <span className="material-symbols-outlined text-[16px]">list_alt</span>
             </div>
+            <h4 className="text-[13px] font-bold text-slate-700 dark:text-slate-100">右键菜单</h4>
           </div>
-          <div className="flex w-full items-center justify-between gap-3 pt-1">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <div className={managerMetricCardClass}>
-                <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">总数</div>
-                <div className="mt-1 text-[15px] font-black text-slate-800 dark:text-slate-100">{contextMenuItems.length}</div>
-              </div>
-              <div className={managerMetricCardClass}>
-                <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">可用</div>
-                <div className="mt-1 text-[15px] font-black text-emerald-500">{enabledMenuCount}</div>
-              </div>
-              <div className={managerMetricCardClass}>
-                <div className="text-[10px] font-bold tracking-[0.08em] text-slate-400">禁用</div>
-                <div className="mt-1 text-[15px] font-black text-amber-500">{Math.max(0, contextMenuItems.length - enabledMenuCount)}</div>
-              </div>
+          <div className={managerHeaderToolsClass}>
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+              <span className="font-bold text-slate-600 dark:text-slate-200">{enabledMenuCount}</span>
+              <span>/</span>
+              <span>{contextMenuItems.length}</span>
+              <span>可用</span>
             </div>
             <button
               type="button"
               onClick={onAddItem}
-              className={`${managerActionButtonClass} shrink-0`}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[color:var(--workspace-accent)] bg-[color:var(--workspace-accent)] px-3 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
             >
-              <span className="material-symbols-outlined text-[14px]">add</span>
-              新增菜单
+              <span className="material-symbols-outlined text-[13px]">add</span>
+              新增
             </button>
           </div>
         </div>
-        <div className={`${managerListSurfaceClass} max-h-[332px] overflow-y-auto pr-1`}>
+
+        <div className="space-y-1.5">
           {contextMenuItems.length > 0 ? contextMenuItems.map((item, index) => {
             const isSelected = selectedItem?.id === item.id;
             const iconName = getPopupMenuIconName(item.defailtimage);
+            const isDisabled = Boolean(item.disabled);
 
             return (
               <div
                 key={item.id}
-                className={`group flex items-center gap-3 rounded-[20px] border px-3.5 py-3 transition-all ${
+                className={`group flex items-center gap-2.5 rounded-xl border px-3 py-2 transition-all ${
                   isSelected
-                    ? 'border-[color:var(--workspace-accent-border-strong)] bg-[linear-gradient(180deg,var(--workspace-accent-surface),rgba(255,255,255,0.96))] shadow-[0_22px_36px_-28px_var(--workspace-accent-shadow)] dark:bg-[linear-gradient(180deg,rgba(36,53,83,0.92),rgba(15,23,42,0.7))]'
-                    : 'border-slate-200/75 bg-white/94 hover:border-[color:var(--workspace-accent-border)] hover:bg-white dark:border-slate-700 dark:bg-slate-900/56 dark:hover:bg-slate-900/72'
+                    ? 'border-[color:var(--workspace-accent)]/30 bg-[color:var(--workspace-accent-soft)]/60 shadow-sm'
+                    : 'border-transparent bg-slate-50/80 hover:border-slate-200/80 hover:bg-white dark:bg-slate-800/40 dark:hover:border-slate-700 dark:hover:bg-slate-800/70'
                 }`}
               >
                 <button
                   type="button"
-                  onClick={() => onSelectItem(item.id)}
-                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                  onClick={() => handleItemClick(item.id)}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                 >
-                  <div className={`flex size-11 shrink-0 items-center justify-center rounded-[18px] border transition-colors ${
+                  <div className={`flex size-8 shrink-0 items-center justify-center rounded-lg border transition-colors ${
                     isSelected
                       ? 'border-[color:var(--workspace-accent)] bg-[color:var(--workspace-accent)] text-white'
                       : 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)] text-[color:var(--workspace-accent-strong)]'
                   }`}>
-                    <span className="material-symbols-outlined text-[18px]">{iconName}</span>
+                    <span className="material-symbols-outlined text-[15px]">{iconName}</span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-bold text-slate-700 dark:text-slate-100">
+                    <div className="truncate text-[12px] font-semibold text-slate-700 dark:text-slate-100">
                       {item.menuname || item.label || `菜单 ${index + 1}`}
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-2 text-[10px] text-slate-400">
+                      {item.dllname && <span className="truncate font-mono">{item.dllname}</span>}
+                      {isDisabled && <span className="rounded bg-amber-100 px-1.5 py-0.5 font-bold text-amber-600 dark:bg-amber-500/15 dark:text-amber-400">禁用</span>}
                     </div>
                   </div>
                 </button>
-                <label
-                  className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200/80 bg-white/90 px-3 py-1.5 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-300"
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <span>禁用</span>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(item.disabled)}
-                    onMouseDown={(event) => event.stopPropagation()}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={(event) => onToggleItemDisabled(item.id, event.target.checked)}
-                    className="h-4 w-4 rounded accent-[color:var(--workspace-accent)]"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => onDeleteItem(item.id)}
-                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl text-rose-500 transition-colors hover:bg-rose-50 dark:hover:bg-rose-500/10"
-                  title="删除菜单"
-                >
-                  <span className="material-symbols-outlined text-[16px]">delete</span>
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onToggleItemDisabled(item.id, !isDisabled); }}
+                    className={`inline-flex size-7 items-center justify-center rounded-lg text-[14px] transition-colors ${
+                      !isDisabled
+                        ? 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
+                        : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                    title={isDisabled ? '启用' : '禁用'}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">{isDisabled ? 'toggle_off' : 'toggle_on'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onDeleteItem(item.id); }}
+                    className="inline-flex size-7 items-center justify-center rounded-lg text-rose-400 transition-colors hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-500/10"
+                    title="删除"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">delete</span>
+                  </button>
+                </div>
               </div>
             );
           }) : (
-            <div className="rounded-[22px] border border-dashed border-slate-200/80 px-4 py-10 text-center text-[12px] text-slate-400 dark:border-slate-700">
-              还没有配置右键菜单
+            <div className="rounded-xl border border-dashed border-slate-200/80 px-4 py-10 text-center dark:border-slate-700">
+              <span className="material-symbols-outlined mb-2 text-[28px] text-slate-300 dark:text-slate-600">right_click</span>
+              <div className="text-[12px] text-slate-400">还没有配置右键菜单</div>
+              <button
+                type="button"
+                onClick={onAddItem}
+                className="mt-3 inline-flex items-center gap-1 rounded-lg border border-slate-200/80 px-3 py-1.5 text-[11px] font-semibold text-slate-500 transition-colors hover:border-[color:var(--workspace-accent)] hover:text-[color:var(--workspace-accent)] dark:border-slate-700 dark:text-slate-400"
+              >
+                <span className="material-symbols-outlined text-[13px]">add</span>
+                新增菜单
+              </button>
             </div>
           )}
         </div>
       </section>
 
-      <section className={`${managerSectionClass} min-w-0`}>
-        <div className={managerHeaderClass}>
-          <div className={managerTitleWrapClass}>
-            <span className={managerTitleIconClass}>
-              <span className="material-symbols-outlined text-[18px]">edit_note</span>
-            </span>
-            <div>
-              <h4 className="text-[14px] font-bold text-slate-800 dark:text-slate-100">菜单详情</h4>
-            </div>
-          </div>
-          {selectedItem ? (
-            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-              <span className={`${managerDetailNameClass} max-w-[320px] truncate`}>
-                {popupMenuDisplayName}
-              </span>
-              <span className="inline-flex items-center rounded-full border border-slate-200/80 bg-white/92 px-3 py-1.5 text-[11px] font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-300">
-                顺序 {selectedItem.orderid ?? 0}
-              </span>
-            </div>
-          ) : null}
-        </div>
-        {selectedItem ? (
-          <div className="space-y-3.5">
-            <section className={detailCardClass}>
-              <div className={detailSectionTitleClass}>
-                <div className={detailSectionLabelClass}>核心配置</div>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="md:col-span-2">
-                  <label className={shadcnMutedLabelClass}>菜单名称</label>
-                  <input
-                    type="text"
-                    value={selectedItem.menuname ?? selectedItem.label ?? ''}
-                    onChange={(event) => onUpdateSelectedItem({ menuname: event.target.value })}
-                    placeholder="菜单名称"
-                    className={shadcnFieldClass}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className={shadcnMutedLabelClass}>调用模板名</label>
-                  <input
-                    type="text"
-                    value={selectedItem.dllname ?? ''}
-                    onChange={(event) => onUpdateSelectedItem({ dllname: event.target.value })}
-                    placeholder="例如：open_archive_detail"
-                    className={`${shadcnFieldClass} font-mono text-[12px]`}
-                  />
-                </div>
-                <div>
-                  <label className={shadcnMutedLabelClass}>右键类型</label>
-                  <input
-                    type="number"
-                    value={selectedItem.menuType ?? 0}
-                    onChange={(event) => updateSelectedPopupMenuNumber('menuType', event.target.value, 0)}
-                    className={shadcnFieldClass}
-                  />
-                </div>
-                <div>
-                  <label className={shadcnMutedLabelClass}>加载方式</label>
-                  <input
-                    type="number"
-                    value={selectedItem.showMode ?? 0}
-                    onChange={(event) => updateSelectedPopupMenuNumber('showMode', event.target.value, 0)}
-                    className={shadcnFieldClass}
-                  />
-                </div>
-                <div>
-                  <label className={shadcnMutedLabelClass}>添加方式</label>
-                  <input
-                    type="number"
-                    value={selectedItem.addShowMode ?? 0}
-                    onChange={(event) => updateSelectedPopupMenuNumber('addShowMode', event.target.value, 0)}
-                    className={shadcnFieldClass}
-                  />
-                </div>
-                <div>
-                  <label className={shadcnMutedLabelClass}>事件类型</label>
-                  <input
-                    type="number"
-                    value={selectedItem.actiontype ?? 0}
-                    onChange={(event) => updateSelectedPopupMenuNumber('actiontype', event.target.value, 0)}
-                    className={shadcnFieldClass}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section className={detailCardClass}>
-              <div className={detailSectionTitleClass}>
-                <div className={detailSectionLabelClass}>参数配置</div>
-                <span className="text-[11px] text-slate-400 dark:text-slate-500">已配置 {configuredPopupMenuParamCount}/10</span>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {popupMenuParamFields.map((field, index) => {
-                  const hasValue = Boolean(String(selectedItem[field.key] ?? '').trim());
-                  const isActive = activePopupMenuParamField.key === field.key;
-                  const previewValue = getPopupMenuParamPreview(String(selectedItem[field.key] ?? ''));
-
-                  return (
-                    <button
-                      key={field.key}
-                      type="button"
-                      onClick={() => onSelectParamKey(field.key)}
-                      aria-pressed={isActive}
-                      className={`group flex min-w-0 items-center justify-between gap-3 rounded-[18px] border px-3.5 py-3 text-left transition-all duration-150 ${
-                        isActive
-                          ? 'border-[color:var(--workspace-accent-border-strong)] bg-[color:var(--workspace-accent-surface)] shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)]'
-                          : hasValue
-                            ? 'border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-soft)]/55 hover:border-[color:var(--workspace-accent-border-strong)]'
-                            : 'border-slate-200/80 bg-white/88 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/68'
-                      }`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[12px] font-bold ${isActive ? 'text-[color:var(--workspace-accent-strong)] dark:text-white' : 'text-slate-700 dark:text-slate-100'}`}>
-                            参数 {index + 1}
-                          </span>
-                          {hasValue ? (
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                              isActive
-                                ? 'bg-[color:var(--workspace-accent)] text-white'
-                                : 'bg-emerald-500/12 text-emerald-600 dark:bg-emerald-500/18 dark:text-emerald-300'
-                            }`}
-                            >
-                              已填
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className={`mt-1 truncate text-[11px] ${hasValue ? (isActive ? 'text-[color:var(--workspace-accent-strong)]/80 dark:text-slate-200/90' : 'text-slate-500 dark:text-slate-300') : 'text-slate-400 dark:text-slate-500'}`}>
-                          {hasValue ? previewValue : '未填写'}
-                        </div>
-                      </div>
-                      <span className={`material-symbols-outlined shrink-0 text-[16px] transition-colors ${
-                        isActive
-                          ? 'text-[color:var(--workspace-accent-strong)] dark:text-white'
-                          : 'text-slate-300 group-hover:text-slate-500 dark:text-slate-600 dark:group-hover:text-slate-300'
-                      }`}
-                      >
-                        chevron_right
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-3 rounded-[18px] border border-slate-200/80 bg-slate-50/72 p-3.5 dark:border-slate-700 dark:bg-slate-900/46">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="text-[12px] font-bold text-slate-700 dark:text-slate-100">{activePopupMenuParamField.label}</div>
-                  <button
-                    type="button"
-                    onClick={() => onUpdateSelectedItem({ [activePopupMenuParamField.key]: '' })}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/88 px-3 py-1.5 text-[11px] font-bold text-slate-500 transition-colors hover:border-rose-200 hover:text-rose-500 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">ink_eraser</span>
-                    清空当前
-                  </button>
-                </div>
-                <textarea
-                  rows={3}
-                  value={activePopupMenuParamValue}
-                  onChange={(event) => onUpdateSelectedItem({ [activePopupMenuParamField.key]: event.target.value })}
-                  placeholder={activePopupMenuParamField.label}
-                  className={`${shadcnTextareaClass} min-h-[96px] resize-y font-mono text-[12px]`}
-                />
-              </div>
-            </section>
-
-            <section className={detailCardClass}>
-              <div className={detailSectionTitleClass}>
-                <div className={detailSectionLabelClass}>事件脚本与提示</div>
-              </div>
-              <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-                <div>
-                  <label className={shadcnMutedLabelClass}>事件脚本</label>
-                  <textarea
-                    rows={8}
-                    value={selectedItem.action ?? ''}
-                    onChange={(event) => onUpdateSelectedItem({ action: event.target.value })}
-                    placeholder="脚本 / 事件表达式"
-                    className={`${shadcnTextareaClass} min-h-[184px]`}
-                  />
-                </div>
-                <div className="grid gap-3">
-                  <div>
-                    <label className={shadcnMutedLabelClass}>执行前提示</label>
-                    <textarea
-                      rows={2}
-                      value={selectedItem.beforeMsg ?? ''}
-                      onChange={(event) => onUpdateSelectedItem({ beforeMsg: event.target.value })}
-                      className={`${shadcnTextareaClass} min-h-[78px] font-sans text-[12px]`}
-                    />
-                  </div>
-                  <div>
-                    <label className={shadcnMutedLabelClass}>成功提示</label>
-                    <textarea
-                      rows={2}
-                      value={selectedItem.msgSuccess ?? ''}
-                      onChange={(event) => onUpdateSelectedItem({ msgSuccess: event.target.value })}
-                      className={`${shadcnTextareaClass} min-h-[78px] font-sans text-[12px]`}
-                    />
-                  </div>
-                  <div>
-                    <label className={shadcnMutedLabelClass}>错误提示</label>
-                    <textarea
-                      rows={2}
-                      value={selectedItem.msgError ?? ''}
-                      onChange={(event) => onUpdateSelectedItem({ msgError: event.target.value })}
-                      className={`${shadcnTextareaClass} min-h-[78px] font-sans text-[12px]`}
-                    />
-                  </div>
-                  <div>
-                    <label className={shadcnMutedLabelClass}>补充说明</label>
-                    <textarea
-                      rows={2}
-                      value={selectedItem.Fremark ?? ''}
-                      onChange={(event) => onUpdateSelectedItem({ Fremark: event.target.value })}
-                      className={`${shadcnTextareaClass} min-h-[78px] font-sans text-[12px]`}
-                    />
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-        ) : (
-          <div className="rounded-[16px] border border-dashed border-slate-200/80 px-4 py-10 text-center text-[12px] text-slate-400 dark:border-slate-800">
-            请选择菜单项
-          </div>
-        )}
-      </section>
+      {editingItem ? (
+        <PopupMenuEditModal
+          item={editingItem}
+          onClose={() => setEditingItemId(null)}
+          onSelectParamKey={onSelectParamKey}
+          onUpdateItem={onUpdateSelectedItem}
+          selectedParamKey={selectedParamKey}
+        />
+      ) : null}
     </div>
   );
 });

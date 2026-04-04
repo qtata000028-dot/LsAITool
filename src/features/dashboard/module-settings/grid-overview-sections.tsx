@@ -150,10 +150,10 @@ type GridLayoutWorkflowSectionProps = {
   totalFieldCount: number;
 };
 
-const quietDocumentInspectorCardClass = 'border border-slate-200/75 bg-white px-4 py-3 shadow-none dark:border-slate-800 dark:bg-slate-950/78';
-const quietDocumentInspectorSummaryClass = 'border border-slate-200/70 bg-slate-50/80 px-3 py-2 text-[11px] leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-300';
-const quietDocumentInspectorActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200/80 bg-white px-3 text-[11px] font-medium text-slate-600 transition-colors hover:border-[color:var(--workspace-accent-border)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200';
-const quietDocumentInspectorPrimaryActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-md bg-[color:var(--workspace-accent)] px-3 text-[11px] font-medium text-white shadow-none transition-colors hover:bg-[color:var(--workspace-accent-strong)]';
+const quietDocumentInspectorCardClass = 'rounded-xl border border-slate-200/60 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900';
+const quietDocumentInspectorSummaryClass = 'rounded-lg border border-slate-100 bg-slate-50/50 p-3 text-[11px] leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-800/30 dark:text-slate-400';
+const quietDocumentInspectorActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/80 bg-white px-3 text-[11px] font-semibold text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-slate-100';
+const quietDocumentInspectorPrimaryActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-lg bg-[color:var(--workspace-accent)] px-3 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-[color:var(--workspace-accent-strong)]';
 
 export const GridLayoutWorkflowSection = React.memo(function GridLayoutWorkflowSection({
   assignedFieldCount,
@@ -925,7 +925,7 @@ export const GridConfigSummarySection = React.memo(function GridConfigSummarySec
   yAxisField,
 }: GridConfigSummarySectionProps) {
   return (
-    <section className={quietDocumentInspectorCardClass}>
+    <section className={`${quietDocumentInspectorCardClass} space-y-4`}>
       <div className={shadcnSectionTitleClass}>
         <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">
           {detailGridFillTypeMeta?.icon || 'table_chart'}
@@ -951,13 +951,13 @@ export const GridConfigSummarySection = React.memo(function GridConfigSummarySec
             <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
               <div>
                 <label className={shadcnMutedLabelClass}>图表类型</label>
-                <div className="rounded-md border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-[13px] font-semibold text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-100">
+                <div className="rounded-lg border border-slate-200/80 bg-slate-50/50 px-3 py-2 text-[12px] font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200">
                   {chartTypeLabel || '未设置'}
                 </div>
               </div>
               <div>
                 <label className={shadcnMutedLabelClass}>图表标题</label>
-                <div className="rounded-md border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-[13px] font-semibold text-slate-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-100">
+                <div className="rounded-lg border border-slate-200/80 bg-slate-50/50 px-3 py-2 text-[12px] font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200">
                   {chartTitle || activeTitle}
                 </div>
               </div>

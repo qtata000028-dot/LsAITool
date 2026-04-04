@@ -96,7 +96,9 @@ type ToolFeedbackServiceOptions = {
 
 const TOOL_FEEDBACK_TABLE_NAME = 'dbo.p_toolImprovementSuggestionTab';
 const TOOL_FEEDBACK_ATTACHMENT_TABLE_NAME = 'dbo.p_toolImprovementSuggestionImageTab';
-const TOOL_FEEDBACK_UPLOAD_ROOT = path.resolve(process.cwd(), 'server-data', 'tool-feedback-images');
+const TOOL_FEEDBACK_UPLOAD_ROOT = path.resolve(
+  process.env.TOOL_FEEDBACK_UPLOAD_ROOT || path.resolve(process.cwd(), 'server-data', 'tool-feedback-images'),
+);
 const STATUS_PENDING = 'pending';
 const STATUS_APPROVED = 'approved';
 const STATUS_REJECTED = 'rejected';
@@ -567,12 +569,12 @@ async function listReviewSuggestions(options: ToolFeedbackServiceOptions = {}) {
       createdat,
       updatedat
     from ${TOOL_FEEDBACK_TABLE_NAME}
+    where isnull(status, '${STATUS_PENDING}') <> '${STATUS_REJECTED}'
     order by
       case
         when status = '${STATUS_PENDING}' then 0
         when status = '${STATUS_APPROVED}' then 1
-        when status = '${STATUS_REJECTED}' then 2
-        else 3
+        else 2
       end,
       createdat desc,
       id desc

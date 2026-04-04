@@ -21,7 +21,7 @@ const port = Number(process.env.PORT || 3001);
 const baseUrl = process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1';
 const model = process.env.MINIMAX_MODEL || 'MiniMax-M2.1';
 const translateModel = process.env.MINIMAX_TRANSLATE_MODEL || model;
-const businessApiBaseUrl = (process.env.BUSINESS_API_BASE_URL || process.env.VITE_API_BASE_URL || 'http://114.116.135.188:9093').replace(/\/+$/, '');
+const businessApiBaseUrl = (process.env.BUSINESS_API_BASE_URL || process.env.VITE_API_BASE_URL || 'http://222.211.229.79:8888').replace(/\/+$/, '');
 const toolFeedbackMaxImageCount = Number(process.env.TOOL_FEEDBACK_MAX_IMAGE_COUNT || 8);
 const toolFeedbackMaxImageSize = Number(process.env.TOOL_FEEDBACK_MAX_IMAGE_SIZE || 10 * 1024 * 1024);
 
