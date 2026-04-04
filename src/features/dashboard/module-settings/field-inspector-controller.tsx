@@ -219,6 +219,11 @@ export function FieldInspectorController({
   };
 
   const currentTypeDisplayLabel = isConditionConfig ? currentColumn.type : currentFieldSqlTagLabel;
+  const currentWidthDisplayLabel = `${Math.round(
+    isConditionConfig
+      ? currentColumn.width || conditionPanelControlWidth
+      : currentColumn.width,
+  )}px`;
   const commonPropertySwitches = propertySwitches.filter((item) => item.key !== 'readonly');
   const advancedPropertySwitches = propertySwitches.filter((item) => item.key === 'readonly');
   const legacyTableMeta = isConditionConfig
@@ -284,6 +289,33 @@ export function FieldInspectorController({
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
         <div className="space-y-5">
+          <section className={compactCardClass}>
+            <div className={sectionTitleClass}>
+              <span className="material-symbols-outlined text-[16px] text-primary">analytics</span>
+              <h4>当前摘要</h4>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className={compactInfoCardClass}>
+                <div className="text-[11px] font-medium text-slate-400">{itemTypeLabel}</div>
+                <div className="mt-1 text-[13px] font-semibold text-slate-700 dark:text-slate-100">
+                  {currentTypeDisplayLabel || '未设置'}
+                </div>
+              </div>
+              <div className={compactInfoCardClass}>
+                <div className="text-[11px] font-medium text-slate-400">{itemWidthLabel}</div>
+                <div className="mt-1 text-[13px] font-semibold text-slate-700 dark:text-slate-100">
+                  {currentWidthDisplayLabel}
+                </div>
+              </div>
+              <div className={compactInfoCardClass}>
+                <div className="text-[11px] font-medium text-slate-400">{secondaryMetricLabel}</div>
+                <div className="mt-1 text-[13px] font-semibold text-slate-700 dark:text-slate-100">
+                  {secondaryMetricValue || '未设置'}
+                </div>
+              </div>
+            </div>
+          </section>
+
           {isCommonPanelTab ? (
             <>
               <section className={compactCardClass}>

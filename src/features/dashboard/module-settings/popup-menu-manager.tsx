@@ -34,11 +34,6 @@ function getPopupMenuIconName(value: unknown) {
   return trimmed && !/[/.:\\]/.test(trimmed) && !/\s/.test(trimmed) ? trimmed : 'right_click';
 }
 
-function getPopupMenuParamPreview(value: string) {
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  return normalized.length > 22 ? `${normalized.slice(0, 22)}...` : normalized;
-}
-
 function PopupMenuEditModal({
   item,
   onClose,
