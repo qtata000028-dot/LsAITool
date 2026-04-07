@@ -43,6 +43,7 @@ export interface AuthSession {
   tokenVersion: number;
   username: string;
   isAdmin?: boolean;
+  selectedCompanyOptionKey?: string;
 }
 
 async function requestEmployeeOptions() {

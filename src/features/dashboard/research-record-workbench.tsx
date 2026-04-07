@@ -11,7 +11,6 @@ import {
 import {
   archiveSurveyMain,
   deleteSurveyDetail,
-  deleteSurveyMain,
   fetchSurveyDetail,
   fetchSurveyDetails,
   fetchSurveyMain,
@@ -382,6 +381,62 @@ function createResearchContentItem(
     suggestions: '',
     timeShare: '',
     workDescription: '',
+  };
+}
+
+function cloneContentLineColors(lineColors: ResearchContentLineColors): ResearchContentLineColors {
+  const cloned: ResearchContentLineColors = {};
+
+  if (lineColors.formsProvided) {
+    cloned.formsProvided = { ...lineColors.formsProvided };
+  }
+  if (lineColors.workDescription) {
+    cloned.workDescription = { ...lineColors.workDescription };
+  }
+  if (lineColors.painPoints) {
+    cloned.painPoints = { ...lineColors.painPoints };
+  }
+  if (lineColors.suggestions) {
+    cloned.suggestions = { ...lineColors.suggestions };
+  }
+
+  return cloned;
+}
+
+function buildNextVersionLabel(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const matched = trimmed.match(/^(.*?)(?:\s*[([]?\s*(版本|V|v)\s*(\d+)\s*[)\]]?)$/);
+  if (!matched) {
+    return `${trimmed} V2`;
+  }
+
+  const baseLabel = matched[1].trim() || trimmed;
+  const nextVersion = Number.parseInt(matched[3], 10) + 1;
+
+  if (!Number.isFinite(nextVersion)) {
+    return `${trimmed} V2`;
+  }
+
+  return matched[2] === '版本'
+    ? `${baseLabel} 版本${nextVersion}`
+    : `${baseLabel} V${nextVersion}`;
+}
+
+function cloneResearchContentItem(item: ResearchContentItem, index: number): ResearchContentItem {
+  return {
+    ...item,
+    backendBillNo: '',
+    backendId: null,
+    businessTheme: item.businessTheme.trim() ? buildNextVersionLabel(item.businessTheme) : item.businessTheme,
+    capturedDetailNames: [...item.capturedDetailNames],
+    capturedFieldNames: [...item.capturedFieldNames],
+    id: buildResearchContentItemId(index),
+    lineColors: cloneContentLineColors(item.lineColors),
+    shouldPersistEvenIfBlank: true,
   };
 }
 
@@ -1413,6 +1468,40 @@ export function ResearchRecordWorkbench({
     setActiveStep('contents');
   }, []);
 
+  const duplicateSelectedContentItem = useCallback(() => {
+    if (!selectedContentItemId) {
+      return;
+    }
+
+    let duplicatedItemId: string | null = null;
+    setDraft((current) => {
+      const sourceItem = current.contentItems.find((item) => item.id === selectedContentItemId);
+      if (!sourceItem) {
+        return current;
+      }
+
+      const sourceIndex = current.contentItems.findIndex((item) => item.id === selectedContentItemId);
+      const insertIndex = sourceIndex >= 0 ? sourceIndex + 1 : current.contentItems.length;
+      const duplicatedItem = cloneResearchContentItem(sourceItem, current.contentItems.length + 1);
+      duplicatedItemId = duplicatedItem.id;
+
+      const nextItems = [...current.contentItems];
+      nextItems.splice(insertIndex, 0, duplicatedItem);
+
+      return {
+        ...current,
+        contentItems: nextItems,
+      };
+    });
+
+    if (duplicatedItemId) {
+      setSelectedContentItemId(duplicatedItemId);
+      scrollPreviewTo(`content-item:${duplicatedItemId}`);
+      setStatusMessage('已复制当前明细并新增一个版本');
+    }
+    setActiveStep('contents');
+  }, [scrollPreviewTo, selectedContentItemId]);
+
   const handleSaveRecord = useCallback(async () => {
     setIsRecordSaving(true);
 
@@ -1552,32 +1641,6 @@ export function ResearchRecordWorkbench({
       setIsArchiving(false);
     }
   }, [handleSaveRecord, onExit, onRecordSaved, onShowToast, recordBinding.mainId]);
-
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const handleDeleteRecord = useCallback(async () => {
-    if (!hasPersistedId(recordBinding.mainId)) {
-      onExit();
-      return;
-    }
-
-    const confirmed = window.confirm('确定要删除此调研记录吗？删除后不可恢复。');
-    if (!confirmed) return;
-
-    setIsDeleting(true);
-    try {
-      await deleteSurveyMain(recordBinding.mainId);
-      onShowToast?.('已删除调研记录');
-      onRecordSaved?.();
-      onExit();
-    } catch (error) {
-      const nextMessage = error instanceof Error ? error.message : '删除失败';
-      setStatusMessage(nextMessage);
-      onShowToast?.(nextMessage);
-    } finally {
-      setIsDeleting(false);
-    }
-  }, [onExit, onRecordSaved, onShowToast, recordBinding.mainId]);
 
   const handleExportWord = useCallback(async () => {
     try {
@@ -2867,6 +2930,15 @@ export function ResearchRecordWorkbench({
                                     </span>
                                     {capturingItemId === selectedContentItem.id ? '捕获中' : '捕获'}
                                   </button>
+                                  <button
+                                    type="button"
+                                    onClick={duplicateSelectedContentItem}
+                                    disabled={isRecordLoading || isRecordSaving || isArchiving}
+                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 transition-colors hover:border-primary/20 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    <span className="material-symbols-outlined text-[15px]">content_copy</span>
+                                    复制新增
+                                  </button>
                                   {isSelectedDetailLoading ? (
                                     <span className="inline-flex h-9 items-center rounded-xl border border-sky-200 bg-sky-50 px-2.5 text-[11px] font-semibold text-sky-700">
                                       加载中
@@ -3100,17 +3172,6 @@ export function ResearchRecordWorkbench({
 
         <div className="shrink-0 border-t border-slate-200 bg-white px-4">
           <div className="flex h-14 items-center gap-3">
-            {!explorerReadOnly && hasPersistedId(recordBinding.mainId) ? (
-              <button
-                type="button"
-                onClick={() => void handleDeleteRecord()}
-                disabled={isRecordLoading || isRecordSaving || isArchiving || isDeleting}
-                className="inline-flex items-center gap-1.5 border border-red-200 bg-white px-4 py-2.5 text-[12px] font-semibold text-red-600 transition-all hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <span className="material-symbols-outlined text-[18px]">delete</span>
-                {isDeleting ? '删除中...' : '删除'}
-              </button>
-            ) : null}
             <div className="flex-1" />
             {statusMessage ? <div className="text-[12px] font-semibold text-emerald-600">{statusMessage}</div> : null}
             {explorerReadOnly ? (
@@ -3123,7 +3184,7 @@ export function ResearchRecordWorkbench({
                 <button
                   type="button"
                   onClick={() => void handleSaveRecord()}
-                  disabled={isRecordLoading || isRecordSaving || isArchiving || isDeleting}
+                  disabled={isRecordLoading || isRecordSaving || isArchiving}
                   className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-5 py-2.5 text-[12px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span className="material-symbols-outlined text-[20px]">save</span>
@@ -3132,7 +3193,7 @@ export function ResearchRecordWorkbench({
                 <button
                   type="button"
                   onClick={() => void handleArchiveRecord()}
-                  disabled={isRecordLoading || isRecordSaving || isArchiving || isDeleting}
+                  disabled={isRecordLoading || isRecordSaving || isArchiving}
                   className="inline-flex items-center gap-1.5 border border-amber-300 bg-amber-50 px-5 py-2.5 text-[12px] font-semibold text-amber-700 transition-all hover:border-amber-400 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span className="material-symbols-outlined text-[20px]">task_alt</span>

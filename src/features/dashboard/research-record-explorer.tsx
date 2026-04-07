@@ -153,6 +153,27 @@ export function ResearchRecordExplorerWorkbench(props: ResearchRecordExplorerPro
     }
   }, []);
 
+  const refreshDepartmentCounts = useCallback(async () => {
+    try {
+      const stats = await fetchSurveyDepartmentStats();
+      setDepartments((prev) => {
+        const countMap = new Map<number, number>();
+        for (const stat of stats) {
+          countMap.set(stat.departId, stat.count);
+        }
+
+        return [...prev]
+          .map((department) => ({
+            ...department,
+            count: countMap.get(department.id) ?? 0,
+          }))
+          .sort((left, right) => right.count - left.count);
+      });
+    } catch {
+      // Keep the current list visible if count refresh fails.
+    }
+  }, []);
+
   useEffect(() => {
     if (activeDepartmentId === null) return;
     void loadRecords(activeDepartmentId);
@@ -162,14 +183,8 @@ export function ResearchRecordExplorerWorkbench(props: ResearchRecordExplorerPro
     if (activeDepartmentId !== null) {
       void loadRecords(activeDepartmentId);
     }
-    fetchSurveyDepartmentStats().then((stats) => {
-      setDepartments((prev) => {
-        const countMap = new Map<number, number>();
-        for (const stat of stats) countMap.set(stat.departId, stat.count);
-        return prev.map((d) => ({ ...d, count: countMap.get(d.id) ?? d.count }));
-      });
-    }).catch(() => {});
-  }, [activeDepartmentId, loadRecords]);
+    void refreshDepartmentCounts();
+  }, [activeDepartmentId, loadRecords, refreshDepartmentCounts]);
 
   const handleExit = useCallback(() => {
     setEditingRecordId(null);
