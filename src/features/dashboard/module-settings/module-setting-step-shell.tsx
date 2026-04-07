@@ -121,8 +121,8 @@ export function ModuleSettingStepShell({
   const stageShellClass = `flex min-h-0 overflow-hidden bg-[#f3f6fa] ${workspaceThemeStyles.tableSurface}`;
   const documentWorkspaceShellClass = 'flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-[linear-gradient(180deg,#fbfdff_0%,#f2f7fb_100%)] p-1.5 shadow-[0_24px_48px_-44px_rgba(96,165,250,0.22)]';
   const documentWorkspaceGridClass = hasDocumentDetails
-    ? 'grid-rows-[minmax(340px,1.08fr)_minmax(300px,0.92fr)] gap-y-2.5'
-    : 'grid-rows-[minmax(0,1fr)_auto]';
+    ? 'grid grid-rows-[minmax(340px,1.08fr)_minmax(300px,0.92fr)] gap-y-2.5'
+    : 'grid grid-rows-[minmax(0,1fr)] gap-y-2.5';
   const workspacePanelClass = 'flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#d9e2ec] bg-white shadow-none';
   const workspacePanelHeaderClass = 'flex items-center justify-between border-b border-[#e6edf5] bg-[#f8fafc] px-4 py-3';
   const sectionIconClass = 'flex size-8 items-center justify-center rounded-[10px] border border-[#dbe5ef] bg-[#f6f9fc] text-[color:var(--workspace-accent-strong)]';
@@ -171,16 +171,43 @@ export function ModuleSettingStepShell({
 
               <div className="h-full min-h-0 min-w-0 flex-1">
                 <div className={documentWorkspaceShellClass}>
-                  <div className={`grid h-full min-h-0 overflow-hidden ${documentWorkspaceGridClass}`}>
+                  <div className={`h-full min-h-0 overflow-hidden ${documentWorkspaceGridClass}`}>
                     <TableWorkbenchPanel
                       bodyNode={document.archiveMainTableBuilderNode}
                       bodyStyle={{ backgroundColor: '#ffffff' }}
                       footerNode={(
-                        <GridOperationConfigBar
-                        config={document.mainGridActionConfig}
-                        selectedActionKey={document.selectedMainGridAction}
-                        onSelectAction={document.onSelectMainGridAction}
-                        />
+                        <>
+                          <GridOperationConfigBar
+                            config={document.mainGridActionConfig}
+                            selectedActionKey={document.selectedMainGridAction}
+                            onSelectAction={document.onSelectMainGridAction}
+                          />
+                          {!hasDocumentDetails ? (
+                            <div className="border-t border-dashed border-[color:var(--workspace-accent-border)] bg-[linear-gradient(180deg,#f8faff_0%,#f1f5ff_100%)] px-5 py-3.5">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-[color:var(--workspace-accent-soft)]">
+                                    <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent-strong)]">tab_group</span>
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="text-[12px] font-semibold text-slate-700 dark:text-slate-100">当前未创建明细</div>
+                                    <p className="mt-0.5 text-[11px] leading-5 text-slate-400 dark:text-slate-300">
+                                      创建明细后可在下方配置明细表字段与操作
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={document.onAddDetailTab}
+                                  className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-[color:var(--workspace-accent)] px-3.5 text-[12px] font-semibold text-white shadow-[0_10px_20px_-18px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">add</span>
+                                  创建明细
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </>
                       )}
                       onPaste={document.onPasteMainTable}
                     />
@@ -211,26 +238,7 @@ export function ModuleSettingStepShell({
                           )}
                         />
                       </div>
-                    ) : (
-                      <div className="rounded-[18px] border border-dashed border-[color:var(--workspace-accent-border)] bg-white px-4 py-4 dark:bg-slate-900/75">
-                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                          <div className="min-w-0">
-                            <div className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">当前未创建明细</div>
-                            <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-300">
-                              点击创建明细后，再展开下方工作台，按现在的上下等分方式继续配置。
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={document.onAddDetailTab}
-                            className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-[color:var(--workspace-accent)] px-4 text-[12px] font-semibold text-white shadow-[0_12px_24px_-22px_var(--workspace-accent-shadow)] transition-colors hover:bg-[color:var(--workspace-accent-strong)]"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">add</span>
-                            创建明细
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -250,7 +258,7 @@ export function ModuleSettingStepShell({
     return (
       <div style={moduleSettingStageStyle} className={`${stageShellClass} flex-1 ${isConfigFullscreenActive ? 'min-h-[640px]' : ''}`}>
         <div className="grid h-full min-h-0 flex-1 gap-0" style={{ gridTemplateColumns: `minmax(0,1fr) ${inspectorPaneWidth}px` }}>
-          <div className="flex h-full min-h-0">
+          <div className="flex h-full min-h-0 overflow-hidden">
             {billDocumentWorkbenchNode}
           </div>
           <div className={rightPaneShellClass}>
@@ -303,9 +311,9 @@ export function ModuleSettingStepShell({
               onPaste={tree.onPasteLeftColumns}
               style={{ backgroundColor: '#fcfdff' }}
             >
-              <div className="px-3 pb-3 pt-2">
+              <div className="h-full min-h-0 overflow-hidden px-3 pb-3 pt-2">
                 {tree.builderLeftTableBuilderNode}
-            </div>
+              </div>
           </div>
         </div>
 
@@ -400,7 +408,7 @@ export function ModuleSettingStepShell({
               startResize={tree.startResize}
             />
             <div
-              className="min-h-0 flex-1 overflow-hidden outline-none"
+              className="flex min-h-0 flex-1 flex-col overflow-hidden outline-none"
               tabIndex={0}
               onPaste={tree.onPasteMainColumns}
               style={{ backgroundColor: '#fcfdff' }}

@@ -650,8 +650,14 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     const measurementHost = (
       hostElement?.closest('[data-table-workbench-body-slot="true"]') as HTMLDivElement | null
     ) ?? hostElement;
+
+    // Synchronous initial measurement — captures layout dimensions before paint
+    // to prevent the table from flashing with height=0 / width=0 on first render.
+    measurePreviewLayout();
+
     let firstRafId = 0;
     let secondRafId = 0;
+    let stabilizationTimerId = 0;
     const scheduleMeasure = () => {
       firstRafId = window.requestAnimationFrame(() => {
         measurePreviewLayout();
@@ -670,6 +676,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     }
 
     scheduleMeasure();
+
+    // Post-animation stabilization: re-measure after CSS transitions / motion
+    // animations settle so the table picks up its final container dimensions.
+    stabilizationTimerId = window.setTimeout(() => {
+      measurePreviewLayout();
+    }, 420);
 
     const resizeObserver = new ResizeObserver(() => {
       measurePreviewLayout();
@@ -695,6 +707,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     return () => {
       window.cancelAnimationFrame(firstRafId);
       window.cancelAnimationFrame(secondRafId);
+      window.clearTimeout(stabilizationTimerId);
       window.removeEventListener('load', handleWindowLoad);
       resizeObserver.disconnect();
     };

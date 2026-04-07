@@ -42,9 +42,9 @@ export function ConfigWizardStepContent({
 
       {configStep === moduleSettingStep ? (
         <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4 }}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           {moduleSettingNode}
@@ -54,9 +54,9 @@ export function ConfigWizardStepContent({
       {configStep === restrictionStep ? (
         <motion.div
           key="restriction-workbench"
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4 }}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           {restrictionNode}
@@ -66,9 +66,9 @@ export function ConfigWizardStepContent({
       {configStep === processDesignStep ? (
         <motion.div
           key="process-design-step"
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4 }}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           {processDesignNode}
@@ -80,9 +80,9 @@ export function ConfigWizardStepContent({
       {configStep === modulePreviewStep ? (
         <motion.div
           key="module-preview-step"
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4 }}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
           {modulePreviewNode}

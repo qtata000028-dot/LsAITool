@@ -9,7 +9,9 @@ import {
   fetchSingleTableModuleFields,
 } from '../../lib/backend-module-config';
 import {
+  archiveSurveyMain,
   deleteSurveyDetail,
+  deleteSurveyMain,
   fetchSurveyDetail,
   fetchSurveyDetails,
   fetchSurveyMain,
@@ -113,7 +115,12 @@ type ResearchRecordWorkbenchProps = {
   activeSubsystemName: string;
   availableModules: ResearchWorkbenchModuleOption[];
   currentUserName: string;
+  explorerDepartmentId?: number | null;
+  explorerDepartmentName?: string;
+  explorerMainId?: string | number | null;
+  explorerReadOnly?: boolean;
   onExit: () => void;
+  onRecordSaved?: () => void;
   onShowToast?: (message: string) => void;
   storageKey: string;
 };
@@ -887,7 +894,7 @@ function DynamicSuggestionPanel({
   const toneStyle = QUICK_ACTION_TONE_STYLES[tone];
 
   return (
-    <div className="rounded-none border border-slate-200 bg-slate-100 p-2.5">
+    <div className="rounded-none border border-slate-200 bg-slate-100 px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[12px] font-semibold text-slate-900">{title}</div>
@@ -896,7 +903,7 @@ function DynamicSuggestionPanel({
         {extra}
       </div>
 
-      <div className="mt-2.5 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-wrap gap-2">
         {tabs.map((tab) => {
           const tabTone = QUICK_ACTION_TONE_STYLES[tab.tone];
           const isActive = activeKey === tab.key;
@@ -1056,7 +1063,12 @@ export function ResearchRecordWorkbench({
   activeSubsystemName,
   availableModules,
   currentUserName,
+  explorerDepartmentId,
+  explorerDepartmentName,
+  explorerMainId,
+  explorerReadOnly = false,
   onExit,
+  onRecordSaved,
   onShowToast,
 }: ResearchRecordWorkbenchProps) {
   const authSession = useMemo(() => getStoredAuthSession(), []);
@@ -1166,33 +1178,79 @@ export function ResearchRecordWorkbench({
   }, [isDepartmentSearchOpen, selectedDepartmentOption]);
 
   useEffect(() => {
+    if (explorerDepartmentId != null && explorerDepartmentName) {
+      setRecordBinding((prev) => ({
+        ...prev,
+        departId: explorerDepartmentId,
+      }));
+      setDraft((prev) => ({
+        ...prev,
+        departmentName: explorerDepartmentName,
+        surveyDate: prev.surveyDate || getTodayDate(),
+      }));
+      setDepartmentSearchKeyword(explorerDepartmentName);
+    }
+  }, [explorerDepartmentId, explorerDepartmentName]);
+
+  useEffect(() => {
     let disposed = false;
 
-    async function loadFirstSurveyRecord() {
+    async function loadSurveyRecord() {
       setIsRecordLoading(true);
 
       try {
-        const mains = await fetchSurveyMainList();
-        const firstMain = Array.isArray(mains) && mains.length > 0 ? mains[0] : null;
+        let targetMainId: SurveyPersistedId | null = null;
 
-        if (!firstMain || !hasPersistedId(firstMain.id)) {
-          if (disposed) {
-            return;
-          }
+        if (explorerMainId != null && hasPersistedId(explorerMainId)) {
+          targetMainId = explorerMainId as SurveyPersistedId;
+        } else if (explorerMainId === null) {
           setLoadedMainRecord(null);
           setHydratedDetailIds([]);
-          setRecordBinding({
+          setRecordBinding((prev) => ({
             detailIds: [],
-            departId: null,
+            departId: explorerDepartmentId ?? prev.departId,
             mainId: null,
-          });
+          }));
+          setDraft((prev) => ({
+            ...defaultDraft,
+            departmentName: explorerDepartmentName || prev.departmentName,
+            surveyDate: getTodayDate(),
+          }));
+          return;
+        } else {
+          const mains = await fetchSurveyMainList(
+            explorerDepartmentId != null ? { departId: explorerDepartmentId } : undefined,
+          );
+          const firstMain = Array.isArray(mains) && mains.length > 0 ? mains[0] : null;
+
+          if (!firstMain || !hasPersistedId(firstMain.id)) {
+            if (disposed) return;
+            setLoadedMainRecord(null);
+            setHydratedDetailIds([]);
+            setRecordBinding({
+              detailIds: [],
+              departId: explorerDepartmentId ?? null,
+              mainId: null,
+            });
+            setDraft({
+              ...defaultDraft,
+              departmentName: explorerDepartmentName || '',
+              surveyDate: getTodayDate(),
+            });
+            return;
+          }
+          targetMainId = firstMain.id;
+        }
+
+        if (!targetMainId || !hasPersistedId(targetMainId)) {
+          if (disposed) return;
           setDraft(defaultDraft);
           return;
         }
 
         const [main, details] = await Promise.all([
-          fetchSurveyMain(firstMain.id),
-          fetchSurveyDetails(firstMain.id),
+          fetchSurveyMain(targetMainId),
+          fetchSurveyDetails(targetMainId),
         ]);
 
         if (disposed) {
@@ -1202,7 +1260,7 @@ export function ResearchRecordWorkbench({
         const resolvedDepartId = (() => {
           return parseDepartmentId(main.departId);
         })();
-        const resolvedMainId = hasPersistedId(main.id) ? main.id : firstMain.id;
+        const resolvedMainId = hasPersistedId(main.id) ? main.id : targetMainId;
         const normalizedMain = {
           ...main,
           id: resolvedMainId,
@@ -1215,7 +1273,7 @@ export function ResearchRecordWorkbench({
         setHydratedDetailIds([]);
         setRecordBinding({
           detailIds,
-          departId: resolvedDepartId ?? null,
+          departId: resolvedDepartId ?? explorerDepartmentId ?? null,
           mainId: resolvedMainId,
         });
         setDraft({
@@ -1234,7 +1292,7 @@ export function ResearchRecordWorkbench({
         setHydratedDetailIds([]);
         setRecordBinding({
           detailIds: [],
-          departId: null,
+          departId: explorerDepartmentId ?? null,
           mainId: null,
         });
         setDraft(defaultDraft);
@@ -1247,12 +1305,12 @@ export function ResearchRecordWorkbench({
       }
     }
 
-    void loadFirstSurveyRecord();
+    void loadSurveyRecord();
 
     return () => {
       disposed = true;
     };
-  }, [defaultDraft, onShowToast]);
+  }, [defaultDraft, explorerDepartmentId, explorerDepartmentName, explorerMainId, onShowToast]);
 
   useEffect(() => {
     setSelectedContentItemId((current) => {
@@ -1472,6 +1530,8 @@ export function ResearchRecordWorkbench({
       });
       setStatusMessage('已保存调研记录');
       onShowToast?.('已保存调研记录');
+      onRecordSaved?.();
+      onExit();
     } catch (error) {
       const nextMessage = error instanceof Error ? error.message : '调研记录保存失败';
       setStatusMessage(nextMessage);
@@ -1479,7 +1539,61 @@ export function ResearchRecordWorkbench({
     } finally {
       setIsRecordSaving(false);
     }
-  }, [draft, loadedMainRecord, onShowToast, recordBinding, selectedContentItemId]);
+  }, [draft, loadedMainRecord, onExit, onRecordSaved, onShowToast, recordBinding, selectedContentItemId]);
+
+  const [isArchiving, setIsArchiving] = useState(false);
+
+  const handleArchiveRecord = useCallback(async () => {
+    if (!hasPersistedId(recordBinding.mainId)) {
+      onShowToast?.('请先保存调研记录后再完结归档');
+      return;
+    }
+
+    const confirmed = window.confirm('确定要完结归档此调研记录吗？归档后将不可再编辑。');
+    if (!confirmed) return;
+
+    setIsArchiving(true);
+    try {
+      await handleSaveRecord();
+      await archiveSurveyMain(recordBinding.mainId);
+      setStatusMessage('已完结归档');
+      onShowToast?.('已完结归档，该记录不可再编辑');
+      onRecordSaved?.();
+      onExit();
+    } catch (error) {
+      const nextMessage = error instanceof Error ? error.message : '归档失败';
+      setStatusMessage(nextMessage);
+      onShowToast?.(nextMessage);
+    } finally {
+      setIsArchiving(false);
+    }
+  }, [handleSaveRecord, onExit, onRecordSaved, onShowToast, recordBinding.mainId]);
+
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteRecord = useCallback(async () => {
+    if (!hasPersistedId(recordBinding.mainId)) {
+      onExit();
+      return;
+    }
+
+    const confirmed = window.confirm('确定要删除此调研记录吗？删除后不可恢复。');
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteSurveyMain(recordBinding.mainId);
+      onShowToast?.('已删除调研记录');
+      onRecordSaved?.();
+      onExit();
+    } catch (error) {
+      const nextMessage = error instanceof Error ? error.message : '删除失败';
+      setStatusMessage(nextMessage);
+      onShowToast?.(nextMessage);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [onExit, onRecordSaved, onShowToast, recordBinding.mainId]);
 
   const handleExportWord = useCallback(async () => {
     try {
@@ -2348,9 +2462,9 @@ export function ResearchRecordWorkbench({
   }, [activeStep, scrollPreviewTo, selectedContentItemId]);
 
   return (
-    <div className="grid h-full min-h-0 overflow-hidden bg-[radial-gradient(circle_at_top_left,#e0f2fe_0%,#ffffff_34%,#f8fafc_100%)] text-slate-900 xl:grid-cols-[minmax(42rem,54rem)_minmax(0,1fr)] 2xl:grid-cols-[minmax(45rem,58rem)_minmax(0,1fr)]">
-      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white/92">
-        <div className="shrink-0 border-b border-slate-200/80 bg-white/92 backdrop-blur">
+    <div className="grid h-full min-h-0 overflow-hidden rounded-[20px] border border-slate-200/80 bg-[radial-gradient(circle_at_top_left,#e0f2fe_0%,#ffffff_34%,#f8fafc_100%)] shadow-sm text-slate-900 dark:border-slate-800 dark:bg-slate-900 xl:grid-cols-[minmax(28rem,0.9fr)_minmax(0,1.1fr)] 2xl:grid-cols-[minmax(32rem,1fr)_minmax(0,1.2fr)]">
+      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white/92 dark:bg-slate-900/90">
+        <div className="shrink-0 border-b border-slate-200/80 bg-white/92 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
           <div className="px-4 pb-2.5 pt-2.5 xl:px-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3">
@@ -2468,12 +2582,13 @@ export function ResearchRecordWorkbench({
                         </FieldShell>
                       </FocusFieldCard>
                       <FocusFieldCard active={activeOverviewQuickTarget === 'surveyDate'} tone={OVERVIEW_QUICK_TARGET_META.surveyDate.tone} className="xl:col-span-4">
-                        <FieldShell label="调研时间">
+                        <FieldShell label="调研时间" hint={explorerDepartmentId != null ? '由档案库锁定' : undefined}>
                           <TextInput
                             type="date"
                             value={draft.surveyDate}
                             onFocus={() => setActiveOverviewQuickTarget('surveyDate')}
                             onChange={(event) => updateDraft({ surveyDate: event.target.value })}
+                            readOnly={explorerDepartmentId != null || explorerReadOnly}
                           />
                         </FieldShell>
                       </FocusFieldCard>
@@ -2498,11 +2613,12 @@ export function ResearchRecordWorkbench({
                         </FieldShell>
                       </FocusFieldCard>
                       <FocusFieldCard active={activeOverviewQuickTarget === 'departmentName'} tone={OVERVIEW_QUICK_TARGET_META.departmentName.tone} className="xl:col-span-4">
-                        <FieldShell label="调研部门" hint={recordBinding.departId !== null ? `ID ${recordBinding.departId}` : undefined}>
+                        <FieldShell label="调研部门" hint={explorerDepartmentId != null ? '由档案库锁定' : recordBinding.departId !== null ? `ID ${recordBinding.departId}` : undefined}>
                           <div className="relative">
                             <TextInput
-                              value={isDepartmentSearchOpen ? departmentSearchKeyword : draft.departmentName}
+                              value={isDepartmentSearchOpen && explorerDepartmentId == null ? departmentSearchKeyword : draft.departmentName}
                               onFocus={() => {
+                                if (explorerDepartmentId != null || explorerReadOnly) return;
                                 setActiveOverviewQuickTarget('departmentName');
                                 setDepartmentSearchKeyword(draft.departmentName);
                                 setIsDepartmentSearchOpen(true);
@@ -2514,11 +2630,13 @@ export function ResearchRecordWorkbench({
                                 }, 120);
                               }}
                               onChange={(event) => {
+                                if (explorerDepartmentId != null || explorerReadOnly) return;
                                 setActiveOverviewQuickTarget('departmentName');
                                 setDepartmentSearchKeyword(event.target.value);
                                 setIsDepartmentSearchOpen(true);
                               }}
                               placeholder={isDepartmentOptionsLoading ? '部门列表加载中...' : '输入部门名称搜索'}
+                              readOnly={explorerDepartmentId != null || explorerReadOnly}
                               className="pr-11"
                             />
                             <div className="pointer-events-none absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400">
@@ -2696,7 +2814,7 @@ export function ResearchRecordWorkbench({
                         </div>
                       </div>
 
-                      <div className="grid min-h-0 flex-1 lg:grid-cols-[108px_minmax(0,1fr)]">
+                      <div className="grid min-h-0 flex-1 lg:grid-cols-[130px_minmax(0,1fr)]">
                         <div className="min-h-0 overflow-y-auto border-r border-slate-200/80 bg-slate-50/70 p-2">
                           {draft.contentItems.length > 0 ? (
                             <div className="space-y-1.5 pr-0.5">
@@ -2730,68 +2848,55 @@ export function ResearchRecordWorkbench({
 
                         {selectedContentItem ? (
                           <div className="min-h-0 flex flex-col px-3 py-3.5 xl:px-3.5" onFocusCapture={() => scrollPreviewTo(`content-item:${selectedContentItem.id}`)}>
-                            <div className="shrink-0 rounded-none border border-slate-200 bg-slate-50 p-3">
-                              <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div className="shrink-0 rounded-none border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div className="min-w-0 flex-1">
                                   <TextInput
                                     value={selectedContentItem.businessTheme}
                                     onFocus={() => setActiveContentQuickTarget('businessTheme')}
                                     onChange={(event) => updateContentItem(selectedContentItem.id, { businessTheme: event.target.value })}
                                     placeholder={`明细 ${selectedContentOrdinal}`}
-                                    className="h-11 rounded-2xl border-slate-200 bg-white px-4 text-[18px] font-black tracking-tight text-slate-950"
+                                    className="h-9 rounded-xl border-slate-200 bg-white px-3 text-[14px] font-black tracking-tight text-slate-950"
                                   />
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  {isSelectedDetailLoading ? (
-                                    <span className="inline-flex h-10 items-center rounded-2xl border border-sky-200 bg-sky-50 px-3 text-[11px] font-semibold text-sky-700">
-                                      明细加载中
-                                    </span>
-                                  ) : null}
+                                  <SelectInput
+                                    value={selectedContentItem.linkedModuleCode}
+                                    onChange={(event) => void handleCaptureModule(selectedContentItem.id, event.target.value)}
+                                    className="h-9 w-[150px] shrink-0 rounded-xl border-slate-200 bg-white text-xs"
+                                  >
+                                    <option value="">不关联模块</option>
+                                    {sortedModules.map((module) => (
+                                      <option key={module.id} value={module.moduleCode}>
+                                        {module.moduleName}
+                                      </option>
+                                    ))}
+                                  </SelectInput>
                                   <button
                                     type="button"
-                                    onClick={() => removeContentItem(selectedContentItem.id)}
-                                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100"
+                                    disabled={!selectedContentItem.linkedModuleCode || capturingItemId === selectedContentItem.id}
+                                    onClick={() => void handleCaptureModule(selectedContentItem.id, selectedContentItem.linkedModuleCode)}
+                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 transition-colors hover:border-primary/20 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
                                   >
-                                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                                    <span className="material-symbols-outlined text-[15px]">
+                                      {capturingItemId === selectedContentItem.id ? 'hourglass_top' : 'data_object'}
+                                    </span>
+                                    {capturingItemId === selectedContentItem.id ? '捕获中' : '捕获'}
                                   </button>
+                                  {isSelectedDetailLoading ? (
+                                    <span className="inline-flex h-9 items-center rounded-xl border border-sky-200 bg-sky-50 px-2.5 text-[11px] font-semibold text-sky-700">
+                                      加载中
+                                    </span>
+                                  ) : null}
                                 </div>
                               </div>
 
-                              <div className="mt-4">
+                              <div className="mt-2.5">
                                 <DynamicSuggestionPanel
                                   actions={activeQuickContext?.actions ?? []}
                                   activeKey={activeContentQuickTarget}
                                   emptyText={activeQuickContext?.emptyText ?? '点击下方输入框切换快捷词。'}
-                                  extra={(
-                                    <div className="grid min-w-[260px] gap-2">
-                                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_96px]">
-                                        <SelectInput
-                                          value={selectedContentItem.linkedModuleCode}
-                                          onChange={(event) => void handleCaptureModule(selectedContentItem.id, event.target.value)}
-                                          className="h-9 rounded-xl border-slate-200 bg-white"
-                                        >
-                                          <option value="">不关联模块，手工填写</option>
-                                          {sortedModules.map((module) => (
-                                            <option key={module.id} value={module.moduleCode}>
-                                              {module.moduleName} ({module.moduleCode})
-                                            </option>
-                                          ))}
-                                        </SelectInput>
-                                        <button
-                                          type="button"
-                                          disabled={!selectedContentItem.linkedModuleCode || capturingItemId === selectedContentItem.id}
-                                          onClick={() => void handleCaptureModule(selectedContentItem.id, selectedContentItem.linkedModuleCode)}
-                                          className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition-colors hover:border-primary/20 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                                        >
-                                          <span className="material-symbols-outlined text-[17px]">
-                                            {capturingItemId === selectedContentItem.id ? 'hourglass_top' : 'data_object'}
-                                          </span>
-                                          {capturingItemId === selectedContentItem.id ? '捕获中' : '捕获'}
-                                        </button>
-                                      </div>
-                                      {activeLineColorToolbar}
-                                    </div>
-                                  )}
+                                  extra={activeLineColorToolbar}
                                   onTabChange={(key) => setActiveContentQuickTarget(key as ResearchContentQuickTarget)}
                                   subtitle=""
                                   tabs={CONTENT_QUICK_TARGET_ORDER.map((target) => ({
@@ -2805,21 +2910,22 @@ export function ResearchRecordWorkbench({
                               </div>
                             </div>
 
-                            <div className="mt-3 min-h-0 flex-1">
+                            <div className="mt-2.5 flex min-h-[120px] flex-1 flex-col pb-2">
                               {showContentMetaEditor ? (
                                 <FocusFieldCard
                                   active={true}
                                   tone={CONTENT_QUICK_TARGET_META[activeContentQuickTarget].tone}
-                                  className="p-4"
+                                  className="p-3"
                                 >
-                                  <div className="mb-3 text-sm font-black tracking-tight text-slate-950">基础补充信息</div>
-                                  <div className="grid gap-3 lg:grid-cols-3">
+                                  <div className="mb-2 text-[12px] font-black tracking-tight text-slate-950">基础补充信息</div>
+                                  <div className="grid gap-2 lg:grid-cols-3">
                                     <FieldShell label="子标题">
                                       <TextInput
                                         value={selectedContentItem.sceneName}
                                         onFocus={() => setActiveContentQuickTarget('sceneName')}
                                         onChange={(event) => updateContentItem(selectedContentItem.id, { sceneName: event.target.value })}
                                         placeholder="例如：基础信息"
+                                        className="h-9"
                                       />
                                     </FieldShell>
                                     <FieldShell label="工作岗位">
@@ -2828,6 +2934,7 @@ export function ResearchRecordWorkbench({
                                         onFocus={() => setActiveContentQuickTarget('jobRole')}
                                         onChange={(event) => updateContentItem(selectedContentItem.id, { jobRole: event.target.value })}
                                         placeholder="例如：检测岗位"
+                                        className="h-9"
                                       />
                                     </FieldShell>
                                     <FieldShell label="工时占比">
@@ -2836,6 +2943,7 @@ export function ResearchRecordWorkbench({
                                         onFocus={() => setActiveContentQuickTarget('timeShare')}
                                         onChange={(event) => updateContentItem(selectedContentItem.id, { timeShare: event.target.value })}
                                         placeholder="例如：5%"
+                                        className="h-9"
                                       />
                                     </FieldShell>
                                   </div>
@@ -2844,9 +2952,9 @@ export function ResearchRecordWorkbench({
                                 <FocusFieldCard
                                   active={true}
                                   tone={CONTENT_QUICK_TARGET_META[activeContentEditorConfig.key].tone}
-                                  className="flex h-full min-h-0 flex-col p-4"
+                                  className="flex flex-1 flex-col p-3 min-h-[120px]"
                                 >
-                                  <div className="flex h-full min-h-0 flex-col">
+                                  <div className="flex flex-1 flex-col min-h-0">
                                     <div className="mb-1.5 text-[11px] font-semibold text-slate-500">{activeContentEditorConfig.label}</div>
                                     <TextArea
                                       value={activeContentEditorConfig.value}
@@ -2861,15 +2969,15 @@ export function ResearchRecordWorkbench({
                                       onKeyUp={syncActiveLineFromTextarea}
                                       onSelect={syncActiveLineFromTextarea}
                                       placeholder={activeContentEditorConfig.placeholder}
-                                      className="min-h-0 flex-1 resize-none bg-white"
+                                      className="min-h-0 flex-1 resize-none bg-white py-1.5 text-[13px]"
                                     />
                                   </div>
                                 </FocusFieldCard>
                               ) : (
-                                <FocusFieldCard active={true} tone={CONTENT_QUICK_TARGET_META.businessTheme.tone} className="flex h-full min-h-[220px] flex-col justify-between p-4">
+                                <FocusFieldCard active={true} tone={CONTENT_QUICK_TARGET_META.businessTheme.tone} className="flex h-full min-h-[140px] flex-col justify-between p-3">
                                   <div>
-                                    <div className="text-sm font-black tracking-tight text-slate-950">明细名称</div>
-                                    <div className="mt-2 text-[12px] leading-6 text-slate-500">
+                                    <div className="text-[12px] font-black tracking-tight text-slate-950">明细名称</div>
+                                    <div className="mt-1 text-[11px] leading-5 text-slate-500">
                                       当前快捷词会直接作用到上方明细名称。切换到子标题、工作岗位、工时占比、资料、做法、痛点或建议后，这里会独占显示对应配置。
                                     </div>
                                   </div>
@@ -2880,9 +2988,9 @@ export function ResearchRecordWorkbench({
                                       { label: '工作岗位', value: selectedContentItem.jobRole.trim() || '未填写' },
                                       { label: '工时占比', value: selectedContentItem.timeShare.trim() || '未填写' },
                                     ].map((meta) => (
-                                      <div key={meta.label} className="border border-slate-200 bg-white px-3 py-2.5">
-                                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{meta.label}</div>
-                                        <div className="mt-1 line-clamp-2 text-[12px] font-semibold text-slate-900">{meta.value}</div>
+                                      <div key={meta.label} className="border border-slate-200 bg-white px-2 py-1.5">
+                                        <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">{meta.label}</div>
+                                        <div className="mt-0.5 line-clamp-1 text-[11px] font-semibold text-slate-900">{meta.value}</div>
                                       </div>
                                     ))}
                                   </div>
@@ -3007,17 +3115,47 @@ export function ResearchRecordWorkbench({
         </section>
 
         <div className="shrink-0 border-t border-slate-200 bg-white px-4">
-          <div className="flex h-14 items-center justify-end gap-3">
+          <div className="flex h-14 items-center gap-3">
+            {!explorerReadOnly && hasPersistedId(recordBinding.mainId) ? (
+              <button
+                type="button"
+                onClick={() => void handleDeleteRecord()}
+                disabled={isRecordLoading || isRecordSaving || isArchiving || isDeleting}
+                className="inline-flex items-center gap-1.5 border border-red-200 bg-white px-4 py-2.5 text-[12px] font-semibold text-red-600 transition-all hover:border-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="material-symbols-outlined text-[18px]">delete</span>
+                {isDeleting ? '删除中...' : '删除'}
+              </button>
+            ) : null}
+            <div className="flex-1" />
             {statusMessage ? <div className="text-[12px] font-semibold text-emerald-600">{statusMessage}</div> : null}
-            <button
-              type="button"
-              onClick={() => void handleSaveRecord()}
-              disabled={isRecordLoading || isRecordSaving}
-              className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-5 py-2.5 text-[12px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <span className="material-symbols-outlined text-[20px]">save</span>
-              {isRecordSaving ? '保存中...' : '保存'}
-            </button>
+            {explorerReadOnly ? (
+              <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-2 text-[12px] font-semibold text-slate-500">
+                <span className="material-symbols-outlined text-[18px]">lock</span>
+                已归档 · 仅查看
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveRecord()}
+                  disabled={isRecordLoading || isRecordSaving || isArchiving || isDeleting}
+                  className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-5 py-2.5 text-[12px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="material-symbols-outlined text-[20px]">save</span>
+                  {isRecordSaving ? '保存中...' : '保存'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleArchiveRecord()}
+                  disabled={isRecordLoading || isRecordSaving || isArchiving || isDeleting}
+                  className="inline-flex items-center gap-1.5 border border-amber-300 bg-amber-50 px-5 py-2.5 text-[12px] font-semibold text-amber-700 transition-all hover:border-amber-400 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="material-symbols-outlined text-[20px]">task_alt</span>
+                  {isArchiving ? '归档中...' : '完结'}
+                </button>
+              </>
+            )}
             <button
               type="button"
               onClick={handleExportWord}

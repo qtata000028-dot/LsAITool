@@ -210,6 +210,40 @@ function setCellVerticalMerge(cell: Element, mode: 'restart' | 'continue' | null
   }
 }
 
+function updateScopeCellDisplay(cell: Element, scope: string) {
+  const paragraph = getElementChildren(cell, 'p')[0];
+  if (!paragraph) return;
+
+  const runs = paragraph.getElementsByTagNameNS(WORD_NAMESPACE, 'r');
+  if (runs.length < 3) {
+    setCellText(cell, formatScopeDisplay(scope));
+    return;
+  }
+
+  const getTextNode = (run: Element) => run.getElementsByTagNameNS(WORD_NAMESPACE, 't')[0];
+  const t0 = getTextNode(runs[0] as Element);
+  const t2 = getTextNode(runs[2] as Element);
+  if (!t0 || !t2) {
+    setCellText(cell, formatScopeDisplay(scope));
+    return;
+  }
+
+  if (scope === '全员') {
+    t0.textContent = '全员';
+    t2.textContent = ' 部门□ 单独□';
+  } else if (scope === '单独') {
+    t0.textContent = '全员□ 部门□ 单独';
+    t2.textContent = '';
+  } else {
+    t0.textContent = '全员□ 部门';
+    t2.textContent = ' 单独□';
+  }
+
+  if (/^\s|\s$/.test(t2.textContent || '')) {
+    t2.setAttributeNS(XML_NAMESPACE, 'xml:space', 'preserve');
+  }
+}
+
 function getBody(xmlDocument: XMLDocument) {
   const body = xmlDocument.getElementsByTagNameNS(WORD_NAMESPACE, 'body')[0];
   if (!body) {
@@ -253,13 +287,7 @@ function buildContentRows(rowPrototypes: Element[], item: ResearchExportContentI
   const jobRoleCells = getCells(jobRoleRow);
   setCellVerticalMerge(jobRoleCells[0], 'restart');
   setCellParagraphs(jobRoleCells[0], [displayName, subheading], BODY_TEXT_TYPOGRAPHY);
-  setCellParagraphs(jobRoleCells[1], [`工作岗位：${item.jobRole.trim()}`], BODY_TEXT_TYPOGRAPHY);
-
-  const timeShareRow = cloneElement(listRowPrototype);
-  const timeShareCells = getCells(timeShareRow);
-  setCellVerticalMerge(timeShareCells[0], 'continue');
-  setCellText(timeShareCells[0], '', BODY_TEXT_TYPOGRAPHY);
-  setCellParagraphs(timeShareCells[1], [`工时占比：${item.timeShare.trim()}`], BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(jobRoleCells[1], [`工作岗位：${item.jobRole.trim()}`, `工时占比：${item.timeShare.trim()}`], BODY_TEXT_TYPOGRAPHY);
 
   const formsRow = cloneElement(listRowPrototype);
   const formsCells = getCells(formsRow);
@@ -271,13 +299,7 @@ function buildContentRows(rowPrototypes: Element[], item: ResearchExportContentI
   const workDescriptionCells = getCells(workDescriptionRow);
   setCellVerticalMerge(workDescriptionCells[0], 'continue');
   setCellText(workDescriptionCells[0], '', BODY_TEXT_TYPOGRAPHY);
-  setCellParagraphs(workDescriptionCells[1], ['工作描述：', ...workDescriptionLines], BODY_TEXT_TYPOGRAPHY);
-
-  const painPointsRow = cloneElement(textRowPrototype);
-  const painPointsCells = getCells(painPointsRow);
-  setCellVerticalMerge(painPointsCells[0], 'continue');
-  setCellText(painPointsCells[0], '', BODY_TEXT_TYPOGRAPHY);
-  setCellParagraphs(painPointsCells[1], ['痛点说明：', ...painLines], BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(workDescriptionCells[1], ['工作描述：', ...workDescriptionLines, '痛点说明：', ...painLines], BODY_TEXT_TYPOGRAPHY);
 
   const suggestionRow = cloneElement(suggestionRowPrototype);
   const suggestionCells = getCells(suggestionRow);
@@ -285,7 +307,7 @@ function buildContentRows(rowPrototypes: Element[], item: ResearchExportContentI
   setCellText(suggestionCells[0], '', BODY_TEXT_TYPOGRAPHY);
   setCellParagraphs(suggestionCells[1], ['朗速建议：', ...suggestionLines], BODY_TEXT_TYPOGRAPHY);
 
-  return [jobRoleRow, timeShareRow, formsRow, workDescriptionRow, painPointsRow, suggestionRow];
+  return [jobRoleRow, formsRow, workDescriptionRow, suggestionRow];
 }
 
 async function rebuildTemplateXml(templateXml: string, draft: ResearchExportDraft) {
@@ -315,7 +337,7 @@ async function rebuildTemplateXml(templateXml: string, draft: ResearchExportDraf
   setCellText(overviewRow0Cells[5], draft.documentNo.trim());
 
   setCellText(overviewRow1Cells[1], draft.departmentName.trim());
-  setCellText(overviewRow1Cells[3], formatScopeDisplay(draft.surveyScope));
+  updateScopeCellDisplay(overviewRow1Cells[3], draft.surveyScope);
   setCellText(overviewRow1Cells[5], draft.surveyCount.trim());
 
   setCellText(overviewRow2Cells[1], toDelimitedParts(draft.respondents, /[、,，\n]+/).join('、'));
@@ -333,9 +355,15 @@ async function rebuildTemplateXml(templateXml: string, draft: ResearchExportDraf
   setCellParagraphs(getCells(staticRowPrefix[1])[0], departmentPostLines, BODY_TEXT_TYPOGRAPHY);
   setCellText(getCells(staticRowPrefix[3])[0], workToolLines.join('、'), BODY_TEXT_TYPOGRAPHY);
 
+  const tblPr = getElementChildren(contentTable, 'tblPr')[0] ?? null;
+  const tblGrid = getElementChildren(contentTable, 'tblGrid')[0] ?? null;
+
   while (contentTable.firstChild) {
     contentTable.removeChild(contentTable.firstChild);
   }
+
+  if (tblPr) contentTable.appendChild(tblPr);
+  if (tblGrid) contentTable.appendChild(tblGrid);
 
   staticRowPrefix.forEach((row) => contentTable.appendChild(row));
 

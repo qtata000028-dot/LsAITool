@@ -1,7 +1,6 @@
 import React from 'react';
 
 import { DashboardModuleScreen } from './dashboard-module-screen';
-import { DashboardResearchRecordScreen } from './dashboard-research-record-screen';
 import { DashboardServerPermissionScreen } from './dashboard-server-permission-screen';
 
 export function DashboardScreenRouter({
@@ -35,16 +34,6 @@ export function DashboardScreenRouter({
     sidebarProps,
   } = moduleScreenProps;
 
-  if (isResearchRecordActive) {
-    return (
-      <DashboardResearchRecordScreen
-        configModalNode={configModalNode}
-        contentNode={researchRecordWorkbenchNode}
-        deleteConfirmNode={deleteConfirmNode}
-      />
-    );
-  }
-
   if (isServerPermissionActive) {
     return (
       <DashboardServerPermissionScreen
@@ -62,6 +51,18 @@ export function DashboardScreenRouter({
       <DashboardServerPermissionScreen
         configModalNode={configModalNode}
         contentNode={toolFeedbackWorkbenchNode}
+        deleteConfirmNode={deleteConfirmNode}
+        headerProps={headerProps}
+        sidebarProps={sidebarProps}
+      />
+    );
+  }
+
+  if (isResearchRecordActive) {
+    return (
+      <DashboardServerPermissionScreen
+        configModalNode={configModalNode}
+        contentNode={researchRecordWorkbenchNode}
         deleteConfirmNode={deleteConfirmNode}
         headerProps={headerProps}
         sidebarProps={sidebarProps}
