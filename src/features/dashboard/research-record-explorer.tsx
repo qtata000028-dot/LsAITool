@@ -3,7 +3,14 @@ import { fetchSystemDepartments } from '../../lib/backend-departments';
 import {
   deleteSurveyMain,
   fetchSurveyDepartmentStats,
+  fetchSurveyDetails,
+  fetchSurveyMain,
   fetchSurveyMainList,
+  saveSurveyDetail,
+  saveSurveyMain,
+  type SaveSurveyDetailPayload,
+  type SaveSurveyMainPayload,
+  type SurveyDetailDto,
   type SurveyMainDto,
 } from '../../lib/backend-survey';
 import { ResearchRecordWorkbench } from './research-record-workbench';
@@ -79,13 +86,54 @@ function resolveRecordDate(main: SurveyMainDto): string {
   return String(raw).slice(0, 10);
 }
 
+function buildClonedSurveyMainPayload(main: SurveyMainDto): SaveSurveyMainPayload {
+  const payload: SaveSurveyMainPayload = {
+    address: main.address ?? '',
+    empNames: main.empNames ?? '',
+    otherBak: main.otherBak ?? '',
+    painsBak: main.painsBak ?? '',
+    positionsBak: main.positionsBak ?? '',
+    project: main.project ?? '',
+    scope: main.scope ?? '',
+    specialBak: main.specialBak ?? '',
+    surveyDate: main.surveyDate ?? '',
+    surveyUsers: main.surveyUsers ?? '',
+    title: main.title ?? '',
+    toolsBak: main.toolsBak ?? '',
+  };
+
+  if (main.departId !== null && main.departId !== undefined && `${main.departId}`.trim()) {
+    payload.departId = main.departId;
+  }
+
+  return payload;
+}
+
+function buildClonedSurveyDetailPayload(detail: SurveyDetailDto): SaveSurveyDetailPayload {
+  return {
+    moduleId: detail.moduleId ?? '',
+    moduleName: detail.moduleName ?? '',
+    painsBak: detail.painsBak ?? '',
+    position1: detail.position1 ?? '',
+    position2: detail.position2 ?? '',
+    position3: detail.position3 ?? '',
+    suggestionBak: detail.suggestionBak ?? '',
+    workingBak: detail.workingBak ?? '',
+    workingRate1: detail.workingRate1 ?? '',
+    workingRate2: detail.workingRate2 ?? '',
+    workingRate3: detail.workingRate3 ?? '',
+  };
+}
+
 export function ResearchRecordExplorerWorkbench(props: ResearchRecordExplorerProps) {
+  const { onShowToast } = props;
   const [departments, setDepartments] = useState<DepartmentNode[]>([]);
   const [activeDepartmentId, setActiveDepartmentId] = useState<number | null>(null);
   const [records, setRecords] = useState<SurveyMainDto[]>([]);
   const [isLoadingDepts, setIsLoadingDepts] = useState(true);
   const [isLoadingRecords, setIsLoadingRecords] = useState(false);
   const [editingRecordId, setEditingRecordId] = useState<string | number | null>(null);
+  const [cloningRecordId, setCloningRecordId] = useState<string | number | null>(null);
   const [searchKeyword, setSearchKeyword] = useState('');
 
   const activeDepartment = useMemo(
@@ -190,6 +238,34 @@ export function ResearchRecordExplorerWorkbench(props: ResearchRecordExplorerPro
     setEditingRecordId(null);
     handleRecordSaved();
   }, [handleRecordSaved]);
+
+  const handleCloneRecord = useCallback(async (recordId: SurveyMainDto['id']) => {
+    if (cloningRecordId !== null) {
+      return;
+    }
+
+    setCloningRecordId(recordId);
+    try {
+      const [main, details] = await Promise.all([
+        fetchSurveyMain(recordId),
+        fetchSurveyDetails(recordId),
+      ]);
+
+      const savedMain = await saveSurveyMain(buildClonedSurveyMainPayload(main));
+
+      await Promise.all(
+        details.map((detail) => saveSurveyDetail(savedMain.id, buildClonedSurveyDetailPayload(detail))),
+      );
+
+      onShowToast?.('已复制为新调研记录');
+      void refreshDepartmentCounts();
+      setEditingRecordId(savedMain.id);
+    } catch (error) {
+      onShowToast?.(error instanceof Error ? error.message : '复制新增失败');
+    } finally {
+      setCloningRecordId(null);
+    }
+  }, [cloningRecordId, onShowToast, refreshDepartmentCounts]);
 
   if (editingRecordId !== null) {
     const editingMain = editingRecordId === 'new' ? null : records.find((r) => String(r.id) === String(editingRecordId));
@@ -324,6 +400,7 @@ export function ResearchRecordExplorerWorkbench(props: ResearchRecordExplorerPro
                 const title = resolveRecordDisplayTitle(record);
                 const author = resolveRecordAuthor(record);
                 const date = resolveRecordDate(record);
+                const isCloning = String(cloningRecordId) === String(record.id);
 
                 return (
                   <button
@@ -351,25 +428,43 @@ export function ResearchRecordExplorerWorkbench(props: ResearchRecordExplorerPro
                           }`}>
                             {status}
                           </div>
-                          {status !== '已归档' && (
+                          <div className="flex items-center gap-1">
                             <button
                               type="button"
-                              onClick={async (e) => {
+                              onClick={(e) => {
                                 e.stopPropagation();
-                                if (!window.confirm('确定要删除此调研记录吗？删除后不可恢复。')) return;
-                                try {
-                                  await deleteSurveyMain(record.id);
-                                  handleRecordSaved();
-                                } catch (error) {
-                                  alert(error instanceof Error ? error.message : '删除失败');
-                                }
+                                void handleCloneRecord(record.id);
                               }}
-                              className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 opacity-0 transition-all hover:bg-rose-100 hover:text-rose-600 group-hover:opacity-100"
-                              title="删除此调研记录"
+                              disabled={isCloning || cloningRecordId !== null}
+                              className={`flex h-7 w-7 items-center justify-center rounded-full text-slate-300 transition-all hover:bg-sky-100 hover:text-sky-600 ${
+                                isCloning ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                              } ${cloningRecordId !== null && !isCloning ? 'cursor-not-allowed opacity-40' : ''}`}
+                              title="复制新增"
                             >
-                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                              <span className={`material-symbols-outlined text-[16px] ${isCloning ? 'animate-spin' : ''}`}>
+                                {isCloning ? 'progress_activity' : 'library_add'}
+                              </span>
                             </button>
-                          )}
+                            {status !== '已归档' && (
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!window.confirm('确定要删除此调研记录吗？删除后不可恢复。')) return;
+                                  try {
+                                    await deleteSurveyMain(record.id);
+                                    handleRecordSaved();
+                                  } catch (error) {
+                                    alert(error instanceof Error ? error.message : '删除失败');
+                                  }
+                                }}
+                                className="flex h-7 w-7 items-center justify-center rounded-full text-slate-300 opacity-0 transition-all hover:bg-rose-100 hover:text-rose-600 group-hover:opacity-100"
+                                title="删除此调研记录"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
 
