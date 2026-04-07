@@ -1,9 +1,15 @@
 import JSZip from 'jszip';
 import {
-  buildMultilineDisplayLines,
   type ResearchLineColorMap,
+  type ResearchLineColorTone,
 } from './research-record-multiline';
-import { buildResearchRecordWordPageHtml } from './research-record-word-template-shared';
+import {
+  buildNumberedLineEntries,
+  buildPlainLineEntries,
+  buildResearchRecordWordPageHtml,
+  buildWorkDescriptionLineEntries,
+  type ResearchWordLineEntry,
+} from './research-record-word-template-shared';
 
 type ResearchExportDraft = Parameters<typeof buildResearchRecordWordPageHtml>[0];
 type ResearchExportContentItem = ResearchExportDraft['contentItems'][number];
@@ -13,6 +19,7 @@ const EXPORT_TEMPLATE_URL = '/research-record-export-template.docx';
 const WORD_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const XML_NAMESPACE = 'http://www.w3.org/XML/1998/namespace';
 const ELEMENT_NODE = 1;
+const EMPHASIS_TEXT_COLOR = '8F1D2C';
 const BODY_TEXT_TYPOGRAPHY = {
   ascii: 'Times',
   cs: '仿宋',
@@ -22,6 +29,10 @@ const BODY_TEXT_TYPOGRAPHY = {
 };
 
 type RunTypography = typeof BODY_TEXT_TYPOGRAPHY;
+type ParagraphLineSpec = {
+  color?: ResearchLineColorTone;
+  text: string;
+};
 
 function getElementChildren(parent: Element, localName: string) {
   return Array.from(parent.childNodes).filter(
@@ -74,10 +85,17 @@ function getContentItemSubheading(item: ResearchExportContentItem) {
   return sceneName;
 }
 
-function buildPlainLines(value: string, lineColors: ResearchLineColorMap = {}) {
-  return buildMultilineDisplayLines(value, lineColors)
+function buildInlinePlainLines(value: string, lineColors: ResearchLineColorMap = {}) {
+  return buildPlainLineEntries(value, lineColors)
     .map((line) => line.text.trim())
     .filter(Boolean);
+}
+
+function toParagraphLineSpecs(lines: ResearchWordLineEntry[]) {
+  return lines.map((line) => ({
+    color: line.color,
+    text: line.text,
+  }));
 }
 
 async function getXmlImplementation() {
@@ -120,10 +138,30 @@ function applyRunTypography(runProps: Element, typography: RunTypography) {
   }
 }
 
-function setParagraphText(paragraph: Element, text: string, typography?: RunTypography) {
+function applyRunColor(runProps: Element, color: ResearchLineColorTone) {
+  const document = runProps.ownerDocument;
+  const colorNode = getElementChildren(runProps, 'color')[0]
+    ?? document.createElementNS(WORD_NAMESPACE, 'w:color');
+
+  if (color === 'red') {
+    colorNode.setAttributeNS(WORD_NAMESPACE, 'w:val', EMPHASIS_TEXT_COLOR);
+    if (!colorNode.parentNode) {
+      runProps.appendChild(colorNode);
+    }
+    return;
+  }
+
+  if (colorNode.parentNode) {
+    colorNode.parentNode.removeChild(colorNode);
+  }
+}
+
+function setParagraphText(paragraph: Element, content: string | ParagraphLineSpec, typography?: RunTypography) {
   const paragraphProperties = getElementChildren(paragraph, 'pPr')[0] ?? null;
   const sourceRun = paragraph.getElementsByTagNameNS(WORD_NAMESPACE, 'r')[0];
   const sourceRunProps = sourceRun ? getElementChildren(sourceRun, 'rPr')[0] ?? null : null;
+  const text = typeof content === 'string' ? content : content.text;
+  const lineColor = typeof content === 'string' ? 'default' : (content.color ?? 'default');
 
   while (paragraph.firstChild) {
     paragraph.removeChild(paragraph.firstChild);
@@ -141,13 +179,14 @@ function setParagraphText(paragraph: Element, text: string, typography?: RunTypo
   }
 
   const run = paragraph.ownerDocument.createElementNS(WORD_NAMESPACE, 'w:r');
-  if (sourceRunProps || typography) {
+  if (sourceRunProps || typography || lineColor !== 'default') {
     const runProps = sourceRunProps
       ? cloneElement(sourceRunProps)
       : paragraph.ownerDocument.createElementNS(WORD_NAMESPACE, 'w:rPr');
     if (typography) {
       applyRunTypography(runProps, typography);
     }
+    applyRunColor(runProps, lineColor);
     run.appendChild(runProps);
   }
 
@@ -161,7 +200,7 @@ function setParagraphText(paragraph: Element, text: string, typography?: RunTypo
   return paragraph;
 }
 
-function setCellParagraphs(cell: Element, lines: string[], typography?: RunTypography) {
+function setCellParagraphs(cell: Element, lines: Array<string | ParagraphLineSpec>, typography?: RunTypography) {
   const cellProperties = getElementChildren(cell, 'tcPr')[0] ?? null;
   const paragraphPrototypes = getElementChildren(cell, 'p');
   const fallbackPrototype = paragraphPrototypes[paragraphPrototypes.length - 1]
@@ -271,10 +310,15 @@ function getCells(row: Element) {
 function buildContentRows(rowPrototypes: Element[], item: ResearchExportContentItem, index: number) {
   const displayName = getContentItemDisplayName(item, index);
   const subheading = getContentItemSubheading(item);
-  const formsLines = buildPlainLines(item.formsProvided, item.lineColors.formsProvided);
-  const workDescriptionLines = buildPlainLines(item.workDescription, item.lineColors.workDescription);
-  const painLines = buildPlainLines(item.painPoints, item.lineColors.painPoints);
-  const suggestionLines = buildPlainLines(item.suggestions, item.lineColors.suggestions);
+  const formsLines = toParagraphLineSpecs(buildNumberedLineEntries(item.formsProvided, item.lineColors.formsProvided));
+  const workDescriptionLines = toParagraphLineSpecs(buildWorkDescriptionLineEntries({
+    fallbackModuleName: item.businessTheme,
+    lineColors: item.lineColors.workDescription,
+    linkedModuleName: item.linkedModuleName,
+    value: item.workDescription,
+  }));
+  const painLines = toParagraphLineSpecs(buildNumberedLineEntries(item.painPoints, item.lineColors.painPoints));
+  const suggestionLines = toParagraphLineSpecs(buildNumberedLineEntries(item.suggestions, item.lineColors.suggestions));
 
   const [
     jobRoleRowPrototype,
@@ -349,8 +393,8 @@ async function rebuildTemplateXml(templateXml: string, draft: ResearchExportDraf
   const staticRowPrefix = rowPrototypes.slice(0, 5).map((row) => cloneElement(row));
   const staticRowSuffix = rowPrototypes.slice(10).map((row) => cloneElement(row));
 
-  const departmentPostLines = buildPlainLines(draft.departmentPosts, draft.lineColors.departmentPosts);
-  const workToolLines = buildPlainLines(draft.workTools, draft.lineColors.workTools);
+  const departmentPostLines = toParagraphLineSpecs(buildNumberedLineEntries(draft.departmentPosts, draft.lineColors.departmentPosts));
+  const workToolLines = buildInlinePlainLines(draft.workTools, draft.lineColors.workTools);
 
   setCellParagraphs(getCells(staticRowPrefix[1])[0], departmentPostLines, BODY_TEXT_TYPOGRAPHY);
   setCellText(getCells(staticRowPrefix[3])[0], workToolLines.join('、'), BODY_TEXT_TYPOGRAPHY);
@@ -389,9 +433,9 @@ async function rebuildTemplateXml(templateXml: string, draft: ResearchExportDraf
   });
 
   const outputRows = staticRowSuffix;
-  setCellParagraphs(getCells(outputRows[1])[0], buildPlainLines(draft.overallPainPoints, draft.lineColors.overallPainPoints), BODY_TEXT_TYPOGRAPHY);
-  setCellParagraphs(getCells(outputRows[3])[0], buildPlainLines(draft.specialDiscussion, draft.lineColors.specialDiscussion), BODY_TEXT_TYPOGRAPHY);
-  setCellParagraphs(getCells(outputRows[5])[0], buildPlainLines(draft.extraNotes, draft.lineColors.extraNotes), BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(getCells(outputRows[1])[0], toParagraphLineSpecs(buildNumberedLineEntries(draft.overallPainPoints, draft.lineColors.overallPainPoints)), BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(getCells(outputRows[3])[0], toParagraphLineSpecs(buildNumberedLineEntries(draft.specialDiscussion, draft.lineColors.specialDiscussion)), BODY_TEXT_TYPOGRAPHY);
+  setCellParagraphs(getCells(outputRows[5])[0], toParagraphLineSpecs(buildNumberedLineEntries(draft.extraNotes, draft.lineColors.extraNotes)), BODY_TEXT_TYPOGRAPHY);
   setCellText(getCells(outputRows[6])[1], draft.signer.trim(), BODY_TEXT_TYPOGRAPHY);
   setCellText(getCells(outputRows[7])[0], formatChineseDate(draft.signerDate), BODY_TEXT_TYPOGRAPHY);
 

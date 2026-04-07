@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { getStoredAuthSession, persistAuthSession } from '../../lib/auth-session';
@@ -73,10 +73,12 @@ export function DashboardWorkspaceSidebar({
   toggleSubsystemOpen: () => void;
 }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isOrganizationMenuOpen, setIsOrganizationMenuOpen] = useState(false);
   const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(false);
   const [isSwitchingOrganization, setIsSwitchingOrganization] = useState(false);
   const [organizationError, setOrganizationError] = useState<string | null>(null);
   const [organizations, setOrganizations] = useState<ServerOption[]>([]);
+  const organizationMenuRef = useRef<HTMLDivElement | null>(null);
   const currentSession = useMemo(() => getStoredAuthSession(), []);
   const currentUserAvatarText = currentUserName.trim().slice(0, 1) || '人';
   const workspaceBrandTitle = normalizeMenuTitle(companyTitle) || '朗速 AI';
@@ -86,6 +88,7 @@ export function DashboardWorkspaceSidebar({
     () => organizations.find((option) => isCurrentOrganization(currentCompanyKey, currentCompanyTitle, option)) ?? null,
     [currentCompanyKey, currentCompanyTitle, organizations],
   );
+  const organizationDisplayTitle = normalizeMenuTitle(currentOrganization?.title) || currentCompanyTitle || workspaceBrandTitle;
   const showNoModulePermissionNotice = !isLoadingSubsystemMenus && !menuLoadError && subsystemMenus.length === 0;
 
   useEffect(() => {
@@ -128,6 +131,25 @@ export function DashboardWorkspaceSidebar({
     };
   }, [currentSession?.employeeId]);
 
+  useEffect(() => {
+    if (!isOrganizationMenuOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const container = organizationMenuRef.current;
+      if (!container || container.contains(event.target as Node)) {
+        return;
+      }
+      setIsOrganizationMenuOpen(false);
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [isOrganizationMenuOpen]);
+
   const handleOrganizationSwitch = async (option: ServerOption) => {
     if (!currentSession?.employeeId) {
       setOrganizationError('当前登录态缺少人员信息，请重新登录后再切换帐套。');
@@ -145,6 +167,7 @@ export function DashboardWorkspaceSidebar({
     }
 
     setIsSwitchingOrganization(true);
+    setIsOrganizationMenuOpen(false);
     setOrganizationError(null);
 
     try {
@@ -190,31 +213,66 @@ export function DashboardWorkspaceSidebar({
           <span className="material-symbols-outlined text-2xl">rocket_launch</span>
         </div>
         <div className="min-w-0 flex flex-col">
-          {organizations.length > 0 ? (
-            <select
-              value={currentOrganization?.companyKey ?? organizations[0]?.companyKey ?? ''}
-              disabled={isLoadingOrganizations || isSwitchingOrganization}
-              onChange={(event) => {
-                const nextOption = organizations.find((option) => option.companyKey === event.target.value);
-                if (nextOption) {
-                  void handleOrganizationSwitch(nextOption);
-                }
-              }}
-              className="max-w-[190px] truncate border-0 bg-transparent p-0 text-lg font-bold leading-tight tracking-tight text-slate-900 outline-none focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60 dark:text-white"
-              title={workspaceBrandTitle}
-            >
-              {organizations.map((option) => (
-                <option key={`${option.companyKey}:${option.basename}:${option.serverport}`} value={option.companyKey}>
-                  {option.title}
-                </option>
-              ))}
-            </select>
+          {organizations.length > 1 ? (
+            <div ref={organizationMenuRef} className="relative max-w-[210px]">
+              <button
+                type="button"
+                disabled={isLoadingOrganizations || isSwitchingOrganization}
+                onClick={() => setIsOrganizationMenuOpen((current) => !current)}
+                className="group flex w-full items-center gap-1 rounded-md px-0 py-0.5 text-left outline-none transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
+                title={organizationDisplayTitle}
+              >
+                <span className="truncate text-lg font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
+                  {organizationDisplayTitle}
+                </span>
+                <motion.span
+                  animate={{ rotate: isOrganizationMenuOpen ? 180 : 0 }}
+                  className="material-symbols-outlined shrink-0 text-[18px] text-slate-400 transition-colors group-hover:text-slate-600 dark:group-hover:text-slate-200"
+                >
+                  keyboard_arrow_down
+                </motion.span>
+              </button>
+
+              <AnimatePresence>
+                {isOrganizationMenuOpen ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    className="absolute left-0 top-full z-40 mt-2 min-w-[220px] max-w-[260px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.35)] dark:border-slate-700 dark:bg-slate-800"
+                  >
+                    <div className="max-h-72 overflow-y-auto py-1.5">
+                      {organizations.map((option) => {
+                        const isActive = isCurrentOrganization(currentCompanyKey, currentCompanyTitle, option);
+                        return (
+                          <button
+                            key={`${option.companyKey}:${option.basename}:${option.serverport}`}
+                            type="button"
+                            onClick={() => {
+                              void handleOrganizationSwitch(option);
+                            }}
+                            className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors ${
+                              isActive
+                                ? 'bg-primary/10 text-primary'
+                                : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700/70'
+                            }`}
+                          >
+                            <span className="truncate text-[13px] font-semibold">{normalizeMenuTitle(option.title) || '未命名帐套'}</span>
+                            {isActive ? <span className="material-symbols-outlined text-[16px]">check</span> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
           ) : (
             <h1
               className="max-w-[190px] truncate text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-tight"
-              title={workspaceBrandTitle}
+              title={organizationDisplayTitle}
             >
-              {workspaceBrandTitle}
+              {organizationDisplayTitle}
             </h1>
           )}
           <p className="text-primary text-[10px] font-bold tracking-wider">模块工作台</p>
