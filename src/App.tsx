@@ -3,15 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 
-import { AppRouter } from './app/router/app-router';
-import type { AuthSession } from './app/providers/auth-session-provider';
-import {
-  clearCurrentAuthSession,
-  getInitialAuthSession,
-} from './app/providers/auth-session-provider';
 import Login from './components/Login';
+import type { AuthSession } from './lib/backend-auth';
+import { clearAuthSession, getStoredAuthSession } from './lib/auth-session';
 
 const Dashboard = lazy(() => import('./components/Dashboard'));
 
@@ -27,32 +23,7 @@ function DashboardLoadingState() {
   );
 }
 
-function normalizePathname(pathname: string) {
-  if (!pathname || pathname === '/') {
-    return '/';
-  }
-
-  const trimmed = pathname.replace(/\/+$/, '');
-  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-}
-
-function isPlatformRouterPath(pathname: string) {
-  return (
-    pathname === '/design'
-    || pathname.startsWith('/design/')
-    || pathname === '/runtime'
-    || pathname.startsWith('/runtime/')
-    || pathname === '/mes'
-    || pathname.startsWith('/mes/')
-    || pathname === '/app'
-    || pathname.startsWith('/app/')
-  );
-}
-
 export default function App() {
-  const [pathname, setPathname] = useState(() => (
-    typeof window === 'undefined' ? '/' : normalizePathname(window.location.pathname)
-  ));
   const [isDebugDashboard, setIsDebugDashboard] = useState(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -61,43 +32,14 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     return params.get('debug') === 'dashboard';
   });
-  const [session, setSession] = useState<AuthSession | null>(() => getInitialAuthSession());
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const handleLocationChange = () => {
-      setPathname(normalizePathname(window.location.pathname));
-      const params = new URLSearchParams(window.location.search);
-      setIsDebugDashboard(params.get('debug') === 'dashboard');
-    };
-
-    window.addEventListener('popstate', handleLocationChange);
-    window.addEventListener('hashchange', handleLocationChange);
-
-    return () => {
-      window.removeEventListener('popstate', handleLocationChange);
-      window.removeEventListener('hashchange', handleLocationChange);
-    };
-  }, []);
+  const [session, setSession] = useState<AuthSession | null>(() => getStoredAuthSession());
 
   const handleLogout = () => {
-    clearCurrentAuthSession();
+    clearAuthSession();
     setSession(null);
     setIsDebugDashboard(false);
   };
-
-  if (!isDebugDashboard && isPlatformRouterPath(pathname)) {
-    return (
-      <AppRouter
-        onLogin={setSession}
-        onLogout={handleLogout}
-        session={session}
-      />
-    );
-  }
 
   if (!isDebugDashboard && !session) {
     return <Login onLogin={setSession} />;

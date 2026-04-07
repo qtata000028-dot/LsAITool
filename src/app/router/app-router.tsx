@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 
+import type { AuthSession } from '../../lib/backend-auth';
 import Login from '../../components/Login';
-import type { AuthSession } from '../providers/auth-session-provider';
 import { DesignPlatformApp } from '../../platforms/design/design-platform-app';
 import {
   resolveDesignRoute,
@@ -54,7 +54,7 @@ type NavigateOptions = {
   replace?: boolean;
 };
 
-const DEFAULT_DESIGN_HOME_PATH = '/design/module';
+const DEFAULT_DESIGN_HOME_PATH = '/design/bill';
 const DEFAULT_DESIGN_LOGIN_PATH = '/design/login';
 
 function normalizePathname(pathname: string) {
@@ -310,19 +310,13 @@ export function AppRouter({ onLogin, onLogout, session }: AppRouterProps) {
 
   useEffect(() => {
     if (route.kind === 'root') {
-      navigateTo(session ? DEFAULT_DESIGN_HOME_PATH : DEFAULT_DESIGN_LOGIN_PATH, { replace: true });
+      navigateTo(DEFAULT_DESIGN_LOGIN_PATH, { replace: true });
     }
-  }, [route, session]);
+  }, [route]);
 
   useEffect(() => {
     if (session && route.kind === 'platform' && route.platform.id === 'design' && route.pathname === '/design') {
       navigateTo(DEFAULT_DESIGN_HOME_PATH, { replace: true });
-    }
-  }, [route, session]);
-
-  useEffect(() => {
-    if (session && route.kind === 'login') {
-      navigateTo(resolvePostLoginPath(route), { replace: true });
     }
   }, [route, session]);
 
@@ -335,10 +329,6 @@ export function AppRouter({ onLogin, onLogout, session }: AppRouterProps) {
   }
 
   if (route.kind === 'login') {
-    if (session) {
-      return null;
-    }
-
     const loginPlatform = resolveLoginPlatform(route);
 
     return (

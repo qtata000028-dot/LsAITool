@@ -1,4 +1,4 @@
-export type PlatformId = 'design' | 'runtime' | 'mes';
+export type PlatformId = 'design' | 'runtime' | 'mes' | 'project';
 export type PlatformKind = 'studio' | 'runtime' | 'business';
 export type PlatformRouteMode = 'fixed' | 'dynamic' | 'mixed';
 export type PlatformLoginMode = 'shared' | 'independent';
@@ -24,6 +24,17 @@ export const PLATFORM_REGISTRY: readonly PlatformDefinition[] = [
     kind: 'studio',
     basePath: '/design',
     loginPath: '/design/login',
+    routeMode: 'fixed',
+    loginMode: 'shared',
+    status: 'active',
+  },
+  {
+    id: 'project',
+    name: '项目平台',
+    description: '用于项目管理系统入口，后续承接甘特图与集中配置工作区。',
+    kind: 'business',
+    basePath: '/project',
+    loginPath: '/project/login',
     routeMode: 'fixed',
     loginMode: 'shared',
     status: 'active',
@@ -61,5 +72,10 @@ export function getPlatformById(id: PlatformId) {
 }
 
 export function getPlatformByBasePath(pathname: string) {
-  return PLATFORM_REGISTRY.find((platform) => pathname === platform.basePath || pathname.startsWith(`${platform.basePath}/`)) ?? null;
+  return (
+    PLATFORM_REGISTRY.find(
+      (platform) =>
+        pathname === platform.basePath || pathname.startsWith(`${platform.basePath}/`),
+    ) ?? null
+  );
 }
