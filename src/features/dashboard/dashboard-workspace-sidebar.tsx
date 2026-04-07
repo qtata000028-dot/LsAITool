@@ -10,6 +10,7 @@ function normalizeMenuTitle(value?: string) {
 export function DashboardWorkspaceSidebar({
   activeFirstLevelMenuId,
   activeSubsystem,
+  companyTitle,
   expandedSubsystemId,
   handleFirstLevelMenuClick,
   isAdmin,
@@ -31,6 +32,7 @@ export function DashboardWorkspaceSidebar({
 }: {
   activeFirstLevelMenuId: string;
   activeSubsystem: string;
+  companyTitle: string;
   currentUserName: string;
   expandedSubsystemId: string | null;
   handleFirstLevelMenuClick: (subsystemId: string, menu: BackendMenuNode) => void;
@@ -52,6 +54,7 @@ export function DashboardWorkspaceSidebar({
 }) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const currentUserAvatarText = currentUserName.trim().slice(0, 1) || '人';
+  const workspaceBrandTitle = normalizeMenuTitle(companyTitle) || '朗速 AI';
 
   return (
     <aside className="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0">
@@ -60,7 +63,12 @@ export function DashboardWorkspaceSidebar({
           <span className="material-symbols-outlined text-2xl">rocket_launch</span>
         </div>
         <div className="flex flex-col">
-          <h1 className="text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-tight">朗速 AI</h1>
+          <h1
+            className="max-w-[190px] truncate text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-tight"
+            title={workspaceBrandTitle}
+          >
+            {workspaceBrandTitle}
+          </h1>
           <p className="text-primary text-[10px] font-bold tracking-wider">模块工作台</p>
         </div>
       </div>
@@ -72,6 +80,19 @@ export function DashboardWorkspaceSidebar({
         </a>
 
         <div className="space-y-1 pt-2">
+          <button
+            type="button"
+            onClick={onOpenResearchRecord}
+            className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
+              isResearchRecordActive
+                ? 'bg-primary text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+            }`}
+          >
+            <span className="material-symbols-outlined text-xl">assignment</span>
+            <span className="text-sm font-medium">调研记录</span>
+          </button>
+
           <button
             onClick={() => {
               toggleSubsystemOpen();
@@ -201,19 +222,6 @@ export function DashboardWorkspaceSidebar({
               <span className="text-sm font-medium">权限配置</span>
             </button>
           ) : null}
-
-          <button
-            type="button"
-            onClick={onOpenResearchRecord}
-            className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
-              isResearchRecordActive
-                ? 'bg-primary text-white shadow-sm'
-                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-            }`}
-          >
-            <span className="material-symbols-outlined text-xl">assignment</span>
-            <span className="text-sm font-medium">调研记录</span>
-          </button>
 
           <button
             type="button"
