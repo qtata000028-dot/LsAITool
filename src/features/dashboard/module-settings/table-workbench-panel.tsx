@@ -42,7 +42,7 @@ export function TableWorkbenchPanel({
       ) : null}
       <div
         className={cn(
-          'scrollbar-none flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none dark:bg-slate-900/90',
+          'scrollbar-none flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none dark:bg-slate-900/90',
           bodyClassName,
         )}
         tabIndex={0}

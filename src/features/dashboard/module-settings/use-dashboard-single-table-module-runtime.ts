@@ -270,6 +270,7 @@ export function useDashboardSingleTableModuleRuntime({
 
   useDashboardSingleTableMainResources({
     activeConfigModuleKey: config.activeConfigModuleKey,
+    businessType: config.businessType,
     canLoadSingleTableModuleResources: config.canLoadSingleTableModuleResources,
     captureMainColors,
     captureMainConditions,

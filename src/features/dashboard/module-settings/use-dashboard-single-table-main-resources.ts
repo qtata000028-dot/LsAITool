@@ -1,6 +1,7 @@
 import { type Dispatch, type SetStateAction, useEffect } from 'react';
 
 import {
+  fetchBillTypeConfig,
   fetchSingleTableModuleColors,
   fetchSingleTableModuleConditions,
   fetchSingleTableModuleConfig,
@@ -10,6 +11,7 @@ import {
 
 export function useDashboardSingleTableMainResources({
   activeConfigModuleKey,
+  businessType,
   canLoadSingleTableModuleResources,
   captureMainColors,
   captureMainConditions,
@@ -38,6 +40,7 @@ export function useDashboardSingleTableMainResources({
   toRecordText,
 }: {
   activeConfigModuleKey: string;
+  businessType: string;
   canLoadSingleTableModuleResources: boolean;
   captureMainColors: (rules: any[]) => void;
   captureMainConditions: (fields: any[]) => void;
@@ -78,30 +81,52 @@ export function useDashboardSingleTableMainResources({
 
     const loadSingleTableModuleConfigRecord = async () => {
       try {
-        const moduleConfig = await fetchSingleTableModuleConfig(activeConfigModuleKey);
+        const moduleConfig = businessType === 'table'
+          ? await fetchBillTypeConfig(activeConfigModuleKey)
+          : await fetchSingleTableModuleConfig(activeConfigModuleKey);
 
         if (!isActive) {
           return;
         }
 
+        const normalizedModuleConfig = moduleConfig as Record<string, unknown>;
+
+        if (businessType === 'table') {
+          setMainTableConfig((prev) => ({
+            ...prev,
+            backendId: getRecordFieldValue(normalizedModuleConfig, 'id'),
+            billSequence: getRecordFieldValue(normalizedModuleConfig, 'billSequence') ?? prev.billSequence,
+            dllCoId: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'typeCode')) || activeConfigModuleKey,
+            formKey: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'formKey')),
+            mainSql: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'masterSql', 'querySql', 'mainSql')),
+            moduleName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'typeName')) || prev.moduleName,
+            overbackKey: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'overbackKey')),
+            remark: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'remark')),
+            tableName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'masterTable', 'mainTable')),
+            typeCode: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'typeCode')) || activeConfigModuleKey,
+            typeName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'typeName')),
+          }));
+          return;
+        }
+
         setMainTableConfig((prev) => ({
           ...prev,
-          addDllName: toRecordText(getRecordFieldValue(moduleConfig, 'addDllName')),
-          addEnable: toRecordNumber(getRecordFieldValue(moduleConfig, 'addEnable'), prev.addEnable ?? 1),
-          backendId: getRecordFieldValue(moduleConfig, 'id'),
-          conditionKey: toRecordText(getRecordFieldValue(moduleConfig, 'conditionKey', 'condKey')),
-          deleteEnable: toRecordNumber(getRecordFieldValue(moduleConfig, 'deleteEnable'), prev.deleteEnable ?? 1),
-          deleteCond: toRecordText(getRecordFieldValue(moduleConfig, 'deleteCond')),
-          dllCoId: toRecordText(getRecordFieldValue(moduleConfig, 'dllCoId')) || activeConfigModuleKey,
-          dllType: getRecordFieldValue(moduleConfig, 'dllType') ?? prev.dllType,
-          formKey: toRecordText(getRecordFieldValue(moduleConfig, 'formKey')),
-          isReport: getRecordFieldValue(moduleConfig, 'isReport') ?? prev.isReport,
-          mainSql: toRecordText(getRecordFieldValue(moduleConfig, 'querySql', 'mainSql')),
-          modifyEnable: toRecordNumber(getRecordFieldValue(moduleConfig, 'modifyEnable'), prev.modifyEnable ?? 1),
-          modifyCond: toRecordText(getRecordFieldValue(moduleConfig, 'modifyCond')),
-          moduleName: toRecordText(getRecordFieldValue(moduleConfig, 'moduleName')),
-          overbackKey: toRecordText(getRecordFieldValue(moduleConfig, 'overbackKey')),
-          tableName: toRecordText(getRecordFieldValue(moduleConfig, 'mainTable')),
+          addDllName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'addDllName')),
+          addEnable: toRecordNumber(getRecordFieldValue(normalizedModuleConfig, 'addEnable'), prev.addEnable ?? 1),
+          backendId: getRecordFieldValue(normalizedModuleConfig, 'id'),
+          conditionKey: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'conditionKey', 'condKey')),
+          deleteEnable: toRecordNumber(getRecordFieldValue(normalizedModuleConfig, 'deleteEnable'), prev.deleteEnable ?? 1),
+          deleteCond: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'deleteCond')),
+          dllCoId: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'dllCoId')) || activeConfigModuleKey,
+          dllType: getRecordFieldValue(normalizedModuleConfig, 'dllType') ?? prev.dllType,
+          formKey: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'formKey')),
+          isReport: getRecordFieldValue(normalizedModuleConfig, 'isReport') ?? prev.isReport,
+          mainSql: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'querySql', 'mainSql')),
+          modifyEnable: toRecordNumber(getRecordFieldValue(normalizedModuleConfig, 'modifyEnable'), prev.modifyEnable ?? 1),
+          modifyCond: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'modifyCond')),
+          moduleName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'moduleName')),
+          overbackKey: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'overbackKey')),
+          tableName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'mainTable')),
         }));
       } catch (error) {
         if (!isActive) {
@@ -119,6 +144,7 @@ export function useDashboardSingleTableMainResources({
     };
   }, [
     activeConfigModuleKey,
+    businessType,
     canLoadSingleTableModuleResources,
     configStep,
     getDashboardErrorMessage,

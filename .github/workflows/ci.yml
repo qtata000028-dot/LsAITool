@@ -28,5 +28,11 @@ jobs:
       - name: Type check
         run: npm run lint
 
+      - name: Architecture Guard
+        run: npm run guard:architecture
+
+      - name: Verify
+        run: npm run verify
+
       - name: Build
         run: npm run build

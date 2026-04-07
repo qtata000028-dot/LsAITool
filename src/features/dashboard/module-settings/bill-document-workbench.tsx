@@ -5,10 +5,8 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { FileSpreadsheet, LayoutPanelTop, Plus, Save, Table2 } from 'lucide-react';
+import { FileSpreadsheet, LayoutPanelTop, Plus, Table2 } from 'lucide-react';
 
-import { Button } from '../../../components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { cn } from '../../../lib/utils';
 
 type BillCanvasFieldScope = 'main' | 'meta';
@@ -139,13 +137,10 @@ export function BillDocumentWorkbench({
   dnd,
   constants,
 }: BillDocumentWorkbenchProps) {
-  const billViewportPaddingClass = state.isConfigFullscreenActive ? 'p-1.5' : 'p-3';
+  const billViewportPaddingClass = 'p-0';
   const billPaperWrapClass = 'justify-stretch';
-  const billPaperShellClass = state.isConfigFullscreenActive
-    ? 'flex h-full min-h-full flex-1 flex-col rounded-[24px] border border-[#d9e4f0] bg-white shadow-none'
-    : 'flex h-full min-h-full flex-1 flex-col rounded-[28px] border border-[#d9e4f0] bg-white shadow-[0_44px_90px_-68px_rgba(15,23,42,0.42)]';
-  const billHeaderPaddingClass = state.isConfigFullscreenActive ? 'px-8 pb-3 pt-4' : 'px-10 pb-4 pt-5';
-  const billBodyPaddingClass = state.isConfigFullscreenActive ? 'gap-5 px-8 pb-6 pt-3' : 'gap-8 px-10 pb-8 pt-4';
+  const billPaperShellClass = 'flex h-full min-h-full flex-1 flex-col bg-transparent';
+  const billHeaderPaddingClass = state.isConfigFullscreenActive ? 'px-3 pb-2 pt-3' : 'px-3 pb-2 pt-3';
   const billHeaderRowCount = helpers.getBillHeaderRowCount();
   const billCanvasFields = helpers.getOrderedBillHeaderFields(state.billMetaFields, state.mainTableColumns, billHeaderRowCount);
   const billHeaderRows = Array.from({ length: billHeaderRowCount }, (_, index) => index + 1);
@@ -351,7 +346,6 @@ export function BillDocumentWorkbench({
     { icon: Table2, label: '来源表', action: () => actions.activateSourceGridSelection() },
     { icon: LayoutPanelTop, label: '整理', action: () => actions.autoArrangeBillHeaderFields() },
     { icon: Plus, label: '控件', action: appendBillHeaderField },
-    { icon: Save, label: '暂存', action: () => actions.showToast('已暂存单据模板布局') },
   ];
   const headerWorkbenchHeightClass = helpers.createRuntimeClassName('bill-header-height', `rows-${billHeaderRowCount}`);
   const billHeaderRuntimeRules = helpers.joinRuntimeDeclarationBlocks([
@@ -378,11 +372,12 @@ export function BillDocumentWorkbench({
   const draggedBillHeaderField = state.billHeaderWorkbenchDrag
     ? billCanvasFields.find((field) => field.id === state.billHeaderWorkbenchDrag?.id) ?? null
     : null;
+  const isBillHeaderCanvasEmpty = billCanvasFields.length === 0;
 
   return (
     <div
       style={state.workspaceThemeVars}
-      className={`flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-slate-50/55 ${state.isConfigFullscreenActive ? 'shadow-none' : 'shadow-[0_28px_64px_-48px_rgba(15,23,42,0.22)]'} ${state.workspaceThemeTableSurfaceClass}`}
+      className={`flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white ${state.workspaceThemeTableSurfaceClass}`}
     >
       {billHeaderRuntimeRules ? <style>{billHeaderRuntimeRules}</style> : null}
       <div ref={billDocumentViewportRef} className={`min-h-0 flex-1 overflow-hidden ${billViewportPaddingClass}`}>
@@ -393,21 +388,13 @@ export function BillDocumentWorkbench({
             style={{ zoom: state.billDocumentScale } as React.CSSProperties}
           >
             <div className={billPaperShellClass}>
-              <div className={`h-2 ${state.isConfigFullscreenActive ? 'rounded-t-lg' : 'rounded-t-xl'} ${billToneMeta.strip}`} />
+              
 
-              <div className={`border-b border-[#e8eef6] ${billHeaderPaddingClass}`}>
+              <div className={`h-1 bg-[linear-gradient(90deg,#2f6fed_0%,#5e90ff_40%,#8db5ff_100%)] shrink-0`} />
+
+              <div className={`border-b border-[#e8eef6] shrink-0 bg-[#fbfcfe] ${billHeaderPaddingClass}`}>
                 <div className="relative">
-                  <div className="absolute right-0 top-0 flex size-[58px] items-center justify-center rounded-[10px] border border-[#dde7f3] bg-white">
-                    <div className="grid h-7 w-7 grid-cols-3 gap-[2px]">
-                      {Array.from({ length: 9 }).map((_, index) => (
-                        <span
-                          key={index}
-                          className={`rounded-[2px] ${[0, 1, 2, 3, 5, 6, 7].includes(index) ? 'bg-slate-700' : 'bg-slate-300'}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <div className="px-20 text-center">
+                  <div className="px-8 text-center">
                     <div className={`text-[31px] font-black tracking-[0.22em] transition-colors ${billToneMeta.title}`}>{billDocumentTitle}</div>
                     <div className={`mx-auto mt-3 h-px w-[54%] transition-colors ${billToneMeta.divider}`} />
                     <div className="mt-4 flex items-center justify-center">
@@ -438,22 +425,30 @@ export function BillDocumentWorkbench({
                 </div>
               </div>
 
-              <div className={`flex min-h-0 flex-1 ${billBodyPaddingClass}`}>
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                  <div
-                    ref={billHeaderCanvasRef}
-                    tabIndex={0}
-                    style={{ ...documentGuideStyle, minHeight: headerWorkbenchHeight }}
-                    onClick={() => {
-                      actions.setSelectedMainForDelete([]);
-                      actions.activateTableConfigSelection('main');
-                    }}
-                    onPaste={handleBillHeaderPaste}
-                    className={`relative overflow-hidden rounded-lg border border-[#dce5f0] bg-white px-4 py-4 outline-none transition-shadow ${
-                      isBillHeaderPanelActive ? 'shadow-[inset_0_0_0_2px_rgba(47,111,237,0.28)]' : ''
-                    }`}
-                  >
-                    {billCanvasFields.length > 0 ? (
+              <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-none bg-[linear-gradient(180deg,#fbfdff_0%,#f2f7fb_100%)] p-1.5 shadow-[0_24px_48px_-44px_rgba(96,165,250,0.22)]">
+                <div className="flex h-full min-h-0 flex-1 gap-3">
+                  <div className="grid h-full min-h-0 flex-1 overflow-hidden grid-rows-[auto_minmax(0,1fr)] gap-y-2.5">
+                    <div className="relative min-h-0 min-w-0 overflow-hidden">
+                      <div className="flex min-h-0 min-w-0 flex-col">
+                        <div
+                          ref={billHeaderCanvasRef}
+                          tabIndex={0}
+                          style={{
+                            ...documentGuideStyle,
+                            minHeight: isBillHeaderCanvasEmpty ? 260 : headerWorkbenchHeight,
+                          }}
+                          onClick={() => {
+                            actions.setSelectedMainForDelete([]);
+                            actions.activateTableConfigSelection('main');
+                          }}
+                          onPaste={handleBillHeaderPaste}
+                          className={cn(
+                            'relative overflow-hidden rounded-[18px] border border-[#d6e2f1] bg-[#fcfdff] outline-none transition-shadow',
+                            !isBillHeaderCanvasEmpty && 'px-3 py-3',
+                            isBillHeaderPanelActive && 'shadow-[inset_0_0_0_2px_rgba(47,111,237,0.28)]',
+                          )}
+                        >
+                    {!isBillHeaderCanvasEmpty ? (
                       <DndContext
                         sensors={dnd.sensors}
                         onDragStart={handleBillHeaderWorkbenchDragStart}
@@ -605,56 +600,40 @@ export function BillDocumentWorkbench({
                       </DndContext>
                     ) : (
                       <div className="flex min-h-[260px] items-center justify-center">
-                        <Card className="border-dashed border-border bg-muted/30 px-6 py-8 text-center shadow-none">
-                          <CardContent className="flex flex-col items-center gap-4 p-0">
+                        <div className="flex flex-col items-center gap-4 px-6 py-8 text-center">
                             <div className="flex size-12 items-center justify-center rounded-md bg-primary/10 text-primary">
                               <FileSpreadsheet className="size-5" />
                             </div>
                             <div className="text-sm font-semibold text-foreground">将 Excel 字段复制到单据抬头</div>
-                          </CardContent>
-                        </Card>
+                        </div>
                       </div>
                     )}
+                    </div>
                   </div>
-
-                  <Card className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden border-border/80 bg-card">
-                    <CardHeader className="border-b border-border/80 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex size-8 items-center justify-center rounded-md bg-primary/10 text-primary">
-                          <Table2 className="size-4" />
-                        </div>
-                        <div>
-                          <CardTitle>单据明细区</CardTitle>
-                          <CardDescription className="text-xs">明细表属性、字段和画布配置统一收在这里。</CardDescription>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="min-h-0 flex-1 p-3">
+                </div>
+                  
+                <div className="relative flex min-h-0 flex-col overflow-hidden before:pointer-events-none before:absolute before:inset-x-8 before:-top-1 before:h-px before:bg-[linear-gradient(90deg,transparent,rgba(148,163,184,0.58),transparent)]">
+                    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-[#d6e2f1] bg-white shadow-none">
                       {nodes.billDetailTableBuilderNode}
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
                 </div>
 
-                <aside className="flex min-h-0 w-[112px] shrink-0 border-l border-border/80 pl-5 pt-1">
-                  <Card className="w-full border-border/80 bg-card">
-                    <CardContent className="p-2.5">
-                      <div className="flex flex-col gap-3">
-                        {actionRailItems.map((item) => (
-                          <Button
-                            key={item.label}
-                            variant="outline"
-                            className="flex h-[78px] w-full flex-col items-center justify-center gap-2 rounded-md px-3 text-xs font-semibold"
-                            onClick={item.action}
-                          >
-                            <item.icon className="size-5" />
-                            <span className="leading-5">{item.label}</span>
-                          </Button>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </aside>
-              </div>
+                    <aside className="relative flex min-h-[0] w-[64px] shrink-0 flex-col gap-3 before:absolute before:-left-[7px] before:bottom-0 before:top-0 before:w-px before:bg-gradient-to-b before:from-transparent before:via-[#dce5f0] before:to-transparent">
+                      {actionRailItems.map((item) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          className="group flex h-[64px] w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-[#e2e8f0] bg-white/60 text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-[1px] hover:border-[#cbd5e1] hover:bg-white hover:text-slate-900 hover:shadow-[0_4px_12px_rgba(15,23,42,0.06)]"
+                          onClick={item.action}
+                        >
+                          <item.icon className="size-[22px] text-slate-400 transition-colors group-hover:text-primary" strokeWidth={1.5} />
+                          <span className="text-[11px] font-semibold tracking-wide">{item.label}</span>
+                        </button>
+                      ))}
+                    </aside>
+                  </div>
+                </div>
             </div>
           </div>
         </div>

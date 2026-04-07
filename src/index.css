@@ -38,6 +38,7 @@ body {
 }
 
 .dashboard-table-builder-ant-table .ant-spin-nested-loading,
+.dashboard-table-builder-ant-table .ant-spin,
 .dashboard-table-builder-ant-table .ant-spin-container,
 .dashboard-table-builder-ant-table .ant-table,
 .dashboard-table-builder-ant-table .ant-table-container {
@@ -75,9 +76,64 @@ body {
   min-height: 0;
   background: #ffffff;
   overflow-x: auto !important;
-  overflow-y: hidden !important;
+  overflow-y: auto !important;
   scrollbar-width: thin;
   scrollbar-color: #4f8cff #deebff;
+}
+
+.dashboard-table-builder-ant-table-no-vertical-scroll .ant-table-body {
+  overflow-y: hidden !important;
+}
+
+.dashboard-table-builder-ant-table-fill-body .ant-table-body {
+  height: 100% !important;
+  max-height: 100% !important;
+}
+
+.dashboard-table-builder-ant-table-fill-body .ant-table-container {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.dashboard-table-builder-ant-table-fill-body .ant-table-header {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.dashboard-table-builder-ant-table-fill-body .ant-table-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.dashboard-table-builder-ant-table-fill-body .ant-table-body > table {
+  height: 100%;
+  min-height: 100%;
+}
+
+.dashboard-table-builder-ant-table-fill-body .ant-table-tbody {
+  height: 100%;
+}
+
+.dashboard-table-builder-ant-preview-scroll-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: hidden !important;
+  background: #ffffff;
+  border-bottom-left-radius: 18px;
+  border-bottom-right-radius: 18px;
+}
+
+.dashboard-table-builder-ant-preview-scroll-body-inner {
+  display: flex;
+  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #ffffff;
 }
 
 .dashboard-table-builder-ant-table .ant-table-header {
@@ -95,6 +151,8 @@ body {
 .dashboard-table-builder-ant-table .ant-table-body::-webkit-scrollbar-track {
   background: linear-gradient(180deg, #f4f8ff 0%, #deebff 100%);
   border-radius: 999px;
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
 }
 
 .dashboard-table-builder-ant-table .ant-table-content::-webkit-scrollbar-thumb,
@@ -143,14 +201,6 @@ body {
     linear-gradient(180deg, #5e97ff 0%, #2563eb 100%) !important;
 }
 
-.dashboard-table-builder-ant-table .ant-table-content table,
-.dashboard-table-builder-ant-table .ant-table-body table,
-.dashboard-table-builder-ant-table .ant-table-header table {
-  width: var(--dashboard-table-builder-width) !important;
-  min-width: var(--dashboard-table-builder-width) !important;
-  max-width: none !important;
-}
-
 .dashboard-table-builder-ant-table .ant-table-thead > tr > th,
 .dashboard-table-builder-ant-table .ant-table-tbody > tr > td {
   padding: 0 !important;
@@ -165,7 +215,7 @@ body {
 }
 
 .dashboard-table-builder-ant-table .ant-table-tbody > tr.ant-table-placeholder > td {
-  height: var(--dashboard-table-builder-placeholder-height, 180px) !important;
+  height: var(--dashboard-table-builder-preview-row-height, 44px) !important;
   padding: 0 !important;
   background: #ffffff !important;
   border-bottom: none !important;
