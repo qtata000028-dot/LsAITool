@@ -1,13 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  fetchSystemDepartments,
-  type SystemDepartmentOption,
-} from '../../lib/backend-departments';
+import { fetchSystemDepartments } from '../../lib/backend-departments';
 import {
   deleteSurveyMain,
   fetchSurveyDepartmentStats,
   fetchSurveyMainList,
-  type SurveyDepartmentStat,
   type SurveyMainDto,
 } from '../../lib/backend-survey';
 import { ResearchRecordWorkbench } from './research-record-workbench';
@@ -129,8 +125,8 @@ export function ResearchRecordExplorerWorkbench(props: ResearchRecordExplorerPro
 
         nodes.sort((a, b) => b.count - a.count);
         setDepartments(nodes);
-        if (nodes.length > 0 && activeDepartmentId === null) {
-          setActiveDepartmentId(nodes[0].id);
+        if (nodes.length > 0) {
+          setActiveDepartmentId((current) => current ?? nodes[0].id);
         }
       } catch {
         if (!disposed) {

@@ -1413,22 +1413,6 @@ export function ResearchRecordWorkbench({
     setActiveStep('contents');
   }, []);
 
-  const removeContentItem = useCallback((id: string) => {
-    const currentIndex = draft.contentItems.findIndex((item) => item.id === id);
-    const fallbackTarget = currentIndex > 0
-      ? draft.contentItems[currentIndex - 1]?.id ?? null
-      : draft.contentItems[currentIndex + 1]?.id ?? null;
-    setDraft((current) => {
-      return {
-        ...current,
-        contentItems: current.contentItems.filter((item) => item.id !== id),
-      };
-    });
-    if (selectedContentItemId === id) {
-      setSelectedContentItemId(fallbackTarget);
-    }
-  }, [draft.contentItems, selectedContentItemId]);
-
   const handleSaveRecord = useCallback(async () => {
     setIsRecordSaving(true);
 

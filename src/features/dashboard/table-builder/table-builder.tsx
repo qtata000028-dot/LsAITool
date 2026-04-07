@@ -651,10 +651,6 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       hostElement?.closest('[data-table-workbench-body-slot="true"]') as HTMLDivElement | null
     ) ?? hostElement;
 
-    // Synchronous initial measurement — captures layout dimensions before paint
-    // to prevent the table from flashing with height=0 / width=0 on first render.
-    measurePreviewLayout();
-
     let firstRafId = 0;
     let secondRafId = 0;
     let stabilizationTimerId = 0;
@@ -727,7 +723,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     });
 
     return nextStyle;
-  }, [effectivePreviewTableWidth, headerColumns, previewFillerWidth, previewRowHeight, workspaceThemeVars]);
+  }, [effectivePreviewTableWidth, headerColumns, previewAvailableBodyHeight, previewFillerWidth, previewRowHeight, workspaceThemeVars]);
 
   const handleAddColumn = useCallback(() => {
     setCols((prev) => [...prev, helpers.buildColumn(scope === 'detail' ? 'd_col' : `${scope}_col`, prev.length + 1)]);
