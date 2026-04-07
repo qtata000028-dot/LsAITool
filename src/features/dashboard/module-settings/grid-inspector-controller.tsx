@@ -260,6 +260,8 @@ export function GridInspectorController({
   const isDocumentDetailGrid = businessType !== 'table' && context.scope === 'detail-grid';
   const isDocumentArchiveGrid = businessType !== 'table' && (isMainGridConfig || isLeftGridConfig);
   const useQuietDocumentInspector = isDocumentDetailGrid || isDocumentArchiveGrid;
+  const hasInspectorTabs = inspectorTabsNode != null;
+  const showConditionWorkbenchAction = isDocumentArchiveGrid;
   const selectedDetailInspectorFillType = isDocumentDetailGrid && detailFillTypeOptions.some((option) => option.value === inspectorTarget.id)
     ? inspectorTarget.id
     : '表格';
@@ -689,9 +691,11 @@ export function GridInspectorController({
                 </span>
               ) : null}
             </div>
-            <div className="flex min-w-0 items-center">
-              {inspectorTabsNode}
-            </div>
+            {hasInspectorTabs ? (
+              <div className="flex min-w-0 items-center">
+                {inspectorTabsNode}
+              </div>
+            ) : null}
           </div>
         ) : (
           <>
@@ -711,9 +715,9 @@ export function GridInspectorController({
                 </div>
               </div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                {isDocumentArchiveGrid ? (
+            {showConditionWorkbenchAction ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => onOpenConditionWorkbench(isLeftGridConfig ? 'left' : 'main')}
@@ -722,10 +726,10 @@ export function GridInspectorController({
                     <span className="material-symbols-outlined text-[16px]">filter_alt</span>
                     条件配置
                   </button>
-                ) : null}
+                </div>
               </div>
-            </div>
-            {inspectorTabsNode}
+            ) : null}
+            {hasInspectorTabs ? inspectorTabsNode : null}
           </>
         )}
       </div>

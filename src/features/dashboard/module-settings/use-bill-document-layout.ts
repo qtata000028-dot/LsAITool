@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 type UseBillDocumentLayoutParams = {
   autoArrangeBillHeaderFields: () => void;
@@ -19,9 +19,6 @@ type UseBillDocumentLayoutParams = {
 
 export function useBillDocumentLayout({
   autoArrangeBillHeaderFields,
-  billDetailColumnCount,
-  billDocumentPaperRef,
-  billDocumentViewportRef,
   billMetaFields,
   businessType,
   isModuleSettingFullscreen,
@@ -30,47 +27,10 @@ export function useBillDocumentLayout({
   getBillFieldLayout,
   constants,
 }: UseBillDocumentLayoutParams) {
-  const [billDocumentScale, setBillDocumentScale] = useState(1);
+  const billDocumentScale = 1;
   const billHeaderAutoFillRef = useRef(false);
 
-  useEffect(() => {
-    if (businessType !== 'table') return;
 
-    const viewport = billDocumentViewportRef.current;
-    const paper = billDocumentPaperRef.current;
-    if (!viewport || !paper || typeof ResizeObserver === 'undefined') return;
-
-    const measure = () => {
-      const viewportPadding = isModuleSettingFullscreen ? 4 : 16;
-      const viewportWidth = viewport.clientWidth - viewportPadding;
-      const viewportHeight = viewport.clientHeight - viewportPadding;
-      const paperWidth = paper.scrollWidth || 1480;
-      const paperHeight = paper.scrollHeight || 920;
-
-      if (viewportWidth <= 0 || viewportHeight <= 0 || paperWidth <= 0 || paperHeight <= 0) return;
-
-      const scaleLimit = isModuleSettingFullscreen ? 1.08 : 1;
-      const nextScale = Math.min(scaleLimit, viewportWidth / paperWidth, viewportHeight / paperHeight);
-      setBillDocumentScale((prev) => (Math.abs(prev - nextScale) < 0.01 ? prev : nextScale));
-    };
-
-    const observer = new ResizeObserver(() => {
-      window.requestAnimationFrame(measure);
-    });
-    observer.observe(viewport);
-    observer.observe(paper);
-    window.requestAnimationFrame(measure);
-
-    return () => observer.disconnect();
-  }, [
-    billDetailColumnCount,
-    billDocumentPaperRef,
-    billDocumentViewportRef,
-    billMetaFields.length,
-    businessType,
-    isModuleSettingFullscreen,
-    mainTableColumns.length,
-  ]);
 
   useEffect(() => {
     if (businessType !== 'table' || isModuleSettingFullscreen || billHeaderAutoFillRef.current) return;
