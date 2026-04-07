@@ -1468,19 +1468,19 @@ export function ResearchRecordWorkbench({
     setActiveStep('contents');
   }, []);
 
-  const duplicateSelectedContentItem = useCallback(() => {
-    if (!selectedContentItemId) {
+  const duplicateContentItem = useCallback((itemId: string) => {
+    if (!itemId) {
       return;
     }
 
     let duplicatedItemId: string | null = null;
     setDraft((current) => {
-      const sourceItem = current.contentItems.find((item) => item.id === selectedContentItemId);
+      const sourceItem = current.contentItems.find((item) => item.id === itemId);
       if (!sourceItem) {
         return current;
       }
 
-      const sourceIndex = current.contentItems.findIndex((item) => item.id === selectedContentItemId);
+      const sourceIndex = current.contentItems.findIndex((item) => item.id === itemId);
       const insertIndex = sourceIndex >= 0 ? sourceIndex + 1 : current.contentItems.length;
       const duplicatedItem = cloneResearchContentItem(sourceItem, current.contentItems.length + 1);
       duplicatedItemId = duplicatedItem.id;
@@ -1500,7 +1500,7 @@ export function ResearchRecordWorkbench({
       setStatusMessage('已复制当前明细并新增一个版本');
     }
     setActiveStep('contents');
-  }, [scrollPreviewTo, selectedContentItemId]);
+  }, [scrollPreviewTo]);
 
   const handleSaveRecord = useCallback(async () => {
     setIsRecordSaving(true);
@@ -2868,23 +2868,41 @@ export function ResearchRecordWorkbench({
                               {draft.contentItems.map((item, index) => {
                                 const isActive = item.id === selectedContentItem?.id;
                                 return (
-                                  <button
+                                  <div
                                     key={item.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedContentItemId(item.id);
-                                      scrollPreviewTo(`content-item:${item.id}`);
-                                    }}
-                                    className={`group w-full rounded-[14px] border px-2 py-1.5 text-left transition-all ${
+                                    className={`group rounded-[14px] border px-2 py-1.5 transition-all ${
                                       isActive
                                         ? 'border-sky-200 bg-[linear-gradient(135deg,#eff6ff_0%,#ecfeff_100%)] text-sky-700 shadow-[0_16px_30px_-24px_rgba(14,165,233,0.35)]'
                                         : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                                     }`}
                                   >
-                                    <span className={`block break-words text-[11px] font-black leading-4 ${isActive ? 'text-sky-700' : 'text-slate-900'}`}>
-                                      {getContentItemDisplayName(item, index)}
-                                    </span>
-                                  </button>
+                                    <div className="flex items-start gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedContentItemId(item.id);
+                                          scrollPreviewTo(`content-item:${item.id}`);
+                                        }}
+                                        className="min-w-0 flex-1 text-left"
+                                      >
+                                        <span className={`block break-words text-[11px] font-black leading-4 ${isActive ? 'text-sky-700' : 'text-slate-900'}`}>
+                                          {getContentItemDisplayName(item, index)}
+                                        </span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => duplicateContentItem(item.id)}
+                                        className={`shrink-0 rounded-md px-1.5 py-1 text-[10px] font-semibold transition-colors ${
+                                          isActive
+                                            ? 'bg-white text-sky-700 hover:bg-sky-50'
+                                            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                                        }`}
+                                        title="复制新增"
+                                      >
+                                        复制新增
+                                      </button>
+                                    </div>
+                                  </div>
                                 );
                               })}
                             </div>
@@ -2929,15 +2947,6 @@ export function ResearchRecordWorkbench({
                                       {capturingItemId === selectedContentItem.id ? 'hourglass_top' : 'data_object'}
                                     </span>
                                     {capturingItemId === selectedContentItem.id ? '捕获中' : '捕获'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={duplicateSelectedContentItem}
-                                    disabled={isRecordLoading || isRecordSaving || isArchiving}
-                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 transition-colors hover:border-primary/20 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    <span className="material-symbols-outlined text-[15px]">content_copy</span>
-                                    复制新增
                                   </button>
                                   {isSelectedDetailLoading ? (
                                     <span className="inline-flex h-9 items-center rounded-xl border border-sky-200 bg-sky-50 px-2.5 text-[11px] font-semibold text-sky-700">
