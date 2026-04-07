@@ -105,11 +105,15 @@ function formatScopeDisplay(value: string) {
   return '全员 □ 部门 ☑ 单独 □';
 }
 
+function stripExistingLineOrder(value: string) {
+  return value.replace(/^\s*\d+\s*[、,，.．)）]\s*/, '').trim();
+}
+
 export function buildNumberedLineEntries(value: string, lineColors: ResearchLineColorMap = {}): ResearchWordLineEntry[] {
   return buildMultilineDisplayLines(value, lineColors).map((line) => ({
     color: line.color,
     rawIndex: line.rawIndex,
-    text: line.numberedText,
+    text: `${line.order}、${stripExistingLineOrder(line.text) || line.text}`,
   }));
 }
 
