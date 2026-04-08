@@ -290,7 +290,6 @@ export default function Login({ onLogin }: LoginProps) {
     || isLoadingOrganizations
     || !selectedEmployee
     || !selectedOrganization
-    || !password.trim()
     || (selectedEmployee !== null && availableOrganizations.length === 0)
   );
 

@@ -161,7 +161,7 @@ export function DashboardWorkspaceSidebar({
     }
 
     const loginContext = getStoredLoginContext();
-    if (!loginContext || loginContext.employeeId !== currentSession.employeeId || !loginContext.password.trim()) {
+    if (!loginContext || loginContext.employeeId !== currentSession.employeeId) {
       setOrganizationError('请重新登录一次后再切换帐套。');
       return;
     }

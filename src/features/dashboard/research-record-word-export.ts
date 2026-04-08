@@ -169,11 +169,9 @@ function setParagraphText(paragraph: Element, content: string | ParagraphLineSpe
 
   if (paragraphProperties) {
     const nextParagraphProperties = cloneElement(paragraphProperties);
-    if (!text) {
-      const numbering = getElementChildren(nextParagraphProperties, 'numPr')[0];
-      if (numbering) {
-        nextParagraphProperties.removeChild(numbering);
-      }
+    const numbering = getElementChildren(nextParagraphProperties, 'numPr')[0];
+    if (numbering) {
+      nextParagraphProperties.removeChild(numbering);
     }
     paragraph.appendChild(nextParagraphProperties);
   }
