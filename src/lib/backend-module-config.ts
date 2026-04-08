@@ -26,6 +26,7 @@ export type SingleTableDesignerLayoutDto = Record<string, unknown>;
 export type BillTypeDesignerControlDto = Record<string, unknown>;
 export type BillTypeDesignerGroupDto = Record<string, unknown>;
 export type BillTypeDesignerLayoutDto = Record<string, unknown>;
+export type BillTypeMasterFieldDto = Record<string, unknown>;
 export type BillTypeDetailFieldDto = Record<string, unknown>;
 export type SingleTableConditionDto = Record<string, unknown>;
 export type SingleTableDetailDto = Record<string, unknown>;
@@ -35,7 +36,9 @@ export type SingleTableColorRuleDto = Record<string, unknown>;
 export type SingleTableContextMenuDto = Record<string, unknown>;
 
 export interface BillTypeConfigDto {
+  detailCond?: unknown;
   detailSql?: unknown;
+  detailSqlPrompt?: unknown;
   detailTable?: unknown;
   formKey?: unknown;
   id?: unknown;
@@ -97,6 +100,10 @@ function stripUndefinedEntries<T extends Record<string, unknown>>(record: T) {
   return Object.fromEntries(
     Object.entries(record).filter(([, value]) => value !== undefined),
   ) as T;
+}
+
+function hasAnyOwnKey(record: Record<string, unknown>, keys: string[]) {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(record, key));
 }
 
 export function normalizeSingleTableModuleConfig(record?: SingleTableModuleConfigDto | null) {
@@ -533,19 +540,189 @@ export async function deleteSingleTableModuleConfig(dllCoId: string) {
   });
 }
 
-export async function fetchBillTypeConfig(typeCode: string) {
-  return apiRequest<BillTypeConfigDto>(`/api/bill/types/${encodePathParam(typeCode)}`, {
-    auth: true,
-    method: 'GET',
+export function normalizeBillTypeConfig(record?: BillTypeConfigDto | null) {
+  const source = record && typeof record === 'object'
+    ? record as Record<string, unknown>
+    : {};
+
+  return {
+    ...source,
+    billSequence: getFirstDefinedValue(source, ['billSequence', 'billsequence']),
+    detailCond: toText(getFirstDefinedValue(source, [
+      'detailCond',
+      'detailcond',
+      'detailCondition',
+      'detailcondition',
+      'unioncond',
+      'unionCond',
+      'relatedCondition',
+      'relatedcondition',
+      'sourceCondition',
+      'sourcecondition',
+      'defaultQuery',
+      'defaultquery',
+    ])),
+    detailSql: toText(getFirstDefinedValue(source, ['detailSql', 'detailsql', 'detailSQL', 'DetailSQL'])),
+    detailSqlPrompt: toText(getFirstDefinedValue(source, [
+      'detailSqlPrompt',
+      'detailsqlprompt',
+      'detailPrompt',
+      'detailprompt',
+      'sqlPrompt',
+      'sqlprompt',
+    ])),
+    detailTable: toText(getFirstDefinedValue(source, [
+      'detailTable',
+      'detailtable',
+      'detailTableName',
+      'detailtablename',
+      'DetailTable',
+    ])),
+    formKey: toText(getFirstDefinedValue(source, ['formKey', 'formkey'])),
+    id: getFirstDefinedValue(source, ['id', 'ID', 'Id']),
+    masterSql: toText(getFirstDefinedValue(source, ['masterSql', 'mastersql', 'querySql', 'querysql', 'mainSql', 'mainsql'])),
+    masterTable: toText(getFirstDefinedValue(source, ['masterTable', 'mastertable', 'mainTable', 'maintable', 'tableName', 'tablename'])),
+    overbackKey: toText(getFirstDefinedValue(source, ['overbackKey', 'overbackkey'])),
+    remark: toText(getFirstDefinedValue(source, ['remark', 'Remark', 'note', 'memo'])),
+    typeCode: toText(getFirstDefinedValue(source, ['typeCode', 'typecode'])),
+    typeName: toText(getFirstDefinedValue(source, ['typeName', 'typename', 'moduleName', 'modulename'])),
+  } satisfies BillTypeConfigDto;
+}
+
+export function buildBillTypeConfigBody(record: Record<string, unknown>) {
+  const source = record && typeof record === 'object'
+    ? record
+    : {};
+  const id = hasAnyOwnKey(source, ['id', 'ID', 'Id'])
+    ? getFirstDefinedValue(source, ['id', 'ID', 'Id'])
+    : undefined;
+  const billSequence = hasAnyOwnKey(source, ['billSequence', 'billsequence'])
+    ? getFirstDefinedValue(source, ['billSequence', 'billsequence'])
+    : undefined;
+  const detailCond = hasAnyOwnKey(source, [
+    'detailCond',
+    'detailcond',
+    'detailCondition',
+    'detailcondition',
+    'unioncond',
+    'unionCond',
+    'relatedCondition',
+    'relatedcondition',
+    'sourceCondition',
+    'sourcecondition',
+    'defaultQuery',
+    'defaultquery',
+  ])
+    ? toText(getFirstDefinedValue(source, [
+      'detailCond',
+      'detailcond',
+      'detailCondition',
+      'detailcondition',
+      'unioncond',
+      'unionCond',
+      'relatedCondition',
+      'relatedcondition',
+      'sourceCondition',
+      'sourcecondition',
+      'defaultQuery',
+      'defaultquery',
+    ]))
+    : undefined;
+  const detailSql = hasAnyOwnKey(source, ['detailSql', 'detailsql', 'detailSQL', 'DetailSQL'])
+    ? toText(getFirstDefinedValue(source, ['detailSql', 'detailsql', 'detailSQL', 'DetailSQL']))
+    : undefined;
+  const detailSqlPrompt = hasAnyOwnKey(source, [
+    'detailSqlPrompt',
+    'detailsqlprompt',
+    'detailPrompt',
+    'detailprompt',
+    'sqlPrompt',
+    'sqlprompt',
+  ])
+    ? toText(getFirstDefinedValue(source, [
+      'detailSqlPrompt',
+      'detailsqlprompt',
+      'detailPrompt',
+      'detailprompt',
+      'sqlPrompt',
+      'sqlprompt',
+    ]))
+    : undefined;
+  const detailTable = hasAnyOwnKey(source, [
+    'detailTable',
+    'detailtable',
+    'detailTableName',
+    'detailtablename',
+    'DetailTable',
+  ])
+    ? toText(getFirstDefinedValue(source, [
+      'detailTable',
+      'detailtable',
+      'detailTableName',
+      'detailtablename',
+      'DetailTable',
+    ]))
+    : undefined;
+  const formKey = hasAnyOwnKey(source, ['formKey', 'formkey'])
+    ? toText(getFirstDefinedValue(source, ['formKey', 'formkey']))
+    : undefined;
+  const masterSql = hasAnyOwnKey(source, ['masterSql', 'mastersql', 'querySql', 'querysql', 'mainSql', 'mainsql'])
+    ? toText(getFirstDefinedValue(source, ['masterSql', 'mastersql', 'querySql', 'querysql', 'mainSql', 'mainsql']))
+    : undefined;
+  const masterTable = hasAnyOwnKey(source, ['masterTable', 'mastertable', 'mainTable', 'maintable', 'tableName', 'tablename'])
+    ? toText(getFirstDefinedValue(source, ['masterTable', 'mastertable', 'mainTable', 'maintable', 'tableName', 'tablename']))
+    : undefined;
+  const overbackKey = hasAnyOwnKey(source, ['overbackKey', 'overbackkey'])
+    ? toText(getFirstDefinedValue(source, ['overbackKey', 'overbackkey']))
+    : undefined;
+  const remark = hasAnyOwnKey(source, ['remark', 'Remark', 'note', 'memo'])
+    ? toText(getFirstDefinedValue(source, ['remark', 'Remark', 'note', 'memo']))
+    : undefined;
+  const typeCode = hasAnyOwnKey(source, ['typeCode', 'typecode'])
+    ? toText(getFirstDefinedValue(source, ['typeCode', 'typecode']))
+    : undefined;
+  const typeName = hasAnyOwnKey(source, ['typeName', 'typename', 'moduleName', 'modulename'])
+    ? toText(getFirstDefinedValue(source, ['typeName', 'typename', 'moduleName', 'modulename']))
+    : undefined;
+
+  return stripUndefinedEntries({
+    id,
+    billSequence,
+    detailCond,
+    detailCondition: detailCond,
+    detailSql,
+    detailSQL: detailSql,
+    detailSqlPrompt,
+    detailPrompt: detailSqlPrompt,
+    detailTable,
+    detailTableName: detailTable,
+    formKey,
+    mainSql: masterSql,
+    masterSql,
+    mainTable: masterTable,
+    masterTable,
+    overbackKey,
+    remark,
+    typeCode,
+    typeName,
   });
 }
 
-export async function saveBillTypeConfig(typeCode: string, body: Record<string, unknown>) {
-  return apiRequest<BillTypeConfigDto>(`/api/bill/types/${encodePathParam(typeCode)}`, {
+export async function fetchBillTypeConfig(typeCode: string) {
+  const response = await apiRequest<BillTypeConfigDto>(`/api/bill/types/${encodePathParam(typeCode)}`, {
     auth: true,
-    body,
+    method: 'GET',
+  });
+  return normalizeBillTypeConfig(response);
+}
+
+export async function saveBillTypeConfig(typeCode: string, body: Record<string, unknown>) {
+  const response = await apiRequest<BillTypeConfigDto>(`/api/bill/types/${encodePathParam(typeCode)}`, {
+    auth: true,
+    body: buildBillTypeConfigBody(body),
     method: 'POST',
   });
+  return normalizeBillTypeConfig(response);
 }
 
 export async function createBillTypeConfig(body: Record<string, unknown>) {
@@ -565,6 +742,13 @@ export async function deleteBillTypeConfig(typeCode: string) {
 
 export async function fetchBillTypeDetailFields(typeCode: string) {
   return apiRequest<BillTypeDetailFieldDto[]>(`/api/bill/types/${encodePathParam(typeCode)}/detail-fields`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchBillTypeMasterFields(typeCode: string) {
+  return apiRequest<BillTypeMasterFieldDto[]>(`/api/bill/types/${encodePathParam(typeCode)}/master-fields`, {
     auth: true,
     method: 'GET',
   });

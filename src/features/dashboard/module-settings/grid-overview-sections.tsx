@@ -151,7 +151,7 @@ type GridLayoutWorkflowSectionProps = {
   totalFieldCount: number;
 };
 
-const quietDocumentInspectorCardClass = 'rounded-xl border border-slate-200/60 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900';
+const quietDocumentInspectorCardClass = 'w-full rounded-xl border border-slate-200/60 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900';
 const quietDocumentInspectorSummaryClass = 'rounded-lg border border-slate-100 bg-slate-50/50 p-3 text-[11px] leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-800/30 dark:text-slate-400';
 const quietDocumentInspectorActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/80 bg-white px-3 text-[11px] font-semibold text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-slate-100';
 const quietDocumentInspectorPrimaryActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-lg bg-[color:var(--workspace-accent)] px-3 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-[color:var(--workspace-accent-strong)]';
@@ -243,7 +243,7 @@ export const GridSqlConfigSection = React.memo(function GridSqlConfigSection({
   const resolvedMainSqlLabel = mainSqlLabel || '主 SQL';
 
   return (
-    <section className={shadcnSectionCardClass}>
+    <section className={`${shadcnSectionCardClass} w-full`}>
       <div className={shadcnSectionTitleClass}>
         <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">frame_source</span>
         <div className="min-w-0">

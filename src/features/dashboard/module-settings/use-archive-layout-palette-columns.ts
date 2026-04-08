@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  fetchBillTypeDesignerControls,
   fetchBillTypeDesignerGroups,
   fetchBillTypeDesignerLayout,
-  type BillTypeDesignerControlDto,
   type BillTypeDesignerGroupDto,
   type BillTypeDesignerLayoutDto,
   fetchSingleTableDesignerControls,
@@ -26,7 +24,7 @@ type UseArchiveLayoutPaletteColumnsOptions = {
 };
 
 type ArchiveLayoutDesignerPayload = {
-  controlRows: Array<SingleTableDesignerControlDto | BillTypeDesignerControlDto>;
+  controlRows: SingleTableDesignerControlDto[];
   groupRows: Array<SingleTableDesignerGroupDto | BillTypeDesignerGroupDto>;
   layoutRows: Array<SingleTableDesignerLayoutDto | BillTypeDesignerLayoutDto>;
   moduleCode: string;
@@ -83,7 +81,7 @@ export function useArchiveLayoutPaletteColumns({
 
         const [controlRows, groupRows, layoutRows] = await Promise.all([
           businessType === 'table'
-            ? fetchBillTypeDesignerControls(moduleCode)
+            ? Promise.resolve([] as SingleTableDesignerControlDto[])
             : fetchSingleTableDesignerControls(moduleCode),
           businessType === 'table'
             ? fetchBillTypeDesignerGroups(moduleCode)

@@ -172,6 +172,7 @@ import { useDashboardWorkbenchColumnActions } from '../features/dashboard/module
 import { useDashboardDetailBoardActions } from '../features/dashboard/module-settings/use-dashboard-detail-board-actions';
 import { useDashboardSelectionActions } from '../features/dashboard/module-settings/use-dashboard-selection-actions';
 import { useDashboardSingleTableModuleRuntime } from '../features/dashboard/module-settings/use-dashboard-single-table-module-runtime';
+import { useBillTypeSettingsSave } from '../features/dashboard/module-settings/use-bill-type-settings-save';
 import { useDashboardSurveyFlow } from '../features/dashboard/module-settings/use-dashboard-survey-flow';
 import { useDashboardWorkbenchEditActions } from '../features/dashboard/module-settings/use-dashboard-workbench-edit-actions';
 import { useDashboardWorkbenchActions } from '../features/dashboard/module-settings/use-dashboard-workbench-actions';
@@ -1221,26 +1222,6 @@ export default function Dashboard({
     setMenuInfoError,
   });
 
-  const handleConfigPageSave = async () => {
-    if (configStep === MODULE_SETTING_STEP && isSingleTableModuleBranch) {
-      const saved = await saveSingleTableModuleSettingsPage();
-      if (saved) {
-        markStepCompleted(configStep);
-      }
-      return;
-    }
-
-    if (configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP) {
-      const saved = await handleSaveRestrictionTab('process');
-      if (saved) {
-        markStepCompleted(configStep);
-      }
-      return;
-    }
-
-    await handleMenuInfoSave();
-  };
-
   const configWizardStepNodes = buildDashboardConfigWizardStepNodes(
     buildDashboardConfigWizardStepBuilderConfig({
       menuInfo: {
@@ -1657,6 +1638,56 @@ export default function Dashboard({
       setSelectedMainForDelete,
     },
   });
+  const {
+    isSaving: isBillTypeSettingsSaving,
+    saveCurrentPage: saveBillTypeSettingsPage,
+  } = useBillTypeSettingsSave({
+    billDetailConfig,
+    currentModuleCode: activeConfigModuleKey,
+    currentModuleName,
+    isActive: (
+      isConfigOpen
+      && configStep === MODULE_SETTING_STEP
+      && businessType === 'table'
+      && Boolean(activeConfigModuleKey)
+      && isMenuInfoBuilt
+    ),
+    mapSingleTableDetailGridFieldToColumn,
+    mainTableConfig,
+    onShowToast: showToast,
+    setBillDetailColumns,
+    setBillDetailConfig,
+    setMainTableColumns,
+    setMainTableConfig,
+  });
+  const isModuleSettingsPageSaving = businessType === 'table'
+    ? isBillTypeSettingsSaving
+    : isSingleTableModuleSettingsSaving;
+  const saveCurrentModuleSettingsPage = useCallback((options?: Parameters<typeof saveSingleTableModuleSettingsPage>[0]) => (
+    businessType === 'table'
+      ? saveBillTypeSettingsPage(options)
+      : saveSingleTableModuleSettingsPage(options)
+  ), [businessType, saveBillTypeSettingsPage, saveSingleTableModuleSettingsPage]);
+
+  const handleConfigPageSave = async () => {
+    if (configStep === MODULE_SETTING_STEP && (isSingleTableModuleBranch || businessType === 'table')) {
+      const saved = await saveCurrentModuleSettingsPage();
+      if (saved) {
+        markStepCompleted(configStep);
+      }
+      return;
+    }
+
+    if (configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP) {
+      const saved = await handleSaveRestrictionTab('process');
+      if (saved) {
+        markStepCompleted(configStep);
+      }
+      return;
+    }
+
+    await handleMenuInfoSave();
+  };
 
   const {
     activeDocumentConditionScope,
@@ -1726,7 +1757,7 @@ export default function Dashboard({
       onStartDetailBoardFieldResize: startDetailBoardFieldResize,
       removeDetailTab: removeDetailTab,
       saveBillSourceDraft,
-      saveSingleTableModuleSettingsPage,
+      saveSingleTableModuleSettingsPage: saveCurrentModuleSettingsPage,
       selectBillSourceDraft,
       showToast,
       syncDetailColumnsFromSqlById,
@@ -2089,7 +2120,7 @@ export default function Dashboard({
       isModuleSettingStep,
       isRestrictionTabSaving,
       isSingleTableModuleEnsuring,
-      isSingleTableModuleSettingsSaving,
+      isSingleTableModuleSettingsSaving: isModuleSettingsPageSaving,
       menuInfoNode: configWizardStepNodes.menuInfoNode,
       moduleIntroEditorNode: configWizardStepNodes.moduleIntroEditorNode,
       modulePreviewNode: configWizardStepNodes.modulePreviewNode,
@@ -2104,7 +2135,7 @@ export default function Dashboard({
       restrictionStep: RESTRICTION_STEP,
       saveLabel: configStep === 2 && isMenuInfoSaving
         ? (activeConfigMenu ? '保存中...' : '创建中...')
-        : configStep === MODULE_SETTING_STEP && isSingleTableModuleSettingsSaving
+        : configStep === MODULE_SETTING_STEP && isModuleSettingsPageSaving
           ? '保存中...'
           : (configStep === RESTRICTION_STEP || configStep === PROCESS_DESIGN_STEP) && isRestrictionTabSaving
             ? '保存中...'

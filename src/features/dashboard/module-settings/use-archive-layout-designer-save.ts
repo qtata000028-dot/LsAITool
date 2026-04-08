@@ -3,7 +3,6 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   deleteBillTypeDesignerGroup,
   deleteBillTypeDesignerLayout,
-  fetchBillTypeDesignerControls,
   fetchBillTypeDesignerGroups,
   fetchBillTypeDesignerLayout,
   saveBillTypeDesignerGroup,
@@ -100,7 +99,7 @@ export function useArchiveLayoutDesignerSave({
 
       const [controlRows, groupRows, layoutRows] = await Promise.all([
         businessType === 'table'
-          ? fetchBillTypeDesignerControls(moduleCode)
+          ? Promise.resolve([])
           : fetchSingleTableDesignerControls(moduleCode),
         businessType === 'table'
           ? fetchBillTypeDesignerGroups(moduleCode)

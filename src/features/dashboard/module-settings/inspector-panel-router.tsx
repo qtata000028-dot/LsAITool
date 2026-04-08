@@ -79,18 +79,32 @@ export function InspectorPanelRouter({
   const documentScopedGridColorRuleCount = isDocumentScopedGridInspector
     ? (selectedColumnContext.column?.colorRules ?? []).length
     : 0;
+  const isBillFieldInspector = businessType === 'table'
+    && selectedColumnContext.kind === 'column'
+    && (
+      selectedColumnContext.scope === 'main'
+      || selectedColumnContext.scope === 'detail'
+    );
+  const isBillGridInspector = businessType === 'table'
+    && selectedColumnContext.kind === 'grid'
+    && (
+      selectedColumnContext.scope === 'main-grid'
+      || selectedColumnContext.scope === 'detail-grid'
+    );
   const documentScopedGridLabel = selectedColumnContext.scope === 'left-grid'
     ? '左表'
     : selectedColumnContext.scope === 'detail-grid'
       ? '明细表'
       : '主表';
-  const shouldHideBillMainGridInspectorTabs = businessType === 'table'
-    && selectedColumnContext.kind === 'grid'
-    && selectedColumnContext.scope === 'main-grid';
+  const shouldHideBillInspectorTabs = isBillFieldInspector || isBillGridInspector;
   const inspectorTabs: Array<{ count?: number; icon: string; id: InspectorTabId; label: string }> = selectedColumnContext.kind === 'grid-action'
     ? [
         { id: 'common', label: '核心配置', icon: 'dashboard_customize' },
       ]
+    : shouldHideBillInspectorTabs
+      ? [
+          { id: 'common', label: '核心配置', icon: 'dashboard_customize' },
+        ]
     : isDocumentScopedGridInspector
       ? [
           { id: 'common', label: documentScopedGridLabel, icon: 'dashboard_customize' },
@@ -110,7 +124,7 @@ export function InspectorPanelRouter({
   const isColorPanelTab = currentInspectorTab === 'color';
   const useIconOnlyInspectorTabs = isDocumentScopedGridInspector;
   const inspectorCountBadgeClass = 'absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border border-white bg-[#e04f5f] px-1 text-[9px] font-black leading-none text-white shadow-[0_10px_18px_-14px_rgba(224,79,95,0.78)] dark:border-slate-950';
-  const inspectorTabsNode = shouldHideBillMainGridInspectorTabs
+  const inspectorTabsNode = shouldHideBillInspectorTabs
     ? null
     : (
         <div className={useIconOnlyInspectorTabs ? 'inline-flex items-center gap-1 rounded-md border border-slate-200/80 bg-slate-100/90 p-0.5 dark:border-slate-800 dark:bg-slate-900' : shadcnTabListClass}>

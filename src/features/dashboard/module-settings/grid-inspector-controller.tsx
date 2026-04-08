@@ -254,7 +254,9 @@ export function GridInspectorController({
   const isLeftGridConfig = context.scope === 'left-grid';
   const isBillHeadGridConfig = businessType === 'table' && context.scope === 'main-grid';
   const isBillDetailGridConfig = businessType === 'table' && context.scope === 'detail-grid';
+  const useCenteredBillGridHeader = isBillHeadGridConfig || isBillDetailGridConfig;
   const isDocumentDetailGrid = businessType !== 'table' && context.scope === 'detail-grid';
+  const useDetailSqlConfig = isDocumentDetailGrid || isBillDetailGridConfig;
   const isDocumentArchiveGrid = businessType !== 'table' && (isMainGridConfig || isLeftGridConfig);
   const useQuietDocumentInspector = isDocumentDetailGrid || isDocumentArchiveGrid;
   const hasInspectorTabs = inspectorTabsNode != null;
@@ -696,14 +698,14 @@ export function GridInspectorController({
           </div>
         ) : (
           <>
-            <div className={`flex min-w-0 gap-3 ${isBillHeadGridConfig ? 'items-center' : 'items-start'}`}>
+            <div className={`flex min-w-0 gap-3 ${useCenteredBillGridHeader ? 'items-center' : 'items-start'}`}>
               <div className={`${panelIconShellClass} ${context.iconClass}`}>
                 <span className="material-symbols-outlined text-[18px]">{context.icon}</span>
               </div>
-              <div className="min-w-0 flex-1">
+              <div className={`min-w-0 flex-1 ${useCenteredBillGridHeader ? 'flex min-h-10 items-center' : ''}`}>
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className={panelTitleClass}>{context.title}</h3>
-                  {!useQuietDocumentInspector && !isBillHeadGridConfig ? <span className={panelBadgeClass}>{isDocumentDetailGrid ? '明细页签' : '表格级配置'}</span> : null}
+                  {!useQuietDocumentInspector && !useCenteredBillGridHeader ? <span className={panelBadgeClass}>{isDocumentDetailGrid ? '明细页签' : '表格级配置'}</span> : null}
                   {isDetailChartInspector ? (
                     <span className="inline-flex items-center rounded-full border border-[#1686e3]/18 bg-[#1686e3]/8 px-2.5 py-1 text-[10px] font-bold text-[#1686e3]">
                       p_systemdlltabchart
@@ -792,7 +794,7 @@ export function GridInspectorController({
         ) : isCommonPanelTab ? (
           isBillHeadGridConfig ? (
             <div className="space-y-0">
-              <section className={compactCardClass}>
+              <section className={`${compactCardClass} w-full`}>
                 <div className="flex flex-wrap items-start gap-3">
                   <div className={sectionTitleClass}>
                     <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">dashboard_customize</span>
@@ -860,16 +862,17 @@ export function GridInspectorController({
                 yAxisField={currentDetailChartConfig.YValueField || ''}
               />
               <GridSqlConfigSection
-                isDetailConfig={isDocumentDetailGrid}
+                isDetailConfig={useDetailSqlConfig}
                 sqlPrompt={currentGridConfig.sqlPrompt || ''}
                 mainSql={currentGridConfig.mainSql || ''}
-                conditionValue={isDocumentDetailGrid ? (currentGridConfig.sourceCondition || currentGridConfig.defaultQuery || '') : (currentGridConfig.defaultQuery || '')}
+                conditionValue={useDetailSqlConfig ? (currentGridConfig.sourceCondition || currentGridConfig.defaultQuery || '') : (currentGridConfig.defaultQuery || '')}
+                mainSqlLabel="明细 SQL"
                 isGeneratingSqlDraft={isGeneratingSqlDraft}
                 onGenerateSqlDraft={generateGridSqlDraft}
                 onUpdateSqlPrompt={(value) => updateGridConfig({ sqlPrompt: value })}
                 onUpdateMainSql={(value) => updateGridConfig({ mainSql: value })}
                 onUpdateConditionValue={(value) => updateGridConfig(
-                  isDocumentDetailGrid
+                  useDetailSqlConfig
                     ? { defaultQuery: value, sourceCondition: value }
                     : { defaultQuery: value },
                 )}

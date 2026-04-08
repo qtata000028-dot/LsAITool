@@ -3,12 +3,15 @@ import { type Dispatch, type SetStateAction, useEffect } from 'react';
 import {
   fetchBillTypeConfig,
   fetchBillTypeDetailFields,
+  fetchBillTypeDesignerLayout,
+  fetchBillTypeMasterFields,
   fetchSingleTableModuleColors,
   fetchSingleTableModuleConditions,
   fetchSingleTableModuleConfig,
   fetchSingleTableModuleFields,
   fetchSingleTableModuleMenus,
 } from '../../../lib/backend-module-config';
+import { buildBillHeaderFieldsFromDesignerLayout } from './dashboard-single-table-field-mappers';
 
 export function useDashboardSingleTableMainResources({
   activeConfigModuleKey,
@@ -111,6 +114,30 @@ export function useDashboardSingleTableMainResources({
         const normalizedModuleConfig = moduleConfig as Record<string, unknown>;
 
         if (businessType === 'table') {
+          const billDetailCondition = toRecordText(getRecordFieldValue(
+            normalizedModuleConfig,
+            'detailCond',
+            'detailcond',
+            'detailCondition',
+            'detailcondition',
+            'unioncond',
+            'unionCond',
+            'relatedCondition',
+            'relatedcondition',
+            'sourceCondition',
+            'sourcecondition',
+            'defaultQuery',
+            'defaultquery',
+          ));
+          const billDetailSqlPrompt = toRecordText(getRecordFieldValue(
+            normalizedModuleConfig,
+            'detailSqlPrompt',
+            'detailsqlprompt',
+            'detailPrompt',
+            'detailprompt',
+            'sqlPrompt',
+            'sqlprompt',
+          ));
           setMainTableConfig((prev) => ({
             ...prev,
             backendId: getRecordFieldValue(normalizedModuleConfig, 'id'),
@@ -128,8 +155,24 @@ export function useDashboardSingleTableMainResources({
           setBillDetailConfig((prev) => ({
             ...prev,
             backendId: getRecordFieldValue(normalizedModuleConfig, 'id'),
-            mainSql: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'detailSql', 'detailsql')),
-            tableName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'detailTable', 'detailtable')),
+            defaultQuery: billDetailCondition || prev.defaultQuery || '',
+            mainSql: toRecordText(getRecordFieldValue(
+              normalizedModuleConfig,
+              'detailSql',
+              'detailsql',
+              'detailSQL',
+              'DetailSQL',
+            )) || prev.mainSql || '',
+            sourceCondition: billDetailCondition || prev.sourceCondition || '',
+            sqlPrompt: billDetailSqlPrompt || prev.sqlPrompt || '',
+            tableName: toRecordText(getRecordFieldValue(
+              normalizedModuleConfig,
+              'detailTable',
+              'detailtable',
+              'detailTableName',
+              'detailtablename',
+              'DetailTable',
+            )) || prev.tableName || '',
             typeCode: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'typeCode')) || activeConfigModuleKey,
             typeName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'typeName')),
           }));
@@ -255,6 +298,73 @@ export function useDashboardSingleTableMainResources({
     setDetailBoardSortColumnId,
     setInspectorTarget,
     setIsSingleTableFieldsLoading,
+    setMainTableColumns,
+    setSelectedMainForDelete,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (businessType !== 'table') {
+      return;
+    }
+
+    if (!canLoadBillTypeResources) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadBillDesignerLayout = async () => {
+      try {
+        const [layoutRows, masterFieldRows] = await Promise.all([
+          fetchBillTypeDesignerLayout(activeConfigModuleKey),
+          fetchBillTypeMasterFields(activeConfigModuleKey),
+        ]);
+
+        if (!isActive) {
+          return;
+        }
+
+        const { columns } = buildBillHeaderFieldsFromDesignerLayout(layoutRows, masterFieldRows);
+        setMainTableColumns(columns);
+        captureMainFields(columns);
+        setSelectedMainForDelete([]);
+        setInspectorTarget((prev) => {
+          if (prev.kind === 'main-col' && !columns.some((column) => column.id === prev.id)) {
+            return { kind: 'main-grid' };
+          }
+
+          return prev;
+        });
+        setDetailBoardSortColumnId((prev) => (
+          prev && columns.some((column) => column.id === prev) ? prev : columns[0]?.id ?? null
+        ));
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        showToast(getDashboardErrorMessage(error));
+      }
+    };
+
+    void loadBillDesignerLayout();
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    activeConfigModuleKey,
+    businessType,
+    canLoadBillTypeResources,
+    captureMainFields,
+    configStep,
+    getDashboardErrorMessage,
+    isConfigOpen,
+    mainResourceScopeKey,
+    moduleSettingStep,
+    setDetailBoardSortColumnId,
+    setInspectorTarget,
     setMainTableColumns,
     setSelectedMainForDelete,
     showToast,

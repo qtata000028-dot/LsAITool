@@ -1,4 +1,8 @@
 import React, { useCallback } from 'react';
+import {
+  alignBillHeaderFieldsToFlowLayout,
+  getBillHeaderFieldWidth,
+} from './dashboard-bill-form-layout-utils';
 
 type BillCanvasFieldScope = 'main' | 'meta';
 
@@ -63,16 +67,80 @@ export function useBillHeaderWorkbench({
     row: getBillHeaderLegacyRow(field),
   }), [constants.layoutPaddingX, constants.layoutPaddingY, getBillHeaderLegacyRow]);
 
-  const getBillHeaderRowCount = useCallback(() => clampValue(
-    Number.isFinite(Number(billHeaderWorkbenchRows)) ? Number(billHeaderWorkbenchRows) : 3,
+  const resolveBillHeaderFieldRow = useCallback((field: any) => clampValue(
+    Number.isFinite(Number(field?.panelRow))
+      ? Number(field.panelRow)
+      : getBillHeaderLegacyMetrics(field).row,
     constants.minRows,
     constants.maxRows,
-  ), [billHeaderWorkbenchRows, clampValue, constants.maxRows, constants.minRows]);
+  ), [clampValue, constants.maxRows, constants.minRows, getBillHeaderLegacyMetrics]);
+
+  const getBillHeaderRowCount = useCallback((
+    metaFields = billMetaFields,
+    mainFields = mainTableColumns,
+  ) => clampValue(
+    [...metaFields, ...mainFields].reduce((maxRow, field) => (
+      Math.max(maxRow, resolveBillHeaderFieldRow(field))
+    ), Number.isFinite(Number(billHeaderWorkbenchRows)) ? Number(billHeaderWorkbenchRows) : 3),
+    constants.minRows,
+    constants.maxRows,
+  ), [
+    billHeaderWorkbenchRows,
+    billMetaFields,
+    clampValue,
+    constants.maxRows,
+    constants.minRows,
+    mainTableColumns,
+    resolveBillHeaderFieldRow,
+  ]);
+
+  const alignBillHeaderFields = useCallback((fields: any[], rowCount = getBillHeaderRowCount()) => (
+    alignBillHeaderFieldsToFlowLayout(
+      fields.map((field, index) => {
+        const normalized = normalizeColumn(field);
+        return {
+          ...normalized,
+          __scope: field.__scope ?? normalized.__scope,
+          panelOrder: Number.isFinite(Number(normalized.panelOrder))
+            ? Number(normalized.panelOrder)
+            : index + 1,
+          panelRow: clampValue(resolveBillHeaderFieldRow(normalized), constants.minRows, rowCount),
+          width: getBillHeaderFieldWidth(normalized, {
+            defaultWidth: constants.defaultWidth,
+            maxWidth: constants.maxWidth,
+            minWidth: constants.minWidth,
+          }),
+        };
+      }),
+      {
+        defaultWidth: constants.defaultWidth,
+        gapX: constants.gapX,
+        gapY: constants.gapY,
+        layoutPaddingX: constants.layoutPaddingX,
+        layoutPaddingY: constants.layoutPaddingY,
+        maxWidth: constants.maxWidth,
+        minWidth: constants.minWidth,
+      },
+    )
+  ), [
+    clampValue,
+    constants.defaultWidth,
+    constants.gapX,
+    constants.gapY,
+    constants.layoutPaddingX,
+    constants.layoutPaddingY,
+    constants.maxWidth,
+    constants.minRows,
+    constants.minWidth,
+    getBillHeaderRowCount,
+    normalizeColumn,
+    resolveBillHeaderFieldRow,
+  ]);
 
   const getOrderedBillHeaderFields = useCallback((
     metaFields = billMetaFields,
     mainFields = mainTableColumns,
-    rowCount = getBillHeaderRowCount(),
+    rowCount = getBillHeaderRowCount(metaFields, mainFields),
   ) => {
     const scopedFields = [
       ...metaFields.map((field) => ({ ...field, __scope: 'meta' as BillCanvasFieldScope })),
@@ -89,20 +157,13 @@ export function useBillHeaderWorkbench({
       });
     const legacyOrderMap = new Map(legacySorted.map((field, index) => [field.id, index + 1]));
 
-    return scopedFields
+    return alignBillHeaderFields(scopedFields
       .map((field) => {
         const normalized = normalizeColumn(field);
         return {
           ...normalized,
           __scope: field.__scope,
-          width: Math.max(constants.minWidth, Math.min(constants.maxWidth, normalized.width || constants.defaultWidth)),
-          panelRow: clampValue(
-            Number.isFinite(Number(normalized.panelRow))
-              ? Number(normalized.panelRow)
-              : getBillHeaderLegacyMetrics(normalized).row,
-            constants.minRows,
-            rowCount,
-          ),
+          panelRow: clampValue(resolveBillHeaderFieldRow(normalized), constants.minRows, rowCount),
           panelOrder: Number.isFinite(Number(normalized.panelOrder))
             ? Number(normalized.panelOrder)
             : (legacyOrderMap.get(field.id) ?? 1),
@@ -112,16 +173,15 @@ export function useBillHeaderWorkbench({
         if (left.panelRow !== right.panelRow) return left.panelRow - right.panelRow;
         if (left.panelOrder !== right.panelOrder) return left.panelOrder - right.panelOrder;
         return (legacyOrderMap.get(left.id) ?? 0) - (legacyOrderMap.get(right.id) ?? 0);
-      });
+      }), rowCount);
   }, [
+    alignBillHeaderFields,
     billMetaFields,
     clampValue,
-    constants.defaultWidth,
-    constants.maxWidth,
     constants.minRows,
-    constants.minWidth,
     getBillHeaderLegacyMetrics,
     getBillHeaderRowCount,
+    resolveBillHeaderFieldRow,
     mainTableColumns,
     normalizeColumn,
   ]);
@@ -134,35 +194,15 @@ export function useBillHeaderWorkbench({
     const currentFields = getOrderedBillHeaderFields(billMetaFields, mainTableColumns, rowCount)
       .map(({ ...field }) => ({ ...field }));
     const nextRaw = typeof updater === 'function' ? updater(currentFields) : updater;
-    const nextFields = nextRaw.map((field, index) => {
-      const normalized = normalizeColumn(field);
-      return {
-        ...normalized,
-        width: Math.max(constants.minWidth, Math.min(constants.maxWidth, normalized.width || constants.defaultWidth)),
-        panelRow: clampValue(
-          Number.isFinite(Number(normalized.panelRow))
-            ? Number(normalized.panelRow)
-            : getBillHeaderLegacyMetrics(normalized).row,
-          constants.minRows,
-          rowCount,
-        ),
-        panelOrder: index + 1,
-      };
-    });
+    const nextFields = alignBillHeaderFields(nextRaw, rowCount);
     setBillMetaFields(nextFields.filter((field) => metaIdSet.has(field.id)));
     setMainTableColumns(nextFields.filter((field) => !metaIdSet.has(field.id)));
   }, [
+    alignBillHeaderFields,
     billMetaFields,
-    clampValue,
-    constants.defaultWidth,
-    constants.maxWidth,
-    constants.minRows,
-    constants.minWidth,
-    getBillHeaderLegacyMetrics,
     getBillHeaderRowCount,
     getOrderedBillHeaderFields,
     mainTableColumns,
-    normalizeColumn,
     setBillMetaFields,
     setMainTableColumns,
   ]);
@@ -231,7 +271,11 @@ export function useBillHeaderWorkbench({
     commitBillHeaderFields((fields) => (
       fields.map((field) => {
         const normalizedField = normalizeColumn(field);
-        const nextWidth = Math.max(constants.minWidth, normalizedField.width || constants.defaultWidth);
+        const nextWidth = getBillHeaderFieldWidth(normalizedField, {
+          defaultWidth: constants.defaultWidth,
+          maxWidth: constants.maxWidth,
+          minWidth: constants.minWidth,
+        });
 
         if (
           currentRowWidth > 0
@@ -254,6 +298,7 @@ export function useBillHeaderWorkbench({
     commitBillHeaderFields,
     constants.defaultWidth,
     constants.gapX,
+    constants.maxWidth,
     constants.minWidth,
     getBillHeaderRowCount,
     normalizeColumn,

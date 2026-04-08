@@ -5,9 +5,18 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { FileSpreadsheet, LayoutPanelTop, Plus, Table2 } from 'lucide-react';
+import { CalendarDays, ChevronDown, FileSpreadsheet, LayoutPanelTop, Plus, Search, Table2 } from 'lucide-react';
 
 import { cn } from '../../../lib/utils';
+import {
+  BILL_FORM_MIN_CONTROL_HEIGHT,
+  BILL_FORM_MIN_PREVIEW_WIDTH,
+  BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT,
+  estimateBillHeaderLabelWidth,
+  getBillHeaderFieldHeight as resolveBillHeaderFieldHeight,
+  getBillHeaderFieldShellHeight as resolveBillHeaderFieldShellHeight,
+  getBillHeaderFieldWidth as resolveBillHeaderFieldWidth,
+} from './dashboard-bill-form-layout-utils';
 
 type BillCanvasFieldScope = 'main' | 'meta';
 
@@ -32,6 +41,7 @@ export type BillDocumentWorkbenchProps = {
     billFieldLivePreview: {
       id: string;
       scope: BillCanvasFieldScope;
+      height?: number;
       width?: number;
     } | null;
     billHeaderWorkbenchDrag: {
@@ -74,7 +84,12 @@ export type BillDocumentWorkbenchProps = {
     setBuilderSelectionContextMenu: (menu: any) => void;
     setSelectedMainForDelete: React.Dispatch<React.SetStateAction<string[]>>;
     showToast: (message: string) => void;
-    startBillFieldResize: (event: React.MouseEvent<HTMLDivElement>, columnId: string, scope?: BillCanvasFieldScope) => void;
+    startBillFieldResize: (
+      event: React.MouseEvent<HTMLDivElement>,
+      columnId: string,
+      scope?: BillCanvasFieldScope,
+      dimension?: 'width' | 'height',
+    ) => void;
   };
   helpers: {
     clampValue: (value: number, min: number, max: number) => number;
@@ -137,6 +152,8 @@ export function BillDocumentWorkbench({
   dnd,
   constants,
 }: BillDocumentWorkbenchProps) {
+  const billHeaderDesignerDefaultWidth = 210;
+  const billHeaderDesignerRowGap = 1;
   const billViewportPaddingClass = 'p-0';
   const billPaperWrapClass = 'justify-stretch';
   const billPaperShellClass = 'flex h-full min-h-full flex-1 flex-col bg-transparent';
@@ -144,9 +161,18 @@ export function BillDocumentWorkbench({
   const billHeaderRowCount = helpers.getBillHeaderRowCount();
   const billCanvasFields = helpers.getOrderedBillHeaderFields(state.billMetaFields, state.mainTableColumns, billHeaderRowCount);
   const billHeaderRows = Array.from({ length: billHeaderRowCount }, (_, index) => index + 1);
-  const headerWorkbenchHeight = billHeaderRowCount * constants.conditionPanelRowHeight
-    + Math.max(0, billHeaderRowCount - 1) * constants.conditionPanelRowGap;
   const isBillHeaderPanelActive = state.selectedTableConfigScope === 'main';
+
+  const getBillHeaderLiveField = (field: any) => (
+    state.billFieldLivePreview?.id === field.id
+      ? {
+          ...field,
+          controlHeight: state.billFieldLivePreview.height ?? field.controlHeight ?? field.layoutHeight,
+          layoutHeight: state.billFieldLivePreview.height ?? field.layoutHeight ?? field.controlHeight,
+          width: state.billFieldLivePreview.width ?? field.width ?? billHeaderDesignerDefaultWidth,
+        }
+      : field
+  );
 
   const buildSelectedIds = (columnId: string, append: boolean) => (
     state.selectedMainForDelete.includes(columnId)
@@ -156,28 +182,49 @@ export function BillDocumentWorkbench({
         : [columnId]
   );
 
-  const getBillHeaderFieldWidth = (field: any) => (
-    Math.max(
-      constants.billFormMinWidth,
-      Math.min(
-        constants.billFormMaxWidth,
-        state.billFieldLivePreview?.id === field.id
-          ? state.billFieldLivePreview.width ?? field.width ?? constants.billFormDefaultWidth
-          : field.width ?? constants.billFormDefaultWidth,
-      ),
-    )
-  );
-
   const getBillHeaderFieldRow = (field: any) => helpers.clampValue(
     Number.isFinite(Number(field?.panelRow)) ? Number(field.panelRow) : constants.billHeaderWorkbenchMinRows,
     constants.billHeaderWorkbenchMinRows,
     billHeaderRowCount,
   );
 
-  const getBillHeaderPreviewShellClass = (fieldId: string, isSelected: boolean) => cn(
+  const getBillHeaderFieldWidth = (field: any) => resolveBillHeaderFieldWidth(getBillHeaderLiveField(field), {
+    defaultWidth: billHeaderDesignerDefaultWidth,
+    minPreviewWidth: BILL_FORM_MIN_PREVIEW_WIDTH,
+    maxWidth: constants.billFormMaxWidth,
+    minWidth: constants.billFormMinWidth,
+  });
+
+  const getBillHeaderFieldHeight = (field: any) => resolveBillHeaderFieldHeight(getBillHeaderLiveField(field), {
+    defaultHeight: BILL_FORM_MIN_CONTROL_HEIGHT,
+  });
+
+  const getBillHeaderFieldShellHeight = (field: any) => resolveBillHeaderFieldShellHeight(getBillHeaderLiveField(field), {
+    defaultHeight: BILL_FORM_MIN_CONTROL_HEIGHT,
+    minRowHeight: BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT,
+  });
+
+  const billHeaderRowHeights = new Map(
+    billHeaderRows.map((rowNumber) => {
+      const rowFields = billCanvasFields.filter((field) => getBillHeaderFieldRow(field) === rowNumber);
+      return [
+        rowNumber,
+        rowFields.length > 0
+          ? Math.max(BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT, ...rowFields.map((field) => getBillHeaderFieldShellHeight(field)))
+          : BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT,
+      ] as const;
+    }),
+  );
+  const headerWorkbenchHeight = billHeaderRows.reduce((height, rowNumber, index) => (
+    height
+    + (billHeaderRowHeights.get(rowNumber) ?? BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT)
+    + (index > 0 ? billHeaderDesignerRowGap : 0)
+  ), 0);
+
+  const getBillHeaderPreviewShellClass = (fieldId: string, isHighlighted: boolean) => cn(
     helpers.createRuntimeClassName('bill-header-field-preview', fieldId),
     'pointer-events-none min-w-0 shrink-0',
-    isSelected && '[&>div]:border-border/60 [&>div]:bg-background [&>div]:shadow-none',
+    isHighlighted && '[&>div]:border-[color:var(--workspace-accent)]/35 [&>div]:bg-white [&>div]:shadow-[0_0_0_1px_rgba(37,99,235,0.04)]',
   );
 
   const toggleBillFieldSelection = (columnId: string) => {
@@ -225,6 +272,60 @@ export function BillDocumentWorkbench({
   const clearBillHeaderWorkbenchDragState = () => {
     actions.setBillHeaderWorkbenchDrag(null);
     actions.setBillHeaderWorkbenchDropTarget(null);
+  };
+
+  const renderBillHeaderFieldPreview = (rawField: any, previewHeight = BILL_FORM_MIN_CONTROL_HEIGHT) => {
+    const field = helpers.normalizeColumn(rawField);
+    const previewValue = String(field.defaultValue || field.placeholder || '').trim();
+    const previewTextNode = (
+      <span className={`min-w-0 flex-1 truncate ${previewValue ? 'text-slate-400' : 'text-transparent'}`}>
+        {previewValue || '\u00a0'}
+      </span>
+    );
+    const shellClass = 'pointer-events-none flex min-w-0 items-center gap-1.5 overflow-hidden rounded-[6px] border border-[#d9e3ee] bg-white/96 px-2 text-[11px] text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]';
+
+    if (field.type === '搜索框') {
+      return (
+        <div className={shellClass} style={{ height: previewHeight }}>
+          <Search className="size-3.5 shrink-0 text-slate-300" strokeWidth={1.75} />
+          {previewTextNode}
+        </div>
+      );
+    }
+
+    if (field.type === '日期框') {
+      return (
+        <div className={shellClass} style={{ height: previewHeight }}>
+          {previewTextNode}
+          <CalendarDays className="size-3.5 shrink-0 text-slate-300" strokeWidth={1.75} />
+        </div>
+      );
+    }
+
+    if (field.type === '下拉框' || field.type === '多选框') {
+      return (
+        <div className={shellClass} style={{ height: previewHeight }}>
+          {previewTextNode}
+          <ChevronDown className="size-3.5 shrink-0 text-slate-300" strokeWidth={1.75} />
+        </div>
+      );
+    }
+
+    if (field.type === '单选框') {
+      return (
+        <div className={shellClass} style={{ height: previewHeight }}>
+          <span className="size-2.5 shrink-0 rounded-full border border-[color:var(--workspace-accent)]/45 bg-[color:var(--workspace-accent)]/12" />
+          <span className="size-2.5 shrink-0 rounded-full border border-slate-300/90 bg-white" />
+          <span className="min-w-0 flex-1 truncate text-transparent">{'\u00a0'}</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className={shellClass} style={{ height: previewHeight }}>
+        {previewTextNode}
+      </div>
+    );
   };
 
   const handleBillHeaderWorkbenchDragStart = (event: DragStartEvent) => {
@@ -298,7 +399,7 @@ export function BillDocumentWorkbench({
       const nextMainIndex = fields.filter((field) => !String(field.id).startsWith('bill_meta_')).length;
       const appendedFields = fieldNames.map((name, index) => actions.buildColumn('m_col', nextMainIndex + index + 1, {
         name,
-        width: constants.billFormDefaultWidth,
+        width: billHeaderDesignerDefaultWidth,
         panelRow: targetRow,
       }));
       return [...fields, ...appendedFields];
@@ -312,7 +413,7 @@ export function BillDocumentWorkbench({
       return [
         ...fields,
         actions.buildColumn('m_col', nextMainIndex + 1, {
-          width: constants.billFormDefaultWidth,
+          width: billHeaderDesignerDefaultWidth,
           panelRow: targetRow,
         }),
       ];
@@ -338,10 +439,6 @@ export function BillDocumentWorkbench({
         radioActiveDot: 'bg-[#e35b74]',
         radioActiveText: 'text-[#d84a63]',
       };
-  const documentGuideStyle: React.CSSProperties = {
-    backgroundImage: 'linear-gradient(rgba(226,232,240,0.52) 1px, transparent 1px), linear-gradient(90deg, rgba(226,232,240,0.52) 1px, transparent 1px)',
-    backgroundSize: '24px 24px',
-  };
   const actionRailItems = [
     { icon: Table2, label: '来源表', action: () => actions.activateSourceGridSelection() },
     { icon: LayoutPanelTop, label: '整理', action: () => actions.autoArrangeBillHeaderFields() },
@@ -352,10 +449,10 @@ export function BillDocumentWorkbench({
     helpers.createRuntimeDeclarationBlock(headerWorkbenchHeightClass, { 'min-height': headerWorkbenchHeight }),
     ...billCanvasFields.flatMap((column) => {
       const normalizedColumn = helpers.normalizeColumn(column);
-      const fieldWidth = getBillHeaderFieldWidth(column);
-      const labelWidth = Math.max(60, Math.min(132, normalizedColumn.name.length * 14 + 10));
-      const fontSize = Math.max(11, Math.min(18, Number(normalizedColumn.fontSize) || constants.billFormDefaultFontSize)) + 1;
-      const previewWidth = Math.max(104, fieldWidth - labelWidth - 18);
+      const labelWidth = estimateBillHeaderLabelWidth(normalizedColumn.name);
+      const fieldWidth = Math.max(getBillHeaderFieldWidth(column), Math.min(constants.billFormMaxWidth, labelWidth + BILL_FORM_MIN_PREVIEW_WIDTH + 8));
+      const fontSize = Math.max(11, Math.min(15, Number(normalizedColumn.fontSize) || constants.billFormDefaultFontSize));
+      const previewWidth = Math.max(BILL_FORM_MIN_PREVIEW_WIDTH, fieldWidth - labelWidth - 8);
       const widthClassName = helpers.createRuntimeClassName('bill-header-field-width', column.id);
       const labelClassName = helpers.createRuntimeClassName('bill-header-field-label', column.id);
       const fontClassName = helpers.createRuntimeClassName('bill-header-field-font', column.id);
@@ -434,7 +531,6 @@ export function BillDocumentWorkbench({
                           ref={billHeaderCanvasRef}
                           tabIndex={0}
                           style={{
-                            ...documentGuideStyle,
                             minHeight: isBillHeaderCanvasEmpty ? 260 : headerWorkbenchHeight,
                           }}
                           onClick={() => {
@@ -456,9 +552,10 @@ export function BillDocumentWorkbench({
                         onDragEnd={handleBillHeaderWorkbenchDragEnd}
                         onDragCancel={clearBillHeaderWorkbenchDragState}
                       >
-                        <div className={cn(headerWorkbenchHeightClass, 'flex flex-col gap-1')}>
+                        <div className={cn(headerWorkbenchHeightClass, 'flex flex-col gap-px')}>
                           {billHeaderRows.map((rowNumber) => {
                             const rowFields = billCanvasFields.filter((field) => getBillHeaderFieldRow(field) === rowNumber);
+                            const rowHeight = billHeaderRowHeights.get(rowNumber) ?? BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT;
                             const isRowDropTarget = state.billHeaderWorkbenchDrag !== null
                               && state.billHeaderWorkbenchDropTarget?.row === rowNumber
                               && state.billHeaderWorkbenchDropTarget.beforeId === null;
@@ -472,14 +569,15 @@ export function BillDocumentWorkbench({
                                   row: rowNumber,
                                 } as BillHeaderRowDragData}
                                 className={cn(
-                                  'scrollbar-none flex min-h-[48px] items-center overflow-visible rounded-lg border border-transparent bg-transparent px-0.5 py-1 transition-colors',
+                                  'scrollbar-none flex items-center overflow-visible rounded-lg border border-transparent bg-transparent px-0.5 py-0 transition-colors',
                                   isRowDropTarget && dnd.rowActiveClass,
-                                  rowFields.length === 0 && dnd.rowEmptyClass,
+                                  rowFields.length === 0 && 'border-dashed border-[#dfe7f1]/70 bg-transparent',
                                 )}
+                                style={{ minHeight: rowHeight }}
                               >
                                 <div className="flex min-w-full items-center">
                                   <div className="flex min-w-0 flex-1 items-center gap-1">
-                                    {rowFields.length > 0 ? rowFields.map((column, index) => {
+                                    {rowFields.length > 0 ? rowFields.map((column) => {
                                       const normalizedColumn = helpers.normalizeColumn(column);
                                       const columnScope = column.__scope as BillCanvasFieldScope;
                                       const isActive = state.selectedMainForDelete.length <= 1
@@ -491,11 +589,15 @@ export function BillDocumentWorkbench({
                                         && state.billHeaderWorkbenchDropTarget?.row === rowNumber
                                         && state.billHeaderWorkbenchDropTarget.beforeId === column.id
                                         && state.billHeaderWorkbenchDrag.id !== column.id;
+                                      const liveColumn = getBillHeaderLiveField(column);
+                                      const fieldShellHeight = getBillHeaderFieldShellHeight(column);
+                                      const previewHeight = getBillHeaderFieldHeight(column);
                                       const widthClassName = helpers.createRuntimeClassName('bill-header-field-width', column.id);
                                       const labelClassName = helpers.createRuntimeClassName('bill-header-field-label', column.id);
                                       const fontClassName = helpers.createRuntimeClassName('bill-header-field-font', column.id);
                                       const previewClassName = helpers.createRuntimeClassName('bill-header-field-preview', column.id);
                                       const isSelected = isActive || isMarkedForDelete || isInsertTarget;
+                                      const isHighlighted = isSelected || isDragging;
 
                                       return (
                                         <dnd.DesignerWorkbenchDraggableItem
@@ -526,14 +628,13 @@ export function BillDocumentWorkbench({
                                             }
                                           }}
                                           className={cn(
-                                            helpers.getCompactWorkbenchItemClass({
-                                              selected: isSelected,
-                                              dragging: isDragging,
-                                              insertTarget: isInsertTarget,
-                                            }),
                                             widthClassName,
-                                            'h-[44px] shrink-0 gap-1 pr-3.5 text-left',
+                                            'group relative flex shrink-0 select-none flex-row items-center gap-1 rounded-[8px] px-1 py-0.5 pr-2 text-left transition-all',
+                                            isDragging ? 'z-20 cursor-grabbing bg-[color:var(--workspace-accent)]/10 shadow-[0_10px_24px_-18px_rgba(37,99,235,0.45)] ring-2 ring-[color:var(--workspace-accent)]/22' : 'cursor-grab active:cursor-grabbing',
+                                            !isDragging && isSelected ? 'bg-[color:var(--workspace-accent)]/8 ring-2 ring-[color:var(--workspace-accent)]/18' : null,
+                                            !isHighlighted ? 'hover:bg-white/68' : null,
                                           )}
+                                          style={{ height: fieldShellHeight }}
                                         >
                                           {isInsertTarget ? (
                                             <span className="pointer-events-none absolute inset-y-1 left-0 w-[3px] rounded-full bg-primary" />
@@ -542,25 +643,33 @@ export function BillDocumentWorkbench({
                                             className={cn(
                                               labelClassName,
                                               fontClassName,
-                                              'pointer-events-none shrink-0 truncate text-left text-[11px] font-medium text-foreground',
-                                              isSelected && 'text-foreground',
+                                              'pointer-events-none shrink-0 whitespace-nowrap text-left text-[11px] font-medium tracking-[0.01em] text-slate-600',
+                                              isHighlighted && 'text-foreground',
                                             )}
                                             title={normalizedColumn.name}
                                           >
-                                            <span className="block truncate">
+                                            <span className="block whitespace-nowrap">
                                               {normalizedColumn.name}
                                             </span>
                                           </div>
-                                          <div className={cn(previewClassName, getBillHeaderPreviewShellClass(column.id, isSelected))}>
-                                            {helpers.renderFieldPreview(normalizedColumn, index, 'condition')}
+                                          <div className={cn(previewClassName, getBillHeaderPreviewShellClass(column.id, isHighlighted))}>
+                                            {renderBillHeaderFieldPreview(liveColumn, previewHeight)}
                                           </div>
                                           <div
                                             data-drag-resize-handle="true"
                                             className="absolute inset-y-0 right-0 flex w-2 cursor-col-resize items-stretch justify-end"
-                                            onMouseDown={(event: React.MouseEvent<HTMLDivElement>) => actions.startBillFieldResize(event, column.id, columnScope)}
+                                            onMouseDown={(event: React.MouseEvent<HTMLDivElement>) => actions.startBillFieldResize(event, column.id, columnScope, 'width')}
                                             title="拖动调整控件宽度"
                                           >
-                                            <span className="h-full w-px bg-border/80 transition-colors group-hover:bg-primary" />
+                                            <span className="my-1 h-[calc(100%-8px)] w-px bg-border/70 transition-colors group-hover:bg-primary" />
+                                          </div>
+                                          <div
+                                            data-drag-resize-handle="true"
+                                            className="absolute inset-x-3 bottom-0 flex h-2 cursor-ns-resize items-end justify-center"
+                                            onMouseDown={(event: React.MouseEvent<HTMLDivElement>) => actions.startBillFieldResize(event, column.id, columnScope, 'height')}
+                                            title="拖动调整控件高度"
+                                          >
+                                            <span className="mb-px h-px w-5 rounded-full bg-border/70 transition-colors group-hover:bg-primary" />
                                           </div>
                                         </dnd.DesignerWorkbenchDraggableItem>
                                       );
@@ -568,27 +677,32 @@ export function BillDocumentWorkbench({
                                       <div
                                         className={cn(
                                           helpers.createRuntimeClassName('bill-header-field-width', draggedBillHeaderField.id),
-                                          helpers.getCompactWorkbenchItemClass({ selected: true }),
-                                          'pointer-events-none h-[44px] shrink-0 gap-1 rounded-md border-dashed border-primary/35 bg-background/85 pr-3.5 text-left shadow-sm',
+                                          'pointer-events-none relative flex shrink-0 select-none flex-row items-center gap-1 rounded-[8px] bg-[color:var(--workspace-accent)]/10 px-1 py-0.5 pr-2 text-left ring-2 ring-[color:var(--workspace-accent)]/22 shadow-[0_10px_24px_-18px_rgba(37,99,235,0.45)]',
                                         )}
+                                        style={{ height: getBillHeaderFieldShellHeight(draggedBillHeaderField) }}
                                       >
                                         <div
                                           className={cn(
                                             helpers.createRuntimeClassName('bill-header-field-label', draggedBillHeaderField.id),
                                             helpers.createRuntimeClassName('bill-header-field-font', draggedBillHeaderField.id),
-                                            'pointer-events-none shrink-0 truncate text-left text-[11px] font-medium text-foreground',
+                                            'pointer-events-none shrink-0 truncate text-left text-[11px] font-medium tracking-[0.01em] text-slate-600',
                                           )}
                                           title={helpers.normalizeColumn(draggedBillHeaderField).name}
                                         >
                                           <span className="block truncate">{helpers.normalizeColumn(draggedBillHeaderField).name}</span>
                                         </div>
                                         <div className={cn(helpers.createRuntimeClassName('bill-header-field-preview', draggedBillHeaderField.id), 'pointer-events-none min-w-0 shrink-0')}>
-                                          {helpers.renderFieldPreview(helpers.normalizeColumn(draggedBillHeaderField), 0, 'condition')}
+                                          {renderBillHeaderFieldPreview(
+                                            helpers.normalizeColumn(draggedBillHeaderField),
+                                            getBillHeaderFieldHeight(draggedBillHeaderField),
+                                          )}
                                         </div>
                                       </div>
                                     ) : (
-                                      <div className="text-xs font-medium text-muted-foreground">
-                                        拖入本行
+                                      <div className="flex w-full items-center gap-2 px-2 text-[11px] font-medium text-slate-400">
+                                        <span className="h-px flex-1 bg-[#dbe6f2]" />
+                                        <span>拖入本行</span>
+                                        <span className="h-px flex-1 bg-[#dbe6f2]" />
                                       </div>
                                     )}
                                   </div>
