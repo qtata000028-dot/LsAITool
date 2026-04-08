@@ -26,6 +26,13 @@ export type SurveyMainDto = {
   otherBak?: string | null;
   operateDate?: string | null;
   operatorName?: string | null;
+  status?: string | null;
+  version?: string | null;
+};
+
+export type SurveyDepartmentStat = {
+  departId: number;
+  count: number;
 };
 
 export type SurveyDetailDto = {
@@ -107,6 +114,8 @@ function normalizeSurveyMainDto(value: unknown): SurveyMainDto {
     surveyUsers: readField(value, 'surveyUsers', 'surveyusers', 'SurveyUsers', 'SURVEYUSERS') as SurveyMainDto['surveyUsers'],
     title: readField(value, 'title', 'Title', 'TITLE') as SurveyMainDto['title'],
     toolsBak: readField(value, 'toolsBak', 'toolsbak', 'ToolsBak', 'TOOLSBAK') as SurveyMainDto['toolsBak'],
+    status: readField(value, 'status', 'Status', 'STATUS') as SurveyMainDto['status'],
+    version: readField(value, 'version', 'Version', 'VERSION') as SurveyMainDto['version'],
   } as SurveyMainDto;
 }
 
@@ -200,4 +209,39 @@ export async function deleteSurveyDetail(mainId: SurveyPersistedId, id: SurveyPe
     auth: true,
     method: 'DELETE',
   });
+}
+
+export async function archiveSurveyMain(id: SurveyPersistedId) {
+  const response = await apiRequest<unknown>(`/api/survey/mains/${id}/archive`, {
+    auth: true,
+    method: 'POST',
+  });
+  return normalizeSurveyMainDto(response);
+}
+
+function normalizeDepartmentStat(value: unknown): SurveyDepartmentStat | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const departId = readField(value, 'departid', 'departId', 'DepartId', 'DEPARTID');
+  const count = readField(value, 'cnt', 'count', 'Count', 'CNT');
+  const parsedDepartId = typeof departId === 'number' ? departId : Number(departId);
+  const parsedCount = typeof count === 'number' ? count : Number(count);
+  if (!Number.isFinite(parsedDepartId) || !Number.isFinite(parsedCount)) {
+    return null;
+  }
+  return { departId: parsedDepartId, count: parsedCount };
+}
+
+export async function fetchSurveyDepartmentStats() {
+  const response = await apiRequest<unknown>('/api/survey/departments', {
+    auth: true,
+    method: 'GET',
+  });
+  if (!Array.isArray(response)) {
+    return [];
+  }
+  return response
+    .map((item) => normalizeDepartmentStat(item))
+    .filter((item): item is SurveyDepartmentStat => item !== null);
 }

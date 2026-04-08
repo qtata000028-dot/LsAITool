@@ -3,6 +3,10 @@ import {
   buildMultilineDisplayLines,
   type ResearchLineColorMap,
 } from './research-record-multiline';
+import {
+  buildNumberedLineEntries,
+  buildWorkDescriptionLineEntries,
+} from './research-record-word-template-shared';
 
 type ResearchPreviewContentMultilineFieldKey = 'formsProvided' | 'workDescription' | 'painPoints' | 'suggestions';
 type ResearchPreviewDraftMultilineFieldKey = 'departmentPosts' | 'workTools' | 'overallPainPoints' | 'specialDiscussion' | 'extraNotes';
@@ -104,16 +108,31 @@ function renderValue(value: string, fallback = '') {
 }
 
 function renderNumberedLines(value: string, lineColors: ResearchLineColorMap = {}) {
-  const lines = buildMultilineDisplayLines(value, lineColors);
+  const lines = buildNumberedLineEntries(value, lineColors);
   if (lines.length === 0) {
     return <div>{EMPTY_CELL}</div>;
   }
   return lines.map((line) => (
     <div
-      key={`${line.rawIndex}-${line.numberedText}`}
+      key={`${line.rawIndex}-${line.text}`}
       className={line.color === 'red' ? 'research-word-line-emphasis' : undefined}
     >
-      {line.numberedText}
+      {line.text}
+    </div>
+  ));
+}
+
+function renderPlainLines(lines: ReturnType<typeof buildWorkDescriptionLineEntries>) {
+  if (lines.length === 0) {
+    return <div>{EMPTY_CELL}</div>;
+  }
+
+  return lines.map((line) => (
+    <div
+      key={`${line.rawIndex}-${line.text}`}
+      className={line.color === 'red' ? 'research-word-line-emphasis' : undefined}
+    >
+      {line.text}
     </div>
   ));
 }
@@ -612,7 +631,12 @@ export function ResearchRecordWordTemplatePreview({
                             <td className="research-word-detail-label-cell">工作描述</td>
                             <td className="research-word-detail-item-cell research-word-detail-item-cell-large">
                               <div className="research-word-line-stack">
-                                {renderNumberedLines(item.workDescription, item.lineColors.workDescription)}
+                                {renderPlainLines(buildWorkDescriptionLineEntries({
+                                  fallbackModuleName: item.businessTheme,
+                                  lineColors: item.lineColors.workDescription,
+                                  linkedModuleName: item.linkedModuleName,
+                                  value: item.workDescription,
+                                }))}
                               </div>
                             </td>
                           </tr>

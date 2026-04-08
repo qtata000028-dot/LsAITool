@@ -1,6 +1,7 @@
 import {
   buildMultilineDisplayLines,
   type ResearchLineColorMap,
+  type ResearchLineColorTone,
 } from './research-record-multiline';
 
 type ResearchWordContentMultilineFieldKey = 'formsProvided' | 'workDescription' | 'painPoints' | 'suggestions';
@@ -52,6 +53,12 @@ type BuildResearchRecordWordPageHtmlOptions = {
 
 const EMPTY_CELL = '\u3000';
 
+export type ResearchWordLineEntry = {
+  color: ResearchLineColorTone;
+  rawIndex: number;
+  text: string;
+};
+
 function escapeHtml(input: string) {
   return input
     .replace(/&/g, '&amp;')
@@ -98,8 +105,52 @@ function formatScopeDisplay(value: string) {
   return '全员 □ 部门 ☑ 单独 □';
 }
 
-function renderNumberedLinesHtml(value: string, lineColors: ResearchLineColorMap = {}) {
-  const lines = buildMultilineDisplayLines(value, lineColors);
+function stripExistingLineOrder(value: string) {
+  return value.replace(/^\s*\d+\s*[、,，.．)）]\s*/, '').trim();
+}
+
+export function buildNumberedLineEntries(value: string, lineColors: ResearchLineColorMap = {}): ResearchWordLineEntry[] {
+  return buildMultilineDisplayLines(value, lineColors).map((line) => ({
+    color: line.color,
+    rawIndex: line.rawIndex,
+    text: `${line.order}、${stripExistingLineOrder(line.text) || line.text}`,
+  }));
+}
+
+export function buildPlainLineEntries(value: string, lineColors: ResearchLineColorMap = {}): ResearchWordLineEntry[] {
+  return buildMultilineDisplayLines(value, lineColors).map((line) => ({
+    color: line.color,
+    rawIndex: line.rawIndex,
+    text: line.text,
+  }));
+}
+
+export function buildWorkDescriptionLineEntries(input: {
+  fallbackModuleName?: string;
+  lineColors?: ResearchLineColorMap;
+  linkedModuleName?: string;
+  value: string;
+}): ResearchWordLineEntry[] {
+  const lines = buildPlainLineEntries(input.value, input.lineColors ?? {});
+  const moduleName = (input.linkedModuleName ?? '').trim() || (input.fallbackModuleName ?? '').trim();
+  if (!moduleName) {
+    return lines;
+  }
+
+  const moduleLine = `    关联模块：${moduleName}`;
+  if (lines.length === 0) {
+    return [{ color: 'default', rawIndex: -1, text: moduleLine }];
+  }
+
+  const [firstLine, ...restLines] = lines;
+  if (firstLine.text.replace(/^\s+/, '').startsWith('关联模块：')) {
+    return [{ ...firstLine, text: moduleLine }, ...restLines];
+  }
+
+  return [{ color: 'default', rawIndex: -1, text: moduleLine }, ...lines];
+}
+
+function renderLineEntriesHtml(lines: ResearchWordLineEntry[]) {
   if (lines.length === 0) {
     return `<div>${EMPTY_CELL}</div>`;
   }
@@ -107,9 +158,17 @@ function renderNumberedLinesHtml(value: string, lineColors: ResearchLineColorMap
   return lines
     .map((line) => {
       const className = line.color === 'red' ? 'research-word-line-emphasis' : '';
-      return `<div class="${className}">${escapeHtml(line.numberedText)}</div>`;
+      return `<div class="${className}">${escapeHtml(line.text)}</div>`;
     })
     .join('');
+}
+
+function renderNumberedLinesHtml(value: string, lineColors: ResearchLineColorMap = {}) {
+  return renderLineEntriesHtml(buildNumberedLineEntries(value, lineColors));
+}
+
+function renderPlainLinesHtml(lines: ResearchWordLineEntry[]) {
+  return renderLineEntriesHtml(lines);
 }
 
 function renderInlineDelimitedLinesHtml(value: string, lineColors: ResearchLineColorMap = {}) {
@@ -432,7 +491,12 @@ export function buildResearchRecordWordPageHtml(
               <td class="research-word-detail-label-cell">工作描述</td>
               <td class="research-word-detail-item-cell research-word-detail-item-cell-large">
                 <div class="research-word-line-stack">
-                  ${renderNumberedLinesHtml(item.workDescription, item.lineColors.workDescription)}
+                  ${renderPlainLinesHtml(buildWorkDescriptionLineEntries({
+                    fallbackModuleName: item.businessTheme,
+                    lineColors: item.lineColors.workDescription,
+                    linkedModuleName: item.linkedModuleName,
+                    value: item.workDescription,
+                  }))}
                 </div>
               </td>
             </tr>

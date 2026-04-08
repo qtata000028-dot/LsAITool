@@ -12,6 +12,7 @@ import {
   getInitialAuthSession,
 } from './app/providers/auth-session-provider';
 import Login from './components/Login';
+import { clearTransientLoginContext } from './shared/auth/login-context';
 
 const Dashboard = lazy(() => import('./components/Dashboard'));
 
@@ -85,6 +86,7 @@ export default function App() {
 
   const handleLogout = () => {
     clearCurrentAuthSession();
+    clearTransientLoginContext();
     setSession(null);
     setIsDebugDashboard(false);
   };

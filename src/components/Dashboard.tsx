@@ -2022,6 +2022,7 @@ export default function Dashboard({
         activeMenuName,
         activeSubsystem,
         activeSubsystemName,
+        companyTitle: authSession?.companyTitle ?? '',
         currentUserName,
         deletingMenuId,
         expandedSubsystemId,

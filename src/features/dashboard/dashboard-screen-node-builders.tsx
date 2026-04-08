@@ -2,6 +2,7 @@ import type { ComponentProps, ReactNode } from 'react';
 
 import { DashboardConfigModal } from './dashboard-config-modal';
 import { ResearchRecordWorkbench } from './research-record-workbench';
+import { ResearchRecordExplorerWorkbench } from './research-record-explorer';
 import { ServerPermissionWorkbench } from './server-permission-workbench';
 import { ToolFeedbackWorkbench } from './tool-feedback-workbench';
 
@@ -14,7 +15,7 @@ export function buildDashboardConfigModalNode(
 export function buildDashboardResearchRecordWorkbenchNode(
   props: ComponentProps<typeof ResearchRecordWorkbench>,
 ): ReactNode {
-  return <ResearchRecordWorkbench {...props} />;
+  return <ResearchRecordExplorerWorkbench {...props} />;
 }
 
 export function buildServerPermissionWorkbenchNode(

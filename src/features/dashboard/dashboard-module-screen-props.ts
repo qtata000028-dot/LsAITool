@@ -17,6 +17,7 @@ export function buildDashboardModuleScreenProps({
   activeMenuName,
   activeSubsystem,
   activeSubsystemName,
+  companyTitle,
   currentUserName,
   deletingMenuId,
   expandedSubsystemId,
@@ -52,6 +53,7 @@ export function buildDashboardModuleScreenProps({
   activeMenuName: DashboardModuleScreenOverviewProps['activeMenuName'];
   activeSubsystem: DashboardModuleScreenSidebarProps['activeSubsystem'];
   activeSubsystemName: DashboardModuleScreenHeaderProps['activeSubsystemName'];
+  companyTitle: DashboardModuleScreenSidebarProps['companyTitle'];
   currentUserName: DashboardModuleScreenSidebarProps['currentUserName'];
   deletingMenuId: DashboardModuleScreenOverviewProps['deletingMenuId'];
   expandedSubsystemId: DashboardModuleScreenSidebarProps['expandedSubsystemId'];
@@ -105,6 +107,7 @@ export function buildDashboardModuleScreenProps({
     sidebarProps: {
       activeFirstLevelMenuId,
       activeSubsystem,
+      companyTitle,
       currentUserName,
       expandedSubsystemId,
       handleFirstLevelMenuClick,

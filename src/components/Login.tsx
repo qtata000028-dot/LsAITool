@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import type { AuthSession, EmployeeOption, ServerOption } from '../shared/api/auth';
 import { fetchEmployeeOptions, fetchServerOptions, loginWithPassword } from '../shared/api/auth';
+import { persistLoginContext } from '../shared/auth/login-context';
 import {
   clearRememberedLoginState,
   getRememberedLoginState,
@@ -37,21 +38,15 @@ export default function Login({ onLogin }: LoginProps) {
   const [password, setPassword] = useState(rememberedLoginState?.password ?? '');
   const [rememberCredentials, setRememberCredentials] = useState(Boolean(rememberedLoginState));
   const [showPassword, setShowPassword] = useState(false);
-  const [isOrganizationOpen, setIsOrganizationOpen] = useState(false);
   const [isEmployeeOpen, setIsEmployeeOpen] = useState(false);
   const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(false);
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const organizationRef = useRef<HTMLDivElement>(null);
   const employeeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
-      if (organizationRef.current && !organizationRef.current.contains(event.target as Node)) {
-        setIsOrganizationOpen(false);
-      }
-
       if (employeeRef.current && !employeeRef.current.contains(event.target as Node)) {
         setIsEmployeeOpen(false);
       }
@@ -116,16 +111,9 @@ export default function Login({ onLogin }: LoginProps) {
     : employees.length > 0
       ? `已从固定人员库加载 ${employees.length} 位可登录人员`
       : '当前未获取到可登录人员';
-
-  const organizationHelperText = isLoadingOrganizations
-    ? '正在加载可选客户帐套...'
-    : selectedEmployee
-      ? availableOrganizations.length > 0
-        ? `已按 ${selectedEmployee.employeeName} 的权限展示 ${availableOrganizations.length} 个客户帐套`
-        : '当前员工没有可登录的客户帐套'
-      : availableOrganizations.length > 0
-        ? `当前展示全部 ${availableOrganizations.length} 个客户帐套，选择后仅用于登录后的业务模块和调研流向`
-        : '当前未获取到客户帐套';
+  const organizationAccessMessage = selectedEmployee && !isLoadingOrganizations && availableOrganizations.length === 0
+    ? '未配置帐套权限，请联系管理员'
+    : null;
 
   useEffect(() => {
     let isActive = true;
@@ -184,11 +172,16 @@ export default function Login({ onLogin }: LoginProps) {
     let isActive = true;
 
     const loadOrganizationOptions = async () => {
+      if (!selectedEmployee) {
+        setOrganizations([]);
+        setIsLoadingOrganizations(false);
+        return;
+      }
+
       try {
         setIsLoadingOrganizations(true);
         setErrorMessage(null);
-        setIsOrganizationOpen(false);
-        const data = await fetchServerOptions(selectedEmployee?.employeeId ?? undefined);
+        const data = await fetchServerOptions(selectedEmployee.employeeId);
         if (!isActive) {
           return;
         }
@@ -236,7 +229,7 @@ export default function Login({ onLogin }: LoginProps) {
     event.preventDefault();
 
     if (!selectedOrganization) {
-      setErrorMessage('请先选择客户帐套。');
+      setErrorMessage('未配置帐套权限，请联系管理员');
       return;
     }
 
@@ -262,10 +255,17 @@ export default function Login({ onLogin }: LoginProps) {
         departmentId: selectedEmployee.departmentId || session.departmentId,
         employeeId: selectedEmployee.employeeId,
         employeeName: selectedEmployee.employeeName || session.employeeName,
+        selectedCompanyOptionKey: selectedOrganization.companyKey,
         username: selectedEmployee.loginAccount || session.username,
       };
 
       persistAuthSession(normalizedSession, rememberCredentials);
+      persistLoginContext({
+        employeeId: selectedEmployee.employeeId,
+        employeeName: selectedEmployee.employeeName,
+        password,
+        remember: rememberCredentials,
+      });
       if (rememberCredentials) {
         persistRememberedLoginState({
           employeeId: selectedEmployee.employeeId,
@@ -283,6 +283,16 @@ export default function Login({ onLogin }: LoginProps) {
       setIsSubmitting(false);
     }
   };
+
+  const isSubmitDisabled = (
+    isSubmitting
+    || isLoadingEmployees
+    || isLoadingOrganizations
+    || !selectedEmployee
+    || !selectedOrganization
+    || !password.trim()
+    || (selectedEmployee !== null && availableOrganizations.length === 0)
+  );
 
   return (
     <div className="font-display main-gradient relative min-h-screen overflow-x-hidden text-slate-900">
@@ -364,88 +374,6 @@ export default function Login({ onLogin }: LoginProps) {
             ) : null}
 
             <form className="space-y-5" onSubmit={handleSubmit}>
-              <div className="space-y-1.5">
-                <label className="ml-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">客户帐套</label>
-                <div ref={organizationRef} className="relative">
-                  <input name="organization" type="hidden" value={organizationKey} />
-                  <button
-                    type="button"
-                    aria-expanded={isOrganizationOpen}
-                    aria-haspopup="listbox"
-                    disabled={isLoadingOrganizations}
-                    onClick={() => setIsOrganizationOpen((open) => !open)}
-                    className="group relative w-full text-left outline-none disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    <div className="pointer-events-none absolute inset-0 rounded-[22px] border border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.92),rgba(255,255,255,0.62)_42%,rgba(224,242,254,0.74))] shadow-[inset_0_1px_0_rgba(255,255,255,0.98),0_22px_42px_-28px_rgba(14,116,144,0.8)] transition-all duration-300 group-hover:border-primary/30 group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,1),0_24px_46px_-24px_rgba(14,116,144,0.9)] group-focus-visible:border-primary/40 group-focus-visible:shadow-[inset_0_1px_0_rgba(255,255,255,1),0_28px_52px_-22px_rgba(14,116,144,1)]" />
-                    <div className="pointer-events-none absolute inset-[1px] rounded-[21px] bg-white/35 backdrop-blur-2xl" />
-                    <div className="pointer-events-none absolute -right-6 top-1/2 h-16 w-16 -translate-y-1/2 rounded-full bg-cyan-200/60 opacity-70 blur-2xl transition-opacity duration-300 group-hover:opacity-100" />
-                    <div className="relative flex h-12 items-center gap-3 px-4 pr-20">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/80 bg-white/70 text-primary shadow-[0_10px_24px_-18px_rgba(14,116,144,0.8)]">
-                        <span className="material-symbols-outlined text-[20px]">domain</span>
-                      </div>
-                      <div className={`min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[0.01em] transition-colors ${selectedOrganization ? 'text-slate-900' : 'text-slate-500'}`}>
-                        {selectedOrganization?.title ?? (isLoadingOrganizations ? '正在加载客户帐套...' : '请选择客户帐套')}
-                      </div>
-                    </div>
-                    <div className={`pointer-events-none absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-2xl border border-white/80 bg-white/78 text-slate-500 shadow-[0_16px_30px_-22px_rgba(15,23,42,0.75)] transition-all duration-300 ${isOrganizationOpen ? 'scale-105 border-primary/35 bg-cyan-50/90 text-primary' : ''}`}>
-                      <span className={`material-symbols-outlined text-[20px] transition-transform duration-300 ${isOrganizationOpen ? 'rotate-180' : ''}`}>
-                        expand_more
-                      </span>
-                    </div>
-                  </button>
-
-                  <AnimatePresence>
-                    {isOrganizationOpen && availableOrganizations.length > 0 ? (
-                      <motion.div
-                        initial={{ opacity: 0, y: -10, scale: 0.97 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                        transition={{ duration: 0.2, ease: 'easeOut' }}
-                        className="absolute left-0 right-0 z-20 mt-3 overflow-hidden rounded-[24px] border border-white/70 bg-white/72 shadow-[0_28px_60px_-30px_rgba(15,23,42,0.5)] backdrop-blur-2xl"
-                      >
-                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.18),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.72),rgba(248,250,252,0.62))]" />
-                        <div className="relative p-2" role="listbox">
-                          {availableOrganizations.map((option) => {
-                            const isActive = option.companyKey === organizationKey;
-
-                            return (
-                              <button
-                                key={option.companyKey}
-                                type="button"
-                                role="option"
-                                aria-selected={isActive}
-                                onClick={() => {
-                                  setOrganizationKey(option.companyKey);
-                                  setIsOrganizationOpen(false);
-                                  setErrorMessage(null);
-                                }}
-                                className={`flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-left transition-all duration-200 ${
-                                  isActive
-                                    ? 'bg-[linear-gradient(135deg,rgba(224,242,254,0.95),rgba(255,255,255,0.92))] text-slate-900 shadow-[0_18px_28px_-24px_rgba(14,116,144,0.95)]'
-                                    : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
-                                }`}
-                              >
-                                <div
-                                  className={`flex h-10 w-10 items-center justify-center rounded-2xl border transition-all duration-200 ${
-                                    isActive
-                                      ? 'border-primary/20 bg-primary/10 text-primary'
-                                      : 'border-white/70 bg-white/55 text-slate-400'
-                                  }`}
-                                >
-                                  <span className="material-symbols-outlined text-[18px]">{isActive ? 'check' : 'apartment'}</span>
-                                </div>
-                                <div className="min-w-0 flex-1 truncate text-[13px] font-semibold">{option.title}</div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </motion.div>
-                    ) : null}
-                  </AnimatePresence>
-                </div>
-                <div className="ml-1 text-[11px] text-slate-400">{organizationHelperText}</div>
-              </div>
-
               <div className="space-y-1.5">
                 <label className="ml-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">登录人员</label>
                 <div ref={employeeRef} className="relative">
@@ -529,6 +457,9 @@ export default function Login({ onLogin }: LoginProps) {
                   </AnimatePresence>
                 </div>
                 <div className="ml-1 text-[11px] text-slate-400">{employeeHelperText}</div>
+                {organizationAccessMessage ? (
+                  <div className="ml-1 text-[11px] font-medium text-rose-600">{organizationAccessMessage}</div>
+                ) : null}
               </div>
 
               <div className="space-y-1.5">
@@ -573,7 +504,7 @@ export default function Login({ onLogin }: LoginProps) {
               <div className="pt-2">
                 <button
                   className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary font-bold text-white shadow-lg shadow-primary/20 transition-all active:scale-[0.98] hover:bg-erp-blue disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none"
-                  disabled={isSubmitting || isLoadingEmployees || isLoadingOrganizations}
+                  disabled={isSubmitDisabled}
                   type="submit"
                 >
                   <span className="text-sm uppercase tracking-widest">{isSubmitting ? '登录中...' : '立即登录'}</span>
