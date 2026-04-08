@@ -1,6 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  alignBillHeaderFieldsToFlowLayout,
+  BILL_FORM_MAX_CONTROL_HEIGHT,
+  BILL_FORM_MIN_CONTROL_HEIGHT,
+  BILL_FORM_LAYOUT_GAP_X,
+  BILL_FORM_LAYOUT_GAP_Y,
+  BILL_FORM_LAYOUT_PADDING_X,
+  BILL_FORM_LAYOUT_PADDING_Y,
+} from './dashboard-bill-form-layout-utils';
 
 type BillCanvasFieldScope = 'main' | 'meta';
+type BillFieldResizeDimension = 'width' | 'height';
 
 type UseBillFieldResizeParams = {
   billHeaderCanvasRef: React.RefObject<HTMLDivElement | null>;
@@ -56,20 +66,25 @@ export function useBillFieldResize({
   const [billFieldLivePreview, setBillFieldLivePreview] = useState<{
     id: string;
     scope: BillCanvasFieldScope;
+    height?: number;
     width?: number;
   } | null>(null);
   const billFieldResizeRef = useRef<{
+    dimension: BillFieldResizeDimension;
     id: string;
     scope: BillCanvasFieldScope;
-    startX: number;
-    startWidth: number;
     startCanvasX: number;
+    startHeight: number;
+    startX: number;
+    startY: number;
+    startWidth: number;
     boardWidth: number;
   } | null>(null);
   const billCanvasFieldsRef = useRef<any[]>([...mainTableColumns, ...billMetaFields]);
   const billResizeFrameRef = useRef<number | null>(null);
   const pendingBillResizeRef = useRef<{
     id: string;
+    height?: number;
     scope: BillCanvasFieldScope;
     width: number;
   } | null>(null);
@@ -91,6 +106,7 @@ export function useBillFieldResize({
     event: React.MouseEvent<HTMLDivElement>,
     columnId: string,
     scope: BillCanvasFieldScope = 'main',
+    dimension: BillFieldResizeDimension = 'width',
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -101,21 +117,32 @@ export function useBillFieldResize({
 
     const normalizedColumn = normalizeColumn(targetColumn);
     const nextWidth = Math.max(constants.minWidth, normalizedColumn.width || constants.defaultWidth);
+    const nextHeight = Math.max(
+      BILL_FORM_MIN_CONTROL_HEIGHT,
+      Math.min(
+        BILL_FORM_MAX_CONTROL_HEIGHT,
+        Math.round(Number(normalizedColumn.controlHeight ?? normalizedColumn.layoutHeight ?? BILL_FORM_MIN_CONTROL_HEIGHT) || BILL_FORM_MIN_CONTROL_HEIGHT),
+      ),
+    );
     billFieldResizeRef.current = {
+      dimension,
       id: columnId,
       scope,
       startX: event.clientX,
+      startY: event.clientY,
       startWidth: nextWidth,
-      startCanvasX: 0,
+      startHeight: nextHeight,
+      startCanvasX: Number(normalizedColumn.canvasX ?? normalizedColumn.controlLeft ?? 0) || 0,
       boardWidth: canvasRect.width,
     };
     setBillFieldLivePreview({
       id: columnId,
       scope,
+      height: nextHeight,
       width: nextWidth,
     });
     setActiveBillResizeId(columnId);
-    document.body.style.cursor = 'ew-resize';
+    document.body.style.cursor = dimension === 'height' ? 'ns-resize' : 'ew-resize';
     document.body.style.userSelect = 'none';
   }, [
     billHeaderCanvasRef,
@@ -155,43 +182,59 @@ export function useBillFieldResize({
       if (!billFieldResizeRef.current) return;
 
       const resize = billFieldResizeRef.current;
-      const maxWidth = Math.max(
-        constants.minWidth,
-        Math.min(constants.maxWidth, resize.boardWidth - resize.startCanvasX - constants.layoutPaddingX),
-      );
-      const resizeField = billCanvasFieldsRef.current.find((column) => column.id === resize.id);
-      const resizeRow = clampValue(
-        Number.isFinite(Number(resizeField?.panelRow)) ? Number(resizeField.panelRow) : constants.minRows,
-        constants.minRows,
-        billHeaderWorkbenchRows,
-      );
-      const siblingWidths = billCanvasFieldsRef.current
-        .filter((column) => column.id !== resize.id)
-        .filter((column) => (
-          clampValue(
-            Number.isFinite(Number(column?.panelRow)) ? Number(column.panelRow) : constants.minRows,
-            constants.minRows,
-            billHeaderWorkbenchRows,
-          ) === resizeRow
-        ))
-        .map((column) => Math.max(constants.minWidth, Number(column?.width) || constants.defaultWidth));
-      const snapCandidates = buildResizeSnapCandidates(siblingWidths, {
-        minWidth: constants.minWidth,
-        maxWidth,
-        baseWidth: constants.defaultWidth,
-      });
-      const rawWidth = resize.startWidth + (event.clientX - resize.startX);
-      const { width: nextWidth } = resolveResizeWidthWithSnap(rawWidth, {
-        minWidth: constants.minWidth,
-        maxWidth,
-        snapCandidates,
-      });
+      if (resize.dimension === 'height') {
+        pendingBillResizeRef.current = {
+          id: resize.id,
+          scope: resize.scope,
+          width: resize.startWidth,
+          height: Math.max(
+            BILL_FORM_MIN_CONTROL_HEIGHT,
+            Math.min(
+              BILL_FORM_MAX_CONTROL_HEIGHT,
+              Math.round(resize.startHeight + (event.clientY - resize.startY)),
+            ),
+          ),
+        };
+      } else {
+        const maxWidth = Math.max(
+          constants.minWidth,
+          Math.min(constants.maxWidth, resize.boardWidth - resize.startCanvasX - constants.layoutPaddingX),
+        );
+        const resizeField = billCanvasFieldsRef.current.find((column) => column.id === resize.id);
+        const resizeRow = clampValue(
+          Number.isFinite(Number(resizeField?.panelRow)) ? Number(resizeField.panelRow) : constants.minRows,
+          constants.minRows,
+          billHeaderWorkbenchRows,
+        );
+        const siblingWidths = billCanvasFieldsRef.current
+          .filter((column) => column.id !== resize.id)
+          .filter((column) => (
+            clampValue(
+              Number.isFinite(Number(column?.panelRow)) ? Number(column.panelRow) : constants.minRows,
+              constants.minRows,
+              billHeaderWorkbenchRows,
+            ) === resizeRow
+          ))
+          .map((column) => Math.max(constants.minWidth, Number(column?.width) || constants.defaultWidth));
+        const snapCandidates = buildResizeSnapCandidates(siblingWidths, {
+          minWidth: constants.minWidth,
+          maxWidth,
+          baseWidth: constants.defaultWidth,
+        });
+        const rawWidth = resize.startWidth + (event.clientX - resize.startX);
+        const { width: nextWidth } = resolveResizeWidthWithSnap(rawWidth, {
+          minWidth: constants.minWidth,
+          maxWidth,
+          snapCandidates,
+        });
 
-      pendingBillResizeRef.current = {
-        id: resize.id,
-        scope: resize.scope,
-        width: nextWidth,
-      };
+        pendingBillResizeRef.current = {
+          id: resize.id,
+          scope: resize.scope,
+          width: nextWidth,
+          height: resize.startHeight,
+        };
+      }
 
       if (billResizeFrameRef.current !== null) return;
       billResizeFrameRef.current = window.requestAnimationFrame(() => {
@@ -204,10 +247,12 @@ export function useBillFieldResize({
           && prev.id === nextResize.id
           && prev.scope === nextResize.scope
           && prev.width === nextResize.width
+          && prev.height === nextResize.height
             ? prev
             : {
                 id: nextResize.id,
                 scope: nextResize.scope,
+                height: nextResize.height,
                 width: nextResize.width,
               }
         ));
@@ -223,12 +268,33 @@ export function useBillFieldResize({
       }
       const nextResize = pendingBillResizeRef.current;
       if (nextResize) {
-        const updateFields = nextResize.scope === 'main' ? setMainTableColumns : setBillMetaFields;
-        updateFields((prev: any[]) => prev.map((column) => (
-          column.id === nextResize.id
-            ? { ...column, width: nextResize.width }
-            : column
-        )));
+        const metaIdSet = new Set(billMetaFields.map((column) => column.id));
+        const nextFields = alignBillHeaderFieldsToFlowLayout(
+          billCanvasFieldsRef.current.map((column) => (
+            column.id === nextResize.id
+              ? {
+                  ...column,
+                  controlHeight: nextResize.height ?? column.controlHeight ?? column.layoutHeight,
+                  controlWidth: nextResize.width,
+                  layoutHeight: nextResize.height ?? column.layoutHeight ?? column.controlHeight,
+                  width: nextResize.width,
+                }
+              : column
+          )),
+          {
+            defaultWidth: constants.defaultWidth,
+            gapX: BILL_FORM_LAYOUT_GAP_X,
+            gapY: BILL_FORM_LAYOUT_GAP_Y,
+            layoutPaddingX: BILL_FORM_LAYOUT_PADDING_X,
+            layoutPaddingY: BILL_FORM_LAYOUT_PADDING_Y,
+            maxHeight: BILL_FORM_MAX_CONTROL_HEIGHT,
+            maxWidth: constants.maxWidth,
+            minHeight: BILL_FORM_MIN_CONTROL_HEIGHT,
+            minWidth: constants.minWidth,
+          },
+        );
+        setBillMetaFields(nextFields.filter((column) => metaIdSet.has(column.id)));
+        setMainTableColumns(nextFields.filter((column) => !metaIdSet.has(column.id)));
       }
 
       resetBillFieldResize();
@@ -250,6 +316,7 @@ export function useBillFieldResize({
     constants.maxWidth,
     constants.minRows,
     constants.minWidth,
+    billMetaFields,
     resetBillFieldResize,
     resolveResizeWidthWithSnap,
     setBillMetaFields,

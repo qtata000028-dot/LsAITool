@@ -2,6 +2,7 @@ import type { BuildDashboardConfigBridgeNodesInput } from './dashboard-config-br
 
 type BuildDashboardConfigBridgeWorkspaceInput = {
   archiveLayoutState: {
+    businessType: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['businessType'];
     currentDetailBoard: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['currentDetailBoard'];
     currentModuleCode: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['currentModuleCode'];
     isOpen: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['isOpen'];

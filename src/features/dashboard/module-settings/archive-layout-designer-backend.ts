@@ -421,6 +421,70 @@ function mapDesignerControlToColumn(
   };
 }
 
+function buildDesignerColumnId(identity: RecordIdentity, fallbackPrefix: string, index: number) {
+  const backendIdKey = normalizeLookupKey(identity.backendId);
+  if (backendIdKey) {
+    return `field_${backendIdKey}`;
+  }
+
+  const fieldNameKey = normalizeLookupKey(identity.fieldName || identity.controlName || identity.fieldKey)
+    .replace(/[^a-z0-9_-]/g, '_');
+  if (fieldNameKey) {
+    return `field_${fieldNameKey}`;
+  }
+
+  return `${fallbackPrefix}_${index + 1}`;
+}
+
+function mapDesignerLayoutRowToColumn(
+  layoutRow: SingleTableDesignerLayoutDto,
+  index: number,
+  lookup: ColumnLookup,
+) {
+  const identity = resolveRecordIdentity(layoutRow);
+  const matchedColumn = findMatchedColumn(identity, lookup);
+  const rect = resolveLayoutRect(
+    layoutRow,
+    Number(matchedColumn?.controlWidth || matchedColumn?.width) > 0
+      ? Number(matchedColumn.controlWidth || matchedColumn.width)
+      : 120,
+    Number(matchedColumn?.controlHeight || matchedColumn?.layoutHeight) > 0
+      ? Number(matchedColumn.controlHeight || matchedColumn.layoutHeight)
+      : 21,
+  );
+
+  const width = rect?.width ?? toRecordNumber(
+    getRecordFieldValue(layoutRow, 'controlWidth', 'width'),
+    Number(matchedColumn?.width) > 0 ? Number(matchedColumn.width) : 120,
+  );
+  const height = rect?.height ?? toRecordNumber(
+    getRecordFieldValue(layoutRow, 'controlHeight', 'height', 'layoutHeight'),
+    Number(matchedColumn?.layoutHeight) > 0 ? Number(matchedColumn.layoutHeight) : 21,
+  );
+
+  return {
+    ...(matchedColumn ?? {}),
+    ...layoutRow,
+    id: matchedColumn?.id ?? buildDesignerColumnId(identity, 'designer_layout', index),
+    backendId: identity.backendId ?? matchedColumn?.backendId ?? null,
+    canvasX: rect?.left ?? matchedColumn?.canvasX ?? 0,
+    canvasY: rect?.top ?? matchedColumn?.canvasY ?? 0,
+    controlHeight: height,
+    controlName: identity.controlName || matchedColumn?.controlName || identity.fieldName || '',
+    controlWidth: width,
+    defaultValue: toRecordText(getRecordFieldValue(layoutRow, 'defaultValue', 'defaultvalue')) || matchedColumn?.defaultValue || '',
+    fieldKey: identity.fieldKey || matchedColumn?.fieldKey || matchedColumn?.backendFieldKey || '',
+    fieldName: identity.fieldName || matchedColumn?.fieldName || '',
+    groupName: toRecordText(getRecordFieldValue(layoutRow, 'groupname', 'groupName')) || matchedColumn?.groupName || '',
+    layoutHeight: height,
+    name: identity.displayName || matchedColumn?.name || identity.fieldName || `Field ${index + 1}`,
+    orderId: toRecordNumber(getRecordFieldValue(layoutRow, 'orderid', 'orderId', 'tabOrder', 'zindex', 'zIndex'), index + 1),
+    sourceField: identity.fieldName || matchedColumn?.sourceField || '',
+    type: matchedColumn?.type || 'text',
+    width,
+  };
+}
+
 function mapDesignerGroup(group: SingleTableDesignerGroupDto, groupIndex: number): ArchiveLayoutDesignerGroupSource {
   const rect = resolveLayoutRect(group);
 
@@ -440,8 +504,8 @@ function mapDesignerGroup(group: SingleTableDesignerGroupDto, groupIndex: number
   };
 }
 
-function mapDesignerLayoutToEntry(
-  layoutRow: SingleTableDesignerLayoutDto,
+function mapDesignerPositionRecordToEntry(
+  layoutRow: Record<string, unknown>,
   index: number,
   lookup: ColumnLookup,
 ): DesignerLayoutEntry | null {
@@ -592,29 +656,48 @@ export function buildArchiveLayoutDesignerState(
   columns: Record<string, any>[],
 ) {
   const columnLookup = buildBaseColumnLookup(columns);
-  const mappedColumns = [...controlRows]
-    .sort(
-      (left, right) => (
-        toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId', 'tabOrder'), 0)
-        - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId', 'tabOrder'), 0)
-      ),
-    )
+  const sortedControlRows = [...controlRows].sort(
+    (left, right) => (
+      toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId', 'tabOrder'), 0)
+      - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId', 'tabOrder'), 0)
+    ),
+  );
+  const mappedControlColumns = sortedControlRows
     .map((row, index) => mapDesignerControlToColumn(row, index, columnLookup));
-
+  const sortedLayoutRows = [...layoutRows].sort(
+    (left, right) => (
+      toRecordNumber(getRecordFieldValue(left, 'orderid', 'orderId', 'tabOrder', 'zindex', 'zIndex'), 0)
+      - toRecordNumber(getRecordFieldValue(right, 'orderid', 'orderId', 'tabOrder', 'zindex', 'zIndex'), 0)
+    ),
+  );
+  const mappedLayoutColumns = sortedLayoutRows
+    .map((row, index) => mapDesignerLayoutRowToColumn(row, index, columnLookup));
+  const mappedColumns = (mappedControlColumns.length > 0 ? mappedControlColumns : mappedLayoutColumns)
+    .filter((column, index, candidateColumns) => (
+      candidateColumns.findIndex((candidate) => String(candidate.id) === String(column.id)) === index
+    ));
+  const mappedColumnLookup = buildBaseColumnLookup(mappedColumns);
   const mappedGroups = groupRows.map((group, index) => mapDesignerGroup(group, index));
-  const mappedLayoutEntries = layoutRows
-    .map((row, index) => mapDesignerLayoutToEntry(row, index, buildBaseColumnLookup(mappedColumns)))
+  const mappedControlEntries = sortedControlRows
+    .map((row, index) => mapDesignerPositionRecordToEntry(row, index, mappedColumnLookup))
     .filter(Boolean) as DesignerLayoutEntry[];
+  const mappedLayoutEntries = sortedLayoutRows
+    .map((row, index) => mapDesignerPositionRecordToEntry(row, index, mappedColumnLookup))
+    .filter(Boolean) as DesignerLayoutEntry[];
+  const positionedEntries = [...mappedLayoutEntries, ...mappedControlEntries]
+    .filter((entry, index, entries) => (
+      entries.findIndex((candidate) => candidate.columnId === entry.columnId) === index
+    ));
 
   const layoutByColumnId = new Map<string, SingleTableDesignerLayoutDto>();
-  mappedLayoutEntries.forEach((entry) => {
+  positionedEntries.forEach((entry) => {
     if (!layoutByColumnId.has(entry.columnId)) {
       layoutByColumnId.set(entry.columnId, entry.raw);
     }
   });
 
   const groupedEntries = new Map<string, DesignerLayoutEntry[]>();
-  mappedLayoutEntries.forEach((entry) => {
+  positionedEntries.forEach((entry) => {
     const targetGroup = chooseTargetGroup(entry, mappedGroups);
     if (!targetGroup) {
       return;
@@ -644,6 +727,11 @@ export function buildArchiveLayoutDesignerState(
     };
   });
 
+  const controlRowByColumnId = new Map<string, SingleTableDesignerControlDto>();
+  mappedControlColumns.forEach((column, index) => {
+    controlRowByColumnId.set(String(column.id), sortedControlRows[index] ?? {});
+  });
+
   const sourceControls = mappedColumns.map((column: Record<string, any>, index) => ({
     backendId: column.backendId ?? null,
     columnId: String(column.id || `designer_control_${index + 1}`),
@@ -657,7 +745,7 @@ export function buildArchiveLayoutDesignerState(
     layoutRow: layoutByColumnId.get(String(column.id)) ?? null,
     name: toRecordText(column.name || column.label || column.username),
     orderId: toRecordNumber(column.orderId ?? column.orderid, index + 1),
-    raw: controlRows[index] ?? {},
+    raw: controlRowByColumnId.get(String(column.id)) ?? layoutByColumnId.get(String(column.id)) ?? {},
   } satisfies ArchiveLayoutDesignerControlSource));
 
   const sourceState: ArchiveLayoutSourceState = {

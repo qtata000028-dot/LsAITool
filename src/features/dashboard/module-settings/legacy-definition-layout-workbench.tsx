@@ -3,7 +3,12 @@ import { useEffect, useMemo, useRef, useState, useTransition, type PointerEvent 
 import {
   buildDetailBoardGroup,
   createSuggestedDetailBoardGroups,
+  getDetailBoardGroupColumnRow,
 } from './detail-board-config';
+import {
+  getRecordFieldValue,
+  toRecordNumber,
+} from './dashboard-field-type-utils';
 
 type LayoutPresetKey = 'balanced' | 'dense' | 'guided';
 type FieldPreviewType = 'number' | 'select' | 'text' | 'textarea';
@@ -39,6 +44,12 @@ type PreviewGroupLayout = {
   width: number;
   x: number;
   y: number;
+};
+
+type ArchiveLayoutPreviewControl = {
+  columnId: string;
+  layoutRow?: Record<string, unknown> | null;
+  orderId?: number;
 };
 
 type LegacyDefinitionLayoutWorkbenchProps = {
@@ -87,8 +98,163 @@ const GENERIC_FIELD_LABEL_PATTERNS = [
   /^字段\s*\d+$/i,
 ];
 
+const LAYOUT_RECT_LEFT_KEYS = [
+  'controlLeft',
+  'left',
+  'Left',
+  'locationLeft',
+  'locationX',
+  'x',
+  'X',
+];
+
+const LAYOUT_RECT_TOP_KEYS = [
+  'controlTop',
+  'top',
+  'Top',
+  'locationTop',
+  'locationY',
+  'y',
+  'Y',
+];
+
+const LAYOUT_RECT_WIDTH_KEYS = [
+  'controlWidth',
+  'width',
+  'Width',
+  'layoutWidth',
+];
+
+const LAYOUT_RECT_HEIGHT_KEYS = [
+  'controlHeight',
+  'height',
+  'Height',
+  'layoutHeight',
+];
+
 function clampValue(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function resolvePreviewLayoutRect(record: Record<string, unknown> | null | undefined) {
+  if (!record || typeof record !== 'object') {
+    return null;
+  }
+
+  const left = toRecordNumber(getRecordFieldValue(record, ...LAYOUT_RECT_LEFT_KEYS), Number.NaN);
+  const top = toRecordNumber(getRecordFieldValue(record, ...LAYOUT_RECT_TOP_KEYS), Number.NaN);
+  const width = toRecordNumber(getRecordFieldValue(record, ...LAYOUT_RECT_WIDTH_KEYS), Number.NaN);
+  const height = toRecordNumber(getRecordFieldValue(record, ...LAYOUT_RECT_HEIGHT_KEYS), Number.NaN);
+
+  if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height)) {
+    return null;
+  }
+
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return { height, left, top, width };
+}
+
+function buildPreviewRowFieldMap(
+  group: Record<string, any>,
+  groupFieldIds: string[],
+  fieldMap: Map<string, NormalizedLayoutField>,
+  sourceControlMap: Map<string, ArchiveLayoutPreviewControl>,
+) {
+  const positionedEntries = groupFieldIds
+    .map((fieldId) => {
+      const field = fieldMap.get(String(fieldId));
+      if (!field) {
+        return null;
+      }
+
+      const sourceControl = sourceControlMap.get(String(fieldId));
+      const rect = resolvePreviewLayoutRect(sourceControl?.layoutRow ?? null);
+      if (!rect) {
+        return null;
+      }
+
+      return {
+        field,
+        height: rect.height,
+        left: rect.left,
+        orderId: Number.isFinite(Number(sourceControl?.orderId)) ? Number(sourceControl?.orderId) : Number.MAX_SAFE_INTEGER,
+        top: rect.top,
+      };
+    })
+    .filter(Boolean) as Array<{
+      field: NormalizedLayoutField;
+      height: number;
+      left: number;
+      orderId: number;
+      top: number;
+    }>;
+
+  const sortedPositionedEntries = positionedEntries
+    .slice()
+    .sort((left, right) => (
+      left.top - right.top
+      || left.left - right.left
+      || left.orderId - right.orderId
+    ));
+
+  const provisionalRowMap = new Map<number, NormalizedLayoutField[]>();
+  let currentRowNumber = 0;
+  let currentRowBaselineTop: number | null = null;
+  let currentRowBaselineHeight: number | null = null;
+
+  sortedPositionedEntries.forEach((entry) => {
+    if (currentRowBaselineTop == null || currentRowBaselineHeight == null) {
+      currentRowNumber = 1;
+      provisionalRowMap.set(currentRowNumber, [entry.field]);
+      currentRowBaselineTop = entry.top;
+      currentRowBaselineHeight = entry.height;
+      return;
+    }
+
+    const rowTolerance = Math.max(12, Math.min(currentRowBaselineHeight, entry.height) * 0.5);
+    if (Math.abs(entry.top - currentRowBaselineTop) <= rowTolerance) {
+      const currentRow = provisionalRowMap.get(currentRowNumber) ?? [];
+      currentRow.push(entry.field);
+      provisionalRowMap.set(currentRowNumber, currentRow);
+      currentRowBaselineTop = Math.min(currentRowBaselineTop, entry.top);
+      currentRowBaselineHeight = Math.max(currentRowBaselineHeight, entry.height);
+      return;
+    }
+
+    currentRowNumber += 1;
+    provisionalRowMap.set(currentRowNumber, [entry.field]);
+    currentRowBaselineTop = entry.top;
+    currentRowBaselineHeight = entry.height;
+  });
+
+  const assignedFieldIds = new Set(sortedPositionedEntries.map((entry) => entry.field.id));
+  groupFieldIds.forEach((fieldId) => {
+    const normalizedFieldId = String(fieldId);
+    if (assignedFieldIds.has(normalizedFieldId)) {
+      return;
+    }
+
+    const field = fieldMap.get(normalizedFieldId);
+    if (!field) {
+      return;
+    }
+
+    const fallbackRow = Math.max(1, getDetailBoardGroupColumnRow(group, normalizedFieldId));
+    const fallbackRowFields = provisionalRowMap.get(fallbackRow) ?? [];
+    fallbackRowFields.push(field);
+    provisionalRowMap.set(fallbackRow, fallbackRowFields);
+  });
+
+  const normalizedRowEntries = [...provisionalRowMap.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .filter(([, rowFields]) => rowFields.length > 0);
+
+  return new Map(
+    normalizedRowEntries.map(([, rowFields], index) => [index + 1, rowFields] as const),
+  );
 }
 
 function getPresetDefinition(presetKey: LayoutPresetKey) {
@@ -230,6 +396,7 @@ function buildPreviewGroups(
   fieldMap: Map<string, NormalizedLayoutField>,
   columnCount: number,
   rowSpace: number,
+  sourceControlMap: Map<string, ArchiveLayoutPreviewControl>,
 ) {
   const stageWidth = STAGE_WIDTH - STAGE_OFFSET_X * 2;
   const normalizedColumns = clampValue(columnCount, 1, 3);
@@ -238,25 +405,56 @@ function buildPreviewGroups(
 
   return groups.map<PreviewGroupLayout>((group, groupIndex) => {
     const groupFieldIds = Array.isArray(group?.columnIds) ? group.columnIds : [];
-    const groupFields = groupFieldIds
-      .map((fieldId: string) => fieldMap.get(String(fieldId)))
-      .filter(Boolean) as NormalizedLayoutField[];
-
     const innerWidth = stageWidth - GROUP_PADDING_X * 2;
+
+    const resolvedFieldHeights = new Map<string, number>();
+    groupFieldIds.forEach((fieldId: string) => {
+      const field = fieldMap.get(String(fieldId));
+      if (!field) {
+        return;
+      }
+
+      const resolvedHeight = clampValue(
+        Number(group?.columnHeights?.[field.id]) > 0 ? Number(group.columnHeights[field.id]) : field.baseHeight,
+        FIELD_HEIGHT_MIN,
+        FIELD_HEIGHT_MAX,
+      );
+      resolvedFieldHeights.set(field.id, resolvedHeight);
+    });
+
+    const rowFieldMap = buildPreviewRowFieldMap(group, groupFieldIds, fieldMap, sourceControlMap);
+
+    const maxRowFieldCount = Math.max(
+      1,
+      ...Array.from(rowFieldMap.values(), (rowFields) => rowFields.length),
+    );
+    const previewColumnCount = clampValue(
+      Math.max(
+        normalizedColumns,
+        Number.isFinite(Number(group?.columnsPerRow)) ? Number(group.columnsPerRow) : 0,
+        maxRowFieldCount,
+      ),
+      1,
+      3,
+    );
     const computedFieldWidth = Math.floor(
-      (innerWidth - FIELD_GAP * Math.max(normalizedColumns - 1, 0)) / Math.max(normalizedColumns, 1),
+      (innerWidth - FIELD_GAP * Math.max(previewColumnCount - 1, 0)) / Math.max(previewColumnCount, 1),
     );
 
-    const resolvedFieldHeights = groupFields.map((field) => clampValue(
-      Number(group?.columnHeights?.[field.id]) > 0 ? Number(group.columnHeights[field.id]) : field.baseHeight,
-      FIELD_HEIGHT_MIN,
-      FIELD_HEIGHT_MAX,
-    ));
-    const rowHeights: number[] = [];
+    const resolvedRowCount = Math.max(
+      1,
+      Number.isFinite(Number(group?.rows)) ? Number(group.rows) : 1,
+      ...Array.from(rowFieldMap.keys()),
+    );
+    const rowHeights = Array.from({ length: resolvedRowCount }, (_, rowIndex) => {
+      const rowFields = rowFieldMap.get(rowIndex + 1) ?? [];
+      if (rowFields.length === 0) {
+        return 0;
+      }
 
-    resolvedFieldHeights.forEach((height, index) => {
-      const row = Math.floor(index / normalizedColumns);
-      rowHeights[row] = Math.max(rowHeights[row] ?? 0, height);
+      return rowFields.reduce((maxHeight, field) => (
+        Math.max(maxHeight, resolvedFieldHeights.get(field.id) ?? field.baseHeight)
+      ), 0);
     });
 
     const rowTops = rowHeights.map((_, rowIndex) => {
@@ -268,23 +466,26 @@ function buildPreviewGroups(
     });
 
     let groupContentBottom = GROUP_HEADER_HEIGHT + GROUP_PADDING_TOP;
+    const fieldLayouts: PreviewFieldLayout[] = [];
 
-    const fieldLayouts = groupFields.map<PreviewFieldLayout>((field, index) => {
-      const row = Math.floor(index / normalizedColumns);
-      const column = index % normalizedColumns;
-      const fieldHeight = resolvedFieldHeights[index];
-      const x = GROUP_PADDING_X + column * (computedFieldWidth + FIELD_GAP);
-      const y = rowTops[row] ?? (GROUP_HEADER_HEIGHT + GROUP_PADDING_TOP);
+    Array.from({ length: resolvedRowCount }, (_, rowIndex) => rowIndex + 1).forEach((rowNumber) => {
+      const rowFields = rowFieldMap.get(rowNumber) ?? [];
+      const rowTop = rowTops[rowNumber - 1] ?? (GROUP_HEADER_HEIGHT + GROUP_PADDING_TOP);
 
-      groupContentBottom = Math.max(groupContentBottom, y + fieldHeight);
+      rowFields.forEach((field, columnIndex) => {
+        const fieldHeight = resolvedFieldHeights.get(field.id) ?? field.baseHeight;
+        const x = GROUP_PADDING_X + columnIndex * (computedFieldWidth + FIELD_GAP);
+        const y = rowTop;
 
-      return {
-        ...field,
-        height: fieldHeight,
-        width: computedFieldWidth,
-        x,
-        y,
-      };
+        groupContentBottom = Math.max(groupContentBottom, y + fieldHeight);
+        fieldLayouts.push({
+          ...field,
+          height: fieldHeight,
+          width: computedFieldWidth,
+          x,
+          y,
+        });
+      });
     });
 
     const groupHeight = Math.max(groupContentBottom + GROUP_PADDING_BOTTOM, GROUP_HEADER_HEIGHT + 96);
@@ -669,9 +870,26 @@ export function LegacyDefinitionLayoutWorkbench({
     () => new Set(unassignedFields.map((field) => field.id)),
     [unassignedFields],
   );
+  const archiveLayoutSourceControlMap = useMemo(() => {
+    const sourceControls = Array.isArray(currentDetailBoard?.archiveLayoutSource?.controls)
+      ? currentDetailBoard.archiveLayoutSource.controls
+      : [];
+
+    return new Map(
+      sourceControls
+        .map((control: any) => ({
+          columnId: String(control?.columnId || ''),
+          layoutRow: control?.layoutRow && typeof control.layoutRow === 'object'
+            ? control.layoutRow as Record<string, unknown>
+            : null,
+          orderId: Number(control?.orderId),
+        }))
+        .filter((control) => control.columnId),
+    );
+  }, [currentDetailBoard]);
   const previewGroups = useMemo(
-    () => buildPreviewGroups(groups, fieldMap, columnCount, rowSpace),
-    [columnCount, fieldMap, groups, rowSpace],
+    () => buildPreviewGroups(groups, fieldMap, columnCount, rowSpace, archiveLayoutSourceControlMap),
+    [archiveLayoutSourceControlMap, columnCount, fieldMap, groups, rowSpace],
   );
   const previewSelectedGroup = previewGroups.find((group) => group.id === activeGroupId) ?? previewGroups[0] ?? null;
   const lastGroup = previewGroups[previewGroups.length - 1] ?? null;

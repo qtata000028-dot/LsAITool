@@ -1,6 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
 
 import {
+  deleteBillTypeDesignerGroup,
+  deleteBillTypeDesignerLayout,
+  fetchBillTypeDesignerGroups,
+  fetchBillTypeDesignerLayout,
+  saveBillTypeDesignerGroup,
+  saveBillTypeDesignerLayout,
   deleteSingleTableDesignerGroup,
   deleteSingleTableDesignerLayout,
   fetchSingleTableDesignerControls,
@@ -12,6 +18,7 @@ import {
 import { buildArchiveLayoutDesignerState, buildArchiveLayoutSavePlan } from './archive-layout-designer-backend';
 
 type UseArchiveLayoutDesignerSaveOptions = {
+  businessType: string;
   currentDetailBoard: Record<string, any>;
   currentModuleCode: string;
   layoutColumns: Record<string, any>[];
@@ -28,6 +35,7 @@ function getErrorMessage(error: unknown) {
 }
 
 export function useArchiveLayoutDesignerSave({
+  businessType,
   currentDetailBoard,
   currentModuleCode,
   layoutColumns,
@@ -58,25 +66,47 @@ export function useArchiveLayoutDesignerSave({
     setIsSaving(true);
     try {
       for (const body of savePlan.groupSaveBodies) {
-        await saveSingleTableDesignerGroup(moduleCode, body);
+        if (businessType === 'table') {
+          await saveBillTypeDesignerGroup(moduleCode, body);
+        } else {
+          await saveSingleTableDesignerGroup(moduleCode, body);
+        }
       }
 
       for (const body of savePlan.layoutSaveBodies) {
-        await saveSingleTableDesignerLayout(moduleCode, body);
+        if (businessType === 'table') {
+          await saveBillTypeDesignerLayout(moduleCode, body);
+        } else {
+          await saveSingleTableDesignerLayout(moduleCode, body);
+        }
       }
 
       for (const fieldId of savePlan.layoutDeleteFieldIds) {
-        await deleteSingleTableDesignerLayout(moduleCode, fieldId);
+        if (businessType === 'table') {
+          await deleteBillTypeDesignerLayout(moduleCode, fieldId);
+        } else {
+          await deleteSingleTableDesignerLayout(moduleCode, fieldId);
+        }
       }
 
       for (const groupId of savePlan.groupDeleteIds) {
-        await deleteSingleTableDesignerGroup(moduleCode, groupId);
+        if (businessType === 'table') {
+          await deleteBillTypeDesignerGroup(moduleCode, groupId);
+        } else {
+          await deleteSingleTableDesignerGroup(moduleCode, groupId);
+        }
       }
 
       const [controlRows, groupRows, layoutRows] = await Promise.all([
-        fetchSingleTableDesignerControls(moduleCode),
-        fetchSingleTableDesignerGroups(moduleCode),
-        fetchSingleTableDesignerLayout(moduleCode),
+        businessType === 'table'
+          ? Promise.resolve([])
+          : fetchSingleTableDesignerControls(moduleCode),
+        businessType === 'table'
+          ? fetchBillTypeDesignerGroups(moduleCode)
+          : fetchSingleTableDesignerGroups(moduleCode),
+        businessType === 'table'
+          ? fetchBillTypeDesignerLayout(moduleCode)
+          : fetchSingleTableDesignerLayout(moduleCode),
       ]);
       const designerState = buildArchiveLayoutDesignerState(
         moduleCode,
@@ -101,7 +131,7 @@ export function useArchiveLayoutDesignerSave({
     } finally {
       setIsSaving(false);
     }
-  }, [currentDetailBoard, currentModuleCode, layoutColumns, onShowToast, onUpdateDetailBoard]);
+  }, [businessType, currentDetailBoard, currentModuleCode, layoutColumns, onShowToast, onUpdateDetailBoard]);
 
   return useMemo(() => ({
     isDirty,
