@@ -5,6 +5,7 @@ import { useArchiveLayoutDesignerSave } from './use-archive-layout-designer-save
 import { useArchiveLayoutPaletteColumns } from './use-archive-layout-palette-columns';
 
 type ArchiveLayoutCanvasModalContainerProps = {
+  businessType: string;
   currentDetailBoard: Record<string, any>;
   currentModuleCode: string;
   isOpen: boolean;
@@ -17,6 +18,7 @@ type ArchiveLayoutCanvasModalContainerProps = {
 };
 
 export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayoutCanvasModalContainer({
+  businessType,
   currentDetailBoard,
   currentModuleCode,
   isOpen,
@@ -27,6 +29,7 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
   onUpdateDetailBoard,
 }: ArchiveLayoutCanvasModalContainerProps) {
   const layoutPaletteColumns = useArchiveLayoutPaletteColumns({
+    businessType,
     currentModuleCode,
     isOpen,
     mainTableColumns,
@@ -38,6 +41,7 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
     isSaving,
     saveArchiveLayout,
   } = useArchiveLayoutDesignerSave({
+    businessType,
     currentDetailBoard,
     currentModuleCode,
     layoutColumns: layoutPaletteColumns,

@@ -160,7 +160,6 @@ export function GridInspectorController({
   activeTab,
   billHeaderWorkbenchMaxRows,
   billHeaderWorkbenchMinRows,
-  billSources,
   buildGridColorRule,
   businessType,
   compactCardClass,
@@ -192,7 +191,6 @@ export function GridInspectorController({
   mainTableHiddenColumnsCount,
   fieldClass,
   getBillHeaderRowCount,
-  getOrderedBillHeaderFields,
   mutedLabelClass,
   normalizeColumn,
   normalizeDetailChartConfig,
@@ -203,7 +201,6 @@ export function GridInspectorController({
   onOpenColorRules,
   onOpenContextMenus,
   onOpenDetailBoardPreview,
-  onOpenSourceGridSelection,
   onRenderAdvancedPlaceholder,
   onResetDetailBoardFieldWidth,
   onResetMainSelection,
@@ -699,14 +696,14 @@ export function GridInspectorController({
           </div>
         ) : (
           <>
-            <div className="flex min-w-0 items-start gap-3">
+            <div className={`flex min-w-0 gap-3 ${isBillHeadGridConfig ? 'items-center' : 'items-start'}`}>
               <div className={`${panelIconShellClass} ${context.iconClass}`}>
                 <span className="material-symbols-outlined text-[18px]">{context.icon}</span>
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className={panelTitleClass}>{context.title}</h3>
-                  {!useQuietDocumentInspector ? <span className={panelBadgeClass}>{isDocumentDetailGrid ? '明细页签' : '表格级配置'}</span> : null}
+                  {!useQuietDocumentInspector && !isBillHeadGridConfig ? <span className={panelBadgeClass}>{isDocumentDetailGrid ? '明细页签' : '表格级配置'}</span> : null}
                   {isDetailChartInspector ? (
                     <span className="inline-flex items-center rounded-full border border-[#1686e3]/18 bg-[#1686e3]/8 px-2.5 py-1 text-[10px] font-bold text-[#1686e3]">
                       p_systemdlltabchart
@@ -796,77 +793,44 @@ export function GridInspectorController({
           isBillHeadGridConfig ? (
             <div className="space-y-0">
               <section className={compactCardClass}>
-                <div className={sectionTitleClass}>
-                  <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">dashboard</span>
-                  <h4>头部流式布局</h4>
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className={sectionTitleClass}>
+                    <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">dashboard_customize</span>
+                    <h4>头部设计</h4>
+                  </div>
                 </div>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className={compactInfoCardClass}>
-                        <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">控件数量</div>
-                    <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{getOrderedBillHeaderFields().length} 个</div>
-                      </div>
-                      <div className={compactInfoCardClass}>
-                        <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">布局模式</div>
-                        <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">按行插入</div>
-                      </div>
-                      <div className={compactInfoCardClass}>
-                        <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">控件行数</div>
-                        <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">{getBillHeaderRowCount()} 行</div>
-                      </div>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div>
-                        <label className={mutedLabelClass}>控件行数</label>
-                        <input
-                          type="number"
-                          min={billHeaderWorkbenchMinRows}
-                          max={billHeaderWorkbenchMaxRows}
-                          value={getBillHeaderRowCount()}
-                          onChange={(event) => onUpdateBillHeaderWorkbenchRows(Number(event.target.value) || billHeaderWorkbenchMinRows)}
-                          className={fieldClass}
-                        />
-                      </div>
-                      <div className={compactInfoCardClass}>
-                        <div className="text-[11px] font-bold tracking-[0.08em] text-slate-400">拖放规则</div>
-                        <div className="mt-1 text-[13px] font-bold text-slate-700 dark:text-slate-100">拖到前面即插入</div>
-                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                          目标控件和后续控件会顺位后移，便于排布头部字段。
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-                  <section className={compactCardClass}>
-                    <div className={sectionTitleClass}>
-                      <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">database</span>
-                      <h4>来源表</h4>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div>
-                        <label className={mutedLabelClass}>已配置来源</label>
-                        <div className="rounded-[18px] border border-slate-200/80 bg-slate-50/92 px-3.5 py-3 text-[12px] text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-200">
-                          {billSources.length} 个来源
-                          <div className="mt-1 truncate text-[11px] text-slate-400">
-                            {billSources.map((item) => item.sourceName || '未命名来源').join(' / ')}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-end">
-                        <button
-                          type="button"
-                          onClick={onOpenSourceGridSelection}
-                          className="inline-flex h-10 items-center gap-1.5 rounded-[14px] bg-[color:var(--workspace-accent)] px-4 text-[12px] font-bold text-white shadow-[0_18px_30px_-24px_var(--workspace-accent-shadow)]"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">database</span>
-                          配置来源表
-                        </button>
-                      </div>
-                    </div>
-                  </section>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className={mutedLabelClass}>控件行数</label>
+                    <input
+                      type="number"
+                      min={billHeaderWorkbenchMinRows}
+                      max={billHeaderWorkbenchMaxRows}
+                      step={1}
+                      inputMode="numeric"
+                      value={getBillHeaderRowCount()}
+                      onChange={(event) => {
+                        const nextRows = Number.parseInt(event.target.value, 10);
+                        if (!Number.isFinite(nextRows)) {
+                          return;
+                        }
+                        const clampedRows = Math.min(
+                          billHeaderWorkbenchMaxRows,
+                          Math.max(billHeaderWorkbenchMinRows, nextRows),
+                        );
+                        onUpdateBillHeaderWorkbenchRows(clampedRows);
+                      }}
+                      className={fieldClass}
+                    />
+                  </div>
+                </div>
+              </section>
               <GridSqlConfigSection
                 isDetailConfig={isDocumentDetailGrid}
                 sqlPrompt={currentGridConfig.sqlPrompt || ''}
                 mainSql={currentGridConfig.mainSql || ''}
                 conditionValue={isDocumentDetailGrid ? (currentGridConfig.sourceCondition || currentGridConfig.defaultQuery || '') : (currentGridConfig.defaultQuery || '')}
+                hideConditionInput
                 isGeneratingSqlDraft={isGeneratingSqlDraft}
                 onGenerateSqlDraft={generateGridSqlDraft}
                 onUpdateSqlPrompt={(value) => updateGridConfig({ sqlPrompt: value })}
@@ -876,12 +840,6 @@ export function GridInspectorController({
                     ? { defaultQuery: value, sourceCondition: value }
                     : { defaultQuery: value },
                 )}
-              />
-              <GridIdentifierTranslationSection
-                availableGridColumnCount={availableGridColumns.length}
-                translatableColumnCount={translatableColumns.length}
-                isTranslatingIdentifiers={isTranslatingIdentifiers}
-                onTranslate={translateGridIdentifiers}
               />
             </div>
           ) : isBillDetailGridConfig ? (

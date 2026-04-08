@@ -2,6 +2,7 @@ import { buildDashboardConfigBridgeWorkspaceInput } from './dashboard-config-bri
 import type { BuildDashboardConfigBridgeNodesInput } from './dashboard-config-bridge-nodes';
 
 type BuildDashboardConfigBridgeWorkspaceConfig = {
+  businessType: BuildDashboardConfigBridgeNodesInput['workspace']['archiveLayout']['businessType'];
   activeScope: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['activeScope'];
   builderSelectionContextMenu: BuildDashboardConfigBridgeNodesInput['workspace']['contextMenus']['builderSelectionContextMenu'];
   canSwitchScope: BuildDashboardConfigBridgeNodesInput['workspace']['conditionWorkbench']['canSwitchScope'];
@@ -38,6 +39,7 @@ export function buildDashboardConfigBridgeWorkspaceConfig(
 ) {
   return buildDashboardConfigBridgeWorkspaceInput({
     archiveLayoutState: {
+      businessType: input.businessType,
       currentDetailBoard: input.currentDetailBoard,
       currentModuleCode: input.currentModuleCode,
       isOpen: input.isArchiveLayoutOpen,

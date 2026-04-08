@@ -1631,6 +1631,8 @@ export default function Dashboard({
     },
     setters: {
       setActiveTab,
+      setBillDetailColumns,
+      setBillDetailConfig,
       setDetailBoardSortColumnId,
       setDetailFilterFields,
       setDetailTabConfigs,
@@ -2110,6 +2112,7 @@ export default function Dashboard({
       surveyPlanningNode: configWizardStepNodes.surveyPlanningNode,
     },
     workspace: {
+      businessType,
       activeScope: activeDocumentConditionScope,
       activateConditionPanelSelection,
       builderSelectionContextMenu: builderSelectionContextMenu as any,

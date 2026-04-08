@@ -37,6 +37,7 @@ type GridColumnDataSectionProps = {
 type GridSqlConfigSectionProps = {
   conditionValue: string;
   conditionLabel?: string;
+  hideConditionInput?: boolean;
   hideSqlPrompt?: boolean;
   isDetailConfig: boolean;
   isGeneratingSqlDraft: boolean;
@@ -220,6 +221,7 @@ export const GridLayoutWorkflowSection = React.memo(function GridLayoutWorkflowS
 export const GridSqlConfigSection = React.memo(function GridSqlConfigSection({
   conditionValue,
   conditionLabel,
+  hideConditionInput = false,
   hideSqlPrompt = false,
   isDetailConfig,
   isGeneratingSqlDraft,
@@ -297,16 +299,18 @@ export const GridSqlConfigSection = React.memo(function GridSqlConfigSection({
             className={`${shadcnTextareaClass} ${readOnlyMainSql ? 'cursor-default bg-slate-50/90 text-slate-500 dark:bg-slate-900/70 dark:text-slate-300' : ''}`}
           />
         </div>
-        <div>
-          <label className={shadcnMutedLabelClass}>{resolvedConditionLabel}</label>
-          <input
-            type="text"
-            value={conditionValue}
-            onChange={(event) => onUpdateConditionValue(event.target.value)}
-            placeholder={isDetailConfig ? '输入关联条件' : '输入默认查询条件'}
-            className={shadcnFieldClass}
-          />
-        </div>
+        {!hideConditionInput ? (
+          <div>
+            <label className={shadcnMutedLabelClass}>{resolvedConditionLabel}</label>
+            <input
+              type="text"
+              value={conditionValue}
+              onChange={(event) => onUpdateConditionValue(event.target.value)}
+              placeholder={isDetailConfig ? '输入关联条件' : '输入默认查询条件'}
+              className={shadcnFieldClass}
+            />
+          </div>
+        ) : null}
       </div>
     </section>
   );

@@ -23,6 +23,10 @@ export type SingleTableModuleFieldDto = Record<string, unknown>;
 export type SingleTableDesignerControlDto = Record<string, unknown>;
 export type SingleTableDesignerGroupDto = Record<string, unknown>;
 export type SingleTableDesignerLayoutDto = Record<string, unknown>;
+export type BillTypeDesignerControlDto = Record<string, unknown>;
+export type BillTypeDesignerGroupDto = Record<string, unknown>;
+export type BillTypeDesignerLayoutDto = Record<string, unknown>;
+export type BillTypeDetailFieldDto = Record<string, unknown>;
 export type SingleTableConditionDto = Record<string, unknown>;
 export type SingleTableDetailDto = Record<string, unknown>;
 export type SingleTableGridFieldDto = Record<string, unknown>;
@@ -554,6 +558,64 @@ export async function createBillTypeConfig(body: Record<string, unknown>) {
 
 export async function deleteBillTypeConfig(typeCode: string) {
   return apiRequest<void>(`/api/bill/types/${encodePathParam(typeCode)}`, {
+    auth: true,
+    method: 'DELETE',
+  });
+}
+
+export async function fetchBillTypeDetailFields(typeCode: string) {
+  return apiRequest<BillTypeDetailFieldDto[]>(`/api/bill/types/${encodePathParam(typeCode)}/detail-fields`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchBillTypeDesignerControls(typeCode: string) {
+  return apiRequest<BillTypeDesignerControlDto[]>(`/api/bill/types/${encodePathParam(typeCode)}/designer-controls`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchBillTypeDesignerGroups(typeCode: string) {
+  return apiRequest<BillTypeDesignerGroupDto[]>(`/api/bill/types/${encodePathParam(typeCode)}/designer-groups`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchBillTypeDesignerLayout(typeCode: string) {
+  return apiRequest<BillTypeDesignerLayoutDto[]>(`/api/bill/types/${encodePathParam(typeCode)}/designer-layout`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function saveBillTypeDesignerGroup(typeCode: string, body: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/api/bill/types/${encodePathParam(typeCode)}/designer-groups`, {
+    auth: true,
+    body,
+    method: 'POST',
+  });
+}
+
+export async function deleteBillTypeDesignerGroup(typeCode: string, id: number | string) {
+  return apiRequest<void>(`/api/bill/types/${encodePathParam(typeCode)}/designer-groups/${encodePathParam(String(id))}`, {
+    auth: true,
+    method: 'DELETE',
+  });
+}
+
+export async function saveBillTypeDesignerLayout(typeCode: string, body: Record<string, unknown>) {
+  return apiRequest<Record<string, unknown>>(`/api/bill/types/${encodePathParam(typeCode)}/designer-layout`, {
+    auth: true,
+    body,
+    method: 'POST',
+  });
+}
+
+export async function deleteBillTypeDesignerLayout(typeCode: string, fieldId: number | string) {
+  return apiRequest<void>(`/api/bill/types/${encodePathParam(typeCode)}/designer-layout/${encodePathParam(String(fieldId))}`, {
     auth: true,
     method: 'DELETE',
   });

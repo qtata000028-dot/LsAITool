@@ -3,6 +3,7 @@ import { buildDashboardConfigBridgeWorkspaceConfig } from './dashboard-config-br
 type DashboardConfigBridgeWorkspaceConfig = Parameters<typeof buildDashboardConfigBridgeWorkspaceConfig>[0];
 
 export function buildDashboardConfigBridgeWorkspaceBuilderConfig({
+  businessType,
   activeScope,
   activateConditionPanelSelection,
   builderSelectionContextMenu,
@@ -32,6 +33,7 @@ export function buildDashboardConfigBridgeWorkspaceBuilderConfig({
   updateMainDetailBoard,
   handleDocumentConditionScopeSwitch,
 }: {
+  businessType: DashboardConfigBridgeWorkspaceConfig['businessType'];
   activeScope: DashboardConfigBridgeWorkspaceConfig['activeScope'];
   activateConditionPanelSelection: DashboardConfigBridgeWorkspaceConfig['onActivateConditionPanel'];
   builderSelectionContextMenu: DashboardConfigBridgeWorkspaceConfig['builderSelectionContextMenu'];
@@ -62,6 +64,7 @@ export function buildDashboardConfigBridgeWorkspaceBuilderConfig({
   handleDocumentConditionScopeSwitch: DashboardConfigBridgeWorkspaceConfig['onScopeSwitch'];
 }) : DashboardConfigBridgeWorkspaceConfig {
   return {
+    businessType,
     activeScope,
     builderSelectionContextMenu,
     canSwitchScope,

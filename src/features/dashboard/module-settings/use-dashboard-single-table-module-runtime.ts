@@ -81,6 +81,8 @@ type UseDashboardSingleTableModuleRuntimeOptions = {
   };
   setters: {
     setActiveTab: Dispatch<SetStateAction<string>>;
+    setBillDetailColumns: Dispatch<SetStateAction<any[]>>;
+    setBillDetailConfig: Dispatch<SetStateAction<Record<string, any>>>;
     setDetailBoardSortColumnId: Dispatch<SetStateAction<string | null>>;
     setDetailFilterFields: Dispatch<SetStateAction<Record<string, any[]>>>;
     setDetailTabConfigs: Dispatch<SetStateAction<Record<string, any>>>;
@@ -284,14 +286,18 @@ export function useDashboardSingleTableModuleRuntime({
     mapSingleTableColorRule: mappings.mapSingleTableColorRule,
     mapSingleTableConditionRecordToField: mappings.mapSingleTableConditionRecordToField,
     mapSingleTableContextMenuItem: mappings.mapSingleTableContextMenuItem,
+    mapSingleTableDetailGridFieldToColumn: mappings.mapSingleTableDetailGridFieldToColumn,
     mapSingleTableFieldRecordToColumn: mappings.mapSingleTableFieldRecordToColumn,
     moduleSettingStep: config.moduleSettingStep,
+    setBillDetailColumns: setters.setBillDetailColumns,
+    setBillDetailConfig: setters.setBillDetailConfig,
     setDetailBoardSortColumnId: setters.setDetailBoardSortColumnId,
     setInspectorTarget: setters.setInspectorTarget,
     setIsSingleTableFieldsLoading: setters.setIsSingleTableFieldsLoading,
     setMainFilterFields: setters.setMainFilterFields,
     setMainTableColumns: setters.setMainTableColumns,
     setMainTableConfig: setters.setMainTableConfig,
+    setSelectedDetailForDelete: setters.setSelectedDetailForDelete,
     setSelectedMainFiltersForDelete: setters.setSelectedMainFiltersForDelete,
     setSelectedMainForDelete: setters.setSelectedMainForDelete,
     showToast: helpers.showToast,

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  fetchBillTypeDesignerControls,
+  fetchBillTypeDesignerGroups,
+  fetchBillTypeDesignerLayout,
+  type BillTypeDesignerControlDto,
+  type BillTypeDesignerGroupDto,
+  type BillTypeDesignerLayoutDto,
   fetchSingleTableDesignerControls,
   fetchSingleTableDesignerGroups,
   fetchSingleTableDesignerLayout,
@@ -11,6 +17,7 @@ import {
 import { buildArchiveLayoutDesignerState } from './archive-layout-designer-backend';
 
 type UseArchiveLayoutPaletteColumnsOptions = {
+  businessType: string;
   currentModuleCode: string;
   isOpen: boolean;
   mainTableColumns: Record<string, any>[];
@@ -19,9 +26,9 @@ type UseArchiveLayoutPaletteColumnsOptions = {
 };
 
 type ArchiveLayoutDesignerPayload = {
-  controlRows: SingleTableDesignerControlDto[];
-  groupRows: SingleTableDesignerGroupDto[];
-  layoutRows: SingleTableDesignerLayoutDto[];
+  controlRows: Array<SingleTableDesignerControlDto | BillTypeDesignerControlDto>;
+  groupRows: Array<SingleTableDesignerGroupDto | BillTypeDesignerGroupDto>;
+  layoutRows: Array<SingleTableDesignerLayoutDto | BillTypeDesignerLayoutDto>;
   moduleCode: string;
 };
 
@@ -34,6 +41,7 @@ function getDashboardErrorMessage(error: unknown) {
 }
 
 export function useArchiveLayoutPaletteColumns({
+  businessType,
   currentModuleCode,
   isOpen,
   mainTableColumns,
@@ -74,9 +82,15 @@ export function useArchiveLayoutPaletteColumns({
         loadTokenRef.current = loadToken;
 
         const [controlRows, groupRows, layoutRows] = await Promise.all([
-          fetchSingleTableDesignerControls(moduleCode),
-          fetchSingleTableDesignerGroups(moduleCode),
-          fetchSingleTableDesignerLayout(moduleCode),
+          businessType === 'table'
+            ? fetchBillTypeDesignerControls(moduleCode)
+            : fetchSingleTableDesignerControls(moduleCode),
+          businessType === 'table'
+            ? fetchBillTypeDesignerGroups(moduleCode)
+            : fetchSingleTableDesignerGroups(moduleCode),
+          businessType === 'table'
+            ? fetchBillTypeDesignerLayout(moduleCode)
+            : fetchSingleTableDesignerLayout(moduleCode),
         ]);
 
         if (!isActive || loadTokenRef.current !== loadToken) {
@@ -104,7 +118,7 @@ export function useArchiveLayoutPaletteColumns({
     return () => {
       isActive = false;
     };
-  }, [moduleCode, shouldLoadDesigner]);
+  }, [businessType, moduleCode, shouldLoadDesigner]);
 
   const effectiveDesignerPayload = useMemo(() => {
     if (!shouldLoadDesigner) {
@@ -154,8 +168,15 @@ export function useArchiveLayoutPaletteColumns({
     });
   }, [effectiveDesignerPayload, designerState, isOpen]);
 
-  return useMemo(
-    () => (designerState?.mappedColumns && designerState.mappedColumns.length > 0 ? designerState.mappedColumns : mainTableColumns),
-    [designerState, mainTableColumns],
-  );
+  return useMemo(() => {
+    if (!shouldLoadDesigner) {
+      return mainTableColumns;
+    }
+
+    if (!effectiveDesignerPayload) {
+      return [];
+    }
+
+    return designerState?.mappedColumns ?? [];
+  }, [designerState, effectiveDesignerPayload, mainTableColumns, shouldLoadDesigner]);
 }

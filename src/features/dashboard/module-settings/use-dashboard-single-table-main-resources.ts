@@ -2,6 +2,7 @@ import { type Dispatch, type SetStateAction, useEffect } from 'react';
 
 import {
   fetchBillTypeConfig,
+  fetchBillTypeDetailFields,
   fetchSingleTableModuleColors,
   fetchSingleTableModuleConditions,
   fetchSingleTableModuleConfig,
@@ -25,8 +26,11 @@ export function useDashboardSingleTableMainResources({
   mapSingleTableColorRule,
   mapSingleTableConditionRecordToField,
   mapSingleTableContextMenuItem,
+  mapSingleTableDetailGridFieldToColumn,
   mapSingleTableFieldRecordToColumn,
   moduleSettingStep,
+  setBillDetailColumns,
+  setBillDetailConfig,
   setDetailBoardSortColumnId,
   setInspectorTarget,
   setIsSingleTableFieldsLoading,
@@ -35,6 +39,7 @@ export function useDashboardSingleTableMainResources({
   setMainTableConfig,
   setSelectedMainFiltersForDelete,
   setSelectedMainForDelete,
+  setSelectedDetailForDelete,
   showToast,
   toRecordNumber,
   toRecordText,
@@ -54,26 +59,40 @@ export function useDashboardSingleTableMainResources({
   mapSingleTableColorRule: (rule: any, index: number) => any;
   mapSingleTableConditionRecordToField: (condition: any, index: number, overrides?: Record<string, unknown>) => any;
   mapSingleTableContextMenuItem: (item: any, index: number) => any;
+  mapSingleTableDetailGridFieldToColumn: (field: any, index: number) => any;
   mapSingleTableFieldRecordToColumn: (field: any, index: number) => any;
   moduleSettingStep: number;
+  setBillDetailColumns: Dispatch<SetStateAction<any[]>>;
+  setBillDetailConfig: Dispatch<SetStateAction<Record<string, any>>>;
   setDetailBoardSortColumnId: Dispatch<SetStateAction<string | null>>;
   setInspectorTarget: Dispatch<SetStateAction<any>>;
   setIsSingleTableFieldsLoading: Dispatch<SetStateAction<boolean>>;
   setMainFilterFields: Dispatch<SetStateAction<any[]>>;
   setMainTableColumns: Dispatch<SetStateAction<any[]>>;
   setMainTableConfig: Dispatch<SetStateAction<Record<string, any>>>;
+  setSelectedDetailForDelete: Dispatch<SetStateAction<string[]>>;
   setSelectedMainFiltersForDelete: Dispatch<SetStateAction<string[]>>;
   setSelectedMainForDelete: Dispatch<SetStateAction<string[]>>;
   showToast: (message: string) => void;
   toRecordNumber: (value: unknown, fallback: number) => number;
   toRecordText: (value: unknown) => string;
 }) {
+  const canLoadBillTypeResources = (
+    businessType === 'table'
+    && isConfigOpen
+    && configStep === moduleSettingStep
+    && Boolean(activeConfigModuleKey)
+  );
+  const canLoadMainConfigResources = businessType === 'table'
+    ? canLoadBillTypeResources
+    : canLoadSingleTableModuleResources;
+
   useEffect(() => {
     if (!isConfigOpen || configStep !== moduleSettingStep) {
       return;
     }
 
-    if (!canLoadSingleTableModuleResources) {
+    if (!canLoadMainConfigResources) {
       return;
     }
 
@@ -103,6 +122,14 @@ export function useDashboardSingleTableMainResources({
             overbackKey: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'overbackKey')),
             remark: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'remark')),
             tableName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'masterTable', 'mainTable')),
+            typeCode: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'typeCode')) || activeConfigModuleKey,
+            typeName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'typeName')),
+          }));
+          setBillDetailConfig((prev) => ({
+            ...prev,
+            backendId: getRecordFieldValue(normalizedModuleConfig, 'id'),
+            mainSql: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'detailSql', 'detailsql')),
+            tableName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'detailTable', 'detailtable')),
             typeCode: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'typeCode')) || activeConfigModuleKey,
             typeName: toRecordText(getRecordFieldValue(normalizedModuleConfig, 'typeName')),
           }));
@@ -145,6 +172,8 @@ export function useDashboardSingleTableMainResources({
   }, [
     activeConfigModuleKey,
     businessType,
+    canLoadBillTypeResources,
+    canLoadMainConfigResources,
     canLoadSingleTableModuleResources,
     configStep,
     getDashboardErrorMessage,
@@ -152,6 +181,7 @@ export function useDashboardSingleTableMainResources({
     isConfigOpen,
     mainResourceScopeKey,
     moduleSettingStep,
+    setBillDetailConfig,
     setMainTableConfig,
     showToast,
     toRecordNumber,
@@ -227,6 +257,66 @@ export function useDashboardSingleTableMainResources({
     setIsSingleTableFieldsLoading,
     setMainTableColumns,
     setSelectedMainForDelete,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (businessType !== 'table') {
+      return;
+    }
+
+    if (!canLoadBillTypeResources) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadBillDetailFields = async () => {
+      try {
+        const rows = await fetchBillTypeDetailFields(activeConfigModuleKey);
+
+        if (!isActive) {
+          return;
+        }
+
+        const mappedColumns = rows.map((field, index) => mapSingleTableDetailGridFieldToColumn(field, index));
+        setBillDetailColumns(mappedColumns);
+        setSelectedDetailForDelete([]);
+        setInspectorTarget((prev) => {
+          if (prev.kind === 'detail-col' && !mappedColumns.some((column) => column.id === prev.id)) {
+            return { kind: 'detail-grid' };
+          }
+
+          return prev;
+        });
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        showToast(getDashboardErrorMessage(error));
+      }
+    };
+
+    void loadBillDetailFields();
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    activeConfigModuleKey,
+    businessType,
+    canLoadBillTypeResources,
+    canLoadSingleTableModuleResources,
+    configStep,
+    getDashboardErrorMessage,
+    isConfigOpen,
+    mainResourceScopeKey,
+    mapSingleTableDetailGridFieldToColumn,
+    moduleSettingStep,
+    setBillDetailColumns,
+    setInspectorTarget,
+    setSelectedDetailForDelete,
     showToast,
   ]);
 
