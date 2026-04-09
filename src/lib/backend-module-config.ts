@@ -252,6 +252,13 @@ export async function saveSingleTableDesignerLayout(dllCoId: string, body: Recor
   });
 }
 
+export async function syncSingleTableDesignerLayout(dllCoId: string) {
+  return apiRequest<Record<string, unknown>>(`/api/single-table/modules/${encodePathParam(dllCoId)}/designer-layout/sync`, {
+    auth: true,
+    method: 'POST',
+  });
+}
+
 export async function deleteSingleTableDesignerLayout(dllCoId: string, fieldId: number | string) {
   return apiRequest<void>(`/api/single-table/modules/${encodePathParam(dllCoId)}/designer-layout/${encodePathParam(String(fieldId))}`, {
     auth: true,
@@ -747,6 +754,28 @@ export async function fetchBillTypeDetailFields(typeCode: string) {
   });
 }
 
+export async function fetchBillTypeDetailField(typeCode: string, id: number | string) {
+  return apiRequest<BillTypeDetailFieldDto>(`/api/bill/types/${encodePathParam(typeCode)}/detail-fields/${encodePathParam(String(id))}`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function saveBillTypeDetailField(typeCode: string, body: Record<string, unknown>) {
+  return apiRequest<BillTypeDetailFieldDto>(`/api/bill/types/${encodePathParam(typeCode)}/detail-fields`, {
+    auth: true,
+    body,
+    method: 'POST',
+  });
+}
+
+export async function deleteBillTypeDetailField(typeCode: string, id: number | string) {
+  return apiRequest<void>(`/api/bill/types/${encodePathParam(typeCode)}/detail-fields/${encodePathParam(String(id))}`, {
+    auth: true,
+    method: 'DELETE',
+  });
+}
+
 export async function fetchBillTypeMasterFields(typeCode: string) {
   return apiRequest<BillTypeMasterFieldDto[]>(`/api/bill/types/${encodePathParam(typeCode)}/master-fields`, {
     auth: true,
@@ -794,6 +823,13 @@ export async function saveBillTypeDesignerLayout(typeCode: string, body: Record<
   return apiRequest<Record<string, unknown>>(`/api/bill/types/${encodePathParam(typeCode)}/designer-layout`, {
     auth: true,
     body,
+    method: 'POST',
+  });
+}
+
+export async function syncBillTypeDesignerLayout(typeCode: string) {
+  return apiRequest<Record<string, unknown>>(`/api/bill/types/${encodePathParam(typeCode)}/designer-layout/sync`, {
+    auth: true,
     method: 'POST',
   });
 }

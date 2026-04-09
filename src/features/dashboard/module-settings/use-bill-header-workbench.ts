@@ -119,6 +119,7 @@ export function useBillHeaderWorkbench({
         layoutPaddingX: constants.layoutPaddingX,
         layoutPaddingY: constants.layoutPaddingY,
         maxWidth: constants.maxWidth,
+        minRowHeight: constants.rowHeight,
         minWidth: constants.minWidth,
       },
     )
@@ -132,6 +133,7 @@ export function useBillHeaderWorkbench({
     constants.maxWidth,
     constants.minRows,
     constants.minWidth,
+    constants.rowHeight,
     getBillHeaderRowCount,
     normalizeColumn,
     resolveBillHeaderFieldRow,

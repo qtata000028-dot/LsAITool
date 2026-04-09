@@ -48,13 +48,13 @@ import {
   BILL_FORM_DEFAULT_FONT_SIZE,
   BILL_FORM_DEFAULT_LABEL_WIDTH,
   BILL_FORM_DEFAULT_WIDTH,
-  BILL_FORM_LAYOUT_GAP_X,
-  BILL_FORM_LAYOUT_GAP_Y,
-  BILL_FORM_LAYOUT_PADDING_X,
-  BILL_FORM_LAYOUT_PADDING_Y,
   BILL_FORM_MAX_WIDTH,
   BILL_FORM_MIN_WIDTH,
-  BILL_FORM_ROW_HEIGHT,
+  BILL_FORM_WORKBENCH_LAYOUT_GAP_X,
+  BILL_FORM_WORKBENCH_LAYOUT_GAP_Y,
+  BILL_FORM_WORKBENCH_LAYOUT_PADDING_X,
+  BILL_FORM_WORKBENCH_LAYOUT_PADDING_Y,
+  BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT,
   getBillFieldLayout,
 } from '../features/dashboard/module-settings/dashboard-bill-form-layout-utils';
 import {
@@ -960,15 +960,15 @@ export default function Dashboard({
     normalizeColumn,
     constants: {
       defaultWidth: BILL_FORM_DEFAULT_WIDTH,
-      gapX: BILL_FORM_LAYOUT_GAP_X,
-      gapY: BILL_FORM_LAYOUT_GAP_Y,
-      layoutPaddingX: BILL_FORM_LAYOUT_PADDING_X,
-      layoutPaddingY: BILL_FORM_LAYOUT_PADDING_Y,
+      gapX: BILL_FORM_WORKBENCH_LAYOUT_GAP_X,
+      gapY: BILL_FORM_WORKBENCH_LAYOUT_GAP_Y,
+      layoutPaddingX: BILL_FORM_WORKBENCH_LAYOUT_PADDING_X,
+      layoutPaddingY: BILL_FORM_WORKBENCH_LAYOUT_PADDING_Y,
       maxRows: BILL_HEADER_WORKBENCH_MAX_ROWS,
       maxWidth: BILL_FORM_MAX_WIDTH,
       minRows: BILL_HEADER_WORKBENCH_MIN_ROWS,
       minWidth: BILL_FORM_MIN_WIDTH,
-      rowHeight: BILL_FORM_ROW_HEIGHT,
+      rowHeight: BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT,
     },
   });
   const {
@@ -988,7 +988,7 @@ export default function Dashboard({
     resolveResizeWidthWithSnap,
     constants: {
       defaultWidth: BILL_FORM_DEFAULT_WIDTH,
-      layoutPaddingX: BILL_FORM_LAYOUT_PADDING_X,
+      layoutPaddingX: BILL_FORM_WORKBENCH_LAYOUT_PADDING_X,
       maxRows: BILL_HEADER_WORKBENCH_MAX_ROWS,
       maxWidth: BILL_FORM_MAX_WIDTH,
       minRows: BILL_HEADER_WORKBENCH_MIN_ROWS,
@@ -1642,6 +1642,7 @@ export default function Dashboard({
     isSaving: isBillTypeSettingsSaving,
     saveCurrentPage: saveBillTypeSettingsPage,
   } = useBillTypeSettingsSave({
+    billDetailColumns,
     billDetailConfig,
     currentModuleCode: activeConfigModuleKey,
     currentModuleName,
@@ -1653,6 +1654,7 @@ export default function Dashboard({
       && isMenuInfoBuilt
     ),
     mapSingleTableDetailGridFieldToColumn,
+    mainTableColumns,
     mainTableConfig,
     onShowToast: showToast,
     setBillDetailColumns,
