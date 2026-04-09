@@ -35,6 +35,10 @@ export function useBillDocumentLayout({
   useEffect(() => {
     if (businessType !== 'table' || isModuleSettingFullscreen || billHeaderAutoFillRef.current) return;
     if (mainTableColumns.length === 0) return;
+    if (mainTableColumns.some((field) => field?.layoutRowId != null && field?.layoutRowId !== '')) {
+      billHeaderAutoFillRef.current = true;
+      return;
+    }
 
     const mainLayoutMatches = mainTableColumns.every((field, index) => {
       const normalizedField = normalizeColumn(field);

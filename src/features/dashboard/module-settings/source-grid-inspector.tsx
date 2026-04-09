@@ -71,6 +71,7 @@ export const SourceGridInspector = React.memo(function SourceGridInspector({
   const panelBadgeClass = shadcnPanelBadgeClass;
   const panelIconShellClass = `${shadcnPanelIconShellClass} size-10 rounded-lg`;
   const compactCardClass = shadcnSectionCardClass;
+  const filledCompactCardClass = `${compactCardClass} w-full max-w-none self-stretch`;
   const sectionTitleClass = shadcnSectionTitleClass;
   const mutedLabelClass = shadcnMutedLabelClass;
   const fieldClass = shadcnFieldClass;
@@ -93,9 +94,9 @@ export const SourceGridInspector = React.memo(function SourceGridInspector({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
-        <div className="space-y-4">
-          <section className={compactCardClass}>
+      <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-0 py-0">
+        <div className="w-full space-y-4">
+          <section className={filledCompactCardClass}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className={sectionTitleClass}>
                 <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">database</span>
@@ -147,7 +148,7 @@ export const SourceGridInspector = React.memo(function SourceGridInspector({
             </div>
           </section>
 
-          <section className={compactCardClass}>
+          <section className={filledCompactCardClass}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className={sectionTitleClass}>
                 <span className="material-symbols-outlined text-[18px] text-[color:var(--workspace-accent)]">edit_square</span>

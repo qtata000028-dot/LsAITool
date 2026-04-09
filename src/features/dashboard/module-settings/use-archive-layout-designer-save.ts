@@ -14,6 +14,7 @@ import {
   fetchSingleTableDesignerLayout,
   saveSingleTableDesignerGroup,
   saveSingleTableDesignerLayout,
+  syncSingleTableDesignerLayout,
 } from '../../../lib/backend-module-config';
 import { buildArchiveLayoutDesignerState, buildArchiveLayoutSavePlan } from './archive-layout-designer-backend';
 
@@ -57,6 +58,7 @@ export function useArchiveLayoutDesignerSave({
       || savePlan.groupDeleteIds.length > 0
       || savePlan.layoutSaveBodies.length > 0
       || savePlan.layoutDeleteFieldIds.length > 0;
+    const hasLayoutChanges = savePlan.layoutSaveBodies.length > 0 || savePlan.layoutDeleteFieldIds.length > 0;
 
     if (!hasChanges) {
       onShowToast('\u5f53\u524d\u6ca1\u6709\u53ef\u4fdd\u5b58\u7684\u5b9a\u4e49\u8bbe\u8ba1\u5e03\u5c40\u3002');
@@ -95,6 +97,10 @@ export function useArchiveLayoutDesignerSave({
         } else {
           await deleteSingleTableDesignerGroup(moduleCode, groupId);
         }
+      }
+
+      if (businessType !== 'table' && hasLayoutChanges) {
+        await syncSingleTableDesignerLayout(moduleCode);
       }
 
       const [controlRows, groupRows, layoutRows] = await Promise.all([

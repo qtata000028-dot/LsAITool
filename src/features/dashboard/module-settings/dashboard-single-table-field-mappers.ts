@@ -17,6 +17,11 @@ import {
 import {
   alignBillHeaderFieldsToFlowLayout,
   BILL_FORM_DEFAULT_WIDTH,
+  BILL_FORM_WORKBENCH_LAYOUT_GAP_X,
+  BILL_FORM_WORKBENCH_LAYOUT_GAP_Y,
+  BILL_FORM_WORKBENCH_LAYOUT_PADDING_X,
+  BILL_FORM_WORKBENCH_LAYOUT_PADDING_Y,
+  BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT,
   getBillFieldLayout,
 } from './dashboard-bill-form-layout-utils';
 
@@ -513,7 +518,13 @@ export function buildBillHeaderFieldsFromDesignerLayout(
       || getBillHeaderLayoutTopValue(left) - getBillHeaderLayoutTopValue(right)
       || getBillHeaderLayoutLeftValue(left) - getBillHeaderLayoutLeftValue(right)
       || toRecordNumber(left.orderId, 0) - toRecordNumber(right.orderId, 0)
-    )));
+    )), {
+      gapX: BILL_FORM_WORKBENCH_LAYOUT_GAP_X,
+      gapY: BILL_FORM_WORKBENCH_LAYOUT_GAP_Y,
+      layoutPaddingX: BILL_FORM_WORKBENCH_LAYOUT_PADDING_X,
+      layoutPaddingY: BILL_FORM_WORKBENCH_LAYOUT_PADDING_Y,
+      minRowHeight: BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT,
+    });
 
   return {
     columns,

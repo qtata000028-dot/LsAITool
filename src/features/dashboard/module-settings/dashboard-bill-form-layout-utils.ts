@@ -14,6 +14,10 @@ export const BILL_FORM_ROW_HEIGHT = 56;
 export const BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT = 28;
 export const BILL_FORM_WORKBENCH_FIELD_CHROME_HEIGHT = 7;
 export const BILL_FORM_MIN_PREVIEW_WIDTH = 92;
+export const BILL_FORM_WORKBENCH_LAYOUT_PADDING_X = 12;
+export const BILL_FORM_WORKBENCH_LAYOUT_PADDING_Y = 12;
+export const BILL_FORM_WORKBENCH_LAYOUT_GAP_X = 4;
+export const BILL_FORM_WORKBENCH_LAYOUT_GAP_Y = 1;
 
 export function getBillFieldLayout(index: number, width = BILL_FORM_DEFAULT_WIDTH) {
   const columnIndex = index % BILL_FORM_LAYOUT_COLUMNS;

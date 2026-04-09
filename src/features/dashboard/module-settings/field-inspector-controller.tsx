@@ -1,13 +1,14 @@
 import React from 'react';
 import {
   alignBillHeaderFieldsToFlowLayout,
-  BILL_FORM_LAYOUT_GAP_X,
-  BILL_FORM_LAYOUT_GAP_Y,
-  BILL_FORM_LAYOUT_PADDING_X,
-  BILL_FORM_LAYOUT_PADDING_Y,
   BILL_FORM_MAX_CONTROL_HEIGHT,
   BILL_FORM_MAX_WIDTH,
   BILL_FORM_MIN_CONTROL_HEIGHT,
+  BILL_FORM_WORKBENCH_LAYOUT_GAP_X,
+  BILL_FORM_WORKBENCH_LAYOUT_GAP_Y,
+  BILL_FORM_WORKBENCH_LAYOUT_PADDING_X,
+  BILL_FORM_WORKBENCH_LAYOUT_PADDING_Y,
+  BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT,
 } from './dashboard-bill-form-layout-utils';
 
 type LongTextEditorHandler = (
@@ -135,13 +136,14 @@ export function FieldInspectorController({
       }
 
       return alignBillHeaderFieldsToFlowLayout(nextFields, {
-        gapX: BILL_FORM_LAYOUT_GAP_X,
-        gapY: BILL_FORM_LAYOUT_GAP_Y,
-        layoutPaddingX: BILL_FORM_LAYOUT_PADDING_X,
-        layoutPaddingY: BILL_FORM_LAYOUT_PADDING_Y,
+        gapX: BILL_FORM_WORKBENCH_LAYOUT_GAP_X,
+        gapY: BILL_FORM_WORKBENCH_LAYOUT_GAP_Y,
+        layoutPaddingX: BILL_FORM_WORKBENCH_LAYOUT_PADDING_X,
+        layoutPaddingY: BILL_FORM_WORKBENCH_LAYOUT_PADDING_Y,
         maxHeight: BILL_FORM_MAX_CONTROL_HEIGHT,
         maxWidth: BILL_FORM_MAX_WIDTH,
         minHeight: BILL_FORM_MIN_CONTROL_HEIGHT,
+        minRowHeight: BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT,
         minWidth: billFormMinWidth,
       });
     });
