@@ -35,6 +35,7 @@ import {
   areGridOperationConfigsEqual,
   buildGridOperationConfigSnapshot,
 } from './grid-operation-config';
+import { buildSingleTableMainFieldExtraBody } from './single-table-main-field-settings-schema';
 
 type DetailSnapshot = {
   tabConfigs: Record<string, any>;
@@ -592,12 +593,14 @@ function buildMainFieldBody(record: any, dllCoId: string, index: number) {
   const width = toInteger(record?.width, 0);
 
   return ensureOptionalId(stripUndefinedEntries({
+    ...buildSingleTableMainFieldExtraBody(record),
     tab: toText(record?.tab || dllCoId),
     username1: displayName,
     fieldname: fieldName,
     sysname: systemName,
     fieldKey,
     fieldsqlTag: toInteger(record?.fieldsqltag ?? record?.fieldSqlTag ?? record?.controltype ?? record?.controlType, 0),
+    fieldsqltag: toInteger(record?.fieldsqltag ?? record?.fieldSqlTag ?? record?.controltype ?? record?.controlType, 0),
     orderid: toInteger(record?.orderid ?? record?.orderId, index + 1),
     width,
     vislble: toBooleanNumber(!(record?.visible ?? true), false),
@@ -609,12 +612,8 @@ function buildMainFieldBody(record: any, dllCoId: string, index: number) {
     fieldsqlid: toText(record?.fieldsqlid || record?.fieldSqlId || record?.dictCode || record?.dictcode),
     fieldsqlname: toText(record?.fieldsqlname || record?.fieldSqlName),
     calcExpr: toText(record?.formula || record?.calcExpr || record?.calcexpr),
-    ifSearch: toBooleanNumber(record?.searchable, false),
     dataAlign: toText(record?.align || record?.dataAlign || record?.dataalign),
-    controlWidth: toInteger(record?.controlWidth ?? record?.controlwidth ?? record?.width, width),
-    MobileWidth: toInteger(record?.mobileWidth ?? record?.mobilewidth, width),
     formKey: toText(record?.formKey || record?.formkey),
-    InputHintText: toText(record?.placeholder || record?.InputHintText || record?.inputhinttext || record?.prompttext || record?.promptText),
   }), record);
 }
 

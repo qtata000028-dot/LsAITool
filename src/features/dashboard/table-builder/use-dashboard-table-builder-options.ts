@@ -14,6 +14,7 @@ type SingleTablePreviewTemplateParams = {
   layoutVersion?: string;
   normalizedDetailBoardConfig?: any;
   onCanvasDoubleClick?: () => void;
+  onHeaderDoubleClick?: (columnId: string) => void;
   onSelectTable: () => void;
   renderableColumns?: any[];
   tableSelected: boolean;
@@ -27,6 +28,7 @@ function buildSingleTablePreviewTemplate({
   layoutVersion,
   normalizedDetailBoardConfig,
   onCanvasDoubleClick,
+  onHeaderDoubleClick,
   onSelectTable,
   renderableColumns,
   tableSelected,
@@ -41,6 +43,7 @@ function buildSingleTablePreviewTemplate({
     normalizedDetailBoardConfig,
     renderableColumns,
     onCanvasDoubleClick,
+    onHeaderDoubleClick,
     canvasLabel,
     surfaceVariant: 'solid',
     surfaceShape: 'square',
@@ -64,6 +67,7 @@ export type UseDashboardTableBuilderOptionsParams = {
     detailBoard?: any;
   };
   normalizedMainDetailBoardConfig: any;
+  onOpenMainFieldSettings: () => void;
   openDetailBoardPreview: (tabIndex: number) => void;
   selectedTableConfigScope: string | null;
   setDetailTableColumns: React.Dispatch<React.SetStateAction<DetailTableColumnsState>>;
@@ -83,6 +87,7 @@ export function useDashboardTableBuilderOptions({
   mainRenderableColumns,
   mainTableConfig,
   normalizedMainDetailBoardConfig,
+  onOpenMainFieldSettings,
   openDetailBoardPreview,
   selectedTableConfigScope,
   setDetailTableColumns,
@@ -119,6 +124,11 @@ export function useDashboardTableBuilderOptions({
     activateTableConfigSelection('main');
   }, [activateTableConfigSelection]);
 
+  const handleMainTableHeaderDoubleClick = useCallback(() => {
+    handleBuilderMainTableSelect();
+    onOpenMainFieldSettings();
+  }, [handleBuilderMainTableSelect, onOpenMainFieldSettings]);
+
   const handleBuilderMainTablePreview = useCallback(() => {
     if (!mainDetailBoardEnabled) return;
     openDetailBoardPreview(1);
@@ -145,12 +155,14 @@ export function useDashboardTableBuilderOptions({
     normalizedDetailBoardConfig: normalizedMainDetailBoardConfig,
     renderableColumns: mainRenderableColumns,
     onCanvasDoubleClick: handleArchiveMainTablePreview,
+    onHeaderDoubleClick: handleMainTableHeaderDoubleClick,
     canvasLabel: '点击配置基础档案主表',
     layoutVersion: detailTabsLength > 0 ? 'main-with-detail' : 'main-without-detail',
   }), [
     detailTabsLength,
     handleArchiveMainTablePreview,
     handleArchiveMainTableSelect,
+    handleMainTableHeaderDoubleClick,
     mainRenderableColumns,
     mainTableConfig.contextMenuItems,
     mainTableConfig.detailBoard,
@@ -175,12 +187,14 @@ export function useDashboardTableBuilderOptions({
     normalizedDetailBoardConfig: normalizedMainDetailBoardConfig,
     renderableColumns: mainRenderableColumns,
     onCanvasDoubleClick: handleBuilderMainTablePreview,
+    onHeaderDoubleClick: handleMainTableHeaderDoubleClick,
     canvasLabel: '点击配置主表属性',
     surfaceVariant: 'solid',
     surfaceShape: 'square',
   }), [
     handleBuilderMainTablePreview,
     handleBuilderMainTableSelect,
+    handleMainTableHeaderDoubleClick,
     mainRenderableColumns,
     mainTableConfig.detailBoard,
     normalizedMainDetailBoardConfig,

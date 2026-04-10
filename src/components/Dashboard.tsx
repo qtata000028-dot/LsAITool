@@ -640,6 +640,7 @@ export default function Dashboard({
   const [selectedPopupMenuParamKey, setSelectedPopupMenuParamKey] = useState<string>('dllpar1');
   const [selectedLeftForDelete, setSelectedLeftForDelete] = useState<string[]>([]);
   const [selectedMainForDelete, setSelectedMainForDelete] = useState<string[]>([]);
+  const [mainFieldSettingsOpenRequestKey, setMainFieldSettingsOpenRequestKey] = useState(0);
   const [selectedLeftFiltersForDelete, setSelectedLeftFiltersForDelete] = useState<string[]>([]);
   const [selectedMainFiltersForDelete, setSelectedMainFiltersForDelete] = useState<string[]>([]);
   const fieldSqlTagOptions = useDashboardFieldSqlTagOptions({
@@ -675,10 +676,13 @@ export default function Dashboard({
     billSourceFieldMap,
     billSources,
     createBillSourceDraft,
+    deleteBillSourceById,
+    hydrateBillSources,
     resetBillSourceState,
     saveBillSourceDraft,
     selectBillSourceDraft,
     setBillSourceDraft,
+    updateBillSourceById,
     updateBillSourceDraft,
   } = useBillSourceState({ showToast });
   const [billDetailColumns, setBillDetailColumns] = useState<any[]>([]);
@@ -1089,6 +1093,10 @@ export default function Dashboard({
     setMainTableConfig,
     setSelectedMainHiddenColumnIds,
   });
+  const requestOpenMainFieldSettings = useCallback(() => {
+    activateTableConfigSelection('main');
+    setMainFieldSettingsOpenRequestKey((prev) => prev + 1);
+  }, [activateTableConfigSelection]);
   const {
     addTab,
     deleteSelectedColumns,
@@ -1338,6 +1346,7 @@ export default function Dashboard({
         activateTableConfigSelection,
         autoFitColumnWidth,
         openDetailBoardPreview,
+        openMainFieldSettings: requestOpenMainFieldSettings,
         setBuilderSelectionContextMenu,
         setDetailTableColumns,
         setSelectedArchiveNodeId,
@@ -1573,6 +1582,7 @@ export default function Dashboard({
       moduleSettingStep: MODULE_SETTING_STEP,
       parsedTreeSourceFields,
       restrictionTopStructures,
+      shouldLoadBillSources: inspectorTarget.kind === 'source-grid',
       treeRelationColumn,
     },
     helpers: {
@@ -1636,6 +1646,7 @@ export default function Dashboard({
       setSelectedLeftForDelete,
       setSelectedMainFiltersForDelete,
       setSelectedMainForDelete,
+      hydrateBillSources,
     },
   });
   const {
@@ -1746,6 +1757,7 @@ export default function Dashboard({
       applyDetailModuleInheritanceById,
       clearColumnSelection,
       createBillSourceDraft,
+      deleteBillSourceById,
       deleteSelectedColumns,
       deleteSelectedConditions,
       handleConditionPanelFieldSelect,
@@ -1764,6 +1776,7 @@ export default function Dashboard({
       showToast,
       syncDetailColumnsFromSqlById,
       updateBillHeaderWorkbenchRows,
+      updateBillSourceById,
       updateBillSourceDraft,
       updateDetailTabConfigById,
     },
@@ -1883,6 +1896,7 @@ export default function Dashboard({
       leftFilterFields,
       leftTableColumns,
       leftTableConfig,
+      mainFieldSettingsOpenRequestKey,
       mainFilterFields,
       mainTableColumns,
       mainTableConfig,

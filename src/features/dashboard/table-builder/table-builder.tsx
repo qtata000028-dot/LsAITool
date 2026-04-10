@@ -28,6 +28,7 @@ export type TableBuilderOptions = {
   normalizedDetailBoardConfig?: any;
   renderableColumns?: any[];
   onCanvasDoubleClick?: () => void;
+  onHeaderDoubleClick?: (columnId: string) => void;
   density?: 'default' | 'compact';
   surfaceVariant?: 'glass' | 'solid';
   surfaceShape?: 'rounded' | 'square';
@@ -592,6 +593,10 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     event.stopPropagation();
     onCanvasDoubleClick?.();
   }, [onCanvasDoubleClick]);
+  const handleColumnHeaderDoubleClick = useCallback((event: React.MouseEvent, columnId: string) => {
+    event.stopPropagation();
+    options?.onHeaderDoubleClick?.(columnId);
+  }, [options]);
   const handlePreviewTableRowClick = useCallback((event: React.MouseEvent) => {
     event.stopPropagation();
     onSelectTable?.();
@@ -790,6 +795,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
             <button
               type="button"
               onClick={(event) => handleColumnHeaderClick(event, col.id)}
+              onDoubleClick={(event) => handleColumnHeaderDoubleClick(event, String(col.id))}
               onContextMenu={(event) => handleColumnHeaderContextMenu(event, col.id)}
               className={cn(
                 `relative flex h-full w-full items-center overflow-hidden text-left transition-all ${getHeaderCornerClass(index)} ${isCollapsedHeader ? 'min-h-[34px] px-0 pr-1.5 py-0' : isCompactModuleSetting ? 'min-h-[32px] px-1.5 pr-3 py-0' : 'min-h-[38px] px-2 pr-3.5 py-0'} ${getHeaderButtonClass(isActive, isMarkedForDelete, isTreeRelation)}`,
@@ -894,6 +900,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     getHeaderResizeRailClass,
     handleAddColumn,
     handleColumnHeaderClick,
+    handleColumnHeaderDoubleClick,
     handleColumnHeaderContextMenu,
     handleColumnResizeStart,
     handleColumnResizeStop,

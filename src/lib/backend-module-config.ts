@@ -28,12 +28,14 @@ export type BillTypeDesignerGroupDto = Record<string, unknown>;
 export type BillTypeDesignerLayoutDto = Record<string, unknown>;
 export type BillTypeMasterFieldDto = Record<string, unknown>;
 export type BillTypeDetailFieldDto = Record<string, unknown>;
+export type BillTypeSourceDto = Record<string, unknown>;
 export type SingleTableConditionDto = Record<string, unknown>;
 export type SingleTableDetailDto = Record<string, unknown>;
 export type SingleTableGridFieldDto = Record<string, unknown>;
 export type SingleTableDetailChartDto = Record<string, unknown>;
 export type SingleTableColorRuleDto = Record<string, unknown>;
 export type SingleTableContextMenuDto = Record<string, unknown>;
+export type SingleTableFieldNameOptionDto = Record<string, unknown>;
 
 export interface BillTypeConfigDto {
   detailCond?: unknown;
@@ -203,6 +205,13 @@ export async function fetchSingleTableModuleConfig(dllCoId: string) {
 
 export async function fetchSingleTableModuleFields(dllCoId: string) {
   return apiRequest<SingleTableModuleFieldDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/fields`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchSingleTableFieldNameOptions(dllCoId: string) {
+  return apiRequest<SingleTableFieldNameOptionDto[]>(`/api/single-table/modules/${encodePathParam(dllCoId)}/fieldname-options`, {
     auth: true,
     method: 'GET',
   });
@@ -749,6 +758,13 @@ export async function deleteBillTypeConfig(typeCode: string) {
 
 export async function fetchBillTypeDetailFields(typeCode: string) {
   return apiRequest<BillTypeDetailFieldDto[]>(`/api/bill/types/${encodePathParam(typeCode)}/detail-fields`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
+export async function fetchBillTypeSources(typeCode: string) {
+  return apiRequest<BillTypeSourceDto[]>(`/api/bill/types/${encodePathParam(typeCode)}/sources`, {
     auth: true,
     method: 'GET',
   });

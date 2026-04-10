@@ -2,14 +2,13 @@ import { useCallback, useMemo, type CSSProperties, type Dispatch, type MouseEven
 
 import {
   shadcnFieldClass,
-  shadcnInfoCardClass,
+  shadcnInspectorActionButtonClass,
+  shadcnInspectorSectionClass,
   shadcnMutedLabelClass,
-  shadcnPanelBadgeClass,
   shadcnPanelHeaderClass,
   shadcnPanelIconShellClass,
   shadcnPanelShellClass,
   shadcnPanelTitleClass,
-  shadcnSectionCardClass,
   shadcnSectionTitleClass,
   shadcnTextareaClass,
 } from '../../../components/ui/shadcn-inspector';
@@ -93,6 +92,7 @@ export type UseInspectorPanelPropsOptions = {
   normalizeFieldSqlTagId: (value: unknown, fallback?: number) => number;
   onOpenArchiveLayoutEditor: () => void;
   onOpenConditionWorkbench: (scope: 'left' | 'main') => void;
+  mainFieldSettingsOpenRequestKey: number;
   onOpenMainHiddenColumnsModal: () => void;
   onOpenDetailBoardPreview: (rowId: number, preferredSortColumnId?: string | null) => void;
   onResetDetailBoardFieldWidth: (event: MouseEvent<HTMLButtonElement>, groupId: string, columnId: string) => void;
@@ -141,6 +141,7 @@ export type UseInspectorPanelPropsOptions = {
     silent?: boolean;
   }) => Promise<boolean>;
   createBillSourceDraft: () => void;
+  deleteBillSourceById: (sourceId: string) => void;
   saveBillSourceDraft: () => void;
   selectBillSourceDraft: (source: any) => void;
   syncDetailColumnsFromSqlById: (tabId: string, sql: string, options?: { notify?: boolean }) => boolean;
@@ -151,6 +152,7 @@ export type UseInspectorPanelPropsOptions = {
   updateActiveDetailTabConfig: (patch: Record<string, any>) => void;
   updateActiveDetailTabType: (nextType: string) => void;
   updateBillHeaderWorkbenchRows: (nextRows: number) => void;
+  updateBillSourceById: (sourceId: string, patch: Record<string, any>) => void;
   updateBillSourceDraft: (patch: Record<string, any>) => void;
   updateDetailTabConfigById: (tabId: string, updater: SetStateAction<Record<string, any>>) => void;
   workspaceTheme: string;
@@ -172,12 +174,8 @@ export function useInspectorPanelProps({
   billHeaderWorkbenchMaxRows,
   billHeaderWorkbenchMinRows,
   billMetaFields,
-  billSourceDraft,
-  billSourceDraftMode,
   billSourceFieldMap,
   billSources,
-  billSourceConfigTypeOptions,
-  billSourceTypeOptions,
   buildGridColorRule,
   businessType,
   clearColumnSelection,
@@ -232,6 +230,7 @@ export function useInspectorPanelProps({
   normalizeFieldSqlTagId,
   onOpenArchiveLayoutEditor,
   onOpenConditionWorkbench,
+  mainFieldSettingsOpenRequestKey,
   onOpenMainHiddenColumnsModal,
   onOpenDetailBoardPreview,
   onResetDetailBoardFieldWidth,
@@ -271,8 +270,7 @@ export function useInspectorPanelProps({
   setWorkspaceTheme,
   showToast,
   saveCurrentPage,
-  createBillSourceDraft,
-  saveBillSourceDraft,
+  deleteBillSourceById,
   selectBillSourceDraft,
   syncDetailColumnsFromSqlById,
   tableColumnResizeMinWidth,
@@ -282,7 +280,7 @@ export function useInspectorPanelProps({
   updateActiveDetailTabConfig,
   updateActiveDetailTabType,
   updateBillHeaderWorkbenchRows,
-  updateBillSourceDraft,
+  updateBillSourceById,
   updateDetailTabConfigById,
   workspaceTheme,
   workspaceThemeVars,
@@ -344,13 +342,11 @@ export function useInspectorPanelProps({
     const panelShellClass = shadcnPanelShellClass;
     const panelHeaderClass = shadcnPanelHeaderClass;
     const panelTitleClass = shadcnPanelTitleClass;
-    const panelBadgeClass = shadcnPanelBadgeClass;
     const panelIconShellClass = `${shadcnPanelIconShellClass} size-10 rounded-lg`;
-    const compactInfoCardClass = shadcnInfoCardClass;
-    const compactCardClass = shadcnSectionCardClass;
+    const compactCardClass = shadcnInspectorSectionClass;
     const sectionTitleClass = shadcnSectionTitleClass;
     const mutedLabelClass = shadcnMutedLabelClass;
-    const quietDocumentInspectorActionClass = 'inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200/80 bg-white px-3 text-[11px] font-medium text-slate-600 transition-colors hover:border-[color:var(--workspace-accent-border)] hover:text-[color:var(--workspace-accent-strong)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200';
+    const quietDocumentInspectorActionClass = shadcnInspectorActionButtonClass;
 
     const detailTabContext = selectedColumnContext?.kind === 'detail-tab' ? selectedColumnContext : null;
     const currentDetailTabConfig = detailTabContext?.column;
@@ -410,7 +406,6 @@ export function useInspectorPanelProps({
         clearColumnSelection,
         columnAlignOptions,
         compactCardClass,
-        compactInfoCardClass,
         conditionPanelControlWidth,
         conditionPanelResizeMaxWidth,
         conditionPanelResizeMinWidth,
@@ -440,7 +435,6 @@ export function useInspectorPanelProps({
           });
         },
         onShowToast: showToast,
-        panelBadgeClass,
         panelHeaderClass,
         panelIconShellClass,
         panelShellClass,
@@ -465,7 +459,6 @@ export function useInspectorPanelProps({
         buildGridColorRule,
         businessType,
         compactCardClass,
-        compactInfoCardClass,
         context: selectedColumnContext,
         currentMenuDraft,
         currentModuleCode,
@@ -490,7 +483,9 @@ export function useInspectorPanelProps({
         isGeneratingSqlDraft,
         isTranslatingIdentifiers,
         leftFilterFields,
+        mainTableColumns,
         loadSingleTableDetailResourcesById,
+        mainFieldSettingsOpenRequestKey,
         mainTableHiddenColumnsCount,
         mutedLabelClass,
         normalizeColumn,
@@ -511,7 +506,6 @@ export function useInspectorPanelProps({
         },
         onUpdateBillHeaderWorkbenchRows: updateBillHeaderWorkbenchRows,
         onUpdateGridColumns: updateGridColumnsForScope,
-        panelBadgeClass,
         panelHeaderClass,
         panelIconShellClass,
         panelShellClass,
@@ -559,15 +553,13 @@ export function useInspectorPanelProps({
         context: selectedColumnContext,
         workspaceThemeVars,
         activeBillSourceId,
-        billSourceDraftMode,
         billSources,
-        currentSourceConfig: billSourceDraft,
-        configTypeOptions: billSourceConfigTypeOptions,
-        sourceTypeOptions: billSourceTypeOptions,
-        onCreateDraft: createBillSourceDraft,
+        onDeleteActiveSource: () => {
+          if (!activeBillSourceId) return;
+          deleteBillSourceById(activeBillSourceId);
+        },
         onSelectDraft: selectBillSourceDraft,
-        onSaveDraft: saveBillSourceDraft,
-        onUpdateDraft: updateBillSourceDraft,
+        onToggleDisabled: (sourceId: string, nextDisabled: boolean) => updateBillSourceById(sourceId, { disabled: nextDisabled }),
       },
       workspaceThemeProps: {
         context: selectedColumnContext,
@@ -592,12 +584,8 @@ export function useInspectorPanelProps({
     billFormMinWidth,
     billHeaderWorkbenchMaxRows,
     billHeaderWorkbenchMinRows,
-    billSourceDraft,
-    billSourceDraftMode,
     billSourceFieldMap,
     billSources,
-    billSourceConfigTypeOptions,
-    billSourceTypeOptions,
     buildGridColorRule,
     businessType,
     clearColumnSelection,
@@ -642,6 +630,7 @@ export function useInspectorPanelProps({
     isTreeRelationFieldColumn,
     leftFilterFields,
     loadSingleTableDetailResourcesById,
+    mainFieldSettingsOpenRequestKey,
     mainTableColumns,
     mapFieldSqlTagToFieldType,
     mainTableHiddenColumnsCount,
@@ -687,8 +676,7 @@ export function useInspectorPanelProps({
     setWorkspaceTheme,
     showToast,
     saveCurrentPage,
-    createBillSourceDraft,
-    saveBillSourceDraft,
+    deleteBillSourceById,
     selectBillSourceDraft,
     syncDetailColumnsFromSqlById,
     tableColumnResizeMinWidth,
@@ -698,7 +686,7 @@ export function useInspectorPanelProps({
     updateActiveDetailTabConfig,
     updateActiveDetailTabType,
     updateBillHeaderWorkbenchRows,
-    updateBillSourceDraft,
+    updateBillSourceById,
     updateDetailTabConfigById,
     updateGridColumnsForScope,
     workspaceTheme,

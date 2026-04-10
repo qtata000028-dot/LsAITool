@@ -7,6 +7,7 @@ type DashboardInspectorRuntimeBuilderConfig = {
     applyDetailModuleInheritanceById: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['applyDetailModuleInheritanceById'];
     clearColumnSelection: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['clearColumnSelection'];
     createBillSourceDraft: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['createBillSourceDraft'];
+    deleteBillSourceById: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['deleteBillSourceById'];
     deleteSelectedColumns: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['deleteSelectedColumns'];
     deleteSelectedConditions: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['deleteSelectedConditions'];
     handleConditionPanelFieldSelect: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['handleConditionPanelFieldSelect'];
@@ -25,6 +26,7 @@ type DashboardInspectorRuntimeBuilderConfig = {
     showToast: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['showToast'];
     syncDetailColumnsFromSqlById: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['syncDetailColumnsFromSqlById'];
     updateBillHeaderWorkbenchRows: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['updateBillHeaderWorkbenchRows'];
+    updateBillSourceById: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['updateBillSourceById'];
     updateBillSourceDraft: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['updateBillSourceDraft'];
     updateDetailTabConfigById: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['updateDetailTabConfigById'];
   };
@@ -142,6 +144,7 @@ type DashboardInspectorRuntimeBuilderConfig = {
     isGeneratingSqlDraft: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['isGeneratingSqlDraft'];
     isTranslatingIdentifiers: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['isTranslatingIdentifiers'];
     leftFilterFields: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['leftFilterFields'];
+    mainFieldSettingsOpenRequestKey: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['mainFieldSettingsOpenRequestKey'];
     leftTableColumns: UseDashboardInspectorRuntimeInput['columnContextInput']['leftTableColumns'];
     leftTableConfig: UseDashboardInspectorRuntimeInput['columnContextInput']['leftTableConfig'];
     mainFilterFields: UseDashboardInspectorRuntimeInput['columnContextInput']['mainFilterFields'];
@@ -243,6 +246,7 @@ export function buildDashboardInspectorRuntimeBuilderConfig({
       isGeneratingSqlDraft: state.isGeneratingSqlDraft,
       isTranslatingIdentifiers: state.isTranslatingIdentifiers,
       leftFilterFields: state.leftFilterFields,
+      mainFieldSettingsOpenRequestKey: state.mainFieldSettingsOpenRequestKey,
       mainTableColumns: state.mainTableColumns,
       saveCurrentPage: actions.saveSingleTableModuleSettingsPage,
       selectedDetailBoardGroupId: state.selectedDetailBoardGroupId,
