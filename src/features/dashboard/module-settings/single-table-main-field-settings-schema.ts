@@ -115,6 +115,10 @@ function toText(value: unknown) {
   return value == null ? '' : String(value);
 }
 
+function normalizeLookupKey(value: unknown) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
 function toIntegerLike(value: unknown) {
   if (value === '' || value == null) {
     return undefined;
@@ -140,10 +144,27 @@ function resolveCheckboxChecked(
   return rawValue === true || rawValue === 1 || String(rawValue) === '1';
 }
 
-function resolveFirstDefinedValue(record: Record<string, unknown>, keys: string[]) {
+function resolveCaseInsensitiveValue(record: Record<string, unknown>, key: string) {
+  if (hasOwn(record, key)) {
+    return record[key];
+  }
+
+  const normalizedTargetKey = normalizeLookupKey(key);
+
+  for (const [entryKey, entryValue] of Object.entries(record)) {
+    if (normalizeLookupKey(entryKey) === normalizedTargetKey) {
+      return entryValue;
+    }
+  }
+
+  return undefined;
+}
+
+function resolveFirstLooseValue(record: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
-    if (hasOwn(record, key)) {
-      return record[key];
+    const value = resolveCaseInsensitiveValue(record, key);
+    if (value !== undefined) {
+      return value;
     }
   }
 
@@ -157,47 +178,47 @@ export function getSingleTableMainFieldSettingDefinition(key: string) {
 export function resolveSingleTableMainFieldSettingValue(record: Record<string, unknown>, key: string) {
   switch (key) {
     case 'fieldname':
-      return resolveFirstDefinedValue(record, ['fieldname', 'fieldName', 'sourceField']) ?? '';
+      return resolveFirstLooseValue(record, ['fieldname', 'fieldName', 'sourceField']) ?? '';
     case 'username1':
-      return resolveFirstDefinedValue(record, ['username1', 'username', 'userName', 'displayName', 'displayname', 'name']) ?? '';
+      return resolveFirstLooseValue(record, ['username1', 'username', 'userName', 'displayName', 'displayname', 'name']) ?? '';
     case 'fieldsqltag':
-      return resolveFirstDefinedValue(record, ['fieldsqltag', 'fieldSqlTag', 'controltype', 'controlType']) ?? 0;
+      return resolveFirstLooseValue(record, ['fieldsqltag', 'fieldSqlTag', 'controltype', 'controlType']) ?? 0;
     case 'defaultdate':
-      return resolveFirstDefinedValue(record, ['defaultdate', 'defaultDate', 'defaultValue']) ?? '';
+      return resolveFirstLooseValue(record, ['defaultdate', 'defaultDate', 'defaultValue']) ?? '';
     case 'vislble':
       return resolveCheckboxChecked(
-        resolveFirstDefinedValue(record, ['vislble']),
-        !resolveCheckboxChecked(resolveFirstDefinedValue(record, ['visible']), true),
+        resolveFirstLooseValue(record, ['vislble']),
+        !resolveCheckboxChecked(resolveFirstLooseValue(record, ['visible']), true),
       );
     case 'tagid':
-      return resolveCheckboxChecked(resolveFirstDefinedValue(record, ['tagid', 'required']));
+      return resolveCheckboxChecked(resolveFirstLooseValue(record, ['tagid', 'required']));
     case 'edit':
-      return resolveCheckboxChecked(resolveFirstDefinedValue(record, ['edit', 'readonly', 'readOnly']));
+      return resolveCheckboxChecked(resolveFirstLooseValue(record, ['edit', 'readonly', 'readOnly']));
     case 'fieldsql':
-      return resolveFirstDefinedValue(record, ['fieldsql', 'fieldSql', 'dynamicSql', 'dynamicsql']) ?? '';
+      return resolveFirstLooseValue(record, ['fieldsql', 'fieldSql', 'dynamicSql', 'dynamicsql']) ?? '';
     case 'fieldsqlid':
-      return resolveFirstDefinedValue(record, ['fieldsqlid', 'fieldSqlId', 'dictCode', 'dictcode']) ?? '';
+      return resolveFirstLooseValue(record, ['fieldsqlid', 'fieldSqlId', 'dictCode', 'dictcode']) ?? '';
     case 'fieldsqlname':
-      return resolveFirstDefinedValue(record, ['fieldsqlname', 'fieldSqlName']) ?? '';
+      return resolveFirstLooseValue(record, ['fieldsqlname', 'fieldSqlName']) ?? '';
     case 'InputHintText':
-      return resolveFirstDefinedValue(record, ['InputHintText', 'inputHintText', 'inputhinttext', 'placeholder']) ?? '';
+      return resolveFirstLooseValue(record, ['InputHintText', 'inputHintText', 'inputhinttext', 'placeholder']) ?? '';
     case 'MobileWidth':
-      return resolveFirstDefinedValue(record, ['MobileWidth', 'mobileWidth', 'mobilewidth']) ?? '';
+      return resolveFirstLooseValue(record, ['MobileWidth', 'mobileWidth', 'mobilewidth']) ?? '';
     case 'controlWidth':
-      return resolveFirstDefinedValue(record, ['controlWidth', 'controlwidth']) ?? '';
+      return resolveFirstLooseValue(record, ['controlWidth', 'controlwidth']) ?? '';
     case 'ifSearch':
       return resolveCheckboxChecked(
-        resolveFirstDefinedValue(record, ['ifSearch', 'ifsearch']),
-        resolveCheckboxChecked(resolveFirstDefinedValue(record, ['searchable']), false),
+        resolveFirstLooseValue(record, ['ifSearch', 'ifsearch']),
+        resolveCheckboxChecked(resolveFirstLooseValue(record, ['searchable']), false),
         { inverted: true },
       );
     case 'ifsearch':
-      return resolveCheckboxChecked(resolveFirstDefinedValue(record, ['ifsearch', 'showSearchMobile']));
+      return resolveCheckboxChecked(resolveFirstLooseValue(record, ['ifsearch', 'showSearchMobile']));
     case 'dataAlign':
-      return resolveFirstDefinedValue(record, ['dataAlign', 'dataalign', 'align']) ?? '';
+      return resolveFirstLooseValue(record, ['dataAlign', 'dataalign', 'align']) ?? '';
     default: {
       const definition = getSingleTableMainFieldSettingDefinition(key);
-      const value = record[key];
+      const value = resolveFirstLooseValue(record, [key]);
       if (!definition) {
         return value;
       }

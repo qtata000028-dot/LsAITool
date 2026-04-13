@@ -117,6 +117,29 @@ body {
   height: 100%;
 }
 
+.single-table-main-field-settings-modal-table {
+  height: 100%;
+}
+
+.single-table-main-field-settings-modal-table .ant-spin-nested-loading,
+.single-table-main-field-settings-modal-table .ant-spin-container,
+.single-table-main-field-settings-modal-table .ant-table,
+.single-table-main-field-settings-modal-table .ant-table-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.single-table-main-field-settings-modal-table .ant-table-header {
+  flex: 0 0 auto;
+}
+
+.single-table-main-field-settings-modal-table .ant-table-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .dashboard-table-builder-ant-preview-scroll-body {
   display: flex;
   flex-direction: column;
@@ -398,6 +421,203 @@ body {
 .dashboard-table-builder-ant-table .ant-table-thead > tr > th:last-child,
 .dashboard-table-builder-ant-table .ant-table-tbody > tr > td:last-child {
   border-right: none !important;
+}
+
+.single-table-main-field-settings-search.ant-input-affix-wrapper {
+  height: 40px;
+  border-radius: 14px;
+  border: 1px solid #d7e4f3;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 28px -24px rgba(37, 99, 235, 0.34);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+.single-table-main-field-settings-search.ant-input-affix-wrapper:hover {
+  border-color: #bfd5f2;
+  background: #ffffff;
+}
+
+.single-table-main-field-settings-search.ant-input-affix-wrapper-focused,
+.single-table-main-field-settings-search.ant-input-affix-wrapper:focus-within {
+  border-color: #93c5fd;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 4px rgba(37, 99, 235, 0.1),
+    0 16px 32px -24px rgba(37, 99, 235, 0.34);
+}
+
+.single-table-main-field-settings-search .ant-input {
+  font-size: 13px;
+  background: transparent;
+}
+
+.single-table-main-field-settings-search .material-symbols-outlined {
+  color: #60a5fa;
+  transition: color 0.18s ease;
+}
+
+.single-table-main-field-settings-search.ant-input-affix-wrapper-focused .material-symbols-outlined,
+.single-table-main-field-settings-search.ant-input-affix-wrapper:focus-within .material-symbols-outlined {
+  color: #2563eb;
+}
+
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table {
+  background: linear-gradient(180deg, #fbfdff 0%, #f6faff 100%);
+}
+
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-header {
+  background: linear-gradient(180deg, #f9fbff 0%, #edf5ff 100%);
+  box-shadow: inset 0 -1px 0 #d9e5f3;
+}
+
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-body {
+  background: linear-gradient(180deg, #fcfdff 0%, #f7faff 100%);
+}
+
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-thead > tr > th {
+  padding: 0 !important;
+  border-right: 1px solid #dbe6f3 !important;
+  border-bottom: 1px solid #dbe6f3 !important;
+  background: linear-gradient(180deg, #f9fbff 0%, #edf5ff 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-tbody > tr > td {
+  padding: 0 !important;
+  border-right: 1px solid #e5edf8 !important;
+  border-bottom: 1px solid #e8eff8 !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  transition: background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-tbody > tr:nth-child(even) > td {
+  background: rgba(248, 251, 255, 0.96) !important;
+}
+
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-tbody > tr:hover > td {
+  background: rgba(239, 246, 255, 0.96) !important;
+}
+
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-tbody > tr.ant-table-row-selected > td,
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-tbody > tr.ant-table-row-selected:hover > td {
+  background: rgba(219, 234, 254, 0.86) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(96, 165, 250, 0.16),
+    inset 0 -1px 0 rgba(96, 165, 250, 0.16);
+}
+
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-thead > tr > th:last-child,
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-tbody > tr > td:last-child {
+  border-right: none !important;
+}
+
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-tbody > tr.ant-table-placeholder > td,
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-tbody > tr.ant-table-placeholder:hover > td {
+  background: transparent !important;
+}
+
+.single-table-main-field-settings-column-title {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #475569;
+}
+
+.single-table-main-field-settings-header-cell {
+  overflow: visible;
+}
+
+.single-table-main-field-settings-header-cell .single-table-main-field-settings-column-title {
+  justify-content: flex-start;
+}
+
+.single-table-main-field-settings-header-cell .material-symbols-outlined {
+  color: #94a3b8;
+  transition: color 0.18s ease, opacity 0.18s ease;
+}
+
+.single-table-main-field-settings-header-cell:hover .material-symbols-outlined {
+  color: #2563eb;
+}
+
+.single-table-main-field-settings-cell-content {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  padding: 7px 10px;
+}
+
+.single-table-main-field-settings-cell-content.is-center {
+  justify-content: center;
+}
+
+.single-table-main-field-settings-cell-content .ant-input,
+.single-table-main-field-settings-cell-content .ant-input-number,
+.single-table-main-field-settings-cell-content .ant-select-selector {
+  border-radius: 10px !important;
+  border-color: #d7e4f1 !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+.single-table-main-field-settings-cell-content .ant-input,
+.single-table-main-field-settings-cell-content .ant-input-number-input,
+.single-table-main-field-settings-cell-content .ant-select-selection-item,
+.single-table-main-field-settings-cell-content .ant-select-selection-placeholder,
+.single-table-main-field-settings-cell-content textarea {
+  font-size: 12px !important;
+}
+
+.single-table-main-field-settings-cell-content .ant-input,
+.single-table-main-field-settings-cell-content .ant-input-number,
+.single-table-main-field-settings-cell-content .ant-select-selector {
+  min-height: 32px;
+}
+
+.single-table-main-field-settings-cell-content .ant-select-single.ant-select-sm {
+  width: 100%;
+}
+
+.single-table-main-field-settings-cell-content .ant-input-number {
+  width: 100%;
+}
+
+.single-table-main-field-settings-cell-content .ant-input-number-input,
+.single-table-main-field-settings-cell-content .ant-input,
+.single-table-main-field-settings-cell-content textarea {
+  color: #0f172a !important;
+}
+
+.single-table-main-field-settings-cell-content .ant-input:hover,
+.single-table-main-field-settings-cell-content .ant-input-number:hover,
+.single-table-main-field-settings-cell-content .ant-select:hover .ant-select-selector {
+  border-color: #bfd5f2 !important;
+  background: #ffffff !important;
+}
+
+.single-table-main-field-settings-cell-content .ant-input:focus,
+.single-table-main-field-settings-cell-content .ant-input-focused,
+.single-table-main-field-settings-cell-content .ant-input-number-focused,
+.single-table-main-field-settings-cell-content .ant-select-focused .ant-select-selector,
+.single-table-main-field-settings-cell-content textarea:focus {
+  border-color: #93c5fd !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important;
+}
+
+.single-table-main-field-settings-cell-content .ant-checkbox .ant-checkbox-inner {
+  border-radius: 6px;
+  border-color: #bfd5f2;
+}
+
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-selection-column {
+  background: linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%) !important;
 }
 
 .dashboard-table-builder-resize-handle.react-resizable-handle-e {

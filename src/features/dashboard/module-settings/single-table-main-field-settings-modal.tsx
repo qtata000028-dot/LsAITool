@@ -1,13 +1,20 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Checkbox, Input, InputNumber, Select, Spin, Table, type TableColumnsType, type TableProps } from 'antd';
-import { fetchSingleTableFieldNameOptions } from '../../../lib/backend-module-config';
+import { flushSync } from 'react-dom';
+import { DndContext, PointerSensor, closestCenter, pointerWithin, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Resizable, type ResizeCallbackData } from 'react-resizable';
+import { fetchSingleTableFieldNameOptions, fetchSingleTableModuleFields } from '../../../lib/backend-module-config';
 import { fetchDataFormatOptions, fetchFieldSqlTagOptions } from '../../../lib/backend-system';
 import {
   shadcnInspectorActionButtonClass,
   shadcnInspectorDangerActionButtonClass,
   shadcnInspectorPrimaryActionButtonClass,
 } from '../../../components/ui/shadcn-inspector';
+import { cn } from '../../../lib/utils';
+import { mapSingleTableFieldRecordToColumn } from './dashboard-single-table-field-mappers';
 import {
   createSingleTableMainFieldDraftRow,
   resolveSingleTableMainFieldSettingValue,
@@ -72,6 +79,208 @@ function ensureDraftKey(row: any, index: number) {
   };
 }
 
+function normalizeLookupKey(value: unknown) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function getDraftRowIdentity(row: any, index: number) {
+  const backendId = normalizeLookupKey(row?.backendId ?? row?.id);
+  if (backendId) {
+    return `id:${backendId}`;
+  }
+
+  const fieldKey = normalizeLookupKey(row?.backendFieldKey ?? row?.fieldKey ?? row?.fieldkey);
+  if (fieldKey) {
+    return `fieldKey:${fieldKey}`;
+  }
+
+  const fieldName = normalizeLookupKey(row?.fieldname ?? row?.fieldName ?? row?.sourceField);
+  if (fieldName) {
+    return `fieldName:${fieldName}`;
+  }
+
+  return `fallback:${index}`;
+}
+
+function mergeFreshRowsWithLocalRows(freshRows: any[], localRows: any[]) {
+  const localRowMap = new Map<string, any>();
+
+  localRows.forEach((row, index) => {
+    localRowMap.set(getDraftRowIdentity(row, index), row);
+  });
+
+  const mergedRows = freshRows.map((row, index) => {
+    const localRow = localRowMap.get(getDraftRowIdentity(row, index));
+    return localRow ? { ...row, __draftKey: localRow.__draftKey ?? row.__draftKey } : row;
+  });
+
+  const freshIdentitySet = new Set(freshRows.map((row, index) => getDraftRowIdentity(row, index)));
+  const localOnlyRows = localRows.filter((row, index) => !freshIdentitySet.has(getDraftRowIdentity(row, index)));
+
+  return [...mergedRows, ...localOnlyRows];
+}
+
+type SingleTableFieldSettingsHeaderCellProps = React.ThHTMLAttributes<HTMLTableCellElement> & {
+  columnId?: string;
+  resizeWidth?: number;
+  resizeMinWidth?: number;
+  resizeMaxWidth?: number;
+  onResizeWidth?: (width: number) => void;
+  onResizeStop?: (width: number) => void;
+  sortable?: boolean;
+};
+
+type SingleTableFieldSettingsHandleContextValue = {
+  listeners?: Record<string, unknown>;
+  setActivatorNodeRef?: (element: HTMLElement | null) => void;
+  sortable: boolean;
+};
+
+const singleTableFieldSettingsHandleContext = React.createContext<SingleTableFieldSettingsHandleContextValue>({
+  sortable: false,
+});
+
+function SingleTableFieldSettingsSortableHeaderCell({
+  columnId,
+  resizeWidth,
+  resizeMinWidth,
+  resizeMaxWidth,
+  onResizeWidth,
+  onResizeStop,
+  sortable = false,
+  style,
+  className,
+  children,
+  ...rest
+}: SingleTableFieldSettingsHeaderCellProps) {
+  const staticHeaderId = React.useId();
+  const {
+    isDragging,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({
+    id: columnId ?? staticHeaderId,
+    disabled: !sortable || !columnId,
+  });
+  const canResize = typeof resizeWidth === 'number'
+    && typeof resizeMinWidth === 'number'
+    && typeof resizeMaxWidth === 'number'
+    && typeof onResizeWidth === 'function'
+    && typeof onResizeStop === 'function';
+  const [liveResizeWidth, setLiveResizeWidth] = React.useState<number | null>(
+    canResize ? Math.max(resizeMinWidth, Math.min(resizeMaxWidth, Math.round(resizeWidth))) : null,
+  );
+  const [liveResizing, setLiveResizing] = React.useState(false);
+  const normalizedWidth = canResize
+    ? Math.max(
+      resizeMinWidth,
+      Math.min(resizeMaxWidth, Math.round((liveResizing ? liveResizeWidth : resizeWidth) ?? resizeWidth)),
+    )
+    : undefined;
+  const contextValue = React.useMemo<SingleTableFieldSettingsHandleContextValue>(() => ({
+    listeners: sortable ? listeners : undefined,
+    setActivatorNodeRef: sortable ? setActivatorNodeRef : undefined,
+    sortable,
+  }), [listeners, setActivatorNodeRef, sortable]);
+
+  const headerCellNode = (
+    <th
+      {...rest}
+      ref={sortable ? setNodeRef : undefined}
+      style={{
+        ...style,
+        ...(typeof normalizedWidth === 'number' ? { width: normalizedWidth, minWidth: normalizedWidth } : null),
+        position: 'relative',
+        transform: CSS.Translate.toString(transform),
+        transition,
+        zIndex: isDragging ? 2 : undefined,
+      }}
+      className={cn(
+        className,
+        'group single-table-main-field-settings-header-cell',
+        sortable && 'select-none',
+        isDragging && 'z-[2] shadow-[0_12px_32px_-18px_rgba(15,23,42,0.28)]',
+      )}
+    >
+      {children}
+    </th>
+  );
+
+  return (
+    <singleTableFieldSettingsHandleContext.Provider value={contextValue}>
+      {canResize && typeof normalizedWidth === 'number' ? (
+        <Resizable
+          width={normalizedWidth}
+          height={0}
+          axis="x"
+          resizeHandles={['e']}
+          minConstraints={[resizeMinWidth, 0]}
+          maxConstraints={[resizeMaxWidth, 0]}
+          draggableOpts={{ enableUserSelectHack: false }}
+          onResizeStart={() => {
+            flushSync(() => {
+              setLiveResizing(true);
+              setLiveResizeWidth(normalizedWidth);
+            });
+          }}
+          onResize={(_event, data: ResizeCallbackData) => {
+            flushSync(() => {
+              setLiveResizeWidth(data.size.width);
+            });
+            onResizeWidth(data.size.width);
+          }}
+          onResizeStop={(_event, data) => {
+            flushSync(() => {
+              setLiveResizeWidth(data.size.width);
+              setLiveResizing(false);
+            });
+            onResizeStop(data.size.width);
+          }}
+          handle={(_axis, ref) => (
+            <span
+              ref={ref as React.Ref<HTMLSpanElement>}
+              role="separator"
+              aria-orientation="vertical"
+              tabIndex={-1}
+              onMouseDown={(event) => {
+                event.stopPropagation();
+              }}
+              className="react-resizable-handle react-resizable-handle-e dashboard-table-builder-resize-handle dashboard-table-builder-resize-handle-compact absolute bottom-0 right-0 top-0 z-20 flex cursor-col-resize items-center justify-center border-0 bg-transparent p-0 outline-none"
+              title="拖动调整列宽"
+            >
+              <span className="h-5 w-px rounded-full bg-transparent transition-all group-hover:bg-slate-300" />
+            </span>
+          )}
+        >
+          {headerCellNode}
+        </Resizable>
+      ) : headerCellNode}
+    </singleTableFieldSettingsHandleContext.Provider>
+  );
+}
+
+function SingleTableFieldSettingsSortableHandle({
+  className,
+  children,
+  ...rest
+}: React.HTMLAttributes<HTMLSpanElement>) {
+  const { listeners, setActivatorNodeRef, sortable } = React.useContext(singleTableFieldSettingsHandleContext);
+
+  return (
+    <span
+      {...rest}
+      ref={sortable ? setActivatorNodeRef : undefined}
+      {...(sortable ? listeners : {})}
+      className={cn(className, sortable && 'cursor-grab touch-none active:cursor-grabbing')}
+    >
+      {children}
+    </span>
+  );
+}
+
 export const SingleTableMainFieldSettingsModal = React.memo(function SingleTableMainFieldSettingsModal({
   currentModuleCode,
   isOpen,
@@ -82,11 +291,23 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
   const [draftRows, setDraftRows] = React.useState<any[]>([]);
   const [selectedDraftKeys, setSelectedDraftKeys] = React.useState<React.Key[]>([]);
   const [searchText, setSearchText] = React.useState('');
+  const [isLoadingFields, setIsLoadingFields] = React.useState(false);
   const [isLoadingOptions, setIsLoadingOptions] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [fieldSqlTagOptions, setFieldSqlTagOptions] = React.useState<FieldSqlTagOption[]>([]);
   const [dataFormatOptions, setDataFormatOptions] = React.useState<DataFormatOption[]>([]);
   const [fieldNameOptions, setFieldNameOptions] = React.useState<FieldNameOption[]>([]);
+  const [orderedSettingKeys, setOrderedSettingKeys] = React.useState<string[]>(() => (
+    singleTableMainFieldSettings.map((definition) => definition.key)
+  ));
+  const [settingColumnWidths, setSettingColumnWidths] = React.useState<Record<string, number>>(() => (
+    Object.fromEntries(singleTableMainFieldSettings.map((definition) => [definition.key, definition.width]))
+  ));
+  const settingColumnDragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 4 },
+    }),
+  );
 
   React.useEffect(() => {
     if (!isOpen) {
@@ -97,6 +318,44 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
     setSelectedDraftKeys([]);
     setSearchText('');
   }, [isOpen, mainTableColumns]);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const normalizedModuleCode = currentModuleCode.trim();
+    if (!normalizedModuleCode) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadFreshDraftRows = async () => {
+      setIsLoadingFields(true);
+      try {
+        const rows = await fetchSingleTableModuleFields(normalizedModuleCode);
+        if (cancelled) {
+          return;
+        }
+
+        const freshRows = rows.map((field, index) => ensureDraftKey(mapSingleTableFieldRecordToColumn(field, index), index));
+        const localRows = mainTableColumns.map((row, index) => ensureDraftKey(row, index));
+        const mergedRows = mergeFreshRowsWithLocalRows(freshRows, localRows);
+        setDraftRows(sortDraftRows(mergedRows));
+      } finally {
+        if (!cancelled) {
+          setIsLoadingFields(false);
+        }
+      }
+    };
+
+    void loadFreshDraftRows();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentModuleCode, isOpen, mainTableColumns]);
 
   React.useEffect(() => {
     if (!isOpen) {
@@ -161,6 +420,38 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
       cancelled = true;
     };
   }, [currentModuleCode, isOpen]);
+
+  const orderedSettingDefinitions = React.useMemo(() => {
+    const definitionLookup = new Map(singleTableMainFieldSettings.map((definition) => [definition.key, definition]));
+    const orderedDefinitions = orderedSettingKeys
+      .map((key) => definitionLookup.get(key))
+      .filter((definition): definition is typeof singleTableMainFieldSettings[number] => Boolean(definition));
+    const missingDefinitions = singleTableMainFieldSettings.filter((definition) => !orderedSettingKeys.includes(definition.key));
+    return [...orderedDefinitions, ...missingDefinitions];
+  }, [orderedSettingKeys]);
+
+  const handleSettingColumnDragEnd = React.useCallback((event: DragEndEvent) => {
+    if (!event.over) {
+      return;
+    }
+
+    const activeId = String(event.active.id);
+    const overId = String(event.over.id);
+
+    if (!activeId || !overId || activeId === overId) {
+      return;
+    }
+
+    setOrderedSettingKeys((prev) => {
+      const activeIndex = prev.indexOf(activeId);
+      const overIndex = prev.indexOf(overId);
+      if (activeIndex < 0 || overIndex < 0 || activeIndex === overIndex) {
+        return prev;
+      }
+
+      return arrayMove(prev, activeIndex, overIndex);
+    });
+  }, []);
 
   const filteredRows = React.useMemo(() => {
     const normalizedSearchText = searchText.trim().toLowerCase();
@@ -230,6 +521,12 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
   }, [draftRows, isSaving, missingFieldNameCount, onClose, onSave]);
 
   const tableColumns = React.useMemo<TableColumnsType<any>>(() => {
+    const renderCellShell = (content: React.ReactNode, align: 'center' | 'left' = 'left') => (
+      <div className={`single-table-main-field-settings-cell-content ${align === 'center' ? 'is-center' : ''}`}>
+        {content}
+      </div>
+    );
+
     const renderEditor = (definition: typeof singleTableMainFieldSettings[number], record: any) => {
       const currentValue = resolveSingleTableMainFieldSettingValue(record, definition.key);
       const handleValueChange = (nextValue: unknown, extraOptions?: Record<string, unknown>) => {
@@ -244,43 +541,48 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
       };
 
       if (definition.readOnly && definition.editor !== 'checkbox') {
-        return <span className="text-[12px] text-slate-600 dark:text-slate-300">{toText(currentValue) || '-'}</span>;
+        return renderCellShell(
+          <span className="text-[12px] font-medium text-slate-600 dark:text-slate-300">{toText(currentValue) || '-'}</span>,
+        );
       }
 
       switch (definition.editor) {
         case 'number':
-          return (
+          return renderCellShell(
             <InputNumber
               size="small"
               value={currentValue === '' || currentValue == null ? undefined : Number(currentValue)}
               onChange={(value) => handleValueChange(value)}
-              className="w-full"
-            />
+              className="single-table-main-field-settings-editor w-full"
+            />,
           );
         case 'textarea':
-          return (
+          return renderCellShell(
             <Input.TextArea
               autoSize={{ minRows: 1, maxRows: 4 }}
+              className="single-table-main-field-settings-editor single-table-main-field-settings-textarea"
               value={toText(currentValue)}
               onChange={(event) => handleValueChange(event.target.value)}
-            />
+            />,
           );
         case 'checkbox':
-          return (
+          return renderCellShell(
             <div className="flex justify-center">
               <Checkbox
                 checked={Boolean(currentValue)}
                 disabled={definition.readOnly}
                 onChange={(event) => handleValueChange(event.target.checked)}
               />
-            </div>
+            </div>,
+            'center',
           );
         case 'field-name-select':
-          return (
+          return renderCellShell(
             <Select
               allowClear
               showSearch
               size="small"
+              className="single-table-main-field-settings-editor"
               value={toText(currentValue) || undefined}
               options={fieldNameOptions}
               optionFilterProp="label"
@@ -292,13 +594,14 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
                   fieldLen: resolvedOption?.fieldLen,
                 });
               }}
-            />
+            />,
           );
         case 'field-sql-tag-select':
-          return (
+          return renderCellShell(
             <Select
               showSearch
               size="small"
+              className="single-table-main-field-settings-editor"
               value={currentValue == null || currentValue === '' ? undefined : Number(currentValue)}
               options={fieldSqlTagOptions}
               optionFilterProp="label"
@@ -309,55 +612,84 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
                   auxiliaryLabel: resolvedOption?.label,
                 });
               }}
-            />
+            />,
           );
         case 'data-format-select':
-          return (
+          return renderCellShell(
             <Select
               allowClear
               showSearch
               size="small"
+              className="single-table-main-field-settings-editor"
               value={toText(currentValue) || undefined}
               options={dataFormatOptions}
               optionFilterProp="label"
               placeholder="选择格式"
               onChange={(value) => handleValueChange(value)}
-            />
+            />,
           );
         case 'font-select':
-          return (
+          return renderCellShell(
             <Select
               allowClear
               showSearch
               size="small"
+              className="single-table-main-field-settings-editor"
               value={toText(currentValue) || undefined}
               options={FONT_NAME_OPTIONS.map((fontName) => ({ label: fontName, value: fontName }))}
               optionFilterProp="label"
               placeholder="选择字体"
               onChange={(value) => handleValueChange(value)}
-            />
+            />,
           );
         default:
-          return (
+          return renderCellShell(
             <Input
               size="small"
+              className="single-table-main-field-settings-editor"
               value={toText(currentValue)}
               onChange={(event) => handleValueChange(event.target.value)}
-            />
+            />,
           );
       }
     };
 
     return [
-      ...singleTableMainFieldSettings.map((definition) => ({
+      ...orderedSettingDefinitions.map((definition) => ({
         dataIndex: definition.key,
         key: definition.key,
         render: (_value: unknown, record: any) => renderEditor(definition, record),
-        title: definition.title,
-        width: definition.width,
+        title: (
+          <span className="single-table-main-field-settings-column-title" title="拖动标题调整列顺序">
+            <SingleTableFieldSettingsSortableHandle className="inline-flex min-w-0 items-center gap-1.5">
+              <span className="material-symbols-outlined text-[14px] text-slate-400">drag_indicator</span>
+              <span className="truncate">{definition.title}</span>
+            </SingleTableFieldSettingsSortableHandle>
+          </span>
+        ),
+        width: settingColumnWidths[definition.key] ?? definition.width,
+        onHeaderCell: () => ({
+          columnId: definition.key,
+          sortable: true,
+          resizeWidth: settingColumnWidths[definition.key] ?? definition.width,
+          resizeMinWidth: Math.max(72, Math.round(definition.width * 0.6)),
+          resizeMaxWidth: Math.max(180, Math.round((settingColumnWidths[definition.key] ?? definition.width) * 2.8)),
+          onResizeWidth: (width: number) => {
+            setSettingColumnWidths((prev) => ({
+              ...prev,
+              [definition.key]: Math.round(width),
+            }));
+          },
+          onResizeStop: (width: number) => {
+            setSettingColumnWidths((prev) => ({
+              ...prev,
+              [definition.key]: Math.round(width),
+            }));
+          },
+        }),
       })),
     ];
-  }, [dataFormatOptions, fieldNameOptions, fieldSqlTagOptions, updateRow]);
+  }, [dataFormatOptions, fieldNameOptions, fieldSqlTagOptions, orderedSettingDefinitions, settingColumnWidths, updateRow]);
 
   const rowSelection = React.useMemo<NonNullable<TableProps<any>['rowSelection']>>(() => ({
     selectedRowKeys: selectedDraftKeys,
@@ -365,6 +697,14 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
       setSelectedDraftKeys(nextSelectedRowKeys);
     },
   }), [selectedDraftKeys]);
+  const tableComponents = React.useMemo(() => ({
+    header: {
+      cell: SingleTableFieldSettingsSortableHeaderCell,
+    },
+  }), []);
+  const tableScrollX = React.useMemo(() => (
+    orderedSettingDefinitions.reduce((sum, definition) => sum + (settingColumnWidths[definition.key] ?? definition.width), 48)
+  ), [orderedSettingDefinitions, settingColumnWidths]);
 
   if (!isOpen) {
     return null;
@@ -376,18 +716,16 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
-        onClick={onClose}
+        className="fixed inset-0 z-[95] bg-white dark:bg-slate-950"
       >
         <motion.div
-          initial={{ opacity: 0, y: 20, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 20, scale: 0.98 }}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 8 }}
           transition={{ duration: 0.2 }}
-          onClick={(event) => event.stopPropagation()}
-          className="flex h-[92vh] w-[96vw] max-w-none flex-col overflow-hidden rounded-[24px] border border-slate-200/70 bg-white/95 shadow-[0_48px_120px_-56px_rgba(15,23,42,0.58)] dark:border-slate-700 dark:bg-slate-900"
+          className="flex h-full w-full flex-col overflow-hidden bg-white dark:bg-slate-950"
         >
-          <div className="border-b border-slate-200/80 bg-white/92 px-6 py-4 dark:border-slate-700 dark:bg-slate-900/92">
+          <div className="border-b border-slate-200 bg-white px-6 py-3 dark:border-slate-700 dark:bg-slate-950">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex items-center gap-3">
@@ -396,9 +734,6 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
                   </div>
                   <div className="min-w-0">
                     <div className="text-[18px] font-bold tracking-[-0.02em] text-slate-900 dark:text-white">显示字段详细设置</div>
-                    <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
-                      直接按表格方式集中维护主表列属性，保存后同步回当前模块配置。
-                    </div>
                   </div>
                 </div>
               </div>
@@ -440,39 +775,47 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 bg-slate-50/85 px-6 py-3 dark:border-slate-800 dark:bg-slate-950/70">
-            <div className="flex min-w-0 flex-wrap items-center gap-3 text-[12px] text-slate-500 dark:text-slate-300">
-              <span>共 {draftRows.length} 列</span>
-              <span>已选 {selectedDraftKeys.length} 项</span>
-              {missingFieldNameCount > 0 ? (
-                <span className="rounded-full bg-amber-50 px-2.5 py-0.5 font-semibold text-amber-600 dark:bg-amber-500/10 dark:text-amber-200">
-                  还有 {missingFieldNameCount} 行未填写字段名
-                </span>
-              ) : null}
-            </div>
-            <div className="w-full max-w-[340px]">
+          <div className="border-b border-slate-200 bg-[linear-gradient(180deg,#f8fbff_0%,#f5f9ff_100%)] px-6 py-3 dark:border-slate-800 dark:bg-slate-900">
+            <div className="w-full max-w-[360px] sm:w-[360px]">
               <Input
                 allowClear
+                className="single-table-main-field-settings-search"
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
                 placeholder="搜索字段、出厂名称、用户名"
+                prefix={<span className="material-symbols-outlined text-[16px]">search</span>}
               />
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-hidden px-4 py-4">
-            <Spin spinning={isLoadingOptions} className="block h-full">
-              <div className="h-full overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_20px_40px_-34px_rgba(15,23,42,0.18)] dark:border-slate-800 dark:bg-slate-950/72">
-                <Table
-                  rowKey="__draftKey"
-                  size="small"
-                  columns={tableColumns}
-                  dataSource={filteredRows}
-                  rowSelection={rowSelection}
-                  pagination={false}
-                  scroll={{ x: 'max-content', y: 'calc(92vh - 210px)' }}
-                />
-              </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <Spin
+              spinning={isLoadingFields || isLoadingOptions}
+              className="block h-full [&_.ant-spin-container]:flex [&_.ant-spin-container]:h-full [&_.ant-spin-container]:min-h-0 [&_.ant-spin-container]:flex-col"
+            >
+              <DndContext
+                sensors={settingColumnDragSensors}
+                collisionDetection={(args) => {
+                  const pointerCollisions = pointerWithin(args);
+                  return pointerCollisions.length > 0 ? pointerCollisions : closestCenter(args);
+                }}
+                onDragEnd={handleSettingColumnDragEnd}
+              >
+                <SortableContext items={orderedSettingDefinitions.map((definition) => definition.key)} strategy={horizontalListSortingStrategy}>
+                  <Table
+                    components={tableComponents}
+                    className="single-table-main-field-settings-modal-table dashboard-table-builder-ant-table min-h-0 h-full"
+                    style={{ height: '100%' }}
+                    rowKey="__draftKey"
+                    size="small"
+                    columns={tableColumns}
+                    dataSource={filteredRows}
+                    rowSelection={rowSelection}
+                    pagination={false}
+                    scroll={{ x: tableScrollX, y: 'calc(100dvh - 154px)' }}
+                  />
+                </SortableContext>
+              </DndContext>
             </Spin>
           </div>
         </motion.div>
