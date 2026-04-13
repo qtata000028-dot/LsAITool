@@ -30,6 +30,7 @@ import {
   DesignerWorkbenchDropLane,
 } from '../features/dashboard/dashboard-workbench-dnd';
 import { buildDashboardScreenRuntimeBuilderConfig } from '../features/dashboard/dashboard-screen-runtime-builder-config';
+import type { DashboardWorkbench } from '../features/dashboard/dashboard-workbench-types';
 import { useDashboardScreenRuntime } from '../features/dashboard/use-dashboard-screen-runtime';
 import {
   type ConditionWorkbenchScope,
@@ -229,7 +230,7 @@ interface DashboardWorkspaceState {
   initialDetailPreview?: boolean;
   initialModuleCode?: string;
   initialBusinessType?: string;
-  initialWorkbench?: 'modules' | 'research-record' | 'tool-feedback';
+  initialWorkbench?: DashboardWorkbench;
   initialWorkspaceTheme?: string;
   menuBridge?: {
     initialMenuCode?: string;
@@ -245,7 +246,7 @@ interface DashboardWorkspaceState {
     mode: string | null;
     moduleCode: string | null;
     theme: string | null;
-    workbench: 'modules' | 'research-record' | 'tool-feedback' | null;
+    workbench: DashboardWorkbench | null;
   }>, options?: { replace?: boolean }) => void;
 }
 
@@ -1417,6 +1418,7 @@ export default function Dashboard({
     activeMenuCodePrefix,
     activeMenuName,
     activeSubsystemName,
+    isFunctionFlowDesignActive,
     isResearchRecordActive,
     isToolFeedbackActive,
     researchCaptureModules,
@@ -1431,7 +1433,9 @@ export default function Dashboard({
     selectedSubsystem,
   });
   const {
+    closeFunctionFlowDesignWorkbench,
     closeResearchRecordWorkbench,
+    openFunctionFlowDesignWorkbench,
     openResearchRecordWorkbench,
     openToolFeedbackWorkbench,
   } = useDashboardWorkbenchNav({
@@ -1460,6 +1464,10 @@ export default function Dashboard({
     setIsServerPermissionWorkbenchActive(false);
     openResearchRecordWorkbench();
   }, [openResearchRecordWorkbench]);
+  const openFunctionFlowDesignWorkbenchWithReset = useCallback(() => {
+    setIsServerPermissionWorkbenchActive(false);
+    openFunctionFlowDesignWorkbench();
+  }, [openFunctionFlowDesignWorkbench]);
   const openToolFeedbackWorkbenchWithReset = useCallback(() => {
     setIsServerPermissionWorkbenchActive(false);
     openToolFeedbackWorkbench();
@@ -2059,6 +2067,17 @@ export default function Dashboard({
         onClose: closeConfigWizard,
         toastMessage,
       },
+      functionFlowDesignWorkbenchProps: {
+        currentUserName,
+        initialSubsystemId: activeSubsystem || null,
+        isLoadingSubsystemMenus,
+        menuLoadError,
+        onExit: closeFunctionFlowDesignWorkbench,
+        onReloadSubsystemMenus: reloadSubsystemMenus,
+        onShowToast: showToast,
+        subsystemMenus,
+      },
+      isFunctionFlowDesignActive,
       isResearchRecordActive,
       isServerPermissionActive: isServerPermissionWorkbenchActive,
       isToolFeedbackActive,
@@ -2078,6 +2097,7 @@ export default function Dashboard({
         handleFirstLevelMenuClick: handleFirstLevelMenuClickWithWorkbenchReset,
         handleSecondLevelMenuConfig,
         isAdmin: isCurrentUserAdmin,
+        isFunctionFlowDesignActive,
         isLoadingSecondLevelMenus,
         isLoadingSubsystemMenus,
         isResearchRecordActive,
@@ -2088,6 +2108,7 @@ export default function Dashboard({
         onCreateModule: openNewModuleGuide,
         onDeleteMenu: setPendingDeleteMenu,
         onLogout,
+        onOpenFunctionFlowDesign: openFunctionFlowDesignWorkbenchWithReset,
         onOpenServerPermission: openServerPermissionWorkbench,
         onOpenResearchRecord: openResearchRecordWorkbenchWithReset,
         onOpenToolFeedback: openToolFeedbackWorkbenchWithReset,

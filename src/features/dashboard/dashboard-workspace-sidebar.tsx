@@ -34,6 +34,7 @@ export function DashboardWorkspaceSidebar({
   expandedSubsystemId,
   handleFirstLevelMenuClick,
   isAdmin,
+  isFunctionFlowDesignActive,
   isLoadingSubsystemMenus,
   isResearchRecordActive,
   isServerPermissionActive,
@@ -41,6 +42,7 @@ export function DashboardWorkspaceSidebar({
   isToolFeedbackActive,
   menuLoadError,
   onLogout,
+  onOpenFunctionFlowDesign,
   onOpenServerPermission,
   onOpenResearchRecord,
   onOpenToolFeedback,
@@ -57,6 +59,7 @@ export function DashboardWorkspaceSidebar({
   expandedSubsystemId: string | null;
   handleFirstLevelMenuClick: (subsystemId: string, menu: BackendMenuNode) => void;
   isAdmin: boolean;
+  isFunctionFlowDesignActive: boolean;
   isLoadingSubsystemMenus: boolean;
   isResearchRecordActive: boolean;
   isServerPermissionActive: boolean;
@@ -64,6 +67,7 @@ export function DashboardWorkspaceSidebar({
   isToolFeedbackActive: boolean;
   menuLoadError: string | null;
   onLogout: () => void;
+  onOpenFunctionFlowDesign: () => void;
   onOpenServerPermission: () => void;
   onOpenResearchRecord: () => void;
   onOpenToolFeedback: () => void;
@@ -161,7 +165,7 @@ export function DashboardWorkspaceSidebar({
     }
 
     const loginContext = getStoredLoginContext();
-    if (!loginContext || loginContext.employeeId !== currentSession.employeeId || !loginContext.password.trim()) {
+    if (!loginContext || loginContext.employeeId !== currentSession.employeeId) {
       setOrganizationError('请重新登录一次后再切换帐套。');
       return;
     }
@@ -422,6 +426,19 @@ export function DashboardWorkspaceSidebar({
               </motion.div>
             ) : null}
           </AnimatePresence>
+
+          <button
+            type="button"
+            onClick={onOpenFunctionFlowDesign}
+            className={`w-full flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
+              isFunctionFlowDesignActive
+                ? 'bg-primary text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+            }`}
+          >
+            <span className="material-symbols-outlined text-xl">schema</span>
+            <span className="text-sm font-medium">功能流程设计</span>
+          </button>
         </div>
 
         <div className="pt-2 space-y-1">

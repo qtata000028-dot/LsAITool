@@ -1,6 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
 
 import { DashboardConfigModal } from './dashboard-config-modal';
+import { FunctionFlowDesignWorkbench } from './function-flow-design-workbench';
 import { ResearchRecordWorkbench } from './research-record-workbench';
 import { ResearchRecordExplorerWorkbench } from './research-record-explorer';
 import { ServerPermissionWorkbench } from './server-permission-workbench';
@@ -16,6 +17,12 @@ export function buildDashboardResearchRecordWorkbenchNode(
   props: ComponentProps<typeof ResearchRecordWorkbench>,
 ): ReactNode {
   return <ResearchRecordExplorerWorkbench {...props} />;
+}
+
+export function buildFunctionFlowDesignWorkbenchNode(
+  props: ComponentProps<typeof FunctionFlowDesignWorkbench>,
+): ReactNode {
+  return <FunctionFlowDesignWorkbench {...props} />;
 }
 
 export function buildServerPermissionWorkbenchNode(

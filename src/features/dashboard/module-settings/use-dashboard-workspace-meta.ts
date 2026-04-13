@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import { type BackendMenuNode, type BackendSubsystemNode } from '../../../lib/backend-menus';
 import { type ResearchWorkbenchModuleOption } from '../research-record-workbench';
+import type { DashboardWorkbench } from '../dashboard-workbench-types';
 import { getMenuModuleTypeProfile } from './dashboard-menu-config-helpers';
 
 function normalizeMenuTitle(value?: string) {
@@ -27,7 +28,7 @@ export function useDashboardWorkspaceMeta({
   activeFirstLevelMenu: BackendMenuNode | null;
   activeFirstLevelMenuId: string;
   activeSubsystem: string;
-  activeWorkbench: 'modules' | 'research-record' | 'tool-feedback';
+  activeWorkbench: DashboardWorkbench;
   secondLevelMenus: BackendMenuNode[];
   selectedSubsystem: BackendSubsystemNode | null;
 }) {
@@ -44,6 +45,7 @@ export function useDashboardWorkspaceMeta({
   const activeSubsystemName = normalizeMenuTitle(selectedSubsystem?.title) || '未选择子系统';
   const activeFirstLevelMenuName = normalizeMenuTitle(activeFirstLevelMenu?.title);
   const isResearchRecordActive = activeWorkbench === 'research-record';
+  const isFunctionFlowDesignActive = activeWorkbench === 'function-flow-design';
   const isToolFeedbackActive = activeWorkbench === 'tool-feedback';
   const researchRecordStorageKey = [
     normalizeMenuCode(selectedSubsystem?.subsysCode ?? selectedSubsystem?.code) || activeSubsystem || 'subsystem',
@@ -73,6 +75,7 @@ export function useDashboardWorkspaceMeta({
     activeMenuCodePrefix,
     activeMenuName,
     activeSubsystemName,
+    isFunctionFlowDesignActive,
     isResearchRecordActive,
     isToolFeedbackActive,
     researchCaptureModules,

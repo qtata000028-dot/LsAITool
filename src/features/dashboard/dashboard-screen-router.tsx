@@ -6,6 +6,8 @@ import { DashboardServerPermissionScreen } from './dashboard-server-permission-s
 export function DashboardScreenRouter({
   configModalNode,
   deleteConfirmNode,
+  functionFlowDesignWorkbenchNode,
+  isFunctionFlowDesignActive,
   isResearchRecordActive,
   isServerPermissionActive,
   isToolFeedbackActive,
@@ -16,6 +18,8 @@ export function DashboardScreenRouter({
 }: {
   configModalNode: React.ReactNode;
   deleteConfirmNode: React.ReactNode;
+  functionFlowDesignWorkbenchNode: React.ReactNode;
+  isFunctionFlowDesignActive: boolean;
   isResearchRecordActive: boolean;
   isServerPermissionActive: boolean;
   isToolFeedbackActive: boolean;
@@ -63,6 +67,18 @@ export function DashboardScreenRouter({
       <DashboardServerPermissionScreen
         configModalNode={configModalNode}
         contentNode={researchRecordWorkbenchNode}
+        deleteConfirmNode={deleteConfirmNode}
+        headerProps={headerProps}
+        sidebarProps={sidebarProps}
+      />
+    );
+  }
+
+  if (isFunctionFlowDesignActive) {
+    return (
+      <DashboardServerPermissionScreen
+        configModalNode={configModalNode}
+        contentNode={functionFlowDesignWorkbenchNode}
         deleteConfirmNode={deleteConfirmNode}
         headerProps={headerProps}
         sidebarProps={sidebarProps}

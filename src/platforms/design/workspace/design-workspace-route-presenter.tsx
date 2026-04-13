@@ -21,6 +21,8 @@ export function DesignWorkspaceRoutePresenter({
 }: DesignWorkspaceRoutePresenterProps) {
   const workbenchLabel = urlState?.workbench === 'research-record'
     ? '调研记录'
+    : urlState?.workbench === 'function-flow-design'
+      ? '功能流程设计'
     : urlState?.workbench === 'tool-feedback'
       ? '意见上报'
       : '模块设计';
