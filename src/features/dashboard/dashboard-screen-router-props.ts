@@ -3,6 +3,7 @@ import type { ComponentProps } from 'react';
 import { buildDashboardModuleScreenProps } from './dashboard-module-screen-props';
 import {
   buildDashboardConfigModalNode,
+  buildFunctionFlowDesignWorkbenchNode,
   buildDashboardResearchRecordWorkbenchNode,
   buildServerPermissionWorkbenchNode,
   buildToolFeedbackWorkbenchNode,
@@ -11,6 +12,7 @@ import { DashboardScreenRouter } from './dashboard-screen-router';
 
 type DashboardConfigModalNodeProps = Parameters<typeof buildDashboardConfigModalNode>[0];
 type DashboardModuleScreenPropsInput = Parameters<typeof buildDashboardModuleScreenProps>[0];
+type DashboardFunctionFlowDesignWorkbenchProps = Parameters<typeof buildFunctionFlowDesignWorkbenchNode>[0];
 type DashboardResearchRecordWorkbenchProps = Parameters<typeof buildDashboardResearchRecordWorkbenchNode>[0];
 type DashboardServerPermissionWorkbenchProps = Parameters<typeof buildServerPermissionWorkbenchNode>[0];
 type DashboardToolFeedbackWorkbenchProps = Parameters<typeof buildToolFeedbackWorkbenchNode>[0];
@@ -18,6 +20,8 @@ type DashboardToolFeedbackWorkbenchProps = Parameters<typeof buildToolFeedbackWo
 export function buildDashboardScreenRouterProps({
   configModalProps,
   deleteConfirmNode,
+  functionFlowDesignWorkbenchProps,
+  isFunctionFlowDesignActive,
   isResearchRecordActive,
   isServerPermissionActive,
   isToolFeedbackActive,
@@ -28,6 +32,8 @@ export function buildDashboardScreenRouterProps({
 }: {
   configModalProps: DashboardConfigModalNodeProps;
   deleteConfirmNode: ComponentProps<typeof DashboardScreenRouter>['deleteConfirmNode'];
+  functionFlowDesignWorkbenchProps: DashboardFunctionFlowDesignWorkbenchProps;
+  isFunctionFlowDesignActive: ComponentProps<typeof DashboardScreenRouter>['isFunctionFlowDesignActive'];
   isResearchRecordActive: ComponentProps<typeof DashboardScreenRouter>['isResearchRecordActive'];
   isServerPermissionActive: ComponentProps<typeof DashboardScreenRouter>['isServerPermissionActive'];
   isToolFeedbackActive: ComponentProps<typeof DashboardScreenRouter>['isToolFeedbackActive'];
@@ -39,6 +45,8 @@ export function buildDashboardScreenRouterProps({
   return {
     configModalNode: buildDashboardConfigModalNode(configModalProps),
     deleteConfirmNode,
+    functionFlowDesignWorkbenchNode: buildFunctionFlowDesignWorkbenchNode(functionFlowDesignWorkbenchProps),
+    isFunctionFlowDesignActive,
     isResearchRecordActive,
     isServerPermissionActive,
     isToolFeedbackActive,

@@ -12,6 +12,8 @@ export type UseDashboardScreenRuntimeInput = {
       DashboardScreenRouterBuilderInput['configModalProps'],
       'bodyNode' | 'footerNode' | 'overlayNodes' | 'sidebarNode'
     >;
+    functionFlowDesignWorkbenchProps: DashboardScreenRouterBuilderInput['functionFlowDesignWorkbenchProps'];
+    isFunctionFlowDesignActive: DashboardScreenRouterBuilderInput['isFunctionFlowDesignActive'];
     isResearchRecordActive: DashboardScreenRouterBuilderInput['isResearchRecordActive'];
     isServerPermissionActive: DashboardScreenRouterBuilderInput['isServerPermissionActive'];
     isToolFeedbackActive: DashboardScreenRouterBuilderInput['isToolFeedbackActive'];
@@ -36,6 +38,8 @@ export function useDashboardScreenRuntime({
       sidebarNode: dashboardConfigBridgeNodes.configWizardModalNodes.sidebarNode,
     },
     deleteConfirmNode: dashboardConfigBridgeNodes.deleteConfirmNode,
+    functionFlowDesignWorkbenchProps: screen.functionFlowDesignWorkbenchProps,
+    isFunctionFlowDesignActive: screen.isFunctionFlowDesignActive,
     isResearchRecordActive: screen.isResearchRecordActive,
     isServerPermissionActive: screen.isServerPermissionActive,
     isToolFeedbackActive: screen.isToolFeedbackActive,

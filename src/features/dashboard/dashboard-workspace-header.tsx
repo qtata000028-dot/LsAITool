@@ -3,12 +3,14 @@ import React from 'react';
 export function DashboardWorkspaceHeader({
   activeFirstLevelMenuName,
   activeSubsystemName,
+  isFunctionFlowDesignActive,
   isResearchRecordActive,
   isServerPermissionActive,
   isToolFeedbackActive,
 }: {
   activeFirstLevelMenuName: string;
   activeSubsystemName: string;
+  isFunctionFlowDesignActive: boolean;
   isResearchRecordActive: boolean;
   isServerPermissionActive: boolean;
   isToolFeedbackActive: boolean;
@@ -23,6 +25,8 @@ export function DashboardWorkspaceHeader({
             ? '权限配置工作台'
             : isResearchRecordActive
               ? '调研记录工作台'
+              : isFunctionFlowDesignActive
+                ? '功能流程设计工作台'
               : isToolFeedbackActive
                 ? '意见上报工作台'
                 : '模块配置工作台'}
@@ -52,6 +56,12 @@ export function DashboardWorkspaceHeader({
                 <>
                   <span className="material-symbols-outlined text-[16px] text-slate-400">chevron_right</span>
                   <span className="text-slate-900 dark:text-slate-200 font-semibold tracking-tight">调研记录</span>
+                </>
+              ) : null}
+              {isFunctionFlowDesignActive ? (
+                <>
+                  <span className="material-symbols-outlined text-[16px] text-slate-400">chevron_right</span>
+                  <span className="text-slate-900 dark:text-slate-200 font-semibold tracking-tight">功能流程设计</span>
                 </>
               ) : null}
               {isToolFeedbackActive ? (

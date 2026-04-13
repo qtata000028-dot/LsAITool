@@ -1,6 +1,7 @@
 import type { DesignRouteContext } from '../../../app/contracts/platform-routing';
+import type { DashboardWorkbench } from '../../../features/dashboard/dashboard-workbench-types';
 
-export type DesignWorkspaceWorkbench = 'modules' | 'research-record' | 'tool-feedback';
+export type DesignWorkspaceWorkbench = DashboardWorkbench;
 
 export type DesignWorkspaceUrlState = {
   configOpen: boolean;
@@ -37,6 +38,10 @@ function normalizeWorkbench(value?: string | null): DesignWorkspaceWorkbench {
 
   if (value === 'tool-feedback') {
     return 'tool-feedback';
+  }
+
+  if (value === 'function-flow-design') {
+    return 'function-flow-design';
   }
 
   return DEFAULT_WORKBENCH;

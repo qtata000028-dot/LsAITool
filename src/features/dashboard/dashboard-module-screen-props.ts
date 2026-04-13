@@ -24,6 +24,7 @@ export function buildDashboardModuleScreenProps({
   handleFirstLevelMenuClick,
   handleSecondLevelMenuConfig,
   isAdmin,
+  isFunctionFlowDesignActive,
   isLoadingSecondLevelMenus,
   isLoadingSubsystemMenus,
   isResearchRecordActive,
@@ -33,6 +34,7 @@ export function buildDashboardModuleScreenProps({
   menuLoadError,
   onDeleteMenu,
   onLogout,
+  onOpenFunctionFlowDesign,
   onOpenServerPermission,
   onOpenResearchRecord,
   onOpenToolFeedback,
@@ -60,6 +62,7 @@ export function buildDashboardModuleScreenProps({
   handleFirstLevelMenuClick: DashboardModuleScreenSidebarProps['handleFirstLevelMenuClick'];
   handleSecondLevelMenuConfig: DashboardModuleScreenOverviewProps['onConfigureMenu'];
   isAdmin: DashboardModuleScreenSidebarProps['isAdmin'];
+  isFunctionFlowDesignActive: DashboardModuleScreenHeaderProps['isFunctionFlowDesignActive'];
   isLoadingSecondLevelMenus: DashboardModuleScreenOverviewProps['isLoadingSecondLevelMenus'];
   isLoadingSubsystemMenus: DashboardModuleScreenSidebarProps['isLoadingSubsystemMenus'];
   isResearchRecordActive: DashboardModuleScreenHeaderProps['isResearchRecordActive'];
@@ -69,6 +72,7 @@ export function buildDashboardModuleScreenProps({
   menuLoadError: DashboardModuleScreenSidebarProps['menuLoadError'];
   onDeleteMenu: DashboardModuleScreenOverviewProps['onDeleteMenu'];
   onLogout: DashboardModuleScreenSidebarProps['onLogout'];
+  onOpenFunctionFlowDesign: DashboardModuleScreenSidebarProps['onOpenFunctionFlowDesign'];
   onOpenServerPermission: DashboardModuleScreenSidebarProps['onOpenServerPermission'];
   onOpenResearchRecord: DashboardModuleScreenSidebarProps['onOpenResearchRecord'];
   onOpenToolFeedback: DashboardModuleScreenSidebarProps['onOpenToolFeedback'];
@@ -82,10 +86,13 @@ export function buildDashboardModuleScreenProps({
   toggleSubsystemOpen: DashboardModuleScreenSidebarProps['toggleSubsystemOpen'];
 }) {
   return {
-    contentKey: isResearchRecordActive || isToolFeedbackActive ? `workspace:${researchRecordStorageKey}` : activeMenu,
+    contentKey: isResearchRecordActive || isToolFeedbackActive || isFunctionFlowDesignActive
+      ? `workspace:${researchRecordStorageKey}`
+      : activeMenu,
     headerProps: {
       activeFirstLevelMenuName,
       activeSubsystemName,
+      isFunctionFlowDesignActive,
       isResearchRecordActive,
       isServerPermissionActive,
       isToolFeedbackActive,
@@ -112,6 +119,7 @@ export function buildDashboardModuleScreenProps({
       expandedSubsystemId,
       handleFirstLevelMenuClick,
       isAdmin,
+      isFunctionFlowDesignActive,
       isLoadingSubsystemMenus,
       isResearchRecordActive,
       isServerPermissionActive,
@@ -119,6 +127,7 @@ export function buildDashboardModuleScreenProps({
       isToolFeedbackActive,
       menuLoadError,
       onLogout,
+      onOpenFunctionFlowDesign,
       onOpenServerPermission,
       onOpenResearchRecord,
       onOpenToolFeedback,

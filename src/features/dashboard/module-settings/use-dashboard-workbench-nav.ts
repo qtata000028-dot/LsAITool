@@ -1,6 +1,7 @@
 import { type Dispatch, type SetStateAction, useCallback } from 'react';
 
 import { updateCurrentDesignSearch } from '../../../platforms/design/navigation/design-navigation';
+import type { DashboardWorkbench } from '../dashboard-workbench-types';
 
 type SyncWorkspaceUrlState = (patch: Partial<{
   configOpen: boolean;
@@ -9,14 +10,14 @@ type SyncWorkspaceUrlState = (patch: Partial<{
   mode: string | null;
   moduleCode: string | null;
   theme: string | null;
-  workbench: 'modules' | 'research-record' | 'tool-feedback' | null;
+  workbench: DashboardWorkbench | null;
 }>, options?: { replace?: boolean }) => void;
 
 export function useDashboardWorkbenchNav({
   setActiveWorkbench,
   syncWorkspaceUrlState,
 }: {
-  setActiveWorkbench: Dispatch<SetStateAction<'modules' | 'research-record' | 'tool-feedback'>>;
+  setActiveWorkbench: Dispatch<SetStateAction<DashboardWorkbench>>;
   syncWorkspaceUrlState?: SyncWorkspaceUrlState;
 }) {
   const openResearchRecordWorkbench = useCallback(() => {
@@ -49,8 +50,30 @@ export function useDashboardWorkbenchNav({
     updateCurrentDesignSearch({ workbench: 'tool-feedback' }, { replace: true });
   }, [setActiveWorkbench, syncWorkspaceUrlState]);
 
+  const openFunctionFlowDesignWorkbench = useCallback(() => {
+    setActiveWorkbench('function-flow-design');
+    if (syncWorkspaceUrlState) {
+      syncWorkspaceUrlState({ workbench: 'function-flow-design' }, { replace: true });
+      return;
+    }
+
+    updateCurrentDesignSearch({ workbench: 'function-flow-design' }, { replace: true });
+  }, [setActiveWorkbench, syncWorkspaceUrlState]);
+
+  const closeFunctionFlowDesignWorkbench = useCallback(() => {
+    setActiveWorkbench('modules');
+    if (syncWorkspaceUrlState) {
+      syncWorkspaceUrlState({ workbench: null }, { replace: true });
+      return;
+    }
+
+    updateCurrentDesignSearch({ workbench: null }, { replace: true });
+  }, [setActiveWorkbench, syncWorkspaceUrlState]);
+
   return {
+    closeFunctionFlowDesignWorkbench,
     closeResearchRecordWorkbench,
+    openFunctionFlowDesignWorkbench,
     openResearchRecordWorkbench,
     openToolFeedbackWorkbench,
   };
