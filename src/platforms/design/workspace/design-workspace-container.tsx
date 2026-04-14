@@ -1,5 +1,6 @@
 import Dashboard from '../../../components/Dashboard';
 import type { DesignRouteContext } from '../../../app/contracts/platform-routing';
+import type { DashboardWorkbench } from '../../../features/dashboard/dashboard-workbench-types';
 import { DesignWorkspaceRoutePresenter } from './design-workspace-route-presenter';
 import { useDesignWorkspaceController } from './design-workspace-controller';
 import { buildDesignWorkspaceMenuBridgeState } from './design-workspace-menu-bridge';
@@ -18,7 +19,7 @@ export type DashboardWorkspaceAdapterState = {
   initialDetailPreview: boolean;
   initialModuleCode?: string;
   initialBusinessType?: string;
-  initialWorkbench: 'modules' | 'research-record' | 'tool-feedback';
+  initialWorkbench: DashboardWorkbench;
   initialWorkspaceTheme?: string;
   menuBridge: {
     initialMenuCode?: string;
@@ -34,7 +35,7 @@ export type DashboardWorkspaceAdapterState = {
     mode: string | null;
     moduleCode: string | null;
     theme: string | null;
-    workbench: 'modules' | 'research-record' | 'tool-feedback' | null;
+    workbench: DashboardWorkbench | null;
   }>, options?: { replace?: boolean }) => void;
 };
 
