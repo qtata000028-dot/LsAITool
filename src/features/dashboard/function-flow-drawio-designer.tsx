@@ -32,6 +32,7 @@ type FunctionFlowDrawIoDesignerProps = {
   moduleOptions: FunctionFlowModuleOption[];
   onChange: (xml: string) => void;
   onClose: () => void;
+  onFlowNameChange?: (name: string) => void;
   onPersist?: (detail: FunctionFlowDetail) => void;
   onShowToast?: (message: string) => void;
   rowVersion?: number | string | null;
@@ -179,6 +180,35 @@ function toJoinTypeAttribute(joinType: 'left' | 'inner' | 'right' | 'full') {
   }
 }
 
+function normalizeFlowName(value?: string | null) {
+  const normalized = String(value ?? '').trim();
+  return normalized || '未命名流程图';
+}
+
+function syncFlowNameIntoXml(xmlText: string, flowName: string) {
+  const normalizedXml = xmlText.trim();
+  if (!normalizedXml || typeof DOMParser === 'undefined' || typeof XMLSerializer === 'undefined') {
+    return normalizedXml;
+  }
+
+  try {
+    const xmlDocument = new DOMParser().parseFromString(normalizedXml, 'text/xml');
+    if (xmlDocument.getElementsByTagName('parsererror').length > 0) {
+      return normalizedXml;
+    }
+
+    const diagramNode = xmlDocument.getElementsByTagName('diagram')[0];
+    if (!diagramNode) {
+      return normalizedXml;
+    }
+
+    diagramNode.setAttribute('name', normalizeFlowName(flowName));
+    return new XMLSerializer().serializeToString(xmlDocument);
+  } catch {
+    return normalizedXml;
+  }
+}
+
 export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProps) {
   const {
     flowCode,
@@ -190,6 +220,7 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
     moduleOptions,
     onChange,
     onClose,
+    onFlowNameChange,
     onPersist,
     onShowToast,
     rowVersion,
@@ -199,8 +230,10 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const initialXmlRef = useRef(initialXml);
   const currentXmlRef = useRef(initialXml.trim());
+  const currentFlowNameRef = useRef(normalizeFlowName(flowName));
   const flowIdRef = useRef<string | null>(flowId?.trim() || null);
   const graphJsonRef = useRef<FunctionFlowGraphJson>(normalizeGraphJson(initialGraphJson));
+  const lastPersistedFlowNameRef = useRef(normalizeFlowName(flowName));
   const lastPersistedXmlRef = useRef(initialXml.trim());
   const previewArtifactsRef = useRef<FunctionFlowGeneratedArtifacts>(toGeneratedArtifacts(initialGeneratedArtifacts));
   const rowVersionRef = useRef<number | string | null>(rowVersion ?? null);
@@ -212,7 +245,8 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
   const moduleMetaPendingRef = useRef<Record<string, boolean>>({});
   const [status, setStatus] = useState<DrawIoStatus>('booting');
   const [isReady, setIsReady] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [flowNameInput, setFlowNameInput] = useState(normalizeFlowName(flowName));
+  const [hasUnsavedXmlChanges, setHasUnsavedXmlChanges] = useState(false);
   const [saveSuccessToastVisible, setSaveSuccessToastVisible] = useState(false);
   const [fieldSqlTagOptions, setFieldSqlTagOptions] = useState<FieldSqlTagOptionDto[]>([]);
   const [edgeDetailModalOpen, setEdgeDetailModalOpen] = useState(false);
@@ -220,9 +254,13 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
   const { edgeDetails, loadEdgeDetails, reorderEdges } = useEdgeDetail();
   const isOpeningModalRef = useRef(false);
 
-  const editorTitle = useMemo(
-    () => `${subsystemTitle.trim() || '未命名子系统'} 流程设计`,
-    [subsystemTitle],
+  const resolvedFlowName = useMemo(() => normalizeFlowName(flowNameInput), [flowNameInput]);
+  const isFlowNameDirty = resolvedFlowName !== lastPersistedFlowNameRef.current;
+  const hasUnsavedChanges = hasUnsavedXmlChanges || isFlowNameDirty;
+  const editorTitle = useMemo(() => resolvedFlowName, [resolvedFlowName]);
+  const iframeTitle = useMemo(
+    () => `${subsystemTitle.trim() || '未命名子系统'} - ${resolvedFlowName}`,
+    [resolvedFlowName, subsystemTitle],
   );
   const iframeSrc = useMemo(() => buildDrawIoEmbedUrl(), []);
   const isSaving = status === 'saving';
@@ -245,14 +283,22 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
     initialXmlRef.current = normalizedXml;
     currentXmlRef.current = normalizedXml;
     onChange(normalizedXml);
-    setHasUnsavedChanges(isXmlDirty(normalizedXml));
+    setHasUnsavedXmlChanges(isXmlDirty(normalizedXml));
     return normalizedXml;
   }, [isXmlDirty, onChange]);
 
   const markDirty = useCallback(() => {
-    setHasUnsavedChanges(true);
+    setHasUnsavedXmlChanges(true);
     setStatus((prev) => (prev === 'saving' ? prev : 'ready'));
   }, []);
+
+  const commitFlowNameInput = useCallback((nextValue?: string | null) => {
+    const nextFlowName = normalizeFlowName(nextValue ?? flowNameInput);
+    currentFlowNameRef.current = nextFlowName;
+    setFlowNameInput(nextFlowName);
+    onFlowNameChange?.(nextFlowName);
+    return nextFlowName;
+  }, [flowNameInput, onFlowNameChange]);
 
   const showSaveSuccessToast = useCallback(() => {
     if (saveSuccessToastTimerRef.current) {
@@ -272,8 +318,15 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
     currentXmlRef.current = normalizedInitialXml;
     lastPersistedXmlRef.current = normalizedInitialXml;
     graphChangeInitializedRef.current = false;
-    setHasUnsavedChanges(false);
+    setHasUnsavedXmlChanges(false);
   }, [initialXml]);
+
+  useEffect(() => {
+    const persistedFlowName = normalizeFlowName(flowName);
+    currentFlowNameRef.current = persistedFlowName;
+    lastPersistedFlowNameRef.current = persistedFlowName;
+    setFlowNameInput(persistedFlowName);
+  }, [flowName]);
 
   useEffect(() => {
     return () => {
@@ -303,6 +356,10 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
   useEffect(() => {
     rowVersionRef.current = rowVersion ?? null;
   }, [rowVersion]);
+
+  useEffect(() => {
+    currentFlowNameRef.current = resolvedFlowName;
+  }, [resolvedFlowName]);
 
   useEffect(() => {
     graphJsonRef.current = normalizeGraphJson(initialGraphJson);
@@ -435,7 +492,8 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
   }, [edgeDetailModalOpen, loadEdgeDetails]);
 
   const persistFlow = useCallback(async (xmlText: string) => {
-    const normalizedXml = xmlText.trim();
+    const normalizedFlowName = commitFlowNameInput(currentFlowNameRef.current);
+    const normalizedXml = syncFlowNameIntoXml(xmlText, normalizedFlowName);
     if (!normalizedXml) {
       return;
     }
@@ -443,15 +501,19 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
     if (currentXmlRef.current !== undefined) {
       currentXmlRef.current = normalizedXml;
       initialXmlRef.current = normalizedXml;
+      onChange(normalizedXml);
 
-      if (!isXmlDirty(normalizedXml)) {
-        setHasUnsavedChanges(false);
+      const xmlDirty = isXmlDirty(normalizedXml);
+      const nameDirty = normalizedFlowName !== lastPersistedFlowNameRef.current;
+
+      if (!xmlDirty && !nameDirty) {
+        setHasUnsavedXmlChanges(false);
         return;
       }
 
       if (saveInFlightRef.current) {
         saveQueueXmlRef.current = normalizedXml;
-        setHasUnsavedChanges(true);
+        setHasUnsavedXmlChanges(true);
         return;
       }
 
@@ -463,7 +525,7 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
           editorXml: normalizedXml,
           flowCode,
           flowId: flowIdRef.current,
-          flowName,
+          flowName: normalizedFlowName,
           generatedArtifacts: previewArtifactsRef.current,
           graphJson: {
             ...graphJsonRef.current,
@@ -473,19 +535,24 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
           subsystemId,
         });
 
+        const persistedFlowName = normalizeFlowName(detail.flowName || normalizedFlowName);
         flowIdRef.current = detail.id || flowIdRef.current;
+        currentFlowNameRef.current = persistedFlowName;
+        lastPersistedFlowNameRef.current = persistedFlowName;
         lastPersistedXmlRef.current = normalizedXml;
         rowVersionRef.current = detail.rowVersion ?? rowVersionRef.current;
-        setHasUnsavedChanges(Boolean(saveQueueXmlRef.current && saveQueueXmlRef.current !== normalizedXml));
+        setFlowNameInput(persistedFlowName);
+        onFlowNameChange?.(persistedFlowName);
+        setHasUnsavedXmlChanges(Boolean(saveQueueXmlRef.current && saveQueueXmlRef.current !== normalizedXml));
         graphChangeInitializedRef.current = true;
         onPersist?.(detail);
         setStatus('saved');
-        showSaveSuccessToast();
 
+        showSaveSuccessToast();
         return;
       } catch (error) {
         setStatus('ready');
-        setHasUnsavedChanges(true);
+        setHasUnsavedXmlChanges(xmlDirty);
         onShowToast?.(error instanceof Error && error.message.trim() ? error.message : '功能流程图保存失败');
         return;
       } finally {
@@ -503,7 +570,9 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
       }
     }
 
-    if (normalizedXml === lastPersistedXmlRef.current) {
+    const xmlDirty = normalizedXml !== lastPersistedXmlRef.current;
+    const nameDirty = normalizedFlowName !== lastPersistedFlowNameRef.current;
+    if (!xmlDirty && !nameDirty) {
       return;
     }
 
@@ -520,7 +589,7 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
         editorXml: normalizedXml,
         flowCode,
         flowId: flowIdRef.current,
-        flowName,
+        flowName: normalizedFlowName,
         generatedArtifacts: previewArtifactsRef.current,
         graphJson: {
           ...graphJsonRef.current,
@@ -530,11 +599,18 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
         subsystemId,
       });
 
+      const persistedFlowName = normalizeFlowName(detail.flowName || normalizedFlowName);
       flowIdRef.current = detail.id || flowIdRef.current;
+      currentFlowNameRef.current = persistedFlowName;
+      lastPersistedFlowNameRef.current = persistedFlowName;
       lastPersistedXmlRef.current = normalizedXml;
       rowVersionRef.current = detail.rowVersion ?? rowVersionRef.current;
+      setFlowNameInput(persistedFlowName);
+      onFlowNameChange?.(persistedFlowName);
+      setHasUnsavedXmlChanges(false);
       onPersist?.(detail);
       setStatus('saved');
+
       showSaveSuccessToast();
     } catch (error) {
       setStatus('ready');
@@ -548,7 +624,21 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
         void persistFlow(queuedXml);
       }
     }
-  }, [flowCode, flowName, isXmlDirty, onPersist, onShowToast, showSaveSuccessToast, subsystemId]);
+  }, [commitFlowNameInput, flowCode, isXmlDirty, onChange, onClose, onFlowNameChange, onPersist, onShowToast, showSaveSuccessToast, subsystemId]);
+
+  const requestEditorSave = useCallback(() => {
+    if (isSaving) {
+      return;
+    }
+
+    commitFlowNameInput();
+    if (!postMessageToEditor({
+      action: 'invokeAction',
+      actionName: 'save',
+    })) {
+      void persistFlow(currentXmlRef.current);
+    }
+  }, [commitFlowNameInput, isSaving, persistFlow, postMessageToEditor]);
 
   useEffect(() => {
     if (!isReady) {
@@ -573,6 +663,33 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+
+    postMessageToEditor({
+      action: 'status',
+      modified: hasUnsavedChanges,
+    });
+  }, [hasUnsavedChanges, isReady, postMessageToEditor]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') {
+        return;
+      }
+
+      event.preventDefault();
+      requestEditorSave();
+    }
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [requestEditorSave]);
 
   useEffect(() => {
     function handleWindowMessage(event: MessageEvent) {
@@ -718,9 +835,38 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
         key={iframeSrc}
         ref={iframeRef}
         src={iframeSrc}
-        title={editorTitle}
+        title={iframeTitle}
         className="h-full w-full border-0"
       />
+
+      <div className="pointer-events-none absolute left-[calc(50%-108px)] top-2 z-[11] -translate-x-1/2">
+        <div
+          className={`pointer-events-auto rounded-full border px-3 py-1 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.24)] backdrop-blur-md transition-all ${isSaving ? 'opacity-80' : ''} ${isFlowNameDirty ? 'border-amber-200 bg-amber-50/92' : 'border-white/80 bg-white/92'}`}
+          title="流程图名称，按 Ctrl+S 保存"
+        >
+          <input
+            type="text"
+            value={flowNameInput}
+            onChange={(event) => {
+              setFlowNameInput(event.target.value);
+              currentFlowNameRef.current = normalizeFlowName(event.target.value);
+            }}
+            onBlur={(event) => {
+              commitFlowNameInput(event.currentTarget.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                commitFlowNameInput(event.currentTarget.value);
+                event.currentTarget.blur();
+              }
+            }}
+            disabled={isSaving}
+            placeholder="请输入流程图名称"
+            className="w-[188px] max-w-[28vw] bg-transparent text-center text-[14px] font-semibold text-slate-700 outline-none placeholder:text-slate-300 disabled:cursor-not-allowed"
+          />
+        </div>
+      </div>
 
       <AnimatePresence>
         {saveSuccessToastVisible && !isSaving ? (
@@ -729,7 +875,7 @@ export function FunctionFlowDrawIoDesigner(props: FunctionFlowDrawIoDesignerProp
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -12, scale: 0.98 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="pointer-events-none absolute left-1/2 top-5 z-[12] -translate-x-1/2"
+            className="pointer-events-none absolute left-1/2 top-16 z-[12] -translate-x-1/2"
           >
             <div className="flex items-center gap-3 rounded-full border border-emerald-200/80 bg-white/96 px-4 py-2 text-[13px] font-semibold text-emerald-700 shadow-[0_22px_50px_-30px_rgba(16,185,129,0.38)] backdrop-blur-md">
               <span className="flex size-7 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">

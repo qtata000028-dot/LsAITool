@@ -594,6 +594,22 @@ export function FunctionFlowDesignWorkbench({
     });
   }, []);
 
+  const handleDraftFlowNameChange = useCallback((nextFlowName: string) => {
+    const normalizedFlowName = normalizeText(nextFlowName) || '未命名流程图';
+
+    setEditingDraft((prev) => {
+      if (!prev) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        flowName: normalizedFlowName,
+        updatedAt: Date.now(),
+      };
+    });
+  }, []);
+
   const handleDesignerPersist = useCallback((detail: FunctionFlowDetail) => {
     setEditingDraft((prev) => {
       if (!prev) {
@@ -923,6 +939,7 @@ export function FunctionFlowDesignWorkbench({
               moduleOptions={editingModuleOptions}
               onChange={handleDraftXmlChange}
               onClose={() => setEditingDraft(null)}
+              onFlowNameChange={handleDraftFlowNameChange}
               onPersist={handleDesignerPersist}
               onShowToast={onShowToast}
               rowVersion={editingDraft.rowVersion ?? null}
