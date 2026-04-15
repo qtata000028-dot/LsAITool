@@ -93,6 +93,11 @@ body {
 .dashboard-table-builder-ant-table-fill-body .ant-table-container {
   display: flex !important;
   flex-direction: column !important;
+  box-sizing: border-box;
+}
+
+.dashboard-table-builder-ant-table-detail.dashboard-table-builder-ant-table-fill-body .ant-table-container {
+  padding-bottom: 4px;
 }
 
 .dashboard-table-builder-ant-table-fill-body .ant-table-header {
@@ -145,10 +150,11 @@ body {
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+  overflow-x: auto !important;
   overflow-y: hidden !important;
   background: #ffffff;
-  border-bottom-left-radius: 18px;
-  border-bottom-right-radius: 18px;
+  scrollbar-gutter: stable;
+  border-radius: 0 !important;
 }
 
 .dashboard-table-builder-ant-preview-scroll-body-inner {
@@ -157,6 +163,12 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   background: #ffffff;
+  border-radius: 0 !important;
+}
+
+.dashboard-table-builder-ant-preview-scroll-body-detail {
+  padding-bottom: 0;
+  border-radius: 0 !important;
 }
 
 .dashboard-table-builder-ant-table .ant-table-header {

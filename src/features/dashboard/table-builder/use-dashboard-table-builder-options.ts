@@ -213,6 +213,8 @@ export function useDashboardTableBuilderOptions({
     renderableColumns: activeDetailTableColumns,
     canvasLabel: '点击配置明细表属性',
     layoutVersion: `detail-tabs-${detailTabsLength}-footer-${showDetailGridActionBar ? 1 : 0}`,
+    surfaceVariant: 'solid',
+    surfaceShape: 'square',
   }), [
     activeDetailTableColumns,
     activeDetailTableConfig?.contextMenuEnabled,
@@ -228,6 +230,8 @@ export function useDashboardTableBuilderOptions({
     backgroundSelectable: true,
     tableSelected: selectedTableConfigScope === 'detail',
     onSelectTable: handleBillDetailTableSelect,
+    surfaceVariant: 'solid',
+    surfaceShape: 'square',
     canvasLabel: '点击配置单据明细表',
   }), [handleBillDetailTableSelect, selectedTableConfigScope]);
 

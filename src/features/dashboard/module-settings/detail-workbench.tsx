@@ -166,7 +166,7 @@ export const MemoDocumentDetailWorkbench = React.memo(function DocumentDetailWor
   const activeDetailContentNode = currentDetailFillType === '表格' ? tableBuilderNode : fillPlaceholderNode;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-[#d6e2f1] bg-white shadow-none">
+    <div className={`flex h-full min-h-0 flex-col overflow-hidden border border-[#d6e2f1] bg-white shadow-none ${activeDetailContentNode === tableBuilderNode ? 'rounded-t-[18px] rounded-b-none' : 'rounded-[18px]'}`}>
       <div className="overflow-hidden rounded-t-[18px] border-b border-[#dbe7f7] bg-[linear-gradient(180deg,#f8fbff_0%,#f1f7ff_100%)]">
         <div className="min-w-0 overflow-hidden">
           <MemoDetailTabStrip
@@ -183,7 +183,7 @@ export const MemoDocumentDetailWorkbench = React.memo(function DocumentDetailWor
           />
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-[18px] bg-white">
+      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden bg-white ${activeDetailContentNode === tableBuilderNode ? 'rounded-b-none' : 'rounded-b-[18px]'}`}>
         {currentDetailFillType === '表格' ? (
           <div
             className="min-h-0 flex-1 overflow-hidden bg-white outline-none"

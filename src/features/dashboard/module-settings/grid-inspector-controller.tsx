@@ -58,6 +58,7 @@ type GridInspectorControllerProps = {
   buildGridColorRule: (index: number, overrides?: Record<string, any>) => any;
   businessType: string;
   compactCardClass: string;
+  consumeMainFieldSettingsOpenRequest: () => void;
   context: any;
   currentMenuDraft: Record<string, any>;
   currentModuleCode: string;
@@ -165,6 +166,7 @@ export function GridInspectorController({
   buildGridColorRule,
   businessType,
   compactCardClass,
+  consumeMainFieldSettingsOpenRequest,
   context,
   currentMenuDraft,
   currentModuleCode,
@@ -374,7 +376,8 @@ export function GridInspectorController({
 
     handledMainFieldSettingsOpenRequestRef.current = mainFieldSettingsOpenRequestKey;
     setIsMainFieldSettingsOpen(true);
-  }, [canOpenMainFieldSettings, mainFieldSettingsOpenRequestKey]);
+    consumeMainFieldSettingsOpenRequest();
+  }, [canOpenMainFieldSettings, consumeMainFieldSettingsOpenRequest, mainFieldSettingsOpenRequestKey]);
   const saveMainFieldSettings = React.useCallback(async (rows: any[]) => {
     if (onSaveCurrentPage) {
       return onSaveCurrentPage({

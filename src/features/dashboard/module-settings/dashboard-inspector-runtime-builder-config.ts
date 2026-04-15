@@ -6,6 +6,7 @@ type DashboardInspectorRuntimeBuilderConfig = {
     activateSourceGridSelection: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['activateSourceGridSelection'];
     applyDetailModuleInheritanceById: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['applyDetailModuleInheritanceById'];
     clearColumnSelection: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['clearColumnSelection'];
+    consumeMainFieldSettingsOpenRequest: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['consumeMainFieldSettingsOpenRequest'];
     createBillSourceDraft: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['createBillSourceDraft'];
     deleteBillSourceById: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['deleteBillSourceById'];
     deleteSelectedColumns: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['deleteSelectedColumns'];

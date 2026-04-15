@@ -40,6 +40,7 @@ export type UseInspectorPanelPropsOptions = {
   buildGridColorRule: (index: number, overrides?: Record<string, any>) => any;
   businessType: string;
   clearColumnSelection: () => void;
+  consumeMainFieldSettingsOpenRequest: () => void;
   columnAlignOptions: any[];
   conditionPanelControlWidth: number;
   conditionPanelResizeMaxWidth: number;
@@ -179,6 +180,7 @@ export function useInspectorPanelProps({
   buildGridColorRule,
   businessType,
   clearColumnSelection,
+  consumeMainFieldSettingsOpenRequest,
   columnAlignOptions,
   conditionPanelControlWidth,
   conditionPanelResizeMaxWidth,
@@ -459,6 +461,7 @@ export function useInspectorPanelProps({
         buildGridColorRule,
         businessType,
         compactCardClass,
+        consumeMainFieldSettingsOpenRequest,
         context: selectedColumnContext,
         currentMenuDraft,
         currentModuleCode,
@@ -589,6 +592,7 @@ export function useInspectorPanelProps({
     buildGridColorRule,
     businessType,
     clearColumnSelection,
+    consumeMainFieldSettingsOpenRequest,
     columnAlignOptions,
     conditionPanelControlWidth,
     conditionPanelResizeMaxWidth,

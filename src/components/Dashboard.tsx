@@ -1098,6 +1098,9 @@ export default function Dashboard({
     activateTableConfigSelection('main');
     setMainFieldSettingsOpenRequestKey((prev) => prev + 1);
   }, [activateTableConfigSelection]);
+  const consumeMainFieldSettingsOpenRequest = useCallback(() => {
+    setMainFieldSettingsOpenRequestKey(0);
+  }, []);
   const {
     addTab,
     deleteSelectedColumns,
@@ -1764,6 +1767,7 @@ export default function Dashboard({
       activateSourceGridSelection,
       applyDetailModuleInheritanceById,
       clearColumnSelection,
+      consumeMainFieldSettingsOpenRequest,
       createBillSourceDraft,
       deleteBillSourceById,
       deleteSelectedColumns,

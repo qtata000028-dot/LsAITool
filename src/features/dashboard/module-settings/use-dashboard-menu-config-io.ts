@@ -18,6 +18,7 @@ import {
   type BusinessType,
   type ModuleMenuDraft,
 } from './dashboard-menu-config-helpers';
+import { MODULE_SETTING_STEP } from './dashboard-shell-constants';
 import type { DashboardWorkbench } from '../dashboard-workbench-types';
 
 type SyncWorkspaceUrlState = (patch: Partial<{
@@ -153,8 +154,8 @@ export function useDashboardMenuConfigIo({
     setIsMenuInfoSaving(false);
     setMenuConfigDraft(buildMenuConfigDraftDefaults(nextType));
     openModuleGuide(nextType, {
-      completedSteps: [1],
-      initialStep: 2,
+      completedSteps: [1, 2],
+      initialStep: MODULE_SETTING_STEP,
       moduleCode: resolveMenuNodeModuleCode(menu),
     });
     void loadMenuInfoForMenu(menu);

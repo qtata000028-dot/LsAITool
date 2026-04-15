@@ -643,6 +643,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const canvasSelectionPanelShellClass = cn(
     'flex h-full w-full items-center justify-center bg-white shadow-none',
   );
+  const canvasSelectionSurfaceRadiusClass = useSquareSurface ? 'rounded-none' : 'rounded-[18px]';
 
   const tableWrapperClass = cn(
     'relative flex h-full min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden',
@@ -725,7 +726,10 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
       <div
         ref={info.ref as React.Ref<HTMLDivElement>}
         onScroll={(event) => info.onScroll({ currentTarget: event.currentTarget })}
-        className="dashboard-table-builder-ant-preview-scroll-body"
+        className={cn(
+          'dashboard-table-builder-ant-preview-scroll-body',
+          scope === 'detail' && 'dashboard-table-builder-ant-preview-scroll-body-detail',
+        )}
       >
         <Flex
           vertical
@@ -927,7 +931,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
           onClick={onSelectTable}
           onDoubleClick={handleCanvasDoubleClick}
           className={cn(
-            'relative flex h-full min-h-0 w-full items-stretch justify-stretch overflow-hidden rounded-[18px] bg-[#fcfdff] text-center transition-colors hover:bg-[#f8fbff]',
+            `relative flex h-full min-h-0 w-full items-stretch justify-stretch overflow-hidden ${canvasSelectionSurfaceRadiusClass} bg-[#fcfdff] text-center transition-colors hover:bg-[#f8fbff]`,
             isCompactCanvas ? 'min-h-[164px]' : 'min-h-[240px]',
           )}
         >
@@ -966,6 +970,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
         <Table
           className={cn(
             'dashboard-table-builder-ant-table min-h-0 flex-1',
+            `dashboard-table-builder-ant-table-${scope}`,
             backgroundSelectable && 'dashboard-table-builder-ant-table-fill-body',
             backgroundSelectable && 'dashboard-table-builder-ant-table-no-vertical-scroll',
           )}
