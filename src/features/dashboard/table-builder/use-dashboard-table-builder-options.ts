@@ -37,6 +37,7 @@ function buildSingleTablePreviewTemplate({
     contextMenuScope,
     contextMenuConfig,
     backgroundSelectable: true,
+    hostSurface: 'embedded',
     tableSelected,
     onSelectTable,
     detailBoardConfig,
@@ -181,6 +182,7 @@ export function useDashboardTableBuilderOptions({
 
   const builderMainTableBuilderOptions = useMemo<TableBuilderOptions>(() => ({
     backgroundSelectable: true,
+    hostSurface: 'embedded',
     tableSelected: selectedTableConfigScope === 'main',
     onSelectTable: handleBuilderMainTableSelect,
     detailBoardConfig: mainTableConfig.detailBoard,
@@ -228,6 +230,7 @@ export function useDashboardTableBuilderOptions({
 
   const billDetailTableBuilderOptions = useMemo<TableBuilderOptions>(() => ({
     backgroundSelectable: true,
+    hostSurface: 'embedded',
     tableSelected: selectedTableConfigScope === 'detail',
     onSelectTable: handleBillDetailTableSelect,
     surfaceVariant: 'solid',

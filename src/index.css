@@ -96,10 +96,6 @@ body {
   box-sizing: border-box;
 }
 
-.dashboard-table-builder-ant-table-detail.dashboard-table-builder-ant-table-fill-body .ant-table-container {
-  padding-bottom: 4px;
-}
-
 .dashboard-table-builder-ant-table-fill-body .ant-table-header {
   flex: 0 0 auto;
   min-height: 0;

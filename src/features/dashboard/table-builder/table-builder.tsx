@@ -32,6 +32,7 @@ export type TableBuilderOptions = {
   density?: 'default' | 'compact';
   surfaceVariant?: 'glass' | 'solid';
   surfaceShape?: 'rounded' | 'square';
+  hostSurface?: 'standalone' | 'embedded';
   previewReadableMinWidth?: number;
   layoutVersion?: string;
 };
@@ -354,6 +355,8 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const useSolidSurface = surfaceVariant === 'solid';
   const surfaceShape = options?.surfaceShape ?? 'rounded';
   const useSquareSurface = useSolidSurface && surfaceShape === 'square';
+  const hostSurface = options?.hostSurface ?? 'standalone';
+  const useEmbeddedSurface = hostSurface === 'embedded';
   const isCompactCanvas = density === 'compact';
   const showCanvasSelectionCard = backgroundSelectable;
   const selectedForDeleteSet = useMemo(() => new Set(selectedForDelete), [selectedForDelete]);
@@ -472,18 +475,28 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   ), [metrics.resizeMaxWidth, metrics.resizeMinWidth]);
 
   const addColumnWidth = isCompactModuleSetting ? 58 : 74;
-  const tableSurfaceRadiusClass = useSquareSurface ? 'rounded-none' : 'rounded-[20px]';
-  const tableSurfaceClass = useSolidSurface
+  const tableSurfaceRadiusClass = useEmbeddedSurface
+    ? 'rounded-none'
+    : useSquareSurface
+      ? 'rounded-none'
+      : 'rounded-[20px]';
+  const tableSurfaceClass = useEmbeddedSurface
     ? (
         tableSelected
-          ? `${tableSurfaceRadiusClass} border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-surface)] shadow-none`
-          : `${tableSurfaceRadiusClass} border border-[#d9e3ef] bg-white shadow-none`
+          ? `${tableSurfaceRadiusClass} border-0 bg-[color:var(--workspace-accent-surface)] shadow-none`
+          : `${tableSurfaceRadiusClass} border-0 bg-transparent shadow-none`
       )
-    : (
-        tableSelected
-          ? 'cloudy-glass-panel bg-[color:var(--workspace-accent-surface)] shadow-none'
-          : 'cloudy-glass-panel'
-      );
+    : useSolidSurface
+      ? (
+          tableSelected
+            ? `${tableSurfaceRadiusClass} border border-[color:var(--workspace-accent-border)] bg-[color:var(--workspace-accent-surface)] shadow-none`
+            : `${tableSurfaceRadiusClass} border border-[#d9e3ef] bg-white shadow-none`
+        )
+      : (
+          tableSelected
+            ? 'cloudy-glass-panel bg-[color:var(--workspace-accent-surface)] shadow-none'
+            : 'cloudy-glass-panel'
+        );
   const headerDividerClass = tableSelected
     ? 'border-[#d7e2f0] dark:border-slate-700/80'
     : 'border-[#e6edf5] dark:border-slate-700/80';
@@ -643,12 +656,12 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
   const canvasSelectionPanelShellClass = cn(
     'flex h-full w-full items-center justify-center bg-white shadow-none',
   );
-  const canvasSelectionSurfaceRadiusClass = useSquareSurface ? 'rounded-none' : 'rounded-[18px]';
+  const canvasSelectionSurfaceRadiusClass = useEmbeddedSurface || useSquareSurface ? 'rounded-none' : 'rounded-[18px]';
 
   const tableWrapperClass = cn(
     'relative flex h-full min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden',
     tableSurfaceClass,
-    backgroundSelectable && (isCompactCanvas ? 'min-h-[184px]' : 'min-h-[260px]'),
+    backgroundSelectable && !useEmbeddedSurface && (isCompactCanvas ? 'min-h-[184px]' : 'min-h-[260px]'),
   );
   const activePreviewHeaderColumn = useMemo(
     () => previewHeaderColumns.find(({ col }) => String(col.id) === previewDraggingColumnId) ?? null,
@@ -932,7 +945,7 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
           onDoubleClick={handleCanvasDoubleClick}
           className={cn(
             `relative flex h-full min-h-0 w-full items-stretch justify-stretch overflow-hidden ${canvasSelectionSurfaceRadiusClass} bg-[#fcfdff] text-center transition-colors hover:bg-[#f8fbff]`,
-            isCompactCanvas ? 'min-h-[164px]' : 'min-h-[240px]',
+            !useEmbeddedSurface && (isCompactCanvas ? 'min-h-[164px]' : 'min-h-[240px]'),
           )}
         >
           <Flex vertical align="center" justify="center" className={canvasSelectionPanelShellClass}>
@@ -943,7 +956,19 @@ export const MemoTableBuilder = React.memo(function TableBuilder({
     }
 
     return (
-      <Flex vertical align="center" justify="center" className={`h-full min-h-0 px-6 text-center text-slate-400 ${isCompactCanvas ? 'min-h-[164px] py-6' : 'min-h-[240px]'}`}>
+      <Flex
+        vertical
+        align="center"
+        justify="center"
+        className={cn(
+          'h-full min-h-0 px-6 text-center text-slate-400',
+          useEmbeddedSurface
+            ? 'py-6'
+            : isCompactCanvas
+              ? 'min-h-[164px] py-6'
+              : 'min-h-[240px]',
+        )}
+      >
         <Flex vertical align="center" gap={12}>
           <div className="cloudy-glass-orb flex size-14 items-center justify-center rounded-3xl">
             <span className="material-symbols-outlined text-[24px] text-slate-300 dark:text-slate-500">data_object</span>
