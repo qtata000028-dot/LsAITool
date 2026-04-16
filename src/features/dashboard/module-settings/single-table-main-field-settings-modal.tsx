@@ -51,6 +51,14 @@ type FieldNameOption = {
   value: string;
 };
 
+type TextCellEditorState = {
+  draft: string;
+  draftKey: string;
+  multiline: boolean;
+  settingKey: string;
+  title: string;
+} | null;
+
 const FONT_NAME_OPTIONS = [
   '微软雅黑',
   '宋体',
@@ -330,6 +338,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
     Object.fromEntries(singleTableMainFieldSettings.map((definition) => [definition.key, definition.width]))
   ));
   const [highlightedDraftKey, setHighlightedDraftKey] = React.useState<string | null>(null);
+  const [textCellEditor, setTextCellEditor] = React.useState<TextCellEditorState>(null);
   const tableHostRef = React.useRef<HTMLDivElement | null>(null);
   const settingColumnDragSensors = useSensors(
     useSensor(PointerSensor, {
@@ -594,12 +603,83 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
     }
   }, [draftRows, isSaving, missingFieldNameCount, onClose, onSave]);
 
+  const handleOpenTextCellEditor = React.useCallback((
+    record: any,
+    definition: typeof singleTableMainFieldSettings[number],
+    multiline: boolean,
+  ) => {
+    setTextCellEditor({
+      draft: toText(resolveSingleTableMainFieldSettingValue(record, definition.key)),
+      draftKey: String(record.__draftKey),
+      multiline,
+      settingKey: definition.key,
+      title: definition.title,
+    });
+  }, []);
+
+  const handleSaveTextCellEditor = React.useCallback(() => {
+    if (!textCellEditor) {
+      return;
+    }
+
+    updateRow(
+      textCellEditor.draftKey,
+      (currentRow) => updateSingleTableMainFieldSettingValue(
+        currentRow,
+        textCellEditor.settingKey,
+        textCellEditor.draft,
+      ),
+    );
+    setTextCellEditor(null);
+  }, [textCellEditor, updateRow]);
+
   const tableColumns = React.useMemo<TableColumnsType<any>>(() => {
     const renderCellShell = (content: React.ReactNode, align: 'center' | 'left' = 'left') => (
       <div className={`single-table-main-field-settings-cell-content ${align === 'center' ? 'is-center' : ''}`}>
         {content}
       </div>
     );
+    const renderTextCellTrigger = (
+      value: unknown,
+      definition: typeof singleTableMainFieldSettings[number],
+      record: any,
+      options: { multiline?: boolean; readOnly?: boolean } = {},
+    ) => {
+      const displayText = toText(value).trim();
+      const isReadOnly = options.readOnly === true;
+      const isPlaceholder = !displayText && !isReadOnly;
+      const triggerNode = (
+        <span className={cn(
+          'single-table-main-field-settings-text-trigger-label',
+          isPlaceholder && 'is-placeholder',
+        )}>
+          {displayText || (isReadOnly ? '-' : '点击编辑内容')}
+        </span>
+      );
+
+      if (isReadOnly) {
+        return renderCellShell(
+          <span
+            className="single-table-main-field-settings-text-trigger is-readonly"
+            title={displayText || '-'}
+          >
+            {triggerNode}
+          </span>,
+        );
+      }
+
+      return renderCellShell(
+        <button
+          type="button"
+          className="single-table-main-field-settings-text-trigger"
+          title={displayText || definition.title}
+          onClick={() => handleOpenTextCellEditor(record, definition, options.multiline === true)}
+        >
+          {triggerNode}
+          <span className="material-symbols-outlined text-[14px] text-slate-400">edit_note</span>
+        </button>,
+      );
+    };
 
     const renderEditor = (definition: typeof singleTableMainFieldSettings[number], record: any) => {
       const currentValue = resolveSingleTableMainFieldSettingValue(record, definition.key);
@@ -615,9 +695,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
       };
 
       if (definition.readOnly && definition.editor !== 'checkbox') {
-        return renderCellShell(
-          <span className="text-[12px] font-medium text-slate-600 dark:text-slate-300">{toText(currentValue) || '-'}</span>,
-        );
+        return renderTextCellTrigger(currentValue, definition, record, { readOnly: true });
       }
 
       switch (definition.editor) {
@@ -631,14 +709,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
             />,
           );
         case 'textarea':
-          return renderCellShell(
-            <Input.TextArea
-              autoSize={{ minRows: 1, maxRows: 4 }}
-              className="single-table-main-field-settings-editor single-table-main-field-settings-textarea"
-              value={toText(currentValue)}
-              onChange={(event) => handleValueChange(event.target.value)}
-            />,
-          );
+          return renderTextCellTrigger(currentValue, definition, record, { multiline: true });
         case 'checkbox':
           return renderCellShell(
             <div className="flex justify-center">
@@ -650,6 +721,8 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
             </div>,
             'center',
           );
+        case 'text':
+          return renderTextCellTrigger(currentValue, definition, record);
         case 'field-name-select':
           return renderCellShell(
             <Select
@@ -763,7 +836,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
         }),
       })),
     ];
-  }, [dataFormatOptions, fieldNameOptions, fieldSqlTagOptions, orderedSettingDefinitions, settingColumnWidths, updateRow]);
+  }, [dataFormatOptions, fieldNameOptions, fieldSqlTagOptions, handleOpenTextCellEditor, orderedSettingDefinitions, settingColumnWidths, updateRow]);
 
   const rowSelection = React.useMemo<NonNullable<TableProps<any>['rowSelection']>>(() => ({
     selectedRowKeys: selectedDraftKeys,
@@ -921,6 +994,78 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
               </DndContext>
             </Spin>
           </div>
+
+          <AnimatePresence>
+            {textCellEditor ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setTextCellEditor(null);
+                }}
+                className="fixed inset-0 z-[96] flex items-center justify-center bg-slate-950/24 px-6 py-8 backdrop-blur-sm"
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 14, scale: 0.985 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 14, scale: 0.985 }}
+                  transition={{ duration: 0.18 }}
+                  onClick={(event) => event.stopPropagation()}
+                  className="flex w-full max-w-3xl flex-col overflow-hidden rounded-[18px] border border-white/80 bg-white/96 shadow-[0_30px_72px_-34px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-slate-950/96"
+                >
+                  <div className="flex items-start justify-between gap-4 border-b border-slate-200/85 px-5 py-4 dark:border-slate-700">
+                    <div className="min-w-0">
+                      <div className="text-[15px] font-bold text-slate-800 dark:text-slate-100">{textCellEditor.title}</div>
+                      <div className="mt-1 text-[12px] text-slate-500 dark:text-slate-300">编辑完成后保存，会直接回写当前字段设置。</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setTextCellEditor(null)}
+                      className="inline-flex size-9 shrink-0 items-center justify-center rounded-2xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                  </div>
+                  <div className="px-5 py-4">
+                    {textCellEditor.multiline ? (
+                      <Input.TextArea
+                        autoFocus
+                        rows={14}
+                        value={textCellEditor.draft}
+                        onChange={(event) => setTextCellEditor((prev) => (prev ? { ...prev, draft: event.target.value } : prev))}
+                        className="single-table-main-field-settings-text-modal-textarea"
+                      />
+                    ) : (
+                      <Input
+                        autoFocus
+                        value={textCellEditor.draft}
+                        onChange={(event) => setTextCellEditor((prev) => (prev ? { ...prev, draft: event.target.value } : prev))}
+                        className="single-table-main-field-settings-text-modal-input"
+                      />
+                    )}
+                  </div>
+                  <div className="flex items-center justify-end gap-3 border-t border-slate-200/85 px-5 py-4 dark:border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => setTextCellEditor(null)}
+                      className={`${shadcnInspectorActionButtonClass} h-10 px-4 text-[12px]`}
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveTextCellEditor}
+                      className={`${shadcnInspectorPrimaryActionButtonClass} h-10 px-4 text-[12px]`}
+                    >
+                      保存内容
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </motion.div>
       </motion.div>
     </AnimatePresence>

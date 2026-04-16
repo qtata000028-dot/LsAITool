@@ -563,9 +563,12 @@ body {
 
 .single-table-main-field-settings-cell-content {
   display: flex;
+  height: 46px;
   min-height: 46px;
+  max-height: 46px;
   align-items: center;
   padding: 7px 10px;
+  overflow: hidden;
 }
 
 .single-table-main-field-settings-cell-content.is-center {
@@ -608,6 +611,65 @@ body {
 .single-table-main-field-settings-cell-content .ant-input,
 .single-table-main-field-settings-cell-content textarea {
   color: #0f172a !important;
+}
+
+.single-table-main-field-settings-text-trigger {
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #d7e4f1;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+.single-table-main-field-settings-text-trigger:hover {
+  border-color: #bfd5f2;
+  background: #ffffff;
+}
+
+.single-table-main-field-settings-text-trigger.is-readonly {
+  cursor: default;
+  color: #475569;
+}
+
+.single-table-main-field-settings-text-trigger-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.single-table-main-field-settings-text-trigger-label.is-placeholder {
+  color: #94a3b8;
+}
+
+.single-table-main-field-settings-text-modal-input.ant-input,
+.single-table-main-field-settings-text-modal-textarea.ant-input {
+  border-radius: 14px;
+  border-color: #d7e4f1;
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.single-table-main-field-settings-text-modal-input.ant-input {
+  min-height: 42px;
+  font-size: 13px;
+}
+
+.single-table-main-field-settings-text-modal-textarea.ant-input {
+  min-height: 320px;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.7;
 }
 
 .single-table-main-field-settings-cell-content .ant-input:hover,
