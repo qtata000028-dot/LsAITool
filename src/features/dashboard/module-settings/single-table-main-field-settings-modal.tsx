@@ -820,7 +820,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
             width: 'min(1680px, calc(100vw - 32px))',
             height: 'min(920px, calc(100dvh - 40px))',
           }}
-          className="flex flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/96 shadow-[0_40px_120px_-42px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-slate-950/96"
+          className="flex flex-col overflow-hidden rounded-t-[18px] rounded-b-[10px] border border-white/70 bg-white/96 shadow-[0_40px_120px_-42px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-slate-950/96"
         >
           <div className="border-b border-slate-200/90 bg-white/92 px-6 py-3 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-950/92">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -915,7 +915,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
                         : ''
                     )}
                     pagination={false}
-                    scroll={{ x: tableScrollX, y: 'calc(100dvh - 260px)' }}
+                    scroll={{ x: tableScrollX, y: 'calc(100dvh - 190px)' }}
                   />
                 </SortableContext>
               </DndContext>
