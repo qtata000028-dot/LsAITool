@@ -27,6 +27,10 @@ import {
   GridSqlConfigSection,
   LeftGridMappingSection,
 } from './grid-overview-sections';
+import {
+  type GridFieldSettingsModalMode,
+  type GridFieldSettingsOpenRequest,
+} from './grid-field-settings-modal-types';
 import { PopupMenuManager } from './popup-menu-manager';
 import { SingleTableMainFieldSettingsModal } from './single-table-main-field-settings-modal';
 
@@ -58,7 +62,7 @@ type GridInspectorControllerProps = {
   buildGridColorRule: (index: number, overrides?: Record<string, any>) => any;
   businessType: string;
   compactCardClass: string;
-  consumeMainFieldSettingsOpenRequest: () => void;
+  consumeFieldSettingsOpenRequest: () => void;
   context: any;
   currentMenuDraft: Record<string, any>;
   currentModuleCode: string;
@@ -85,7 +89,7 @@ type GridInspectorControllerProps = {
   isGeneratingSqlDraft: boolean;
   isTranslatingIdentifiers: boolean;
   leftFilterFields: any[];
-  mainFieldSettingsOpenRequestKey: number;
+  fieldSettingsOpenRequest: GridFieldSettingsOpenRequest;
   mainTableColumns: any[];
   loadSingleTableDetailResourcesById: (tabId: string, fillType: string) => Promise<any>;
   mainTableHiddenColumnsCount: number;
@@ -166,7 +170,7 @@ export function GridInspectorController({
   buildGridColorRule,
   businessType,
   compactCardClass,
-  consumeMainFieldSettingsOpenRequest,
+  consumeFieldSettingsOpenRequest,
   context,
   currentMenuDraft,
   currentModuleCode,
@@ -191,7 +195,7 @@ export function GridInspectorController({
   isGeneratingSqlDraft,
   isTranslatingIdentifiers,
   leftFilterFields,
-  mainFieldSettingsOpenRequestKey,
+  fieldSettingsOpenRequest,
   mainTableColumns,
   mainTableHiddenColumnsCount,
   fieldClass,
@@ -248,7 +252,7 @@ export function GridInspectorController({
   updateDetailTabConfigById,
   workspaceTheme,
 }: GridInspectorControllerProps) {
-  const availableGridColumns = context.availableColumns ?? [];
+  const availableGridColumns = React.useMemo(() => context.availableColumns ?? [], [context.availableColumns]);
   const currentGridConfig = context.column;
   const currentDetailBoard = normalizeDetailBoardConfig(currentGridConfig.detailBoard, availableGridColumns);
   const detailBoardTheme = getDetailBoardTheme(workspaceTheme);
@@ -340,9 +344,12 @@ export function GridInspectorController({
     : canManageDetailGridDecorations
       ? setSelectedDetailColorRuleId
       : setSelectedMainColorRuleId;
-  const [isMainFieldSettingsOpen, setIsMainFieldSettingsOpen] = React.useState(false);
+  const [fieldSettingsModalState, setFieldSettingsModalState] = React.useState<{
+    initialFieldId?: string | null;
+    mode: GridFieldSettingsModalMode;
+  } | null>(null);
   const [selectedColumnListItemId, setSelectedColumnListItemId] = React.useState<string | null>(null);
-  const handledMainFieldSettingsOpenRequestRef = React.useRef(0);
+  const handledFieldSettingsOpenRequestRef = React.useRef(0);
 
   const updateGridConfig = (patch: Record<string, any>) => {
     context.setCols((prev: Record<string, any>) => ({
@@ -351,7 +358,7 @@ export function GridInspectorController({
     }));
   };
 
-  const canOpenMainFieldSettings = businessType !== 'table' && isMainGridConfig;
+  const canOpenFieldSettings = !isLeftGridConfig && (isMainGridConfig || isDocumentDetailGrid || isBillDetailGridConfig);
   const selectedGridColumnId = isLeftGridConfig
     ? (inspectorTarget.kind === 'left-col' ? inspectorTarget.id ?? null : null)
     : isMainGridConfig
@@ -365,32 +372,107 @@ export function GridInspectorController({
     setSelectedColumnListItemId(selectedGridColumnId);
   }, [selectedGridColumnId, activeTab, context.scope]);
 
+  const resolveFieldSettingsModeForCurrentScope = React.useCallback((): GridFieldSettingsModalMode | null => {
+    if (isLeftGridConfig) {
+      return null;
+    }
+
+    if (isBillHeadGridConfig) {
+      return 'bill-main';
+    }
+
+    if (isBillDetailGridConfig) {
+      return 'bill-detail';
+    }
+
+    if (isDocumentDetailGrid) {
+      return 'single-table-detail';
+    }
+
+    if (isMainGridConfig) {
+      return 'single-table-main';
+    }
+
+    return null;
+  }, [isBillDetailGridConfig, isBillHeadGridConfig, isDocumentDetailGrid, isLeftGridConfig, isMainGridConfig]);
+
+  const openFieldSettingsModal = React.useCallback((mode: GridFieldSettingsModalMode, fieldId?: string | null) => {
+    setFieldSettingsModalState({
+      initialFieldId: fieldId ?? null,
+      mode,
+    });
+  }, []);
+
+  const handleColumnListItemDoubleClick = React.useCallback((columnId: string) => {
+    const modalMode = resolveFieldSettingsModeForCurrentScope();
+    if (!modalMode) {
+      return;
+    }
+
+    openFieldSettingsModal(modalMode, columnId);
+  }, [openFieldSettingsModal, resolveFieldSettingsModeForCurrentScope]);
+
   React.useEffect(() => {
-    if (!canOpenMainFieldSettings || mainFieldSettingsOpenRequestKey <= 0) {
+    if (!fieldSettingsOpenRequest || fieldSettingsOpenRequest.key <= 0) {
       return;
     }
 
-    if (handledMainFieldSettingsOpenRequestRef.current === mainFieldSettingsOpenRequestKey) {
+    if (handledFieldSettingsOpenRequestRef.current === fieldSettingsOpenRequest.key) {
       return;
     }
 
-    handledMainFieldSettingsOpenRequestRef.current = mainFieldSettingsOpenRequestKey;
-    setIsMainFieldSettingsOpen(true);
-    consumeMainFieldSettingsOpenRequest();
-  }, [canOpenMainFieldSettings, consumeMainFieldSettingsOpenRequest, mainFieldSettingsOpenRequestKey]);
-  const saveMainFieldSettings = React.useCallback(async (rows: any[]) => {
+    handledFieldSettingsOpenRequestRef.current = fieldSettingsOpenRequest.key;
+    openFieldSettingsModal(fieldSettingsOpenRequest.mode, fieldSettingsOpenRequest.fieldId);
+    consumeFieldSettingsOpenRequest();
+  }, [consumeFieldSettingsOpenRequest, fieldSettingsOpenRequest, openFieldSettingsModal]);
+
+  const saveFieldSettings = React.useCallback(async (rows: any[]) => {
+    const currentMode = fieldSettingsModalState?.mode;
+    const saveScope = currentMode === 'single-table-detail' || currentMode === 'bill-detail'
+      ? 'detail-grid'
+      : 'main-grid';
+    const saveTabId = currentMode === 'single-table-detail' ? activeTab : undefined;
+
     if (onSaveCurrentPage) {
       return onSaveCurrentPage({
         gridColumnsOverride: {
           rows,
-          scope: 'main-grid',
+          scope: saveScope,
+          ...(saveTabId ? { tabId: saveTabId } : {}),
         },
       });
     }
 
-    onUpdateGridColumns('main-grid', rows);
+    onUpdateGridColumns(saveScope, rows);
     return true;
-  }, [onSaveCurrentPage, onUpdateGridColumns]);
+  }, [activeTab, fieldSettingsModalState?.mode, onSaveCurrentPage, onUpdateGridColumns]);
+
+  const modalRows = React.useMemo(() => {
+    const currentMode = fieldSettingsModalState?.mode;
+    if (currentMode === 'single-table-detail' || currentMode === 'bill-detail') {
+      return availableGridColumns;
+    }
+
+    if (currentMode === 'bill-main') {
+      return availableGridColumns.length > 0 ? availableGridColumns : mainTableColumns;
+    }
+
+    return mainTableColumns;
+  }, [availableGridColumns, fieldSettingsModalState?.mode, mainTableColumns]);
+
+  const modalTableLabel = React.useMemo(() => {
+    switch (fieldSettingsModalState?.mode) {
+      case 'single-table-detail':
+        return currentDetailTabName || context.title || '当前明细表';
+      case 'bill-main':
+        return currentModuleName || context.title || '单据主表';
+      case 'bill-detail':
+        return context.title || '单据明细表';
+      case 'single-table-main':
+      default:
+        return context.title || currentModuleName || '主表';
+    }
+  }, [context.title, currentDetailTabName, currentModuleName, fieldSettingsModalState?.mode]);
 
   const updateActiveDetailTabConfig = (patch: Record<string, any>) => {
     if (!isDocumentDetailGrid) return;
@@ -802,10 +884,15 @@ export function GridInspectorController({
         ) : isColumnsPanelTab ? (
           <div className="space-y-0">
             <GridColumnDataSection
-              actionNode={canOpenMainFieldSettings ? (
+              actionNode={canOpenFieldSettings ? (
                 <button
                   type="button"
-                  onClick={() => setIsMainFieldSettingsOpen(true)}
+                  onClick={() => {
+                    const modalMode = resolveFieldSettingsModeForCurrentScope();
+                    if (modalMode) {
+                      openFieldSettingsModal(modalMode, displayedGridColumnListSelectionId);
+                    }
+                  }}
                   className={`${quietDocumentInspectorActionClass} shrink-0`}
                 >
                   <span className="material-symbols-outlined text-[14px]">table_view</span>
@@ -815,6 +902,7 @@ export function GridInspectorController({
               title={documentGridColumnDataTitle}
               availableGridColumns={availableGridColumns}
               normalizeColumn={normalizeColumn}
+              onDoubleClickColumn={handleColumnListItemDoubleClick}
               onSelectColumn={setSelectedColumnListItemId}
               selectedColumnId={displayedGridColumnListSelectionId}
             />
@@ -1145,10 +1233,13 @@ export function GridInspectorController({
       </div>
       <SingleTableMainFieldSettingsModal
         currentModuleCode={currentModuleCode}
-        isOpen={isMainFieldSettingsOpen}
-        mainTableColumns={mainTableColumns}
-        onClose={() => setIsMainFieldSettingsOpen(false)}
-        onSave={saveMainFieldSettings}
+        initialFieldId={fieldSettingsModalState?.initialFieldId ?? null}
+        isOpen={fieldSettingsModalState != null}
+        mode={fieldSettingsModalState?.mode ?? 'single-table-main'}
+        onClose={() => setFieldSettingsModalState(null)}
+        onSave={saveFieldSettings}
+        rows={modalRows}
+        tableLabel={modalTableLabel}
       />
     </div>
   );

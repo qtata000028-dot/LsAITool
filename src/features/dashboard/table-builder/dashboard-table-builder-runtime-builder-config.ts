@@ -7,6 +7,8 @@ type DashboardTableBuilderRuntimeBuilderConfig = {
     activateColumnSelection: DashboardTableBuilderRuntimeConfig['runtime']['activateColumnSelection'];
     activateTableConfigSelection: DashboardTableBuilderRuntimeConfig['bridge']['options']['activateTableConfigSelection'];
     autoFitColumnWidth: DashboardTableBuilderRuntimeConfig['runtime']['autoFitColumnWidth'];
+    openBillDetailFieldSettings: DashboardTableBuilderRuntimeConfig['bridge']['options']['onOpenBillDetailFieldSettings'];
+    openDetailFieldSettings: DashboardTableBuilderRuntimeConfig['bridge']['options']['onOpenDetailFieldSettings'];
     openMainFieldSettings: DashboardTableBuilderRuntimeConfig['bridge']['options']['onOpenMainFieldSettings'];
     openDetailBoardPreview: DashboardTableBuilderRuntimeConfig['bridge']['options']['openDetailBoardPreview'];
     setBuilderSelectionContextMenu: DashboardTableBuilderRuntimeConfig['runtime']['setBuilderSelectionContextMenu'];
@@ -93,6 +95,8 @@ export function buildDashboardTableBuilderRuntimeBuilderConfig({
         mainDetailBoardGroupsLength: state.mainDetailBoardGroupsLength,
         mainRenderableColumns: columns.mainRenderableColumns,
         mainTableConfig: columns.mainTableConfig,
+        onOpenBillDetailFieldSettings: actions.openBillDetailFieldSettings,
+        onOpenDetailFieldSettings: actions.openDetailFieldSettings,
         onOpenMainFieldSettings: actions.openMainFieldSettings,
         normalizedMainDetailBoardConfig: state.normalizedMainDetailBoardConfig,
         openDetailBoardPreview: actions.openDetailBoardPreview,

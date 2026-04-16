@@ -6,7 +6,7 @@ type DashboardInspectorRuntimeBuilderConfig = {
     activateSourceGridSelection: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['activateSourceGridSelection'];
     applyDetailModuleInheritanceById: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['applyDetailModuleInheritanceById'];
     clearColumnSelection: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['clearColumnSelection'];
-    consumeMainFieldSettingsOpenRequest: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['consumeMainFieldSettingsOpenRequest'];
+    consumeFieldSettingsOpenRequest: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['consumeFieldSettingsOpenRequest'];
     createBillSourceDraft: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['createBillSourceDraft'];
     deleteBillSourceById: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['deleteBillSourceById'];
     deleteSelectedColumns: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['deleteSelectedColumns'];
@@ -145,7 +145,7 @@ type DashboardInspectorRuntimeBuilderConfig = {
     isGeneratingSqlDraft: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['isGeneratingSqlDraft'];
     isTranslatingIdentifiers: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['isTranslatingIdentifiers'];
     leftFilterFields: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['leftFilterFields'];
-    mainFieldSettingsOpenRequestKey: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['mainFieldSettingsOpenRequestKey'];
+    fieldSettingsOpenRequest: UseDashboardInspectorRuntimeInput['inspectorPanelInput']['fieldSettingsOpenRequest'];
     leftTableColumns: UseDashboardInspectorRuntimeInput['columnContextInput']['leftTableColumns'];
     leftTableConfig: UseDashboardInspectorRuntimeInput['columnContextInput']['leftTableConfig'];
     mainFilterFields: UseDashboardInspectorRuntimeInput['columnContextInput']['mainFilterFields'];
@@ -247,7 +247,7 @@ export function buildDashboardInspectorRuntimeBuilderConfig({
       isGeneratingSqlDraft: state.isGeneratingSqlDraft,
       isTranslatingIdentifiers: state.isTranslatingIdentifiers,
       leftFilterFields: state.leftFilterFields,
-      mainFieldSettingsOpenRequestKey: state.mainFieldSettingsOpenRequestKey,
+      fieldSettingsOpenRequest: state.fieldSettingsOpenRequest,
       mainTableColumns: state.mainTableColumns,
       saveCurrentPage: actions.saveSingleTableModuleSettingsPage,
       selectedDetailBoardGroupId: state.selectedDetailBoardGroupId,

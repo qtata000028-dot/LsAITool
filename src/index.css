@@ -514,6 +514,14 @@ body {
     inset 0 -1px 0 rgba(96, 165, 250, 0.16);
 }
 
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-tbody > tr.single-table-main-field-settings-row-highlighted > td,
+.single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-tbody > tr.single-table-main-field-settings-row-highlighted:hover > td {
+  background: rgba(191, 219, 254, 0.92) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(37, 99, 235, 0.18),
+    inset 0 -1px 0 rgba(37, 99, 235, 0.18);
+}
+
 .single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-thead > tr > th:last-child,
 .single-table-main-field-settings-modal-table.dashboard-table-builder-ant-table .ant-table-tbody > tr > td:last-child {
   border-right: none !important;

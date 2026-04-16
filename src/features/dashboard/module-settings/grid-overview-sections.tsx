@@ -39,6 +39,7 @@ type GridColumnDataSectionProps = {
   actionNode?: React.ReactNode;
   availableGridColumns: any[];
   normalizeColumn: (column: any) => any;
+  onDoubleClickColumn?: (columnId: string) => void;
   onSelectColumn: (columnId: string) => void;
   selectedColumnId?: string | null;
   title?: string;
@@ -438,6 +439,7 @@ export const GridColumnDataSection = React.memo(function GridColumnDataSection({
   actionNode,
   availableGridColumns,
   normalizeColumn,
+  onDoubleClickColumn,
   onSelectColumn,
   selectedColumnId = null,
   title = '列数据',
@@ -482,6 +484,11 @@ export const GridColumnDataSection = React.memo(function GridColumnDataSection({
                 onClick={() => {
                   if (column.id) {
                     onSelectColumn(column.id);
+                  }
+                }}
+                onDoubleClick={() => {
+                  if (column.id) {
+                    onDoubleClickColumn?.(column.id);
                   }
                 }}
                 className={getShadcnInspectorListItemClass(isActive)}

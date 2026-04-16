@@ -62,6 +62,7 @@ export function useDashboardTableBuilderBridge({
       cols: activeDetailTableColumns,
       setCols: setActiveDetailTableColumns,
       options: {
+        ...documentDetailTableBuilderOptions,
         ...(nodes.builderDetail.options ?? {}),
         hostSurface: 'embedded',
       },

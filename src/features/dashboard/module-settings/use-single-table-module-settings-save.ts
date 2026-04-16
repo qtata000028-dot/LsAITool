@@ -662,6 +662,7 @@ function buildGridFieldBody(
   const resolvedVisible = resolveGridFieldVisible(record, true);
 
   return ensureOptionalId(stripUndefinedEntries({
+    ...buildSingleTableMainFieldExtraBody(record),
     ...(fieldId != null ? { fieldId } : {}),
     fieldKey: toText(record?.backendFieldKey || record?.fieldKey || record?.fieldkey),
     fieldName,
@@ -671,12 +672,17 @@ function buildGridFieldBody(
     username: displayName,
     userName: displayName,
     orderId: toInteger(record?.orderId ?? record?.orderid, 1),
+    orderid: toInteger(record?.orderId ?? record?.orderid, 1),
     width: toInteger(record?.width, 120),
     mobileWidth: toInteger(record?.mobileWidth ?? record?.mobilewidth, toInteger(record?.width, 120)),
+    MobileWidth: toInteger(record?.mobileWidth ?? record?.mobilewidth, toInteger(record?.width, 120)),
     isVisible: options.invertVisibleFlag
       ? toBooleanNumber(!resolvedVisible, false)
       : resolvedVisible,
+    visible: resolvedVisible,
+    vislble: toBooleanNumber(!resolvedVisible, false),
     showMobile: Boolean(record?.showMobile ?? record?.showmobile ?? false),
+    ShowMobile: toBooleanNumber(record?.showMobile ?? record?.showmobile ?? false),
     isCodeField: Boolean(record?.isCodeField ?? record?.iscodefield ?? false),
   }), record);
 }

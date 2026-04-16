@@ -13,6 +13,7 @@ import {
   shadcnTextareaClass,
 } from '../../../components/ui/shadcn-inspector';
 import { getDetailBoardTheme } from './detail-board-config';
+import { type GridFieldSettingsOpenRequest } from './grid-field-settings-modal-types';
 import { type InspectorPanelRouterProps } from './inspector-panel-router';
 
 export type UseInspectorPanelPropsOptions = {
@@ -40,7 +41,7 @@ export type UseInspectorPanelPropsOptions = {
   buildGridColorRule: (index: number, overrides?: Record<string, any>) => any;
   businessType: string;
   clearColumnSelection: () => void;
-  consumeMainFieldSettingsOpenRequest: () => void;
+  consumeFieldSettingsOpenRequest: () => void;
   columnAlignOptions: any[];
   conditionPanelControlWidth: number;
   conditionPanelResizeMaxWidth: number;
@@ -93,7 +94,7 @@ export type UseInspectorPanelPropsOptions = {
   normalizeFieldSqlTagId: (value: unknown, fallback?: number) => number;
   onOpenArchiveLayoutEditor: () => void;
   onOpenConditionWorkbench: (scope: 'left' | 'main') => void;
-  mainFieldSettingsOpenRequestKey: number;
+  fieldSettingsOpenRequest: GridFieldSettingsOpenRequest;
   onOpenMainHiddenColumnsModal: () => void;
   onOpenDetailBoardPreview: (rowId: number, preferredSortColumnId?: string | null) => void;
   onResetDetailBoardFieldWidth: (event: MouseEvent<HTMLButtonElement>, groupId: string, columnId: string) => void;
@@ -180,7 +181,7 @@ export function useInspectorPanelProps({
   buildGridColorRule,
   businessType,
   clearColumnSelection,
-  consumeMainFieldSettingsOpenRequest,
+  consumeFieldSettingsOpenRequest,
   columnAlignOptions,
   conditionPanelControlWidth,
   conditionPanelResizeMaxWidth,
@@ -232,7 +233,7 @@ export function useInspectorPanelProps({
   normalizeFieldSqlTagId,
   onOpenArchiveLayoutEditor,
   onOpenConditionWorkbench,
-  mainFieldSettingsOpenRequestKey,
+  fieldSettingsOpenRequest,
   onOpenMainHiddenColumnsModal,
   onOpenDetailBoardPreview,
   onResetDetailBoardFieldWidth,
@@ -461,7 +462,7 @@ export function useInspectorPanelProps({
         buildGridColorRule,
         businessType,
         compactCardClass,
-        consumeMainFieldSettingsOpenRequest,
+        consumeFieldSettingsOpenRequest,
         context: selectedColumnContext,
         currentMenuDraft,
         currentModuleCode,
@@ -488,7 +489,7 @@ export function useInspectorPanelProps({
         leftFilterFields,
         mainTableColumns,
         loadSingleTableDetailResourcesById,
-        mainFieldSettingsOpenRequestKey,
+        fieldSettingsOpenRequest,
         mainTableHiddenColumnsCount,
         mutedLabelClass,
         normalizeColumn,
@@ -592,7 +593,7 @@ export function useInspectorPanelProps({
     buildGridColorRule,
     businessType,
     clearColumnSelection,
-    consumeMainFieldSettingsOpenRequest,
+    consumeFieldSettingsOpenRequest,
     columnAlignOptions,
     conditionPanelControlWidth,
     conditionPanelResizeMaxWidth,
@@ -634,7 +635,7 @@ export function useInspectorPanelProps({
     isTreeRelationFieldColumn,
     leftFilterFields,
     loadSingleTableDetailResourcesById,
-    mainFieldSettingsOpenRequestKey,
+    fieldSettingsOpenRequest,
     mainTableColumns,
     mapFieldSqlTagToFieldType,
     mainTableHiddenColumnsCount,

@@ -15,6 +15,7 @@ import {
 } from '../../../components/ui/shadcn-inspector';
 import { cn } from '../../../lib/utils';
 import { mapSingleTableFieldRecordToColumn } from './dashboard-single-table-field-mappers';
+import { type GridFieldSettingsModalMode } from './grid-field-settings-modal-types';
 import {
   createSingleTableMainFieldDraftRow,
   resolveSingleTableMainFieldSettingValue,
@@ -24,10 +25,13 @@ import {
 
 type SingleTableMainFieldSettingsModalProps = {
   currentModuleCode: string;
+  initialFieldId?: string | null;
   isOpen: boolean;
-  mainTableColumns: any[];
+  mode: GridFieldSettingsModalMode;
   onClose: () => void;
   onSave: (rows: any[]) => Promise<boolean>;
+  rows: any[];
+  tableLabel: string;
 };
 
 type FieldSqlTagOption = {
@@ -100,6 +104,25 @@ function getDraftRowIdentity(row: any, index: number) {
   }
 
   return `fallback:${index}`;
+}
+
+function matchesRequestedField(row: any, fieldId: string | null | undefined) {
+  const normalizedFieldId = normalizeLookupKey(fieldId);
+  if (!normalizedFieldId) {
+    return false;
+  }
+
+  return [
+    row?.__draftKey,
+    row?.id,
+    row?.backendId,
+    row?.backendFieldKey,
+    row?.fieldKey,
+    row?.fieldkey,
+    row?.fieldname,
+    row?.fieldName,
+    row?.sourceField,
+  ].some((candidate) => normalizeLookupKey(candidate) === normalizedFieldId);
 }
 
 function mergeFreshRowsWithLocalRows(freshRows: any[], localRows: any[]) {
@@ -283,10 +306,13 @@ function SingleTableFieldSettingsSortableHandle({
 
 export const SingleTableMainFieldSettingsModal = React.memo(function SingleTableMainFieldSettingsModal({
   currentModuleCode,
+  initialFieldId = null,
   isOpen,
-  mainTableColumns,
+  mode,
   onClose,
   onSave,
+  rows,
+  tableLabel,
 }: SingleTableMainFieldSettingsModalProps) {
   const [draftRows, setDraftRows] = React.useState<any[]>([]);
   const [selectedDraftKeys, setSelectedDraftKeys] = React.useState<React.Key[]>([]);
@@ -303,6 +329,8 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
   const [settingColumnWidths, setSettingColumnWidths] = React.useState<Record<string, number>>(() => (
     Object.fromEntries(singleTableMainFieldSettings.map((definition) => [definition.key, definition.width]))
   ));
+  const [highlightedDraftKey, setHighlightedDraftKey] = React.useState<string | null>(null);
+  const tableHostRef = React.useRef<HTMLDivElement | null>(null);
   const settingColumnDragSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 4 },
@@ -314,13 +342,18 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
       return;
     }
 
-    setDraftRows(sortDraftRows(mainTableColumns.map((row, index) => ensureDraftKey(row, index))));
+    setDraftRows(sortDraftRows(rows.map((row, index) => ensureDraftKey(row, index))));
     setSelectedDraftKeys([]);
     setSearchText('');
-  }, [isOpen, mainTableColumns]);
+  }, [isOpen, rows]);
 
   React.useEffect(() => {
     if (!isOpen) {
+      return;
+    }
+
+    if (!mode.startsWith('single-table')) {
+      setIsLoadingFields(false);
       return;
     }
 
@@ -334,13 +367,13 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
     const loadFreshDraftRows = async () => {
       setIsLoadingFields(true);
       try {
-        const rows = await fetchSingleTableModuleFields(normalizedModuleCode);
+        const fetchedRows = await fetchSingleTableModuleFields(normalizedModuleCode);
         if (cancelled) {
           return;
         }
 
-        const freshRows = rows.map((field, index) => ensureDraftKey(mapSingleTableFieldRecordToColumn(field, index), index));
-        const localRows = mainTableColumns.map((row, index) => ensureDraftKey(row, index));
+        const freshRows = fetchedRows.map((field, index) => ensureDraftKey(mapSingleTableFieldRecordToColumn(field, index), index));
+        const localRows = rows.map((row, index) => ensureDraftKey(row, index));
         const mergedRows = mergeFreshRowsWithLocalRows(freshRows, localRows);
         setDraftRows(sortDraftRows(mergedRows));
       } finally {
@@ -355,7 +388,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
     return () => {
       cancelled = true;
     };
-  }, [currentModuleCode, isOpen, mainTableColumns]);
+  }, [currentModuleCode, isOpen, mode, rows]);
 
   React.useEffect(() => {
     if (!isOpen) {
@@ -420,6 +453,47 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
       cancelled = true;
     };
   }, [currentModuleCode, isOpen]);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      setHighlightedDraftKey(null);
+      return;
+    }
+
+    const matchedRow = draftRows.find((row) => matchesRequestedField(row, initialFieldId)) ?? null;
+    const nextDraftKey = matchedRow?.__draftKey ? String(matchedRow.__draftKey) : null;
+    setHighlightedDraftKey(nextDraftKey);
+
+    if (!nextDraftKey) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const tableHost = tableHostRef.current;
+      if (!tableHost) {
+        return;
+      }
+
+      const targetRow = Array.from(
+        tableHost.querySelectorAll('tr[data-row-key]'),
+      ).find((rowElement) => (
+        (rowElement as HTMLTableRowElement).getAttribute('data-row-key') === nextDraftKey
+      )) as HTMLTableRowElement | undefined;
+
+      if (!targetRow) {
+        return;
+      }
+
+      targetRow.scrollIntoView({
+        block: 'center',
+        inline: 'nearest',
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [draftRows, initialFieldId, isOpen]);
 
   const orderedSettingDefinitions = React.useMemo(() => {
     const definitionLookup = new Map(singleTableMainFieldSettings.map((definition) => [definition.key, definition]));
@@ -705,6 +779,23 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
   const tableScrollX = React.useMemo(() => (
     orderedSettingDefinitions.reduce((sum, definition) => sum + (settingColumnWidths[definition.key] ?? definition.width), 48)
   ), [orderedSettingDefinitions, settingColumnWidths]);
+  const modalTitle = React.useMemo(() => {
+    switch (mode) {
+      case 'single-table-detail':
+        return '明细表字段详细设置';
+      case 'bill-main':
+        return '单据主表字段详细设置';
+      case 'bill-detail':
+        return '单据明细字段详细设置';
+      case 'single-table-main':
+      default:
+        return '主表字段详细设置';
+    }
+  }, [mode]);
+  const modalSubtitle = React.useMemo(() => {
+    const resolvedTableLabel = tableLabel.trim() || '当前表';
+    return `当前正在编辑 ${resolvedTableLabel} 的全部字段配置`;
+  }, [tableLabel]);
 
   if (!isOpen) {
     return null;
@@ -716,16 +807,22 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[95] bg-white dark:bg-slate-950"
+        onClick={onClose}
+        className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/26 px-4 py-5 backdrop-blur-md sm:px-6 sm:py-6"
       >
         <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 8 }}
+          initial={{ opacity: 0, y: 18, scale: 0.985 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 18, scale: 0.985 }}
           transition={{ duration: 0.2 }}
-          className="flex h-full w-full flex-col overflow-hidden bg-white dark:bg-slate-950"
+          onClick={(event) => event.stopPropagation()}
+          style={{
+            width: 'min(1680px, calc(100vw - 32px))',
+            height: 'min(920px, calc(100dvh - 40px))',
+          }}
+          className="flex flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/96 shadow-[0_40px_120px_-42px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-slate-950/96"
         >
-          <div className="border-b border-slate-200 bg-white px-6 py-3 dark:border-slate-700 dark:bg-slate-950">
+          <div className="border-b border-slate-200/90 bg-white/92 px-6 py-3 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-950/92">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex items-center gap-3">
@@ -733,7 +830,8 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
                     <span className="material-symbols-outlined text-[18px]">table_view</span>
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[18px] font-bold tracking-[-0.02em] text-slate-900 dark:text-white">显示字段详细设置</div>
+                    <div className="text-[18px] font-bold tracking-[-0.02em] text-slate-900 dark:text-white">{modalTitle}</div>
+                    <div className="mt-1 text-[12px] text-slate-500 dark:text-slate-300">{modalSubtitle}</div>
                   </div>
                 </div>
               </div>
@@ -775,7 +873,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
             </div>
           </div>
 
-          <div className="border-b border-slate-200 bg-[linear-gradient(180deg,#f8fbff_0%,#f5f9ff_100%)] px-6 py-3 dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-200/85 bg-[linear-gradient(180deg,rgba(248,251,255,0.96)_0%,rgba(245,249,255,0.92)_100%)] px-6 py-3 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/90">
             <div className="w-full max-w-[360px] sm:w-[360px]">
               <Input
                 allowClear
@@ -788,7 +886,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div ref={tableHostRef} className="min-h-0 flex-1 overflow-hidden">
             <Spin
               spinning={isLoadingFields || isLoadingOptions}
               className="block h-full [&_.ant-spin-container]:flex [&_.ant-spin-container]:h-full [&_.ant-spin-container]:min-h-0 [&_.ant-spin-container]:flex-col"
@@ -811,8 +909,13 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
                     columns={tableColumns}
                     dataSource={filteredRows}
                     rowSelection={rowSelection}
+                    rowClassName={(record) => (
+                      record.__draftKey === highlightedDraftKey
+                        ? 'single-table-main-field-settings-row-highlighted'
+                        : ''
+                    )}
                     pagination={false}
-                    scroll={{ x: tableScrollX, y: 'calc(100dvh - 154px)' }}
+                    scroll={{ x: tableScrollX, y: 'calc(100dvh - 260px)' }}
                   />
                 </SortableContext>
               </DndContext>
