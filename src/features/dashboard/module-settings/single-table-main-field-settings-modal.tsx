@@ -1,6 +1,6 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Checkbox, Input, InputNumber, Select, Spin, Table, type TableColumnsType, type TableProps } from 'antd';
+import { Checkbox, Input, InputNumber, Modal, Select, Spin, Table, type TableColumnsType, type TableProps } from 'antd';
 import { flushSync } from 'react-dom';
 import { DndContext, PointerSensor, closestCenter, pointerWithin, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -107,6 +107,14 @@ function ensureDraftKey(row: any, index: number) {
 
 function normalizeLookupKey(value: unknown) {
   return String(value ?? '').trim().toLowerCase();
+}
+
+function serializeDraftRowsSnapshot(rows: any[]) {
+  return JSON.stringify(sortDraftRows(rows).map((row) => {
+    const rest = { ...(row ?? {}) };
+    delete rest.__draftKey;
+    return rest;
+  }));
 }
 
 function getDraftRowIdentity(row: any, index: number) {
@@ -360,6 +368,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
   const hasSavedPreferenceRef = React.useRef(false);
   const hasShownPreferenceErrorRef = React.useRef(false);
   const hasLocalPreferenceInteractionRef = React.useRef(false);
+  const initialDraftRowsSnapshotRef = React.useRef('[]');
   const lastSavedPreferenceSnapshotRef = React.useRef(
     serializeGridFieldSettingsPreference(DEFAULT_GRID_FIELD_SETTINGS_PREFERENCE),
   );
@@ -380,6 +389,11 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
     () => serializeGridFieldSettingsPreference(normalizedLayoutPreference),
     [normalizedLayoutPreference],
   );
+  const serializedDraftRowsSnapshot = React.useMemo(
+    () => serializeDraftRowsSnapshot(draftRows),
+    [draftRows],
+  );
+  const hasUnsavedDraftChanges = serializedDraftRowsSnapshot !== initialDraftRowsSnapshotRef.current;
 
   const reportPreferenceError = React.useCallback((message: string) => {
     if (hasShownPreferenceErrorRef.current) {
@@ -396,6 +410,9 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
     }
 
     setDraftRows(sortDraftRows(rows.map((row, index) => ensureDraftKey(row, index))));
+    initialDraftRowsSnapshotRef.current = serializeDraftRowsSnapshot(
+      rows.map((row, index) => ensureDraftKey(row, index)),
+    );
     setSelectedDraftKeys([]);
     setSearchText('');
   }, [isOpen, rows]);
@@ -429,6 +446,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
         const localRows = rows.map((row, index) => ensureDraftKey(row, index));
         const mergedRows = mergeFreshRowsWithLocalRows(freshRows, localRows);
         setDraftRows(sortDraftRows(mergedRows));
+        initialDraftRowsSnapshotRef.current = serializeDraftRowsSnapshot(mergedRows);
       } finally {
         if (!cancelled) {
           setIsLoadingFields(false);
@@ -720,7 +738,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
 
   const handleSave = React.useCallback(async () => {
     if (isSaving || missingFieldNameCount > 0) {
-      return;
+      return false;
     }
 
     setIsSaving(true);
@@ -732,12 +750,39 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
       }));
       const saved = await onSave(normalizedRows);
       if (saved) {
+        initialDraftRowsSnapshotRef.current = serializeDraftRowsSnapshot(normalizedRows);
         onClose();
       }
+      return saved;
     } finally {
       setIsSaving(false);
     }
   }, [draftRows, isSaving, missingFieldNameCount, onClose, onSave]);
+
+  const handleMaskClose = React.useCallback(() => {
+    if (isSaving) {
+      return;
+    }
+
+    if (!hasUnsavedDraftChanges) {
+      onClose();
+      return;
+    }
+
+    Modal.confirm({
+      cancelText: '继续编辑',
+      centered: true,
+      content: '当前有未保存的字段配置，是否先保存再关闭？',
+      okText: '保存并关闭',
+      onOk: async () => {
+        const saved = await handleSave();
+        if (!saved) {
+          throw new Error('field-settings-save-cancelled');
+        }
+      },
+      title: '未保存内容',
+    });
+  }, [handleSave, hasUnsavedDraftChanges, isSaving, onClose]);
 
   const handleOpenTextCellEditor = React.useCallback((
     record: any,
@@ -1018,7 +1063,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        onClick={onClose}
+        onClick={handleMaskClose}
         className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/26 px-4 py-5 backdrop-blur-md sm:px-6 sm:py-6"
       >
         <motion.div
@@ -1067,7 +1112,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
                 <button
                   type="button"
                   className={`${shadcnInspectorActionButtonClass} h-9 px-4 text-[12px] disabled:cursor-not-allowed disabled:opacity-50`}
-                  onClick={onClose}
+                  onClick={handleMaskClose}
                   disabled={isSaving}
                 >
                   关闭
