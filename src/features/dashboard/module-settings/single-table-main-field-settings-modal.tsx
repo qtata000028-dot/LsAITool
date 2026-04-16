@@ -6,6 +6,12 @@ import { DndContext, PointerSensor, closestCenter, pointerWithin, useSensor, use
 import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Resizable, type ResizeCallbackData } from 'react-resizable';
+import {
+  fetchGridFieldSettingsPreference,
+  resetGridFieldSettingsPreference,
+  saveGridFieldSettingsPreference,
+  type GridFieldSettingsPreferenceScope,
+} from '../../../lib/backend-grid-field-settings-preferences';
 import { fetchSingleTableFieldNameOptions, fetchSingleTableModuleFields } from '../../../lib/backend-module-config';
 import { fetchDataFormatOptions, fetchFieldSqlTagOptions } from '../../../lib/backend-system';
 import {
@@ -16,6 +22,12 @@ import {
 import { cn } from '../../../lib/utils';
 import { mapSingleTableFieldRecordToColumn } from './dashboard-single-table-field-mappers';
 import { type GridFieldSettingsModalMode } from './grid-field-settings-modal-types';
+import {
+  DEFAULT_GRID_FIELD_SETTINGS_PREFERENCE,
+  normalizeGridFieldSettingsPreference,
+  serializeGridFieldSettingsPreference,
+  serializeGridFieldSettingsScope,
+} from './grid-field-settings-preference-utils';
 import {
   createSingleTableMainFieldDraftRow,
   resolveSingleTableMainFieldSettingValue,
@@ -29,7 +41,9 @@ type SingleTableMainFieldSettingsModalProps = {
   isOpen: boolean;
   mode: GridFieldSettingsModalMode;
   onClose: () => void;
+  onPreferenceError?: (message: string) => void;
   onSave: (rows: any[]) => Promise<boolean>;
+  preferenceScope?: GridFieldSettingsPreferenceScope | null;
   rows: any[];
   tableLabel: string;
 };
@@ -318,7 +332,9 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
   isOpen,
   mode,
   onClose,
+  onPreferenceError,
   onSave,
+  preferenceScope = null,
   rows,
   tableLabel,
 }: SingleTableMainFieldSettingsModalProps) {
@@ -332,19 +348,47 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
   const [dataFormatOptions, setDataFormatOptions] = React.useState<DataFormatOption[]>([]);
   const [fieldNameOptions, setFieldNameOptions] = React.useState<FieldNameOption[]>([]);
   const [orderedSettingKeys, setOrderedSettingKeys] = React.useState<string[]>(() => (
-    singleTableMainFieldSettings.map((definition) => definition.key)
+    DEFAULT_GRID_FIELD_SETTINGS_PREFERENCE.orderedSettingKeys
   ));
   const [settingColumnWidths, setSettingColumnWidths] = React.useState<Record<string, number>>(() => (
-    Object.fromEntries(singleTableMainFieldSettings.map((definition) => [definition.key, definition.width]))
+    DEFAULT_GRID_FIELD_SETTINGS_PREFERENCE.columnWidths
   ));
   const [highlightedDraftKey, setHighlightedDraftKey] = React.useState<string | null>(null);
   const [textCellEditor, setTextCellEditor] = React.useState<TextCellEditorState>(null);
+  const [preferenceSaveRevision, setPreferenceSaveRevision] = React.useState(0);
   const tableHostRef = React.useRef<HTMLDivElement | null>(null);
+  const hasSavedPreferenceRef = React.useRef(false);
+  const hasShownPreferenceErrorRef = React.useRef(false);
+  const hasLocalPreferenceInteractionRef = React.useRef(false);
+  const lastSavedPreferenceSnapshotRef = React.useRef(
+    serializeGridFieldSettingsPreference(DEFAULT_GRID_FIELD_SETTINGS_PREFERENCE),
+  );
   const settingColumnDragSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 4 },
     }),
   );
+  const serializedPreferenceScope = React.useMemo(
+    () => serializeGridFieldSettingsScope(preferenceScope),
+    [preferenceScope],
+  );
+  const normalizedLayoutPreference = React.useMemo(() => normalizeGridFieldSettingsPreference({
+    columnWidths: settingColumnWidths,
+    orderedSettingKeys,
+  }), [orderedSettingKeys, settingColumnWidths]);
+  const serializedLayoutPreference = React.useMemo(
+    () => serializeGridFieldSettingsPreference(normalizedLayoutPreference),
+    [normalizedLayoutPreference],
+  );
+
+  const reportPreferenceError = React.useCallback((message: string) => {
+    if (hasShownPreferenceErrorRef.current) {
+      return;
+    }
+
+    hasShownPreferenceErrorRef.current = true;
+    onPreferenceError?.(message);
+  }, [onPreferenceError]);
 
   React.useEffect(() => {
     if (!isOpen) {
@@ -465,6 +509,96 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
 
   React.useEffect(() => {
     if (!isOpen) {
+      return;
+    }
+
+    const defaultPreference = normalizeGridFieldSettingsPreference(DEFAULT_GRID_FIELD_SETTINGS_PREFERENCE);
+    setOrderedSettingKeys(defaultPreference.orderedSettingKeys);
+    setSettingColumnWidths(defaultPreference.columnWidths);
+    setPreferenceSaveRevision(0);
+    hasSavedPreferenceRef.current = false;
+    hasShownPreferenceErrorRef.current = false;
+    hasLocalPreferenceInteractionRef.current = false;
+    lastSavedPreferenceSnapshotRef.current = serializeGridFieldSettingsPreference(defaultPreference);
+
+    if (!serializedPreferenceScope || !preferenceScope) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPreference = async () => {
+      try {
+        const response = await fetchGridFieldSettingsPreference(preferenceScope);
+        if (cancelled || hasLocalPreferenceInteractionRef.current) {
+          return;
+        }
+
+        const nextPreference = normalizeGridFieldSettingsPreference(response.preference);
+        setOrderedSettingKeys(nextPreference.orderedSettingKeys);
+        setSettingColumnWidths(nextPreference.columnWidths);
+        hasSavedPreferenceRef.current = response.hasUserPreference;
+        lastSavedPreferenceSnapshotRef.current = serializeGridFieldSettingsPreference(nextPreference);
+      } catch {
+        if (!cancelled) {
+          reportPreferenceError('字段设置列布局偏好加载失败，已回退到默认布局。');
+        }
+      }
+    };
+
+    void loadPreference();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, preferenceScope, reportPreferenceError, serializedPreferenceScope]);
+
+  React.useEffect(() => {
+    if (!isOpen || preferenceSaveRevision <= 0 || !serializedPreferenceScope || !preferenceScope) {
+      return;
+    }
+
+    if (serializedLayoutPreference === lastSavedPreferenceSnapshotRef.current) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const defaultSnapshot = serializeGridFieldSettingsPreference(DEFAULT_GRID_FIELD_SETTINGS_PREFERENCE);
+        if (serializedLayoutPreference === defaultSnapshot) {
+          if (hasSavedPreferenceRef.current) {
+            const response = await resetGridFieldSettingsPreference(preferenceScope);
+            hasSavedPreferenceRef.current = response.hasUserPreference;
+          }
+          lastSavedPreferenceSnapshotRef.current = defaultSnapshot;
+        } else {
+          const response = await saveGridFieldSettingsPreference(preferenceScope, normalizedLayoutPreference);
+          const nextPreference = normalizeGridFieldSettingsPreference(response.preference ?? normalizedLayoutPreference);
+          hasSavedPreferenceRef.current = true;
+          lastSavedPreferenceSnapshotRef.current = serializeGridFieldSettingsPreference(nextPreference);
+        }
+
+        hasShownPreferenceErrorRef.current = false;
+      } catch {
+        reportPreferenceError('字段设置列布局偏好保存失败，当前调整仅保留在本次会话。');
+      }
+    }, 320);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    isOpen,
+    normalizedLayoutPreference,
+    preferenceSaveRevision,
+    preferenceScope,
+    reportPreferenceError,
+    serializedLayoutPreference,
+    serializedPreferenceScope,
+  ]);
+
+  React.useEffect(() => {
+    if (!isOpen) {
       setHighlightedDraftKey(null);
       return;
     }
@@ -534,6 +668,8 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
 
       return arrayMove(prev, activeIndex, overIndex);
     });
+    hasLocalPreferenceInteractionRef.current = true;
+    setPreferenceSaveRevision((prev) => prev + 1);
   }, []);
 
   const filteredRows = React.useMemo(() => {
@@ -832,6 +968,8 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
               ...prev,
               [definition.key]: Math.round(width),
             }));
+            hasLocalPreferenceInteractionRef.current = true;
+            setPreferenceSaveRevision((prev) => prev + 1);
           },
         }),
       })),

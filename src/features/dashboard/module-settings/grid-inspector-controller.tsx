@@ -1,6 +1,7 @@
 import React from 'react';
 import { shadcnInspectorSectionClass, shadcnPanelBodyClass } from '../../../components/ui/shadcn-inspector';
 
+import type { GridFieldSettingsPreferenceScope } from '../../../lib/backend-grid-field-settings-preferences';
 import { saveSingleTableModuleConfig } from '../../../lib/backend-module-config';
 import {
   requestAiCreateMainTable,
@@ -473,6 +474,23 @@ export function GridInspectorController({
         return context.title || currentModuleName || '主表';
     }
   }, [context.title, currentDetailTabName, currentModuleName, fieldSettingsModalState?.mode]);
+  const fieldSettingsPreferenceScope = React.useMemo<GridFieldSettingsPreferenceScope | null>(() => {
+    const currentMode = fieldSettingsModalState?.mode;
+    const ownerCode = String(currentModuleCode ?? '').trim();
+    if (!currentMode || !ownerCode) {
+      return null;
+    }
+
+    const viewScope = currentMode.endsWith('detail') ? 'detail' : 'main';
+    return {
+      detailTabKey: viewScope === 'detail'
+        ? String(currentDetailTabConfig?.tabKey || activeTab || '').trim() || null
+        : null,
+      ownerCode,
+      ownerType: currentMode.startsWith('bill') ? 'bill' : 'single-table',
+      viewScope,
+    };
+  }, [activeTab, currentDetailTabConfig?.tabKey, currentModuleCode, fieldSettingsModalState?.mode]);
 
   const updateActiveDetailTabConfig = (patch: Record<string, any>) => {
     if (!isDocumentDetailGrid) return;
@@ -1237,7 +1255,9 @@ export function GridInspectorController({
         isOpen={fieldSettingsModalState != null}
         mode={fieldSettingsModalState?.mode ?? 'single-table-main'}
         onClose={() => setFieldSettingsModalState(null)}
+        onPreferenceError={showToast}
         onSave={saveFieldSettings}
+        preferenceScope={fieldSettingsPreferenceScope}
         rows={modalRows}
         tableLabel={modalTableLabel}
       />
