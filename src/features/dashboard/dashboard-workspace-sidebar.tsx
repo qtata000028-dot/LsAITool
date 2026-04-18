@@ -453,7 +453,7 @@ export function DashboardWorkspaceSidebar({
               }`}
             >
               <span className="material-symbols-outlined text-xl">shield_lock</span>
-              <span className="text-sm font-medium">权限配置</span>
+              <span className="text-sm font-medium">权限管理</span>
             </button>
           ) : null}
 

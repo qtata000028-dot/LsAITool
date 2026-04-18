@@ -46,6 +46,18 @@ export interface AuthSession {
   selectedCompanyOptionKey?: string;
 }
 
+export interface AuthMeProfile {
+  companyKey: string;
+  companyTitle: string;
+  datasourceCode: string;
+  departmentId: string;
+  employeeId: number;
+  employeeName: string;
+  isAdmin?: boolean;
+  tokenVersion: number;
+  username: string;
+}
+
 async function requestEmployeeOptions() {
   return apiRequest<EmployeeOption[]>('/api/auth/employees', {
     method: 'GET',
@@ -70,5 +82,12 @@ export async function loginWithPassword(payload: LoginPayload) {
   return apiRequest<AuthSession>('/api/auth/login', {
     body: payload,
     method: 'POST',
+  });
+}
+
+export async function fetchCurrentUserProfile() {
+  return apiRequest<AuthMeProfile>('/api/auth/me', {
+    auth: true,
+    method: 'GET',
   });
 }

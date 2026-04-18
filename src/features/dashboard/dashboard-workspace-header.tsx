@@ -22,7 +22,7 @@ export function DashboardWorkspaceHeader({
       <div className="flex items-center gap-4">
         <h2 className="text-base font-bold text-slate-900 dark:text-white">
           {isServerPermissionActive
-            ? '权限配置工作台'
+            ? '权限管理工作台'
             : isResearchRecordActive
               ? '调研记录工作台'
               : isFunctionFlowDesignActive
@@ -37,7 +37,7 @@ export function DashboardWorkspaceHeader({
             <>
               <span className="text-slate-900 dark:text-slate-200 font-semibold tracking-tight">系统管理</span>
               <span className="material-symbols-outlined text-[16px] text-slate-400">chevron_right</span>
-              <span className="text-slate-900 dark:text-slate-200 font-semibold tracking-tight">帐套权限</span>
+              <span className="text-slate-900 dark:text-slate-200 font-semibold tracking-tight">权限管理中心</span>
             </>
           ) : (
             <>
@@ -93,7 +93,7 @@ export function DashboardWorkspaceHeader({
         </div>
       ) : (
         <div className="rounded-full border border-cyan-100 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-700">
-          仅管理员可维护帐套权限
+          仅超级管理员可维护权限配置
         </div>
       )}
     </header>
