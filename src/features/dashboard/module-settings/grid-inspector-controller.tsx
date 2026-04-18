@@ -476,21 +476,29 @@ export function GridInspectorController({
   }, [context.title, currentDetailTabName, currentModuleName, fieldSettingsModalState?.mode]);
   const fieldSettingsPreferenceScope = React.useMemo<GridFieldSettingsPreferenceScope | null>(() => {
     const currentMode = fieldSettingsModalState?.mode;
-    const ownerCode = String(currentModuleCode ?? '').trim();
+    const isBillMode = currentMode?.startsWith('bill') === true;
+    const ownerCode = isBillMode
+      ? String(currentGridConfig?.typeCode || currentGridConfig?.dllCoId || currentModuleCode || '').trim()
+      : String(currentModuleCode ?? '').trim();
     if (!currentMode || !ownerCode) {
       return null;
     }
 
-    const viewScope = currentMode.endsWith('detail') ? 'detail' : 'main';
+    const viewScope = isBillMode
+      ? 'main'
+      : (currentMode.endsWith('detail') ? 'detail' : 'main');
     return {
       detailTabKey: viewScope === 'detail'
         ? String(currentDetailTabConfig?.tabKey || activeTab || '').trim() || null
         : null,
       ownerCode,
-      ownerType: currentMode.startsWith('bill') ? 'bill' : 'single-table',
+      ownerType: isBillMode ? 'bill' : 'single-table',
       viewScope,
     };
-  }, [activeTab, currentDetailTabConfig?.tabKey, currentModuleCode, fieldSettingsModalState?.mode]);
+  }, [activeTab, currentDetailTabConfig?.tabKey, currentGridConfig?.dllCoId, currentGridConfig?.typeCode, currentModuleCode, fieldSettingsModalState?.mode]);
+  const fieldSettingsModuleCode = React.useMemo(() => (
+    fieldSettingsPreferenceScope?.ownerCode || String(currentModuleCode ?? '').trim()
+  ), [currentModuleCode, fieldSettingsPreferenceScope?.ownerCode]);
 
   const updateActiveDetailTabConfig = (patch: Record<string, any>) => {
     if (!isDocumentDetailGrid) return;
@@ -1250,7 +1258,7 @@ export function GridInspectorController({
         )}
       </div>
       <SingleTableMainFieldSettingsModal
-        currentModuleCode={currentModuleCode}
+        currentModuleCode={fieldSettingsModuleCode}
         initialFieldId={fieldSettingsModalState?.initialFieldId ?? null}
         isOpen={fieldSettingsModalState != null}
         mode={fieldSettingsModalState?.mode ?? 'single-table-main'}

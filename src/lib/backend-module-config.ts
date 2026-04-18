@@ -799,6 +799,14 @@ export async function fetchBillTypeMasterFields(typeCode: string) {
   });
 }
 
+export async function fetchBillTypeFieldNameOptions(typeCode: string, scope: 'main' | 'detail') {
+  const path = scope === 'detail' ? 'detail-fields' : 'master-fields';
+  return apiRequest<Array<Record<string, unknown>>>(`/api/bill/types/${encodePathParam(typeCode)}/${path}`, {
+    auth: true,
+    method: 'GET',
+  });
+}
+
 export async function fetchBillTypeDesignerControls(typeCode: string) {
   return apiRequest<BillTypeDesignerControlDto[]>(`/api/bill/types/${encodePathParam(typeCode)}/designer-controls`, {
     auth: true,

@@ -12,7 +12,11 @@ import {
   saveGridFieldSettingsPreference,
   type GridFieldSettingsPreferenceScope,
 } from '../../../lib/backend-grid-field-settings-preferences';
-import { fetchSingleTableFieldNameOptions, fetchSingleTableModuleFields } from '../../../lib/backend-module-config';
+import {
+  fetchBillTypeFieldNameOptions,
+  fetchSingleTableFieldNameOptions,
+  fetchSingleTableModuleFields,
+} from '../../../lib/backend-module-config';
 import { fetchDataFormatOptions, fetchFieldSqlTagOptions } from '../../../lib/backend-system';
 import {
   shadcnInspectorActionButtonClass,
@@ -469,12 +473,21 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
     let cancelled = false;
 
     const loadOptions = async () => {
+      const normalizedModuleCode = currentModuleCode.trim();
+      const nextFieldNameOptionsPromise = !normalizedModuleCode
+        ? Promise.resolve([])
+        : mode === 'bill-main'
+          ? fetchBillTypeFieldNameOptions(normalizedModuleCode, 'main')
+          : mode === 'bill-detail'
+            ? fetchBillTypeFieldNameOptions(normalizedModuleCode, 'detail')
+            : fetchSingleTableFieldNameOptions(normalizedModuleCode);
+
       setIsLoadingOptions(true);
       try {
         const [nextFieldSqlTags, nextDataFormats, nextFieldNames] = await Promise.all([
           fetchFieldSqlTagOptions(),
           fetchDataFormatOptions(),
-          currentModuleCode.trim() ? fetchSingleTableFieldNameOptions(currentModuleCode.trim()) : Promise.resolve([]),
+          nextFieldNameOptionsPromise,
         ]);
 
         if (cancelled) {
@@ -496,16 +509,16 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
         setFieldNameOptions(
           (nextFieldNames || []).map((item: any) => {
             const fieldName = toText(item?.fieldName);
-            const fieldType = toText(item?.fieldType);
-            const fieldLen = toText(item?.fieldLen);
-            const fieldDec = toText(item?.fieldDec);
+            const fieldType = toText(item?.fieldType ?? item?.dataType);
+            const fieldLen = toText(item?.fieldLen ?? item?.dataSize);
+            const fieldDec = toText(item?.fieldDec ?? item?.dataDec);
             const suffix = [fieldType, fieldLen ? `L${fieldLen}` : '', fieldDec ? `D${fieldDec}` : '']
               .filter(Boolean)
               .join(' · ');
 
             return {
-              fieldDec: item?.fieldDec,
-              fieldLen: item?.fieldLen,
+              fieldDec: item?.fieldDec ?? item?.dataDec,
+              fieldLen: item?.fieldLen ?? item?.dataSize,
               label: suffix ? `${fieldName} (${suffix})` : fieldName,
               value: fieldName,
             };
@@ -523,7 +536,7 @@ export const SingleTableMainFieldSettingsModal = React.memo(function SingleTable
     return () => {
       cancelled = true;
     };
-  }, [currentModuleCode, isOpen]);
+  }, [currentModuleCode, isOpen, mode]);
 
   React.useEffect(() => {
     if (!isOpen) {

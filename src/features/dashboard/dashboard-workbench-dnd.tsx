@@ -7,6 +7,7 @@ type DesignerWorkbenchDropLaneProps = {
   data: Record<string, unknown>;
   dropId: string;
   key?: React.Key;
+  style?: React.CSSProperties;
 };
 
 export function DesignerWorkbenchDropLane({
@@ -14,6 +15,7 @@ export function DesignerWorkbenchDropLane({
   className,
   data,
   dropId,
+  style,
 }: DesignerWorkbenchDropLaneProps): React.JSX.Element {
   const { setNodeRef } = useDroppable({
     id: dropId,
@@ -21,7 +23,7 @@ export function DesignerWorkbenchDropLane({
   });
 
   return (
-    <div ref={setNodeRef} className={className}>
+    <div ref={setNodeRef} className={className} style={style}>
       {children}
     </div>
   );
@@ -37,7 +39,12 @@ type DesignerWorkbenchDraggableItemProps = {
   key?: React.Key;
   onClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
   onContextMenu?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onDoubleClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
   onKeyDown?: (event: React.KeyboardEvent<HTMLDivElement>) => void;
+  onMouseDown?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onMouseDownCapture?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onMouseUp?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onMouseUpCapture?: (event: React.MouseEvent<HTMLDivElement>) => void;
   role?: string;
   style?: React.CSSProperties;
   tabIndex?: number;
@@ -52,7 +59,12 @@ export function DesignerWorkbenchDraggableItem({
   itemAttributes,
   onClick,
   onContextMenu,
+  onDoubleClick,
   onKeyDown,
+  onMouseDown,
+  onMouseDownCapture,
+  onMouseUp,
+  onMouseUpCapture,
   role = 'button',
   style,
   tabIndex = 0,
@@ -72,6 +84,26 @@ export function DesignerWorkbenchDraggableItem({
   const dragStyle = transform
     ? { ...(style ?? {}), transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : style;
+  const shouldBlockDragStart = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return Boolean(target.closest('[data-workbench-no-drag="true"]'));
+  };
+  const handleMouseDownCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (shouldBlockDragStart(target)) {
+      event.stopPropagation();
+      return;
+    }
+    onMouseDownCapture?.(event);
+  };
+  const handlePointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (shouldBlockDragStart(event.target)) {
+      event.stopPropagation();
+    }
+  };
 
   return (
     <div
@@ -82,7 +114,13 @@ export function DesignerWorkbenchDraggableItem({
       style={dragStyle}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
+      onMouseDown={onMouseDown}
+      onMouseDownCapture={handleMouseDownCapture}
+      onPointerDownCapture={handlePointerDownCapture}
+      onMouseUp={onMouseUp}
+      onMouseUpCapture={onMouseUpCapture}
       {...itemAttributes}
       {...attributes}
       {...listeners}

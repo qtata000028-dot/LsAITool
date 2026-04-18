@@ -24,6 +24,7 @@ const DETAIL_BOARD_GROUP_ROW_GAP = 16;
 const DETAIL_BOARD_GROUP_COLUMN_GAP = 16;
 const DETAIL_BOARD_GROUP_HEADER_HEIGHT = 40;
 const DETAIL_BOARD_GROUP_BODY_GAP = 24;
+const DETAIL_BOARD_ARCHIVE_DEFAULT_GROUP_TITLE = '未分组字段';
 
 type NormalizeColumn = (column: Record<string, any>) => Record<string, any>;
 
@@ -210,7 +211,7 @@ export function buildDetailLayoutDocumentFromDetailBoard(
     items.push({
       id: groupId,
       type: 'groupbox',
-      title: typeof group?.name === 'string' && group.name.trim() ? group.name : `信息分组 ${groupIndex + 1}`,
+      title: typeof group?.name === 'string' ? group.name : `信息分组 ${groupIndex + 1}`,
       parentId: null,
       x: 24,
       y: nextGroupY,
@@ -224,6 +225,90 @@ export function buildDetailLayoutDocumentFromDetailBoard(
   return createEmptyDetailLayoutDocument({
     items,
   });
+}
+
+export function buildArchiveDetailLayoutDocumentFromDetailBoard(
+  currentDetailBoard: Record<string, any>,
+  availableGridColumns: Record<string, any>[],
+  normalizeColumn: NormalizeColumn,
+): DetailLayoutDocument {
+  const availableColumnMap = buildColumnMap(availableGridColumns);
+  const normalizedDesignerLayout = normalizeDesignerLayoutDocument(currentDetailBoard?.designerLayout, availableColumnMap);
+  if (normalizedDesignerLayout) {
+    return normalizedDesignerLayout;
+  }
+
+  const groups = Array.isArray(currentDetailBoard?.groups) ? currentDetailBoard.groups : [];
+  const assignedColumnIds = new Set<string>();
+  const items: DetailLayoutItem[] = [];
+  let nextGroupY = 24;
+
+  const appendGroup = (group: Record<string, any>, groupIndex: number) => {
+    const effectiveColumnIds = Array.isArray(group?.columnIds)
+      ? group.columnIds.map(String).filter((columnId) => availableColumnMap.has(columnId))
+      : [];
+    if (effectiveColumnIds.length === 0) {
+      return;
+    }
+
+    effectiveColumnIds.forEach((columnId) => assignedColumnIds.add(columnId));
+    const groupId = String(group?.id || `archive_detail_group_${groupIndex + 1}`);
+    const { childItems, groupHeight, groupWidth } = buildGroupChildItems(
+      {
+        ...group,
+        columnIds: effectiveColumnIds,
+      },
+      groupId,
+      availableColumnMap,
+      normalizeColumn,
+    );
+    items.push({
+      id: groupId,
+      type: 'groupbox',
+      title: typeof group?.name === 'string' ? group.name : `信息分组 ${groupIndex + 1}`,
+      parentId: null,
+      x: 24,
+      y: nextGroupY,
+      w: groupWidth,
+      h: groupHeight,
+    });
+    items.push(...childItems);
+    nextGroupY += groupHeight + DETAIL_BOARD_GROUP_GAP;
+  };
+
+  groups.forEach((group: Record<string, any>, groupIndex: number) => {
+    appendGroup(group, groupIndex);
+  });
+
+  const remainingColumnIds = availableGridColumns
+    .map((column) => String(column?.id ?? ''))
+    .filter((columnId) => columnId && !assignedColumnIds.has(columnId) && availableColumnMap.has(columnId));
+
+  if (remainingColumnIds.length > 0 || items.length === 0) {
+    const fallbackGroup = previousRootGroupToArchiveGroup(currentDetailBoard, remainingColumnIds);
+    appendGroup(fallbackGroup, items.length);
+  }
+
+  return createEmptyDetailLayoutDocument({
+    items,
+  });
+}
+
+function previousRootGroupToArchiveGroup(currentDetailBoard: Record<string, any>, columnIds: string[]) {
+  const previousRootGroup = Array.isArray(currentDetailBoard?.groups)
+    ? currentDetailBoard.groups.find((group: Record<string, any>) => String(group?.id) === DETAIL_BOARD_DESIGNER_ROOT_GROUP_ID)
+    : null;
+  return {
+    columnHeights: previousRootGroup?.columnHeights ?? {},
+    columnIds,
+    columnRows: previousRootGroup?.columnRows ?? {},
+    columnWidths: previousRootGroup?.columnWidths ?? {},
+    columnsPerRow: previousRootGroup?.columnsPerRow ?? 2,
+    description: previousRootGroup?.description ?? '',
+    id: previousRootGroup?.id ?? 'archive_detail_group_default',
+    name: previousRootGroup?.name ?? DETAIL_BOARD_ARCHIVE_DEFAULT_GROUP_TITLE,
+    rows: previousRootGroup?.rows ?? Math.max(1, Math.ceil(Math.max(columnIds.length, 1) / 2)),
+  };
 }
 
 function buildLegacyGroupFromItems(
@@ -252,7 +337,7 @@ function buildLegacyGroupFromItems(
 
   return {
     id: groupId,
-    name: groupTitle || previousGroup?.name || '信息分组',
+    name: groupTitle ?? previousGroup?.name ?? '信息分组',
     description: previousGroup?.description ?? '',
     columnIds,
     rows: Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, rowAnchors.length || 1),
@@ -291,7 +376,7 @@ export function buildDetailBoardFromDesignerLayout(
   if (rootFieldItems.length > 0) {
     groups.push(buildLegacyGroupFromItems(
       DETAIL_BOARD_DESIGNER_ROOT_GROUP_ID,
-      previousGroupMap.get(DETAIL_BOARD_DESIGNER_ROOT_GROUP_ID)?.name || '未分组字段',
+      previousGroupMap.get(DETAIL_BOARD_DESIGNER_ROOT_GROUP_ID)?.name ?? '未分组字段',
       rootFieldItems,
       previousGroupMap,
       usedFieldIds,
@@ -303,7 +388,7 @@ export function buildDetailBoardFromDesignerLayout(
     .forEach((groupItem) => {
       groups.push(buildLegacyGroupFromItems(
         groupItem.id,
-        groupItem.title || '信息分组',
+        typeof groupItem.title === 'string' ? groupItem.title : '信息分组',
         childrenByParent.get(groupItem.id) ?? [],
         previousGroupMap,
         usedFieldIds,
@@ -355,7 +440,7 @@ export function buildDetailBoardPreviewGroupsFromDesignerLayout(document: Detail
       previewGroups.push({
         id: groupItem.id,
         items: itemsByParent.get(groupItem.id) ?? [],
-        title: groupItem.title || '信息分组',
+        title: typeof groupItem.title === 'string' ? groupItem.title : '信息分组',
       });
     });
 
