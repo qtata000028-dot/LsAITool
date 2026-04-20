@@ -1,5 +1,7 @@
 import React from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 type DesignerWorkbenchDropLaneProps = {
   children: React.ReactNode;
@@ -46,6 +48,7 @@ type DesignerWorkbenchDraggableItemProps = {
   onMouseUp?: (event: React.MouseEvent<HTMLDivElement>) => void;
   onMouseUpCapture?: (event: React.MouseEvent<HTMLDivElement>) => void;
   role?: string;
+  sortable?: boolean;
   style?: React.CSSProperties;
   tabIndex?: number;
 };
@@ -66,6 +69,7 @@ export function DesignerWorkbenchDraggableItem({
   onMouseUp,
   onMouseUpCapture,
   role = 'button',
+  sortable = false,
   style,
   tabIndex = 0,
 }: DesignerWorkbenchDraggableItemProps): React.JSX.Element {
@@ -77,32 +81,48 @@ export function DesignerWorkbenchDraggableItem({
     id: dropId,
     data,
   });
+  const {
+    attributes: sortableAttributes,
+    listeners: sortableListeners,
+    setNodeRef: setSortableNodeRef,
+    transform: sortableTransform,
+    transition: sortableTransition,
+  } = useSortable({
+    id: dragId,
+    data,
+    disabled: !sortable,
+  });
   const setNodeRef = (node: HTMLDivElement | null) => {
+    if (sortable) {
+      setSortableNodeRef(node);
+      return;
+    }
     setDragNodeRef(node);
     setDropNodeRef(node);
   };
-  const dragStyle = transform
-    ? { ...(style ?? {}), transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
-    : style;
+  const dragStyle = sortable
+    ? {
+        ...(style ?? {}),
+        transform: CSS.Transform.toString(sortableTransform),
+        transition: sortableTransition,
+      }
+    : transform
+      ? { ...(style ?? {}), transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+      : style;
+  const activeListeners = (sortable ? sortableListeners : listeners) as Record<string, unknown> | undefined;
+  const dndPointerDown = activeListeners?.onPointerDown as ((event: React.PointerEvent<HTMLDivElement>) => void) | undefined;
+  const dndKeyDown = activeListeners?.onKeyDown as ((event: React.KeyboardEvent<HTMLDivElement>) => void) | undefined;
+  const mergedListeners = activeListeners
+    ? Object.fromEntries(
+        Object.entries(activeListeners).filter(([key]) => key !== 'onPointerDown' && key !== 'onKeyDown'),
+      )
+    : undefined;
   const shouldBlockDragStart = (target: EventTarget | null) => {
     if (!(target instanceof HTMLElement)) {
       return false;
     }
 
     return Boolean(target.closest('[data-workbench-no-drag="true"]'));
-  };
-  const handleMouseDownCapture = (event: React.MouseEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement | null;
-    if (shouldBlockDragStart(target)) {
-      event.stopPropagation();
-      return;
-    }
-    onMouseDownCapture?.(event);
-  };
-  const handlePointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (shouldBlockDragStart(event.target)) {
-      event.stopPropagation();
-    }
   };
 
   return (
@@ -115,15 +135,23 @@ export function DesignerWorkbenchDraggableItem({
       onClick={onClick}
       onContextMenu={onContextMenu}
       onDoubleClick={onDoubleClick}
-      onKeyDown={onKeyDown}
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        dndKeyDown?.(event);
+      }}
       onMouseDown={onMouseDown}
-      onMouseDownCapture={handleMouseDownCapture}
-      onPointerDownCapture={handlePointerDownCapture}
+      onMouseDownCapture={onMouseDownCapture}
+      onPointerDown={(event) => {
+        if (shouldBlockDragStart(event.target)) {
+          return;
+        }
+        dndPointerDown?.(event);
+      }}
       onMouseUp={onMouseUp}
       onMouseUpCapture={onMouseUpCapture}
       {...itemAttributes}
-      {...attributes}
-      {...listeners}
+      {...(sortable ? sortableAttributes : attributes)}
+      {...mergedListeners}
     >
       {children}
     </div>

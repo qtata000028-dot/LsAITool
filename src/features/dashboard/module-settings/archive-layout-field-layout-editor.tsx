@@ -1,13 +1,17 @@
 import React from 'react';
 import {
+  closestCenter,
   DndContext,
+  DragOverlay,
   PointerSensor,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type Modifier,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
+import { rectSortingStrategy, SortableContext } from '@dnd-kit/sortable';
 import { CalendarDays, ChevronDown, Search } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
@@ -36,8 +40,9 @@ const GROUP_HEADER_HEIGHT = 42;
 const GROUP_GAP = 18;
 const GROUP_MIN_HEIGHT = 176;
 const GROUP_MIN_WIDTH = 880;
-const GROUP_FLOW_USABLE_WIDTH = GROUP_MIN_WIDTH - BILL_FORM_WORKBENCH_LAYOUT_PADDING_X * 2;
-const GROUP_DEFAULT_ROWS = 3;
+const GROUP_DEFAULT_ROWS = 1;
+const PREVIEW_WIDTH_MIN = 720;
+const PREVIEW_WIDTH_MAX = 1320;
 const DEFAULT_GROUP_TITLE = '未分组字段';
 type ArchiveLayoutFieldLayoutEditorProps = {
   document: DetailLayoutDocument;
@@ -63,14 +68,77 @@ type SelectedFieldContext = {
   group: ArchiveLayoutGroupViewModel;
 };
 
+type FieldDropTarget = {
+  beforeId: string | null;
+  groupId: string;
+  mode: 'standard' | 'solo-row';
+};
+
 type FieldDragData = { fieldId: string; groupId: string; type: 'archive-field' };
 type GroupDragData = { groupId: string; type: 'archive-group' };
+type FieldInsertDropData = { beforeId: string | null; groupId: string; type: 'archive-field-insert' };
+type FieldSoloRowDropData = { beforeId: string | null; groupId: string; type: 'archive-field-solo-row' };
 type FieldSizeInputDraft = { fieldId: string | null; h: string; w: string };
 type WidthPreset = 'compact' | 'standard' | 'full';
 type HeightPreset = 'single' | 'comfortable' | 'expanded';
+type FieldResizeState = {
+  dimension: 'h' | 'w';
+  fieldId: string;
+  startHeight: number;
+  startMouseX: number;
+  startMouseY: number;
+  startWidth: number;
+};
+type FieldResizePreview = {
+  fieldId: string;
+  h: number;
+  w: number;
+};
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizePreviewWorkbenchWidth(value: number) {
+  return clampNumber(Math.round(value / 20) * 20, PREVIEW_WIDTH_MIN, PREVIEW_WIDTH_MAX);
+}
+
+function getPreviewWorkbenchWidthFromDocument(document: DetailLayoutDocument) {
+  const firstGroup = buildGroupOrder(document)[0];
+  if (!firstGroup?.w) {
+    return GROUP_MIN_WIDTH;
+  }
+  return normalizePreviewWorkbenchWidth(firstGroup.w);
+}
+
+function getGroupFlowUsableWidth(groupWidth: number) {
+  return Math.max(BILL_FORM_MIN_WIDTH, groupWidth - BILL_FORM_WORKBENCH_LAYOUT_PADDING_X * 2);
+}
+
+function parseArchiveFieldDragId(id: unknown) {
+  if (typeof id !== 'string') {
+    return null;
+  }
+  return id.startsWith('archive-field:') ? id.slice('archive-field:'.length) : null;
+}
+
+function getClientPointFromActivatorEvent(event: Event | undefined) {
+  if (!event) {
+    return null;
+  }
+  if ('clientX' in event && 'clientY' in event) {
+    return {
+      x: Number(event.clientX),
+      y: Number(event.clientY),
+    };
+  }
+  if (typeof TouchEvent !== 'undefined' && event instanceof TouchEvent && event.touches.length > 0) {
+    return {
+      x: Number(event.touches[0]?.clientX ?? 0),
+      y: Number(event.touches[0]?.clientY ?? 0),
+    };
+  }
+  return null;
 }
 
 function parseCommittedNumber(rawValue: string, fallback: number, min: number, max: number) {
@@ -119,7 +187,11 @@ function normalizeDrafts<T extends FlowDraft>(drafts: T[]): T[] {
   return sortDraftsForFlow(drafts).map((item, index) => ({ ...item, panelOrder: index + 1, panelRow: 1 }));
 }
 
-function autoFlowDrafts<T extends FlowDraft & { resolvedWidth?: number }>(drafts: T[]) {
+function reindexDrafts<T extends FlowDraft>(drafts: T[]): T[] {
+  return drafts.map((item, index) => ({ ...item, panelOrder: index + 1, panelRow: 1 }));
+}
+
+function autoFlowDrafts<T extends FlowDraft & { resolvedWidth?: number }>(drafts: T[], usableWidth: number) {
   let currentRow = 1;
   let currentWidth = 0;
   let currentOrder = 0;
@@ -128,7 +200,7 @@ function autoFlowDrafts<T extends FlowDraft & { resolvedWidth?: number }>(drafts
     const width = clampNumber(item.resolvedWidth ?? item.w ?? BILL_FORM_DEFAULT_WIDTH, BILL_FORM_MIN_WIDTH, BILL_FORM_MAX_WIDTH);
     const projectedWidth = currentOrder === 0 ? width : currentWidth + BILL_FORM_WORKBENCH_LAYOUT_GAP_X + width;
 
-    if (currentOrder > 0 && projectedWidth > GROUP_FLOW_USABLE_WIDTH) {
+    if (currentOrder > 0 && projectedWidth > usableWidth) {
       currentRow += 1;
       currentWidth = 0;
       currentOrder = 0;
@@ -149,12 +221,12 @@ function getDisplayTitle(item: DetailLayoutItem, fieldOption?: DetailLayoutField
   return String(item.title || fieldOption?.title || rawField?.name || fieldOption?.label || item.field || '字段').trim();
 }
 
-function getFieldWidthPresetValue(preset: WidthPreset) {
+function getFieldWidthPresetValue(preset: WidthPreset, usableWidth: number) {
   if (preset === 'compact') {
-    return clampNumber(Math.round((GROUP_FLOW_USABLE_WIDTH - BILL_FORM_WORKBENCH_LAYOUT_GAP_X) / 2), BILL_FORM_MIN_WIDTH, BILL_FORM_MAX_WIDTH);
+    return clampNumber(Math.round((usableWidth - BILL_FORM_WORKBENCH_LAYOUT_GAP_X) / 2), BILL_FORM_MIN_WIDTH, BILL_FORM_MAX_WIDTH);
   }
   if (preset === 'full') {
-    return clampNumber(GROUP_FLOW_USABLE_WIDTH, BILL_FORM_MIN_WIDTH, BILL_FORM_MAX_WIDTH);
+    return clampNumber(usableWidth, BILL_FORM_MIN_WIDTH, BILL_FORM_MAX_WIDTH);
   }
   return clampNumber(BILL_FORM_DEFAULT_WIDTH, BILL_FORM_MIN_WIDTH, BILL_FORM_MAX_WIDTH);
 }
@@ -165,7 +237,10 @@ function stabilizeDocument(
   getDefaultSize: (field: Record<string, any>) => { h: number; w: number },
   draftOverrides?: Map<string, FlowDraft[]>,
   preferredGroupOrder?: string[],
+  previewWorkbenchWidth: number = GROUP_MIN_WIDTH,
 ) {
+  const normalizedPreviewWidth = normalizePreviewWorkbenchWidth(previewWorkbenchWidth);
+  const groupFlowUsableWidth = getGroupFlowUsableWidth(normalizedPreviewWidth);
   const optionMap = getFieldOptionMap(fieldOptions);
   const sourceGroups = buildGroupOrder(document);
   const sourceFields = document.items.filter((item) => item.type !== 'groupbox' && item.field);
@@ -179,7 +254,7 @@ function stabilizeDocument(
     h: GROUP_MIN_HEIGHT,
     id: 'archive_layout_group_default',
     type: 'groupbox',
-    w: GROUP_MIN_WIDTH,
+    w: normalizedPreviewWidth,
     x: 24,
     y: 24,
     title: DEFAULT_GROUP_TITLE,
@@ -214,10 +289,10 @@ function stabilizeDocument(
       return {
         ...item,
         resolvedHeight: clampNumber(item.h || defaultSize.h, BILL_FORM_MIN_CONTROL_HEIGHT, 160),
-        resolvedWidth: clampNumber(item.w || defaultSize.w, BILL_FORM_MIN_WIDTH, BILL_FORM_MAX_WIDTH),
+        resolvedWidth: clampNumber(item.w || defaultSize.w, BILL_FORM_MIN_WIDTH, Math.min(BILL_FORM_MAX_WIDTH, groupFlowUsableWidth)),
       };
     });
-    const drafts = autoFlowDrafts(preparedDrafts);
+    const drafts = autoFlowDrafts(preparedDrafts, groupFlowUsableWidth);
     const aligned = alignBillHeaderFieldsToFlowLayout(
       drafts.map((item) => {
         const fieldOption = optionMap.get(String(item.field ?? ''));
@@ -261,18 +336,22 @@ function stabilizeDocument(
       const shellHeight = getBillHeaderFieldShellHeight({ controlHeight: item.h, width: item.w });
       return Math.max(max, item.y + shellHeight);
     }, BILL_FORM_WORKBENCH_LAYOUT_PADDING_Y + BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT);
-    const groupHeight = Math.max(GROUP_MIN_HEIGHT, bodyHeight + GROUP_HEADER_HEIGHT + 20);
     const actualRowCount = Math.max(1, drafts.reduce((max, item) => Math.max(max, item.panelRow), 1));
+    const desiredRowCount = Math.max(actualRowCount, Number((group as DetailLayoutItem & { rows?: number }).rows) || 0);
+    const desiredBodyHeight = BILL_FORM_WORKBENCH_LAYOUT_PADDING_Y
+      + desiredRowCount * BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT
+      + Math.max(0, desiredRowCount - 1) * BILL_FORM_WORKBENCH_LAYOUT_GAP_Y;
+    const groupHeight = Math.max(GROUP_MIN_HEIGHT, Math.max(bodyHeight, desiredBodyHeight) + GROUP_HEADER_HEIGHT + 20);
 
     const nextGroup = {
       ...group,
       h: groupHeight,
       title: typeof group.title === 'string' ? group.title : `信息分组 ${groupIndex + 1}`,
-      w: GROUP_FLOW_USABLE_WIDTH + BILL_FORM_WORKBENCH_LAYOUT_PADDING_X * 2,
+      w: normalizedPreviewWidth,
       x: 24,
       y: nextGroupY,
     };
-    (nextGroup as DetailLayoutItem & { rows?: number }).rows = actualRowCount;
+    (nextGroup as DetailLayoutItem & { rows?: number }).rows = desiredRowCount;
 
     nextItems.push(nextGroup);
     nextItems.push(...childItems);
@@ -328,21 +407,54 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
   onDocumentChange,
 }: ArchiveLayoutFieldLayoutEditorProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const documentPreviewWorkbenchWidth = React.useMemo(
+    () => getPreviewWorkbenchWidthFromDocument(document),
+    [document],
+  );
+  const [previewWorkbenchWidth, setPreviewWorkbenchWidth] = React.useState(documentPreviewWorkbenchWidth);
+  const [previewWorkbenchWidthInput, setPreviewWorkbenchWidthInput] = React.useState(String(documentPreviewWorkbenchWidth));
   const stabilizedDocument = React.useMemo(
-    () => stabilizeDocument(document, fieldOptions, getDefaultSize),
-    [document, fieldOptions, getDefaultSize],
+    () => stabilizeDocument(document, fieldOptions, getDefaultSize, undefined, undefined, previewWorkbenchWidth),
+    [document, fieldOptions, getDefaultSize, previewWorkbenchWidth],
   );
   const optionMap = React.useMemo(() => getFieldOptionMap(fieldOptions), [fieldOptions]);
   const groups = React.useMemo(() => buildGroupViewModels(stabilizedDocument), [stabilizedDocument]);
+  const usablePreviewWorkbenchWidth = React.useMemo(
+    () => getGroupFlowUsableWidth(previewWorkbenchWidth),
+    [previewWorkbenchWidth],
+  );
   const [keyword, setKeyword] = React.useState('');
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(groups[0]?.group.id ?? null);
   const [selectedFieldId, setSelectedFieldId] = React.useState<string | null>(null);
   const [openFieldEditorId, setOpenFieldEditorId] = React.useState<string | null>(null);
   const [dragFieldId, setDragFieldId] = React.useState<string | null>(null);
-  const [dropTarget, setDropTarget] = React.useState<{ beforeId: string | null; groupId: string } | null>(null);
+  const [dropTarget, setDropTarget] = React.useState<FieldDropTarget | null>(null);
+  const [dragOverlayOffset, setDragOverlayOffset] = React.useState<{ x: number; y: number } | null>(null);
   const [density, setDensity] = React.useState<'comfortable' | 'compact'>('comfortable');
+  const [fieldResizeState, setFieldResizeState] = React.useState<FieldResizeState | null>(null);
+  const [fieldResizePreview, setFieldResizePreview] = React.useState<FieldResizePreview | null>(null);
   const [quickEditorSizeInput, setQuickEditorSizeInput] = React.useState<FieldSizeInputDraft>({ fieldId: null, h: '', w: '' });
   const outsideCloseBlockedUntilRef = React.useRef(0);
+  const fieldResizePreviewRef = React.useRef<FieldResizePreview | null>(null);
+  const fieldResizeFrameRef = React.useRef<number | null>(null);
+  const dragOverlayModifiers = React.useMemo<Modifier[]>(() => {
+    if (!dragOverlayOffset) {
+      return [];
+    }
+
+    return [
+      ({ transform }) => ({
+        ...transform,
+        x: transform.x - dragOverlayOffset.x + 18,
+        y: transform.y - dragOverlayOffset.y + 12,
+      }),
+    ];
+  }, [dragOverlayOffset]);
+
+  React.useEffect(() => {
+    setPreviewWorkbenchWidth(documentPreviewWorkbenchWidth);
+    setPreviewWorkbenchWidthInput(String(documentPreviewWorkbenchWidth));
+  }, [documentPreviewWorkbenchWidth]);
 
   React.useEffect(() => {
     if (!selectedGroupId || !groups.some((group) => group.group.id === selectedGroupId)) {
@@ -376,8 +488,15 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
   );
 
   const commitDocument = React.useCallback((nextDocument: DetailLayoutDocument) => {
-    onDocumentChange(stabilizeDocument(nextDocument, fieldOptions, getDefaultSize));
-  }, [fieldOptions, getDefaultSize, onDocumentChange]);
+    onDocumentChange(stabilizeDocument(nextDocument, fieldOptions, getDefaultSize, undefined, undefined, previewWorkbenchWidth));
+  }, [fieldOptions, getDefaultSize, onDocumentChange, previewWorkbenchWidth]);
+
+  const applyPreviewWorkbenchWidth = React.useCallback((nextWidth: number) => {
+    const normalizedWidth = normalizePreviewWorkbenchWidth(nextWidth);
+    setPreviewWorkbenchWidth(normalizedWidth);
+    setPreviewWorkbenchWidthInput(String(normalizedWidth));
+    onDocumentChange(stabilizeDocument(stabilizedDocument, fieldOptions, getDefaultSize, undefined, undefined, normalizedWidth));
+  }, [fieldOptions, getDefaultSize, onDocumentChange, stabilizedDocument]);
 
   const mutateDrafts = React.useCallback((mutator: (draftMap: Map<string, FlowDraft[]>, groupOrder: string[]) => void) => {
     const draftMap = new Map<string, FlowDraft[]>(
@@ -385,8 +504,8 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     );
     const groupOrder = groups.map((group) => group.group.id);
     mutator(draftMap, groupOrder);
-    commitDocument(stabilizeDocument(stabilizedDocument, fieldOptions, getDefaultSize, draftMap, groupOrder));
-  }, [commitDocument, fieldOptions, getDefaultSize, groups, stabilizedDocument]);
+    commitDocument(stabilizeDocument(stabilizedDocument, fieldOptions, getDefaultSize, draftMap, groupOrder, previewWorkbenchWidth));
+  }, [commitDocument, fieldOptions, getDefaultSize, groups, previewWorkbenchWidth, stabilizedDocument]);
 
   const addFieldToGroup = React.useCallback((fieldId: string, targetGroupId?: string | null) => {
     const option = optionMap.get(fieldId);
@@ -416,7 +535,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       required: Boolean(option.required),
       title: option.title || option.label,
       type: option.itemType,
-      w: clampNumber(defaultSize.w, BILL_FORM_MIN_WIDTH, BILL_FORM_MAX_WIDTH),
+      w: clampNumber(defaultSize.w, BILL_FORM_MIN_WIDTH, usablePreviewWorkbenchWidth),
       x: 0,
       y: 0,
     };
@@ -427,7 +546,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     });
     setSelectedGroupId(groupId);
     setSelectedFieldId(nextField.id);
-  }, [getDefaultSize, groups, mutateDrafts, optionMap, placedFieldIds, selectedGroupId]);
+  }, [getDefaultSize, groups, mutateDrafts, optionMap, placedFieldIds, selectedGroupId, usablePreviewWorkbenchWidth]);
 
   const updateField = React.useCallback((fieldId: string, patch: Partial<FlowDraft>) => {
     mutateDrafts((draftMap) => {
@@ -451,6 +570,31 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     });
   }, [mutateDrafts]);
 
+  const startFieldResize = React.useCallback((
+    event: React.MouseEvent<HTMLDivElement> | React.PointerEvent<HTMLDivElement>,
+    field: FlowDraft,
+    dimension: 'h' | 'w',
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedFieldId(field.id);
+    const initialPreview = {
+      fieldId: field.id,
+      h: field.h,
+      w: field.w,
+    } satisfies FieldResizePreview;
+    fieldResizePreviewRef.current = initialPreview;
+    setFieldResizePreview(initialPreview);
+    setFieldResizeState({
+      dimension,
+      fieldId: field.id,
+      startHeight: field.h,
+      startMouseX: event.clientX,
+      startMouseY: event.clientY,
+      startWidth: field.w,
+    });
+  }, []);
+
   const removeField = React.useCallback((fieldId: string) => {
     mutateDrafts((draftMap) => {
       draftMap.forEach((drafts, groupId) => {
@@ -465,6 +609,100 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     }
   }, [mutateDrafts, openFieldEditorId, selectedFieldId]);
 
+  React.useEffect(() => {
+    if (!fieldResizeState) {
+      return undefined;
+    }
+
+    const bodyStyle = globalThis.document?.body?.style;
+    if (bodyStyle) {
+      bodyStyle.cursor = fieldResizeState.dimension === 'w' ? 'col-resize' : 'row-resize';
+      bodyStyle.userSelect = 'none';
+    }
+
+    const applyPreview = (nextPreview: FieldResizePreview) => {
+      fieldResizePreviewRef.current = nextPreview;
+      if (fieldResizeFrameRef.current !== null) {
+        cancelAnimationFrame(fieldResizeFrameRef.current);
+      }
+      fieldResizeFrameRef.current = requestAnimationFrame(() => {
+        setFieldResizePreview(nextPreview);
+        fieldResizeFrameRef.current = null;
+      });
+    };
+
+    const finishResize = () => {
+      if (fieldResizeFrameRef.current !== null) {
+        cancelAnimationFrame(fieldResizeFrameRef.current);
+        fieldResizeFrameRef.current = null;
+      }
+      const finalPreview = fieldResizePreviewRef.current;
+      if (finalPreview && finalPreview.fieldId === fieldResizeState.fieldId) {
+        updateField(fieldResizeState.fieldId, { h: finalPreview.h, w: finalPreview.w });
+      }
+      fieldResizePreviewRef.current = null;
+      setFieldResizePreview(null);
+      setFieldResizeState(null);
+      if (bodyStyle) {
+        bodyStyle.cursor = '';
+        bodyStyle.userSelect = '';
+      }
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (fieldResizeState.dimension === 'w') {
+        applyPreview({
+          fieldId: fieldResizeState.fieldId,
+          h: fieldResizePreviewRef.current?.h ?? fieldResizeState.startHeight,
+          w: clampNumber(
+            Math.round(fieldResizeState.startWidth + (event.clientX - fieldResizeState.startMouseX)),
+            BILL_FORM_MIN_WIDTH,
+            usablePreviewWorkbenchWidth,
+          ),
+        });
+        return;
+      }
+
+      applyPreview({
+        fieldId: fieldResizeState.fieldId,
+        h: clampNumber(
+          Math.round(fieldResizeState.startHeight + (event.clientY - fieldResizeState.startMouseY)),
+          BILL_FORM_MIN_CONTROL_HEIGHT,
+          160,
+        ),
+        w: fieldResizePreviewRef.current?.w ?? fieldResizeState.startWidth,
+      });
+    };
+
+    const handlePointerUp = () => {
+      finishResize();
+    };
+
+    const handleWindowBlur = () => {
+      finishResize();
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+    window.addEventListener('pointercancel', handlePointerUp, { once: true });
+    window.addEventListener('blur', handleWindowBlur, { once: true });
+
+    return () => {
+      if (fieldResizeFrameRef.current !== null) {
+        cancelAnimationFrame(fieldResizeFrameRef.current);
+        fieldResizeFrameRef.current = null;
+      }
+      if (bodyStyle) {
+        bodyStyle.cursor = '';
+        bodyStyle.userSelect = '';
+      }
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, [fieldResizeState, updateField, usablePreviewWorkbenchWidth]);
+
   const renameGroup = React.useCallback((groupId: string, title: string) => {
     const nextDocument = createEmptyDetailLayoutDocument({
       gridSize: stabilizedDocument.gridSize,
@@ -474,6 +712,51 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     });
     commitDocument(nextDocument);
   }, [commitDocument, stabilizedDocument.gridSize, stabilizedDocument.items]);
+
+  const addGroupRow = React.useCallback((groupId: string) => {
+    const groupContext = groups.find((group) => group.group.id === groupId);
+    if (!groupContext) {
+      return;
+    }
+
+    const actualRowCount = Math.max(1, groupContext.fields.reduce((max, item) => Math.max(max, item.panelRow), 1));
+    const currentRowCount = Math.max(actualRowCount, Number((groupContext.group as DetailLayoutItem & { rows?: number }).rows) || 0);
+    const nextDocument = createEmptyDetailLayoutDocument({
+      gridSize: stabilizedDocument.gridSize,
+      items: stabilizedDocument.items.map((item) => (
+        item.id === groupId
+          ? { ...item, rows: currentRowCount + 1 } as DetailLayoutItem & { rows?: number }
+          : item
+      )),
+    });
+    commitDocument(nextDocument);
+    setSelectedGroupId(groupId);
+  }, [commitDocument, groups, stabilizedDocument.gridSize, stabilizedDocument.items]);
+
+  const deleteGroupRow = React.useCallback((groupId: string) => {
+    const groupContext = groups.find((group) => group.group.id === groupId);
+    if (!groupContext) {
+      return;
+    }
+
+    const actualRowCount = Math.max(1, groupContext.fields.reduce((max, item) => Math.max(max, item.panelRow), 1));
+    const currentRowCount = Math.max(actualRowCount, Number((groupContext.group as DetailLayoutItem & { rows?: number }).rows) || 0);
+    const nextRowCount = Math.max(actualRowCount, currentRowCount - 1);
+    if (nextRowCount === currentRowCount) {
+      return;
+    }
+
+    const nextDocument = createEmptyDetailLayoutDocument({
+      gridSize: stabilizedDocument.gridSize,
+      items: stabilizedDocument.items.map((item) => (
+        item.id === groupId
+          ? { ...item, rows: nextRowCount } as DetailLayoutItem & { rows?: number }
+          : item
+      )),
+    });
+    commitDocument(nextDocument);
+    setSelectedGroupId(groupId);
+  }, [commitDocument, groups, stabilizedDocument.gridSize, stabilizedDocument.items]);
 
   const deleteGroup = React.useCallback((groupId: string) => {
     const nextItems = stabilizedDocument.items.filter((item) => item.id !== groupId && item.parentId !== groupId);
@@ -503,7 +786,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
           return;
         }
         movingField = { ...drafts[index], panelRow: 1, parentId: targetGroupId };
-        draftMap.set(groupId, normalizeDrafts(drafts.filter((item) => item.id !== fieldId)));
+        draftMap.set(groupId, reindexDrafts(drafts.filter((item) => item.id !== fieldId)));
       });
 
       if (!movingField) {
@@ -518,7 +801,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
         targetDrafts.push(movingField);
       }
 
-      draftMap.set(targetGroupId, normalizeDrafts(targetDrafts.map((item) => ({
+      draftMap.set(targetGroupId, reindexDrafts(targetDrafts.map((item) => ({
         ...item,
         parentId: targetGroupId,
       }))));
@@ -526,6 +809,44 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     setSelectedGroupId(targetGroupId);
     setSelectedFieldId(fieldId);
   }, [mutateDrafts]);
+
+  const moveFieldToSoloRow = React.useCallback((fieldId: string, targetGroupId: string, beforeId: string | null = null) => {
+    mutateDrafts((draftMap) => {
+      let movingField: FlowDraft | null = null;
+      draftMap.forEach((drafts, groupId) => {
+        const index = drafts.findIndex((item) => item.id === fieldId);
+        if (index === -1) {
+          return;
+        }
+        movingField = {
+          ...drafts[index],
+          panelRow: 1,
+          parentId: targetGroupId,
+          w: usablePreviewWorkbenchWidth,
+        };
+        draftMap.set(groupId, reindexDrafts(drafts.filter((item) => item.id !== fieldId)));
+      });
+
+      if (!movingField) {
+        return;
+      }
+
+      const targetDrafts = draftMap.get(targetGroupId)?.slice() ?? [];
+      const insertIndex = beforeId ? targetDrafts.findIndex((item) => item.id === beforeId) : -1;
+      if (insertIndex >= 0) {
+        targetDrafts.splice(insertIndex, 0, movingField);
+      } else {
+        targetDrafts.push(movingField);
+      }
+
+      draftMap.set(targetGroupId, reindexDrafts(targetDrafts.map((item) => ({
+        ...item,
+        parentId: targetGroupId,
+      }))));
+    });
+    setSelectedGroupId(targetGroupId);
+    setSelectedFieldId(fieldId);
+  }, [mutateDrafts, usablePreviewWorkbenchWidth]);
 
   const addGroup = React.useCallback(() => {
     const nextGroupId = `archive_layout_group_${Date.now()}`;
@@ -538,7 +859,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
             h: GROUP_MIN_HEIGHT,
             id: nextGroupId,
             type: 'groupbox',
-            w: GROUP_MIN_WIDTH,
+            w: previewWorkbenchWidth,
             x: 24,
             y: 24,
             title: `信息分组 ${groups.length + 1}`,
@@ -551,7 +872,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     commitDocument(nextDocument);
     setSelectedGroupId(nextGroupId);
     setSelectedFieldId(null);
-  }, [commitDocument, groups.length, stabilizedDocument.gridSize, stabilizedDocument.items]);
+  }, [commitDocument, groups.length, previewWorkbenchWidth, stabilizedDocument.gridSize, stabilizedDocument.items]);
 
   const getFieldHeightPresetValue = React.useCallback((preset: HeightPreset, rawField?: Record<string, any>) => {
     const normalizedField = rawField ? normalizeColumn(rawField) : {};
@@ -572,48 +893,109 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     }
     return isLongField ? 92 : 64;
   }, [normalizeColumn]);
+  const fieldIdToGroupId = React.useMemo(() => {
+    const nextMap = new Map<string, string>();
+    groups.forEach((group) => {
+      group.fields.forEach((field) => {
+        nextMap.set(field.id, group.group.id);
+      });
+    });
+    return nextMap;
+  }, [groups]);
 
   const handleDragStart = React.useCallback((event: DragStartEvent) => {
+    const activeFieldId = parseArchiveFieldDragId(event.active.id);
     const activeData = event.active.data.current as FieldDragData | undefined;
-    if (activeData?.type !== 'archive-field') {
+    if (!activeFieldId && activeData?.type !== 'archive-field') {
       return;
     }
-    setDragFieldId(activeData.fieldId);
+    const activatorPoint = getClientPointFromActivatorEvent(event.activatorEvent);
+    const initialRect = event.active.rect.current.initial;
+    setDragFieldId(activeFieldId ?? activeData?.fieldId ?? null);
     setDropTarget(null);
+    setDragOverlayOffset(
+      activatorPoint && initialRect
+        ? {
+            x: activatorPoint.x - initialRect.left,
+            y: activatorPoint.y - initialRect.top,
+          }
+        : null,
+    );
   }, []);
 
   const handleDragOver = React.useCallback((event: DragOverEvent) => {
+    const activeFieldId = parseArchiveFieldDragId(event.active.id);
+    const overFieldId = parseArchiveFieldDragId(event.over?.id);
     const activeData = event.active.data.current as FieldDragData | undefined;
-    const overData = event.over?.data.current as FieldDragData | GroupDragData | undefined;
-    if (activeData?.type !== 'archive-field') {
+    const overData = event.over?.data.current as FieldDragData | GroupDragData | FieldInsertDropData | FieldSoloRowDropData | undefined;
+    if (!activeFieldId && activeData?.type !== 'archive-field') {
       return;
     }
-    if (overData?.type === 'archive-field' && overData.fieldId !== activeData.fieldId) {
-      setDropTarget({ beforeId: overData.fieldId, groupId: overData.groupId });
+    if (overFieldId && overFieldId !== activeFieldId) {
+      setDropTarget({
+        beforeId: overFieldId,
+        groupId: fieldIdToGroupId.get(overFieldId) ?? activeData?.groupId ?? '',
+        mode: 'standard',
+      });
+      return;
+    }
+    if (overFieldId === activeFieldId) {
+      return;
+    }
+    if (overData?.type === 'archive-field-solo-row') {
+      setDropTarget({ beforeId: overData.beforeId, groupId: overData.groupId, mode: 'solo-row' });
+      return;
+    }
+    if (overData?.type === 'archive-field-insert') {
+      setDropTarget({ beforeId: overData.beforeId, groupId: overData.groupId, mode: 'standard' });
+      return;
+    }
+    if (overData?.type === 'archive-field' && overData.fieldId !== (activeFieldId ?? activeData?.fieldId)) {
+      setDropTarget({ beforeId: overData.fieldId, groupId: overData.groupId, mode: 'standard' });
       return;
     }
     if (overData?.type === 'archive-group') {
-      setDropTarget({ beforeId: null, groupId: overData.groupId });
+      setDropTarget({ beforeId: null, groupId: overData.groupId, mode: 'standard' });
       return;
     }
-    setDropTarget(null);
-  }, []);
+  }, [fieldIdToGroupId]);
 
   const handleDragEnd = React.useCallback((event: DragEndEvent) => {
+    const activeFieldId = parseArchiveFieldDragId(event.active.id);
+    const overFieldId = parseArchiveFieldDragId(event.over?.id);
     const activeData = event.active.data.current as FieldDragData | undefined;
-    const overData = event.over?.data.current as FieldDragData | GroupDragData | undefined;
-    if (activeData?.type === 'archive-field' && overData?.type === 'archive-field' && overData.fieldId !== activeData.fieldId) {
-      moveField(activeData.fieldId, overData.groupId, overData.fieldId);
-    } else if (activeData?.type === 'archive-field' && overData?.type === 'archive-group') {
-      moveField(activeData.fieldId, overData.groupId);
+    const overData = event.over?.data.current as FieldDragData | GroupDragData | FieldInsertDropData | FieldSoloRowDropData | undefined;
+    const resolvedActiveFieldId = activeFieldId ?? activeData?.fieldId ?? null;
+    const resolvedActiveGroupId = activeData?.groupId ?? (resolvedActiveFieldId ? fieldIdToGroupId.get(resolvedActiveFieldId) ?? '' : '');
+
+    if (resolvedActiveFieldId && dropTarget?.mode === 'solo-row' && (dropTarget.groupId !== resolvedActiveGroupId || dropTarget.beforeId !== resolvedActiveFieldId)) {
+      moveFieldToSoloRow(resolvedActiveFieldId, dropTarget.groupId, dropTarget.beforeId);
+    } else if (resolvedActiveFieldId && overData?.type === 'archive-field-solo-row') {
+      moveFieldToSoloRow(resolvedActiveFieldId, overData.groupId, overData.beforeId);
+    } else if (resolvedActiveFieldId && overFieldId && overFieldId !== resolvedActiveFieldId) {
+      moveField(resolvedActiveFieldId, fieldIdToGroupId.get(overFieldId) ?? resolvedActiveGroupId, overFieldId);
+    } else if (resolvedActiveFieldId && dropTarget && (dropTarget.groupId !== resolvedActiveGroupId || dropTarget.beforeId !== resolvedActiveFieldId)) {
+      if (dropTarget.mode === 'solo-row') {
+        moveFieldToSoloRow(resolvedActiveFieldId, dropTarget.groupId, dropTarget.beforeId);
+      } else {
+        moveField(resolvedActiveFieldId, dropTarget.groupId, dropTarget.beforeId);
+      }
+    } else if (resolvedActiveFieldId && overData?.type === 'archive-field-insert') {
+      moveField(resolvedActiveFieldId, overData.groupId, overData.beforeId);
+    } else if (resolvedActiveFieldId && overData?.type === 'archive-field' && overData.fieldId !== resolvedActiveFieldId) {
+      moveField(resolvedActiveFieldId, overData.groupId, overData.fieldId);
+    } else if (resolvedActiveFieldId && overData?.type === 'archive-group') {
+      moveField(resolvedActiveFieldId, overData.groupId);
     }
     setDragFieldId(null);
     setDropTarget(null);
-  }, [moveField]);
+    setDragOverlayOffset(null);
+  }, [dropTarget, fieldIdToGroupId, moveField, moveFieldToSoloRow]);
 
   const handleDragCancel = React.useCallback(() => {
     setDragFieldId(null);
     setDropTarget(null);
+    setDragOverlayOffset(null);
   }, []);
 
   const groupedPlacedFields = React.useMemo(() => {
@@ -629,6 +1011,10 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
   const activeFieldEditor = React.useMemo(
     () => (openFieldEditorId ? findSelectedFieldContext(groups, openFieldEditorId) : null),
     [groups, openFieldEditorId],
+  );
+  const activeDragFieldContext = React.useMemo(
+    () => (dragFieldId ? findSelectedFieldContext(groups, dragFieldId) : null),
+    [dragFieldId, groups],
   );
   const activeFieldEditorId = activeFieldEditor?.field.id ?? null;
   const activeFieldEditorWidth = activeFieldEditor?.field.w ?? null;
@@ -656,11 +1042,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       rawValue,
       fallback,
       dimension === 'w' ? BILL_FORM_MIN_WIDTH : BILL_FORM_MIN_CONTROL_HEIGHT,
-      dimension === 'w' ? BILL_FORM_MAX_WIDTH : 160,
+      dimension === 'w' ? usablePreviewWorkbenchWidth : 160,
     );
     updateField(fieldId, dimension === 'w' ? { w: nextValue } : { h: nextValue });
     return nextValue;
-  }, [updateField]);
+  }, [updateField, usablePreviewWorkbenchWidth]);
 
   const nudgeFieldSizeValue = React.useCallback((
     fieldId: string,
@@ -671,11 +1057,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     const nextValue = clampNumber(
       currentValue + delta,
       dimension === 'w' ? BILL_FORM_MIN_WIDTH : BILL_FORM_MIN_CONTROL_HEIGHT,
-      dimension === 'w' ? BILL_FORM_MAX_WIDTH : 160,
+      dimension === 'w' ? usablePreviewWorkbenchWidth : 160,
     );
     updateField(fieldId, dimension === 'w' ? { w: nextValue } : { h: nextValue });
     return nextValue;
-  }, [updateField]);
+  }, [updateField, usablePreviewWorkbenchWidth]);
 
   const handleFieldSizeInputKeyDown = React.useCallback((
     event: React.KeyboardEvent<HTMLInputElement>,
@@ -718,7 +1104,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
         {previewValue || '\u00a0'}
       </span>
     );
-    const shellClass = 'pointer-events-none flex w-full min-w-0 items-center gap-1 overflow-hidden rounded-[8px] border border-[#d9e3ee] bg-white px-2 text-[11px] text-slate-500 shadow-none';
+    const shellClass = 'pointer-events-none flex w-full min-w-0 items-center gap-1 overflow-hidden rounded-[7px] border border-[#d9e3ee] bg-white px-1.5 text-[10px] text-slate-500 shadow-none';
 
     if (fieldTypeText.includes('搜索')) {
       return (
@@ -879,6 +1265,32 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
               <div className="mt-1 text-[12px] text-slate-500">中间区域只保留分组标题和字段预览，双击字段打开快编设置。</div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-2.5 py-1.5">
+                <span className="text-[11px] font-medium text-slate-500">预览宽度</span>
+                <input
+                  type="range"
+                  min={PREVIEW_WIDTH_MIN}
+                  max={PREVIEW_WIDTH_MAX}
+                  step={20}
+                  value={previewWorkbenchWidth}
+                  onChange={(event) => applyPreviewWorkbenchWidth(Number(event.target.value))}
+                  className="h-4 w-24 accent-primary"
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={previewWorkbenchWidthInput}
+                  onChange={(event) => setPreviewWorkbenchWidthInput(event.target.value.replace(/[^\d]/g, ''))}
+                  onBlur={() => applyPreviewWorkbenchWidth(parseCommittedNumber(previewWorkbenchWidthInput, previewWorkbenchWidth, PREVIEW_WIDTH_MIN, PREVIEW_WIDTH_MAX))}
+                  onKeyDown={(event) => handleFieldSizeInputKeyDown(
+                    event,
+                    () => applyPreviewWorkbenchWidth(parseCommittedNumber(previewWorkbenchWidthInput, previewWorkbenchWidth, PREVIEW_WIDTH_MIN, PREVIEW_WIDTH_MAX)),
+                    () => setPreviewWorkbenchWidthInput(String(previewWorkbenchWidth)),
+                  )}
+                  className="h-7 w-16 rounded-[9px] border border-[#d8e3ef] px-2 text-center text-[11px] text-slate-700 outline-none"
+                />
+              </div>
               <div className="inline-flex rounded-[12px] border border-[#dbe5ef] bg-white p-1">
                 <button
                   type="button"
@@ -905,27 +1317,42 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
           </div>
         </div>
         <DndContext
+          collisionDetection={closestCenter}
           sensors={sensors}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            <div className="rounded-[18px] border border-[#d6e2f1] bg-[linear-gradient(180deg,#fcfdff_0%,#f6faff_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+          <div className="min-h-0 flex-1 overflow-auto p-3">
+            <div
+              className="mx-auto rounded-[18px] border border-[#d6e2f1] bg-[linear-gradient(180deg,#fcfdff_0%,#f6faff_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]"
+              style={{ minWidth: previewWorkbenchWidth + 32, width: previewWorkbenchWidth + 32 }}
+            >
               <div className="flex min-h-full flex-col gap-6">
                 {groups.length === 0 ? (
                   <div className="rounded-[16px] border border-dashed border-[#dbe6f1] bg-white/72 px-4 py-10 text-center text-[12px] text-slate-400">
                     暂无分组，先在左侧点击“新增分组”。
                   </div>
                 ) : null}
-                {groups.map((group) => (
-                  <div
+                {groups.map((group) => {
+                  const actualRowCount = Math.max(1, group.fields.reduce((max, item) => Math.max(max, item.panelRow), 1));
+                  const desiredRowCount = Math.max(actualRowCount, Number((group.group as DetailLayoutItem & { rows?: number }).rows) || 0);
+                  const extraRowCount = Math.max(0, desiredRowCount - actualRowCount);
+                  const isAppendSoloRowTarget = Boolean(
+                    dragFieldId
+                    && dropTarget?.groupId === group.group.id
+                    && dropTarget.beforeId === null
+                    && dropTarget.mode === 'solo-row',
+                  );
+
+                  return <div
                     key={group.group.id}
                     className={cn(
                       'group border-t border-[#edf2f7] pt-4 transition-colors first:border-t-0 first:pt-0',
                       selectedGroupId === group.group.id && 'border-primary/20',
                     )}
+                    style={{ width: group.group.w }}
                     onClick={() => {
                       setSelectedGroupId(group.group.id);
                       setSelectedFieldId(null);
@@ -939,6 +1366,16 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                         className="h-8 min-w-0 flex-1 rounded-[10px] border border-transparent bg-transparent px-2 text-[15px] font-semibold tracking-[-0.01em] text-slate-800 outline-none transition-colors focus:border-[#d8e3ef] focus:bg-white"
                         placeholder={DEFAULT_GROUP_TITLE}
                       />
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          addGroupRow(group.group.id);
+                        }}
+                        className="h-8 shrink-0 rounded-[10px] border border-[#dbe5ef] bg-white px-3 text-[11px] font-semibold text-slate-600 transition-colors hover:border-primary/35 hover:text-primary"
+                      >
+                        新增行
+                      </button>
                       <button
                         type="button"
                         onClick={(event) => {
@@ -968,19 +1405,22 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                           : BILL_FORM_WORKBENCH_MIN_ROW_HEIGHT,
                       }}
                     >
-                      <div className={cn(
-                        'flex min-w-full flex-wrap content-start items-start',
-                        density === 'compact' ? 'gap-1.5' : 'gap-2',
-                      )}>
+                      <SortableContext items={group.fields.map((field) => `archive-field:${field.id}`)} strategy={rectSortingStrategy}>
+                        <div className={cn(
+                          'flex min-w-full flex-wrap content-start items-start',
+                          density === 'compact' ? 'gap-x-1.5 gap-y-0.5' : 'gap-x-2 gap-y-1',
+                        )}>
                         {group.fields.length > 0 ? group.fields.map((field) => {
                           const fieldOption = optionMap.get(String(field.field ?? ''));
                           const rawField = (fieldOption?.rawField ?? {}) as Record<string, any>;
                           const displayTitle = getDisplayTitle(field, fieldOption, rawField);
                           const normalizedField = normalizeColumn({ ...rawField, name: displayTitle });
-                          const liveWidth = getBillHeaderFieldWidth({ width: field.w, name: displayTitle });
-                          const liveHeight = getBillHeaderFieldHeight({ controlHeight: field.h });
-                          const shellHeight = Math.max(36, getBillHeaderFieldShellHeight({ controlHeight: liveHeight, width: liveWidth }) - 16);
-                          const previewHeight = clampNumber(liveHeight - 16, 26, 36);
+                          const previewFieldWidth = fieldResizePreview?.fieldId === field.id ? fieldResizePreview.w : field.w;
+                          const previewFieldHeight = fieldResizePreview?.fieldId === field.id ? fieldResizePreview.h : field.h;
+                          const liveWidth = getBillHeaderFieldWidth({ width: previewFieldWidth, name: displayTitle });
+                          const liveHeight = getBillHeaderFieldHeight({ controlHeight: previewFieldHeight });
+                          const shellHeight = Math.max(28, getBillHeaderFieldShellHeight({ controlHeight: liveHeight, width: liveWidth }) - 24);
+                          const previewHeight = clampNumber(liveHeight - 24, 18, 24);
                           const isInsertTarget = dragFieldId && dropTarget?.groupId === group.group.id && dropTarget.beforeId === field.id && dragFieldId !== field.id;
                           const isDragging = dragFieldId === field.id;
                           const isSelected = selectedFieldId === field.id || isInsertTarget || openFieldEditorId === field.id;
@@ -991,12 +1431,13 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                               dragId={`archive-field:${field.id}`}
                               dropId={`archive-drop:${field.id}`}
                               data={{ fieldId: field.id, groupId: group.group.id, type: 'archive-field' } as FieldDragData}
-                              itemAttributes={{ 'data-archive-field-card': 'true' }}
+                              sortable
+                              itemAttributes={{ 'data-archive-field-card': 'true', title: `${displayTitle} · 拖动调整顺序，双击设置` }}
                               className={cn(
                                 'group relative flex shrink-0 select-none rounded-[10px] text-left transition-all',
-                                isDragging ? 'z-20 cursor-grabbing ring-2 ring-[color:var(--workspace-accent)]/14' : 'cursor-grab active:cursor-grabbing',
+                                isDragging ? 'cursor-grabbing opacity-0' : 'cursor-grab active:cursor-grabbing',
                                 !isDragging && isSelected ? 'ring-2 ring-[color:var(--workspace-accent)]/10' : null,
-                                !isSelected && !isDragging ? 'hover:bg-slate-50/40' : null,
+                                !isDragging && !isSelected ? 'hover:bg-slate-50/40' : null,
                               )}
                               style={{ height: shellHeight, width: liveWidth }}
                               onClick={(event: React.MouseEvent<HTMLDivElement>) => {
@@ -1010,8 +1451,22 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                               }}
                             >
                               {isInsertTarget ? <span className="pointer-events-none absolute inset-y-2 left-0 w-[3px] rounded-full bg-primary" /> : null}
-                              <div className="pointer-events-none flex h-full min-w-0 flex-1 items-center gap-1 px-1">
-                                <div className="flex h-full max-w-[42%] shrink-0 items-center text-[11px] font-medium tracking-[-0.01em] text-slate-500" title={displayTitle}>
+                              <div
+                                data-workbench-no-drag="true"
+                                className="absolute inset-y-1 right-0 z-10 flex w-3 cursor-col-resize items-center justify-center rounded-full opacity-0 transition-all group-hover:opacity-100 hover:bg-primary/8"
+                                onPointerDown={(event) => startFieldResize(event, field, 'w')}
+                              >
+                                <span className="h-7 w-px rounded-full bg-slate-300/70" />
+                              </div>
+                              <div
+                                data-workbench-no-drag="true"
+                                className="absolute inset-x-3 bottom-0 z-10 flex h-3 cursor-row-resize items-center justify-center rounded-full opacity-0 transition-all group-hover:opacity-100 hover:bg-primary/8"
+                                onPointerDown={(event) => startFieldResize(event, field, 'h')}
+                              >
+                                <span className="h-px w-7 rounded-full bg-slate-300/70" />
+                              </div>
+                              <div className="pointer-events-none flex h-full min-w-0 flex-1 items-center gap-1.5 px-1">
+                                <div className="flex h-full max-w-[42%] shrink-0 items-center text-[12px] font-medium tracking-[-0.01em] text-slate-800" title={displayTitle}>
                                   <span className="truncate">{displayTitle}</span>
                                 </div>
                                 <div className="min-w-0 flex-1">
@@ -1027,13 +1482,74 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                             <span className="h-px flex-1 bg-[#dbe6f2]" />
                           </div>
                         )}
-                      </div>
+                        {extraRowCount > 0 ? Array.from({ length: extraRowCount }, (_, index) => (
+                          <DesignerWorkbenchDropLane
+                            key={`archive-empty-row:${group.group.id}:${index}`}
+                            dropId={`archive-empty-row:${group.group.id}:${index}`}
+                            data={{ beforeId: null, groupId: group.group.id, type: 'archive-field-solo-row' } as FieldSoloRowDropData}
+                            className={cn(
+                              'group/empty-row relative flex min-h-[38px] w-full items-center gap-2 rounded-[10px] border border-dashed px-3 text-[11px] font-medium transition-colors',
+                              isAppendSoloRowTarget
+                                ? 'border-primary/40 bg-primary/6 text-primary'
+                                : 'border-[#dbe5ef] bg-white/70 text-slate-400 hover:border-primary/30 hover:text-primary',
+                            )}
+                          >
+                            <span className={cn('h-px flex-1 rounded-full', isAppendSoloRowTarget ? 'bg-primary/35' : 'bg-[#dbe6f2]')} />
+                            <span className="shrink-0">拖入新增行</span>
+                            <span className={cn('h-px flex-1 rounded-full', isAppendSoloRowTarget ? 'bg-primary/35' : 'bg-[#dbe6f2]')} />
+                            <button
+                              type="button"
+                              data-workbench-no-drag="true"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                deleteGroupRow(group.group.id);
+                              }}
+                              className="absolute right-2 top-1/2 inline-flex h-6 -translate-y-1/2 items-center rounded-[8px] border border-[#f1d4d8] bg-white/96 px-2 text-[10px] font-semibold text-rose-600 opacity-0 shadow-sm transition-all pointer-events-none group-hover/empty-row:pointer-events-auto group-hover/empty-row:opacity-100 hover:bg-[#fff5f5]"
+                            >
+                              删除行
+                            </button>
+                          </DesignerWorkbenchDropLane>
+                        )) : null}
+                        </div>
+                      </SortableContext>
                     </DesignerWorkbenchDropLane>
                   </div>
-                ))}
+                })}
               </div>
             </div>
           </div>
+          <DragOverlay modifiers={dragOverlayModifiers}>
+            {activeDragFieldContext ? (() => {
+              const fieldOption = optionMap.get(String(activeDragFieldContext.field.field ?? ''));
+              const rawField = (fieldOption?.rawField ?? {}) as Record<string, any>;
+              const displayTitle = getDisplayTitle(activeDragFieldContext.field, fieldOption, rawField);
+              const normalizedField = normalizeColumn({ ...rawField, name: displayTitle });
+              const liveHeight = getBillHeaderFieldHeight({ controlHeight: activeDragFieldContext.field.h });
+              const overlayWidth = clampNumber(
+                Math.min(getBillHeaderFieldWidth({ width: activeDragFieldContext.field.w, name: displayTitle }), 320),
+                220,
+                320,
+              );
+              const overlayHeight = clampNumber(Math.max(32, liveHeight + 8), 32, 42);
+              const previewHeight = clampNumber(liveHeight - 26, 16, 20);
+
+              return (
+                <div
+                  className="flex select-none rounded-[10px] border border-[color:var(--workspace-accent)]/18 bg-white/96 text-left shadow-[0_16px_30px_-24px_rgba(15,23,42,0.28)]"
+                  style={{ height: overlayHeight, width: overlayWidth }}
+                >
+                  <div className="pointer-events-none flex h-full min-w-0 flex-1 items-center gap-2 px-2">
+                    <div className="flex h-full max-w-[44%] shrink-0 items-center text-[12px] font-semibold tracking-[-0.01em] text-slate-800" title={displayTitle}>
+                      <span className="truncate">{displayTitle}</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {renderBillStyleFieldPreview(normalizedField, previewHeight)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })() : null}
+          </DragOverlay>
         </DndContext>
       </section>
       {openFieldEditorId && typeof globalThis.document !== 'undefined'
@@ -1181,9 +1697,9 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                           </label>
                         </div>
                         <div className="grid grid-cols-3 gap-1.5">
-                          <button type="button" onClick={() => updateField(activeFieldEditor.field.id, { w: getFieldWidthPresetValue('compact') })} className="h-8 rounded-[10px] border border-[#dbe5ef] bg-[#f8fbff] text-[11px] font-medium text-slate-600">半宽</button>
-                          <button type="button" onClick={() => updateField(activeFieldEditor.field.id, { w: getFieldWidthPresetValue('standard') })} className="h-8 rounded-[10px] border border-[#dbe5ef] bg-[#f8fbff] text-[11px] font-medium text-slate-600">标准</button>
-                          <button type="button" onClick={() => updateField(activeFieldEditor.field.id, { w: getFieldWidthPresetValue('full') })} className="h-8 rounded-[10px] border border-[#dbe5ef] bg-[#f8fbff] text-[11px] font-medium text-slate-600">通栏</button>
+                          <button type="button" onClick={() => updateField(activeFieldEditor.field.id, { w: getFieldWidthPresetValue('compact', usablePreviewWorkbenchWidth) })} className="h-8 rounded-[10px] border border-[#dbe5ef] bg-[#f8fbff] text-[11px] font-medium text-slate-600">半宽</button>
+                          <button type="button" onClick={() => updateField(activeFieldEditor.field.id, { w: getFieldWidthPresetValue('standard', usablePreviewWorkbenchWidth) })} className="h-8 rounded-[10px] border border-[#dbe5ef] bg-[#f8fbff] text-[11px] font-medium text-slate-600">标准</button>
+                          <button type="button" onClick={() => updateField(activeFieldEditor.field.id, { w: getFieldWidthPresetValue('full', usablePreviewWorkbenchWidth) })} className="h-8 rounded-[10px] border border-[#dbe5ef] bg-[#f8fbff] text-[11px] font-medium text-slate-600">通栏</button>
                         </div>
                         <div className="grid grid-cols-3 gap-1.5">
                           <button type="button" onClick={() => updateField(activeFieldEditor.field.id, { h: getFieldHeightPresetValue('single', rawField) })} className="h-8 rounded-[10px] border border-[#dbe5ef] bg-[#f8fbff] text-[11px] font-medium text-slate-600">单行</button>

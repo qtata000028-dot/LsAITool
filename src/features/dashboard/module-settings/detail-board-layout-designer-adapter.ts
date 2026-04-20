@@ -103,6 +103,7 @@ function normalizeDesignerLayoutDocument(rawLayout: unknown, columnMap: Map<stri
       y: isFiniteNumber(item.y) ? Number(item.y) : 16,
       w: isFiniteNumber(item.w) ? Number(item.w) : 160,
       h: isFiniteNumber(item.h) ? Number(item.h) : 56,
+      rows: isFiniteNumber(item.rows) ? Number(item.rows) : undefined,
     }))
     .filter((item) => item.type === 'groupbox' || !item.field || columnMap.has(String(item.field)));
 
@@ -113,7 +114,7 @@ function normalizeDesignerLayoutDocument(rawLayout: unknown, columnMap: Map<stri
     items: normalizedItems.map((item) => ({
       ...item,
       parentId: item.parentId && itemIdSet.has(item.parentId) ? item.parentId : null,
-    })),
+    })) as DetailLayoutItem[],
   });
 }
 
@@ -217,7 +218,8 @@ export function buildDetailLayoutDocumentFromDetailBoard(
       y: nextGroupY,
       w: groupWidth,
       h: groupHeight,
-    });
+      rows: Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, getDetailBoardGroupRows(group)),
+    } as DetailLayoutItem & { rows?: number });
     items.push(...childItems);
     nextGroupY += groupHeight + DETAIL_BOARD_GROUP_GAP;
   });
@@ -271,7 +273,8 @@ export function buildArchiveDetailLayoutDocumentFromDetailBoard(
       y: nextGroupY,
       w: groupWidth,
       h: groupHeight,
-    });
+      rows: Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, getDetailBoardGroupRows(group)),
+    } as DetailLayoutItem & { rows?: number });
     items.push(...childItems);
     nextGroupY += groupHeight + DETAIL_BOARD_GROUP_GAP;
   };
@@ -334,13 +337,17 @@ function buildLegacyGroupFromItems(
   }
 
   const columnsPerRow = rowCounts.size > 0 ? Math.max(...rowCounts.values()) : 1;
+  const configuredRows = Number(previousGroup?.rows);
+  const detectedRows = Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, rowAnchors.length || 1);
 
   return {
     id: groupId,
     name: groupTitle ?? previousGroup?.name ?? '信息分组',
     description: previousGroup?.description ?? '',
     columnIds,
-    rows: Math.max(DETAIL_BOARD_GROUP_MIN_ROWS, rowAnchors.length || 1),
+    rows: Number.isFinite(configuredRows)
+      ? Math.max(detectedRows, configuredRows)
+      : detectedRows,
     columnRows: Object.fromEntries(children.map((child) => [child.field as string, Math.max(1, rowAnchors.indexOf(child.y) + 1)])),
     columnsPerRow,
     columnWidths: Object.fromEntries(children.map((child) => [child.field as string, Math.round(child.w)])),
