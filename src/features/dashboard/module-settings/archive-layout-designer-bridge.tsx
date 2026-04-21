@@ -4,10 +4,13 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { areDetailLayoutDocumentsEqual } from '../detail-layout-designer/utils/layout';
 import { ArchiveLayoutFieldLayoutEditor } from './archive-layout-field-layout-editor';
 import {
+  buildArchiveLayoutDocumentFromScheme,
   buildArchiveDetailLayoutDocumentFromDetailBoard,
+  buildSuggestedArchiveLayoutScheme,
   buildDetailBoardFieldOptions,
   buildDetailBoardFromDesignerLayout,
   getDetailBoardFieldDefaultSize,
+  normalizeArchiveLayoutSchemes,
 } from './detail-board-layout-designer-adapter';
 
 const ARCHIVE_LAYOUT_TITLE = '基础档案详情布局';
@@ -50,6 +53,14 @@ export const ArchiveLayoutDesignerBridge = React.memo(function ArchiveLayoutDesi
     () => buildDetailBoardFieldOptions(mainTableColumns, normalizeColumn),
     [mainTableColumns, normalizeColumn],
   );
+  const schemes = React.useMemo(
+    () => normalizeArchiveLayoutSchemes(currentDetailBoard?.archiveLayoutSchemes, mainTableColumns),
+    [currentDetailBoard?.archiveLayoutSchemes, mainTableColumns],
+  );
+  const suggestedScheme = React.useMemo(
+    () => buildSuggestedArchiveLayoutScheme(mainTableColumns, normalizeColumn),
+    [mainTableColumns, normalizeColumn],
+  );
 
   const handleDocumentChange = React.useCallback((nextDocument: ReturnType<typeof buildArchiveDetailLayoutDocumentFromDetailBoard>) => {
     if (areDetailLayoutDocumentsEqual(document, nextDocument)) {
@@ -64,6 +75,16 @@ export const ArchiveLayoutDesignerBridge = React.memo(function ArchiveLayoutDesi
       };
     });
   }, [document, onUpdateDetailBoard]);
+  const handleSchemesChange = React.useCallback((nextSchemes: typeof schemes) => {
+    onUpdateDetailBoard((current: any) => ({
+      ...current,
+      archiveLayoutDirty: true,
+      archiveLayoutSchemes: nextSchemes,
+    }));
+  }, [onUpdateDetailBoard]);
+  const buildSchemeDocument = React.useCallback((scheme: (typeof schemes)[number], previewWorkbenchWidth?: number) => (
+    buildArchiveLayoutDocumentFromScheme(scheme, mainTableColumns, normalizeColumn, previewWorkbenchWidth)
+  ), [mainTableColumns, normalizeColumn]);
 
   if (!isOpen) {
     return null;
@@ -138,7 +159,11 @@ export const ArchiveLayoutDesignerBridge = React.memo(function ArchiveLayoutDesi
                 getDefaultSize={(field) => getDetailBoardFieldDefaultSize(normalizeColumn, field)}
                 normalizeColumn={normalizeColumn}
                 onDocumentChange={handleDocumentChange}
+                onSchemesChange={handleSchemesChange}
+                buildSchemeDocument={buildSchemeDocument}
                 renderFieldPreview={renderFieldPreview}
+                schemes={schemes}
+                suggestedScheme={suggestedScheme}
               />
             </div>
           </div>
