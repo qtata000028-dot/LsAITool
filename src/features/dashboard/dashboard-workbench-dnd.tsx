@@ -1,6 +1,6 @@
 import React from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
-import { useSortable } from '@dnd-kit/sortable';
+import { defaultAnimateLayoutChanges, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 type DesignerWorkbenchDropLaneProps = {
@@ -85,12 +85,23 @@ export function DesignerWorkbenchDraggableItem({
     attributes: sortableAttributes,
     listeners: sortableListeners,
     setNodeRef: setSortableNodeRef,
+    isDragging: sortableDragging,
     transform: sortableTransform,
     transition: sortableTransition,
   } = useSortable({
     id: dragId,
     data,
     disabled: !sortable,
+    animateLayoutChanges: (args) => {
+      if (args.isSorting || args.wasDragging) {
+        return defaultAnimateLayoutChanges(args);
+      }
+      return false;
+    },
+    transition: {
+      duration: 180,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    },
   });
   const setNodeRef = (node: HTMLDivElement | null) => {
     if (sortable) {
@@ -103,11 +114,21 @@ export function DesignerWorkbenchDraggableItem({
   const dragStyle = sortable
     ? {
         ...(style ?? {}),
-        transform: CSS.Transform.toString(sortableTransform),
+        transform: CSS.Transform.toString(
+          sortableTransform
+            ? {
+                ...sortableTransform,
+                scaleX: 1,
+                scaleY: 1,
+              }
+            : null,
+        ),
         transition: sortableTransition,
+        touchAction: 'manipulation',
+        willChange: sortableDragging ? 'transform' : undefined,
       }
     : transform
-      ? { ...(style ?? {}), transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+      ? { ...(style ?? {}), transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, touchAction: 'manipulation', willChange: 'transform' }
       : style;
   const activeListeners = (sortable ? sortableListeners : listeners) as Record<string, unknown> | undefined;
   const dndPointerDown = activeListeners?.onPointerDown as ((event: React.PointerEvent<HTMLDivElement>) => void) | undefined;

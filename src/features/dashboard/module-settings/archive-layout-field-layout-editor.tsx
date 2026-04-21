@@ -3,10 +3,15 @@ import {
   closestCenter,
   DndContext,
   DragOverlay,
+  getFirstCollision,
+  MeasuringStrategy,
   PointerSensor,
+  pointerWithin,
+  rectIntersection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type CollisionDetection,
   type Modifier,
   useSensor,
   useSensors,
@@ -513,7 +518,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
   schemes,
   suggestedScheme,
 }: ArchiveLayoutFieldLayoutEditorProps) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const documentPreviewWorkbenchWidth = React.useMemo(
     () => getPreviewWorkbenchWidthFromDocument(document),
     [document],
@@ -556,9 +561,23 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     buildSchemeFieldSizeInputDrafts(schemes[0] ? cloneArchiveLayoutScheme(schemes[0]) : cloneArchiveLayoutScheme(suggestedScheme))
   ));
   const outsideCloseBlockedUntilRef = React.useRef(0);
+  const lastDragOverIdRef = React.useRef<string | null>(null);
   const fieldResizePreviewRef = React.useRef<FieldResizePreview | null>(null);
   const fieldResizeFrameRef = React.useRef<number | null>(null);
   const schemeAutoOpenedRef = React.useRef(false);
+  const setDropTargetIfChanged = React.useCallback((nextTarget: FieldDropTarget | null) => {
+    setDropTarget((current) => {
+      if (
+        current?.beforeId === nextTarget?.beforeId
+        && current?.groupId === nextTarget?.groupId
+        && current?.mode === nextTarget?.mode
+        && current?.rowNumber === nextTarget?.rowNumber
+      ) {
+        return current;
+      }
+      return nextTarget;
+    });
+  }, []);
   const dragOverlayModifiers = React.useMemo<Modifier[]>(() => {
     if (!dragOverlayOffset) {
       return [];
@@ -572,6 +591,42 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       }),
     ];
   }, [dragOverlayOffset]);
+  const collisionDetection = React.useCallback<CollisionDetection>((args) => {
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) {
+      const nextId = getFirstCollision(pointerCollisions, 'id');
+      lastDragOverIdRef.current = nextId == null ? null : String(nextId);
+      return pointerCollisions;
+    }
+
+    const rectCollisions = rectIntersection(args);
+    if (rectCollisions.length > 0) {
+      const nextId = getFirstCollision(rectCollisions, 'id');
+      lastDragOverIdRef.current = nextId == null ? null : String(nextId);
+      return rectCollisions;
+    }
+
+    const centerCollisions = closestCenter(args);
+    if (centerCollisions.length > 0) {
+      const nextId = getFirstCollision(centerCollisions, 'id');
+      lastDragOverIdRef.current = nextId == null ? null : String(nextId);
+      return centerCollisions;
+    }
+
+    if (lastDragOverIdRef.current) {
+      const fallbackContainer = args.droppableContainers.find(
+        (container) => String(container.id) === lastDragOverIdRef.current,
+      );
+      if (fallbackContainer) {
+        return [{
+          id: fallbackContainer.id,
+          data: { droppableContainer: fallbackContainer, value: 1 },
+        }];
+      }
+    }
+
+    return [];
+  }, []);
 
   React.useEffect(() => {
     setPreviewWorkbenchWidth(documentPreviewWorkbenchWidth);
@@ -1406,8 +1461,9 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     }
     const activatorPoint = getClientPointFromActivatorEvent(event.activatorEvent);
     const initialRect = event.active.rect.current.initial;
+    lastDragOverIdRef.current = null;
     setDragFieldId(activeFieldId ?? activeData?.fieldId ?? null);
-    setDropTarget(null);
+    setDropTargetIfChanged(null);
     setDragOverlayOffset(
       activatorPoint && initialRect
         ? {
@@ -1416,7 +1472,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
           }
         : null,
     );
-  }, []);
+  }, [setDropTargetIfChanged]);
 
   const handleDragOver = React.useCallback((event: DragOverEvent) => {
     const activeFieldId = parseArchiveFieldDragId(event.active.id);
@@ -1427,7 +1483,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       return;
     }
     if (overFieldId && overFieldId !== activeFieldId) {
-      setDropTarget({
+      setDropTargetIfChanged({
         beforeId: overFieldId,
         groupId: fieldIdToGroupId.get(overFieldId) ?? activeData?.groupId ?? '',
         rowNumber: overData?.type === 'archive-field' ? null : null,
@@ -1439,17 +1495,17 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       return;
     }
     if (overData?.type === 'archive-field-row') {
-      setDropTarget({ beforeId: overData.beforeId, groupId: overData.groupId, rowNumber: overData.rowNumber, mode: 'row' });
+      setDropTargetIfChanged({ beforeId: overData.beforeId, groupId: overData.groupId, rowNumber: overData.rowNumber, mode: 'row' });
       return;
     }
     if (overData?.type === 'archive-field-insert') {
-      setDropTarget({ beforeId: overData.beforeId, groupId: overData.groupId, rowNumber: null, mode: 'standard' });
+      setDropTargetIfChanged({ beforeId: overData.beforeId, groupId: overData.groupId, rowNumber: null, mode: 'standard' });
       return;
     }
     if (overData?.type === 'archive-field' && overData.fieldId !== (activeFieldId ?? activeData?.fieldId)) {
       const targetGroup = groups.find((group) => group.group.id === overData.groupId);
       const targetField = targetGroup?.fields.find((field) => field.id === overData.fieldId);
-      setDropTarget({
+      setDropTargetIfChanged({
         beforeId: overData.fieldId,
         groupId: overData.groupId,
         rowNumber: targetField?.panelRow ?? null,
@@ -1458,10 +1514,10 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       return;
     }
     if (overData?.type === 'archive-group') {
-      setDropTarget({ beforeId: null, groupId: overData.groupId, rowNumber: null, mode: 'standard' });
+      setDropTargetIfChanged({ beforeId: null, groupId: overData.groupId, rowNumber: null, mode: 'standard' });
       return;
     }
-  }, [fieldIdToGroupId, groups]);
+  }, [fieldIdToGroupId, groups, setDropTargetIfChanged]);
 
   const handleDragEnd = React.useCallback((event: DragEndEvent) => {
     const activeFieldId = parseArchiveFieldDragId(event.active.id);
@@ -1494,16 +1550,18 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     } else if (resolvedActiveFieldId && overData?.type === 'archive-group') {
       moveField(resolvedActiveFieldId, overData.groupId, resolvedActiveRowNumber);
     }
+    lastDragOverIdRef.current = null;
     setDragFieldId(null);
-    setDropTarget(null);
+    setDropTargetIfChanged(null);
     setDragOverlayOffset(null);
-  }, [dropTarget, fieldIdToGroupId, groups, moveField]);
+  }, [dropTarget, fieldIdToGroupId, groups, moveField, setDropTargetIfChanged]);
 
   const handleDragCancel = React.useCallback(() => {
+    lastDragOverIdRef.current = null;
     setDragFieldId(null);
-    setDropTarget(null);
+    setDropTargetIfChanged(null);
     setDragOverlayOffset(null);
-  }, []);
+  }, [setDropTargetIfChanged]);
 
   const groupedPlacedFields = React.useMemo(() => {
     const fieldGroupMap = new Map<string, string>();
@@ -2015,7 +2073,12 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
           </div>
         </div>
         <DndContext
-          collisionDetection={closestCenter}
+          collisionDetection={collisionDetection}
+          measuring={{
+            droppable: {
+              strategy: MeasuringStrategy.Always,
+            },
+          }}
           sensors={sensors}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
@@ -2149,12 +2212,12 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                                         sortable
                                         itemAttributes={{ 'data-archive-field-card': 'true', title: `${displayTitle} · 拖动调整顺序，双击设置` }}
                                         className={cn(
-                                          'group relative flex shrink-0 select-none rounded-[10px] text-left transition-all',
+                                          'group relative flex shrink-0 select-none rounded-[10px] text-left transition-[background-color,box-shadow,opacity] duration-150 ease-out',
                                           isDragging ? 'cursor-grabbing opacity-0' : 'cursor-grab active:cursor-grabbing',
                                           !isDragging && isSelected ? 'ring-2 ring-[color:var(--workspace-accent)]/10' : null,
                                           !isDragging && !isSelected ? 'hover:bg-slate-50/40' : null,
                                         )}
-                                        style={{ height: shellHeight, width: liveWidth }}
+                                        style={{ height: shellHeight, width: liveWidth, willChange: 'transform' }}
                                         onClick={(event: React.MouseEvent<HTMLDivElement>) => {
                                           event.stopPropagation();
                                           setSelectedGroupId(group.group.id);
@@ -2222,7 +2285,13 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
               </div>
             </div>
           </div>
-          <DragOverlay modifiers={dragOverlayModifiers}>
+          <DragOverlay
+            modifiers={dragOverlayModifiers}
+            dropAnimation={{
+              duration: 180,
+              easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+            }}
+          >
             {activeDragFieldContext ? (() => {
               const fieldOption = optionMap.get(String(activeDragFieldContext.field.field ?? ''));
               const rawField = (fieldOption?.rawField ?? {}) as Record<string, any>;
