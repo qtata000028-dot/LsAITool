@@ -21,41 +21,49 @@ const ARCHIVE_LAYOUT_MODULE_LABEL = '模块';
 type ArchiveLayoutDesignerBridgeProps = {
   currentDetailBoard: Record<string, any>;
   currentModuleCode: string;
-  isDirty: boolean;
   isOpen: boolean;
   isSaving: boolean;
   mainTableColumns: Record<string, any>[];
   normalizeColumn: (column: Record<string, any>) => Record<string, any>;
-  onRequestClose: () => void;
-  onSave: () => Promise<boolean>;
-  onUpdateDetailBoard: (patch: Record<string, any> | ((current: any) => any)) => void;
+  onRequestClose: (context: { detailBoard: Record<string, any>; hasUnsavedChanges: boolean }) => void;
+  onSave: (detailBoard: Record<string, any>) => Promise<boolean>;
   renderFieldPreview: (column: Record<string, any>, index: number, scope: string) => React.ReactNode;
 };
 
 export const ArchiveLayoutDesignerBridge = React.memo(function ArchiveLayoutDesignerBridge({
   currentDetailBoard,
   currentModuleCode,
-  isDirty,
   isOpen,
   isSaving,
   mainTableColumns,
   normalizeColumn,
   onRequestClose,
   onSave,
-  onUpdateDetailBoard,
   renderFieldPreview,
 }: ArchiveLayoutDesignerBridgeProps) {
+  const [draftDetailBoard, setDraftDetailBoard] = React.useState<Record<string, any>>(() => currentDetailBoard);
+  const [draftDirty, setDraftDirty] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    if (!draftDirty) {
+      setDraftDetailBoard(currentDetailBoard);
+    }
+  }, [currentDetailBoard, draftDirty, isOpen]);
+
   const document = React.useMemo(
-    () => buildArchiveDetailLayoutDocumentFromDetailBoard(currentDetailBoard, mainTableColumns, normalizeColumn),
-    [currentDetailBoard, mainTableColumns, normalizeColumn],
+    () => buildArchiveDetailLayoutDocumentFromDetailBoard(draftDetailBoard, mainTableColumns, normalizeColumn),
+    [draftDetailBoard, mainTableColumns, normalizeColumn],
   );
   const fieldOptions = React.useMemo(
     () => buildDetailBoardFieldOptions(mainTableColumns, normalizeColumn),
     [mainTableColumns, normalizeColumn],
   );
   const schemes = React.useMemo(
-    () => normalizeArchiveLayoutSchemes(currentDetailBoard?.archiveLayoutSchemes, mainTableColumns),
-    [currentDetailBoard?.archiveLayoutSchemes, mainTableColumns],
+    () => normalizeArchiveLayoutSchemes(draftDetailBoard?.archiveLayoutSchemes, mainTableColumns),
+    [draftDetailBoard?.archiveLayoutSchemes, mainTableColumns],
   );
   const suggestedScheme = React.useMemo(
     () => buildSuggestedArchiveLayoutScheme(mainTableColumns, normalizeColumn),
@@ -67,24 +75,50 @@ export const ArchiveLayoutDesignerBridge = React.memo(function ArchiveLayoutDesi
       return;
     }
 
-    onUpdateDetailBoard((current: any) => {
+    setDraftDetailBoard((current) => {
       const nextDetailBoard = buildDetailBoardFromDesignerLayout(current, nextDocument);
       return {
         ...nextDetailBoard,
         archiveLayoutDirty: true,
       };
     });
-  }, [document, onUpdateDetailBoard]);
+    setDraftDirty(true);
+  }, [document]);
   const handleSchemesChange = React.useCallback((nextSchemes: typeof schemes) => {
-    onUpdateDetailBoard((current: any) => ({
+    setDraftDetailBoard((current) => ({
       ...current,
       archiveLayoutDirty: true,
       archiveLayoutSchemes: nextSchemes,
     }));
-  }, [onUpdateDetailBoard]);
+    setDraftDirty(true);
+  }, []);
   const buildSchemeDocument = React.useCallback((scheme: (typeof schemes)[number], previewWorkbenchWidth?: number) => (
     buildArchiveLayoutDocumentFromScheme(scheme, mainTableColumns, normalizeColumn, previewWorkbenchWidth)
   ), [mainTableColumns, normalizeColumn]);
+  const handleSave = React.useCallback(async () => {
+    const nextDetailBoard = {
+      ...draftDetailBoard,
+      archiveLayoutDirty: draftDirty,
+    };
+    const success = await onSave(nextDetailBoard);
+    if (success) {
+      setDraftDetailBoard((current) => ({
+        ...current,
+        archiveLayoutDirty: false,
+      }));
+      setDraftDirty(false);
+    }
+    return success;
+  }, [draftDetailBoard, draftDirty, onSave]);
+  const handleRequestClose = React.useCallback(() => {
+    onRequestClose({
+      detailBoard: {
+        ...draftDetailBoard,
+        archiveLayoutDirty: draftDirty,
+      },
+      hasUnsavedChanges: draftDirty,
+    });
+  }, [draftDetailBoard, draftDirty, onRequestClose]);
 
   if (!isOpen) {
     return null;
@@ -97,7 +131,7 @@ export const ArchiveLayoutDesignerBridge = React.memo(function ArchiveLayoutDesi
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-[79] bg-slate-950/42 backdrop-blur-[6px]"
-        onClick={onRequestClose}
+        onClick={handleRequestClose}
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.985, y: 12 }}
@@ -127,13 +161,13 @@ export const ArchiveLayoutDesignerBridge = React.memo(function ArchiveLayoutDesi
                   <button
                     type="button"
                     onClick={() => {
-                      void onSave();
+                      void handleSave();
                     }}
                     disabled={isSaving}
                     className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-[12px] border px-4 text-[12px] font-semibold transition-colors ${
                       isSaving
                         ? 'cursor-wait border-primary/20 bg-primary/10 text-primary'
-                        : isDirty
+                        : draftDirty
                           ? 'border-primary/20 bg-primary text-white hover:bg-primary/90'
                           : 'border-[#dbe5ef] bg-white text-slate-700 hover:bg-[#f8fbff]'
                     }`}
@@ -143,7 +177,7 @@ export const ArchiveLayoutDesignerBridge = React.memo(function ArchiveLayoutDesi
                   </button>
                   <button
                     type="button"
-                    onClick={onRequestClose}
+                    onClick={handleRequestClose}
                     className="inline-flex size-10 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white text-slate-500 transition-colors hover:bg-[#f8fbff]"
                   >
                     <span className="material-symbols-outlined text-[18px]">close</span>

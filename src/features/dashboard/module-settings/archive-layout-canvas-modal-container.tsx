@@ -39,7 +39,6 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
     onShowToast,
   });
   const {
-    isDirty,
     isSaving,
     saveArchiveLayout,
   } = useArchiveLayoutDesignerSave({
@@ -51,16 +50,23 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
     onUpdateDetailBoard,
   });
 
-  const handleSave = React.useCallback(async () => {
-    return saveArchiveLayout();
-  }, [saveArchiveLayout]);
+  const handleSave = React.useCallback(async (detailBoard: Record<string, any>) => {
+    onUpdateDetailBoard(detailBoard);
+    return saveArchiveLayout(detailBoard);
+  }, [onUpdateDetailBoard, saveArchiveLayout]);
 
-  const handleRequestClose = React.useCallback(() => {
+  const handleRequestClose = React.useCallback(({
+    detailBoard,
+    hasUnsavedChanges,
+  }: {
+    detailBoard: Record<string, any>;
+    hasUnsavedChanges: boolean;
+  }) => {
     if (isSaving) {
       return;
     }
 
-    if (!isDirty) {
+    if (!hasUnsavedChanges) {
       onClose();
       return;
     }
@@ -72,26 +78,24 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
       okText: '保存并关闭',
       title: '未保存的布局改动',
       onOk: async () => {
-        const success = await handleSave();
+        const success = await handleSave(detailBoard);
         if (success) {
           onClose();
         }
       },
     });
-  }, [handleSave, isDirty, isSaving, onClose]);
+  }, [handleSave, isSaving, onClose]);
 
   return (
     <ArchiveLayoutDesignerBridge
       currentDetailBoard={currentDetailBoard}
       currentModuleCode={currentModuleCode}
-      isDirty={isDirty}
       isOpen={isOpen}
       isSaving={isSaving}
       mainTableColumns={layoutPaletteColumns}
       normalizeColumn={normalizeColumn}
       onRequestClose={handleRequestClose}
       onSave={handleSave}
-      onUpdateDetailBoard={onUpdateDetailBoard}
       renderFieldPreview={renderFieldPreview}
     />
   );
