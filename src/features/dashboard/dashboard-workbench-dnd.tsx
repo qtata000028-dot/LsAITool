@@ -3,6 +3,9 @@ import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { defaultAnimateLayoutChanges, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+export const DASHBOARD_DRAG_MOTION_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+export const DASHBOARD_DRAG_MOTION_BASE_MS = 180;
+
 type DesignerWorkbenchDropLaneProps = {
   children: React.ReactNode;
   className: string;
@@ -99,8 +102,8 @@ export function DesignerWorkbenchDraggableItem({
       return false;
     },
     transition: {
-      duration: 180,
-      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      duration: DASHBOARD_DRAG_MOTION_BASE_MS,
+      easing: DASHBOARD_DRAG_MOTION_EASING,
     },
   });
   const setNodeRef = (node: HTMLDivElement | null) => {
@@ -123,12 +126,21 @@ export function DesignerWorkbenchDraggableItem({
               }
             : null,
         ),
+        transformOrigin: '0 0',
         transition: sortableTransition,
         touchAction: 'manipulation',
         willChange: sortableDragging ? 'transform' : undefined,
+        zIndex: sortableDragging ? 20 : undefined,
       }
     : transform
-      ? { ...(style ?? {}), transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, touchAction: 'manipulation', willChange: 'transform' }
+      ? {
+          ...(style ?? {}),
+          transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+          transformOrigin: '0 0',
+          touchAction: 'manipulation',
+          willChange: 'transform',
+          zIndex: 20,
+        }
       : style;
   const activeListeners = (sortable ? sortableListeners : listeners) as Record<string, unknown> | undefined;
   const dndPointerDown = activeListeners?.onPointerDown as ((event: React.PointerEvent<HTMLDivElement>) => void) | undefined;

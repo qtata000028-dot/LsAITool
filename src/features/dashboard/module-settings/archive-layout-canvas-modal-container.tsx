@@ -50,34 +50,17 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
     onShowToast,
     onUpdateDetailBoard,
   });
-  const [autoSaveFailed, setAutoSaveFailed] = React.useState(false);
 
   const handleSave = React.useCallback(async () => {
-    const success = await saveArchiveLayout();
-    setAutoSaveFailed(!success);
-    return success;
+    return saveArchiveLayout();
   }, [saveArchiveLayout]);
-
-  React.useEffect(() => {
-    if (!isOpen || !isDirty || isSaving) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      void handleSave();
-    }, 500);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [handleSave, isDirty, isOpen, isSaving]);
 
   const handleRequestClose = React.useCallback(() => {
     if (isSaving) {
       return;
     }
 
-    if (!isDirty && !autoSaveFailed) {
+    if (!isDirty) {
       onClose();
       return;
     }
@@ -85,9 +68,7 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
     Modal.confirm({
       cancelText: '继续编辑',
       centered: true,
-      content: autoSaveFailed
-        ? '最近一次自动保存失败。是否先保存当前布局，再关闭弹窗？'
-        : '当前布局还有未保存的改动。是否先保存，再关闭弹窗？',
+      content: '当前布局还有未保存的改动。是否先保存，再关闭弹窗？',
       okText: '保存并关闭',
       title: '未保存的布局改动',
       onOk: async () => {
@@ -97,7 +78,7 @@ export const ArchiveLayoutCanvasModalContainer = React.memo(function ArchiveLayo
         }
       },
     });
-  }, [autoSaveFailed, handleSave, isDirty, isSaving, onClose]);
+  }, [handleSave, isDirty, isSaving, onClose]);
 
   return (
     <ArchiveLayoutDesignerBridge

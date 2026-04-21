@@ -1,5 +1,6 @@
-import React from 'react';
+﻿import React from 'react';
 import {
+  AutoScrollActivator,
   closestCenter,
   DndContext,
   DragOverlay,
@@ -23,7 +24,12 @@ import { createPortal } from 'react-dom';
 import { cn } from '../../../lib/utils';
 import type { DetailLayoutDocument, DetailLayoutFieldOption, DetailLayoutItem } from '../detail-layout-designer/types';
 import { createEmptyDetailLayoutDocument } from '../detail-layout-designer/utils/layout';
-import { DesignerWorkbenchDraggableItem, DesignerWorkbenchDropLane } from '../dashboard-workbench-dnd';
+import {
+  DASHBOARD_DRAG_MOTION_BASE_MS,
+  DASHBOARD_DRAG_MOTION_EASING,
+  DesignerWorkbenchDraggableItem,
+  DesignerWorkbenchDropLane,
+} from '../dashboard-workbench-dnd';
 import type {
   ArchiveLayoutScheme,
   ArchiveLayoutSchemeFieldDefaults,
@@ -54,6 +60,17 @@ const GROUP_DEFAULT_ROWS = 1;
 const PREVIEW_WIDTH_MIN = 720;
 const PREVIEW_WIDTH_MAX = 1320;
 const DEFAULT_GROUP_TITLE = '未分组字段';
+const DASHBOARD_DRAG_FEEDBACK_SAME_ROW_HYSTERESIS_MS = 56;
+const DASHBOARD_DRAG_FEEDBACK_CROSS_ROW_HYSTERESIS_MS = 72;
+const DASHBOARD_DRAG_FEEDBACK_VISUAL_ENTER_MS = 24;
+const DASHBOARD_DRAG_FEEDBACK_VISUAL_EXIT_MS = 34;
+const DASHBOARD_DRAG_FEEDBACK_LOCK_MS = 64;
+const DASHBOARD_DRAG_FEEDBACK_LOCK_MOTION_EXTRA_MS = 26;
+const DASHBOARD_DRAG_FEEDBACK_VISUAL_DELAY_MOTION_EXTRA_MS = 18;
+const DASHBOARD_DRAG_FEEDBACK_MOTION_EXTRA_MS = 44;
+const DASHBOARD_DRAG_FEEDBACK_SETTLE_MS = 96;
+const DASHBOARD_DRAG_FEEDBACK_END_SETTLE_MS = 104;
+const DASHBOARD_DRAG_FEEDBACK_CANCEL_SETTLE_MS = 88;
 type ArchiveLayoutFieldLayoutEditorProps = {
   buildSchemeDocument: (scheme: ArchiveLayoutScheme, previewWorkbenchWidth?: number) => DetailLayoutDocument;
   document: DetailLayoutDocument;
@@ -95,6 +112,7 @@ type FieldInsertDropData = { beforeId: string | null; groupId: string; type: 'ar
 type FieldRowDropData = { beforeId: string | null; groupId: string; rowNumber: number; type: 'archive-field-row' };
 type FieldSizeInputDraft = { fieldId: string | null; h: string; w: string };
 type SchemeFieldSizeInputDraftMap = Record<string, { h: string; w: string }>;
+type SchemeBatchSizeInputDraft = { h: string; w: string };
 type WidthPreset = 'compact' | 'standard' | 'full';
 type HeightPreset = 'single' | 'comfortable' | 'expanded';
 type FieldResizeState = {
@@ -114,6 +132,15 @@ type SidebarTabKey = 'placed' | 'pending' | 'schemes';
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function areFieldDropTargetsEqual(left: FieldDropTarget | null, right: FieldDropTarget | null) {
+  return (
+    left?.beforeId === right?.beforeId
+    && left?.groupId === right?.groupId
+    && left?.mode === right?.mode
+    && left?.rowNumber === right?.rowNumber
+  );
 }
 
 function cloneArchiveLayoutSchemeGroup(group: ArchiveLayoutSchemeGroup): ArchiveLayoutSchemeGroup {
@@ -541,7 +568,10 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
   const [openFieldEditorId, setOpenFieldEditorId] = React.useState<string | null>(null);
   const [dragFieldId, setDragFieldId] = React.useState<string | null>(null);
   const [dropTarget, setDropTarget] = React.useState<FieldDropTarget | null>(null);
+  const [visualDropTarget, setVisualDropTarget] = React.useState<FieldDropTarget | null>(null);
+  const [isDragFeedbackSettling, setIsDragFeedbackSettling] = React.useState(false);
   const [dragOverlayOffset, setDragOverlayOffset] = React.useState<{ x: number; y: number } | null>(null);
+  const [dragOverlayMotionIntensity, setDragOverlayMotionIntensity] = React.useState(0);
   const [density, setDensity] = React.useState<'comfortable' | 'compact'>('comfortable');
   const [fieldResizeState, setFieldResizeState] = React.useState<FieldResizeState | null>(null);
   const [fieldResizePreview, setFieldResizePreview] = React.useState<FieldResizePreview | null>(null);
@@ -560,11 +590,25 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
   const [schemeFieldSizeInputs, setSchemeFieldSizeInputs] = React.useState<SchemeFieldSizeInputDraftMap>(() => (
     buildSchemeFieldSizeInputDrafts(schemes[0] ? cloneArchiveLayoutScheme(schemes[0]) : cloneArchiveLayoutScheme(suggestedScheme))
   ));
+  const [schemeBatchSizeInput, setSchemeBatchSizeInput] = React.useState<SchemeBatchSizeInputDraft>({ h: '', w: '' });
   const outsideCloseBlockedUntilRef = React.useRef(0);
   const lastDragOverIdRef = React.useRef<string | null>(null);
+  const dropTargetCommittedAtRef = React.useRef(0);
+  const visualDropTargetRef = React.useRef<FieldDropTarget | null>(null);
+  const visualDropTargetTimerRef = React.useRef<number | null>(null);
+  const visualDropTargetLockedUntilRef = React.useRef(0);
+  const dragFeedbackSettlingTimerRef = React.useRef<number | null>(null);
+  const dragOverlayVisualPositionRef = React.useRef<{ x: number; y: number } | null>(null);
+  const dragOverlayLastTickRef = React.useRef<number | null>(null);
+  const dragOverlayMotionIntensityRef = React.useRef(0);
+  const dragOverlayMotionFrameRef = React.useRef<number | null>(null);
   const fieldResizePreviewRef = React.useRef<FieldResizePreview | null>(null);
   const fieldResizeFrameRef = React.useRef<number | null>(null);
   const schemeAutoOpenedRef = React.useRef(false);
+  const getDragNow = React.useCallback(
+    () => (typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now()),
+    [],
+  );
   const setDropTargetIfChanged = React.useCallback((nextTarget: FieldDropTarget | null) => {
     setDropTarget((current) => {
       if (
@@ -575,8 +619,164 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       ) {
         return current;
       }
+      dropTargetCommittedAtRef.current = nextTarget ? getDragNow() : 0;
       return nextTarget;
     });
+  }, [getDragNow]);
+  const setDropTargetWithHysteresis = React.useCallback((nextTarget: FieldDropTarget | null) => {
+    setDropTarget((current) => {
+      if (
+        current?.beforeId === nextTarget?.beforeId
+        && current?.groupId === nextTarget?.groupId
+        && current?.mode === nextTarget?.mode
+        && current?.rowNumber === nextTarget?.rowNumber
+      ) {
+        return current;
+      }
+      if (!nextTarget) {
+        dropTargetCommittedAtRef.current = 0;
+        return null;
+      }
+      const now = getDragNow();
+      const isWithinSameRow =
+        current?.groupId === nextTarget.groupId
+        && current?.rowNumber === nextTarget.rowNumber
+        && current?.mode === nextTarget.mode;
+      const changedInsertAnchor = current?.beforeId !== nextTarget.beforeId;
+      const changedRowWithinSameGroup =
+        current?.groupId === nextTarget.groupId
+        && current?.rowNumber != null
+        && nextTarget.rowNumber != null
+        && current.rowNumber !== nextTarget.rowNumber;
+      if (
+        isWithinSameRow
+        && changedInsertAnchor
+        && now - dropTargetCommittedAtRef.current < DASHBOARD_DRAG_FEEDBACK_SAME_ROW_HYSTERESIS_MS
+      ) {
+        return current;
+      }
+      if (
+        changedRowWithinSameGroup
+        && now - dropTargetCommittedAtRef.current < DASHBOARD_DRAG_FEEDBACK_CROSS_ROW_HYSTERESIS_MS
+      ) {
+        return current;
+      }
+      dropTargetCommittedAtRef.current = now;
+      return nextTarget;
+    });
+  }, [getDragNow]);
+  const updateDragOverlayMotionIntensity = React.useCallback((nextIntensity: number) => {
+    const normalizedIntensity = clampNumber(nextIntensity, 0, 1);
+    dragOverlayMotionIntensityRef.current = normalizedIntensity;
+    if (typeof window === 'undefined') {
+      setDragOverlayMotionIntensity(normalizedIntensity);
+      return;
+    }
+    if (dragOverlayMotionFrameRef.current !== null) {
+      return;
+    }
+    dragOverlayMotionFrameRef.current = window.requestAnimationFrame(() => {
+      dragOverlayMotionFrameRef.current = null;
+      setDragOverlayMotionIntensity(dragOverlayMotionIntensityRef.current);
+    });
+  }, []);
+  const commitVisualDropTarget = React.useCallback((nextTarget: FieldDropTarget | null, lockMs?: number) => {
+    const resolvedLockMs = lockMs ?? (
+      nextTarget
+        ? Math.round(
+            DASHBOARD_DRAG_FEEDBACK_LOCK_MS
+            + dragOverlayMotionIntensityRef.current * DASHBOARD_DRAG_FEEDBACK_LOCK_MOTION_EXTRA_MS,
+          )
+        : 0
+    );
+    visualDropTargetRef.current = nextTarget;
+    visualDropTargetLockedUntilRef.current = nextTarget ? getDragNow() + resolvedLockMs : 0;
+    setVisualDropTarget(nextTarget);
+  }, [getDragNow]);
+  const clearDragFeedbackSettling = React.useCallback(() => {
+    if (typeof window !== 'undefined' && dragFeedbackSettlingTimerRef.current !== null) {
+      window.clearTimeout(dragFeedbackSettlingTimerRef.current);
+      dragFeedbackSettlingTimerRef.current = null;
+    }
+    setIsDragFeedbackSettling(false);
+  }, []);
+  const startDragFeedbackSettling = React.useCallback((holdMs = DASHBOARD_DRAG_FEEDBACK_SETTLE_MS) => {
+    if (!visualDropTargetRef.current) {
+      clearDragFeedbackSettling();
+      return;
+    }
+    if (typeof window === 'undefined') {
+      setIsDragFeedbackSettling(false);
+      return;
+    }
+    if (dragFeedbackSettlingTimerRef.current !== null) {
+      window.clearTimeout(dragFeedbackSettlingTimerRef.current);
+      dragFeedbackSettlingTimerRef.current = null;
+    }
+    setIsDragFeedbackSettling(true);
+    dragFeedbackSettlingTimerRef.current = window.setTimeout(() => {
+      dragFeedbackSettlingTimerRef.current = null;
+      setIsDragFeedbackSettling(false);
+      commitVisualDropTarget(null, 0);
+    }, holdMs);
+  }, [clearDragFeedbackSettling, commitVisualDropTarget]);
+  React.useEffect(() => {
+    visualDropTargetRef.current = visualDropTarget;
+  }, [visualDropTarget]);
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      commitVisualDropTarget(dropTarget, 0);
+      return;
+    }
+    if (visualDropTargetTimerRef.current !== null) {
+      window.clearTimeout(visualDropTargetTimerRef.current);
+      visualDropTargetTimerRef.current = null;
+    }
+    if (!dragFieldId) {
+      if (isDragFeedbackSettling) {
+        return;
+      }
+      commitVisualDropTarget(null, 0);
+      return;
+    }
+    const currentVisual = visualDropTargetRef.current;
+    if (areFieldDropTargetsEqual(currentVisual, dropTarget)) {
+      return;
+    }
+    const shouldDelayVisualSwap = Boolean(currentVisual);
+    if (!shouldDelayVisualSwap) {
+      commitVisualDropTarget(dropTarget);
+      return;
+    }
+    const now = getDragNow();
+    const visualLockRemaining = Math.max(0, visualDropTargetLockedUntilRef.current - now);
+    const visualSwapDelay = Math.max(
+      Math.round(
+        (dropTarget ? DASHBOARD_DRAG_FEEDBACK_VISUAL_ENTER_MS : DASHBOARD_DRAG_FEEDBACK_VISUAL_EXIT_MS)
+        + dragOverlayMotionIntensityRef.current * DASHBOARD_DRAG_FEEDBACK_VISUAL_DELAY_MOTION_EXTRA_MS,
+      ),
+      visualLockRemaining,
+    );
+    visualDropTargetTimerRef.current = window.setTimeout(() => {
+      commitVisualDropTarget(dropTarget);
+      visualDropTargetTimerRef.current = null;
+    }, visualSwapDelay);
+    return () => {
+      if (visualDropTargetTimerRef.current !== null) {
+        window.clearTimeout(visualDropTargetTimerRef.current);
+        visualDropTargetTimerRef.current = null;
+      }
+    };
+  }, [commitVisualDropTarget, dragFieldId, dropTarget, getDragNow, isDragFeedbackSettling, visualDropTarget]);
+  React.useEffect(() => () => {
+    if (typeof window !== 'undefined' && dragOverlayMotionFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragOverlayMotionFrameRef.current);
+      dragOverlayMotionFrameRef.current = null;
+    }
+    if (typeof window !== 'undefined' && dragFeedbackSettlingTimerRef.current !== null) {
+      window.clearTimeout(dragFeedbackSettlingTimerRef.current);
+      dragFeedbackSettlingTimerRef.current = null;
+    }
   }, []);
   const dragOverlayModifiers = React.useMemo<Modifier[]>(() => {
     if (!dragOverlayOffset) {
@@ -584,13 +784,41 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     }
 
     return [
-      ({ transform }) => ({
-        ...transform,
-        x: transform.x - dragOverlayOffset.x + 18,
-        y: transform.y - dragOverlayOffset.y + 12,
-      }),
+      ({ transform }) => {
+        const targetX = transform.x - dragOverlayOffset.x + 18;
+        const targetY = transform.y - dragOverlayOffset.y + 12;
+        const now = getDragNow();
+        const previousVisualPosition = dragOverlayVisualPositionRef.current;
+        if (!previousVisualPosition) {
+          dragOverlayVisualPositionRef.current = { x: targetX, y: targetY };
+          dragOverlayLastTickRef.current = now;
+          updateDragOverlayMotionIntensity(0);
+          return {
+            ...transform,
+            x: targetX,
+            y: targetY,
+          };
+        }
+
+        const previousTick = dragOverlayLastTickRef.current ?? now;
+        const delta = Math.max(8, Math.min(28, now - previousTick));
+        const blend = Math.min(0.58, 0.24 + delta / 52);
+        const nextX = previousVisualPosition.x + (targetX - previousVisualPosition.x) * blend;
+        const nextY = previousVisualPosition.y + (targetY - previousVisualPosition.y) * blend;
+        const lagDistance = Math.hypot(targetX - nextX, targetY - nextY);
+
+        dragOverlayVisualPositionRef.current = { x: nextX, y: nextY };
+        dragOverlayLastTickRef.current = now;
+        updateDragOverlayMotionIntensity(lagDistance / 30);
+
+        return {
+          ...transform,
+          x: nextX,
+          y: nextY,
+        };
+      },
     ];
-  }, [dragOverlayOffset]);
+  }, [dragOverlayOffset, getDragNow, updateDragOverlayMotionIntensity]);
   const collisionDetection = React.useCallback<CollisionDetection>((args) => {
     const pointerCollisions = pointerWithin(args);
     if (pointerCollisions.length > 0) {
@@ -706,6 +934,21 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     [filteredOptions, placedFieldIds],
   );
   const hasPlacedFields = placedFieldIds.size > 0;
+  const renderDropTarget = dragFieldId || isDragFeedbackSettling ? visualDropTarget : null;
+  const dragFeedbackMotion = dragFieldId ? clampNumber(dragOverlayMotionIntensity, 0, 1) : 0;
+  const dragFeedbackTransitionMs = DASHBOARD_DRAG_MOTION_BASE_MS + Math.round(dragFeedbackMotion * DASHBOARD_DRAG_FEEDBACK_MOTION_EXTRA_MS);
+  const dragFeedbackIndicatorOpacity = 1 - dragFeedbackMotion * 0.18;
+  const staticWorkbenchMotionStyle = React.useMemo(
+    () => ({
+      transitionDuration: `${DASHBOARD_DRAG_MOTION_BASE_MS}ms`,
+      transitionTimingFunction: DASHBOARD_DRAG_MOTION_EASING,
+    }),
+    [],
+  );
+  const schemeModalSurfaceButtonClass = 'transition-[background-color,color,border-color,box-shadow,transform] hover:-translate-y-[1px] hover:shadow-[0_12px_24px_-22px_rgba(15,23,42,0.18)] active:translate-y-0';
+  const schemeModalInputClass = 'transition-[border-color,background-color,box-shadow] focus:border-primary/35 focus:bg-white focus:shadow-[0_0_0_4px_rgba(59,130,246,0.08)]';
+  const schemeModalCardClass = 'transition-[border-color,background-color,box-shadow,transform] hover:-translate-y-[1px] hover:shadow-[0_14px_28px_-26px_rgba(15,23,42,0.18)]';
+  const schemeModalSelectedCardClass = 'shadow-[0_16px_30px_-28px_rgba(59,130,246,0.34)]';
   const shouldAutoOpenSchemeModal = !hasPlacedFields && !hasSourcePlacedFields;
   const showFieldStats = false;
   const filteredSchemeFieldOptions = React.useMemo(() => {
@@ -726,6 +969,10 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     });
     return nextMap;
   }, [schemeDraft.groups]);
+  const selectedSchemeFieldIds = React.useMemo(
+    () => Array.from(new Set(schemeDraft.groups.flatMap((group) => group.fieldIds))),
+    [schemeDraft.groups],
+  );
 
   const openSchemeModal = React.useCallback((schemeId?: string | null, draft?: ArchiveLayoutScheme | null) => {
     if (draft) {
@@ -840,7 +1087,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     const nextScheme: ArchiveLayoutScheme = {
       ...cloneArchiveLayoutScheme(schemeDraft),
       id: createSchemeId(),
-      name: baseName.endsWith('副本') ? baseName : `${baseName} 副本`,
+      name: baseName.endsWith('鍓湰') ? baseName : `${baseName} 鍓湰`,
       groups: schemeDraft.groups.map((group, index) => ({
         ...cloneArchiveLayoutSchemeGroup(group),
         id: createSchemeGroupId(`archive_layout_scheme_copy_group_${index + 1}`),
@@ -903,7 +1150,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     const duplicatedScheme: ArchiveLayoutScheme = {
       ...cloneArchiveLayoutScheme(scheme),
       id: createSchemeId(),
-      name: scheme.name.endsWith('副本') ? scheme.name : `${scheme.name} 副本`,
+      name: scheme.name.endsWith('鍓湰') ? scheme.name : `${scheme.name} 鍓湰`,
       groups: scheme.groups.map((group, index) => ({
         ...cloneArchiveLayoutSchemeGroup(group),
         id: createSchemeGroupId(`archive_layout_scheme_duplicate_group_${index + 1}`),
@@ -1452,6 +1699,27 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     });
     return nextMap;
   }, [groups]);
+  const rowFieldIdsByGroupRow = React.useMemo(() => {
+    const nextMap = new Map<string, string[]>();
+    groups.forEach((group) => {
+      const rowMap = new Map<number, FlowDraft[]>();
+      group.fields.forEach((field) => {
+        const rowFields = rowMap.get(field.panelRow) ?? [];
+        rowFields.push(field);
+        rowMap.set(field.panelRow, rowFields);
+      });
+      rowMap.forEach((rowFields, rowNumber) => {
+        nextMap.set(
+          `${group.group.id}:${rowNumber}`,
+          rowFields
+            .slice()
+            .sort((left, right) => left.panelOrder - right.panelOrder || left.x - right.x)
+            .map((field) => field.id),
+        );
+      });
+    });
+    return nextMap;
+  }, [groups]);
 
   const handleDragStart = React.useCallback((event: DragStartEvent) => {
     const activeFieldId = parseArchiveFieldDragId(event.active.id);
@@ -1462,6 +1730,15 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     const activatorPoint = getClientPointFromActivatorEvent(event.activatorEvent);
     const initialRect = event.active.rect.current.initial;
     lastDragOverIdRef.current = null;
+    dragOverlayVisualPositionRef.current = null;
+    dragOverlayLastTickRef.current = null;
+    dragOverlayMotionIntensityRef.current = 0;
+    clearDragFeedbackSettling();
+    if (typeof window !== 'undefined' && dragOverlayMotionFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragOverlayMotionFrameRef.current);
+      dragOverlayMotionFrameRef.current = null;
+    }
+    setDragOverlayMotionIntensity(0);
     setDragFieldId(activeFieldId ?? activeData?.fieldId ?? null);
     setDropTargetIfChanged(null);
     setDragOverlayOffset(
@@ -1472,21 +1749,55 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
           }
         : null,
     );
-  }, [setDropTargetIfChanged]);
+  }, [clearDragFeedbackSettling, setDropTargetIfChanged]);
 
   const handleDragOver = React.useCallback((event: DragOverEvent) => {
     const activeFieldId = parseArchiveFieldDragId(event.active.id);
     const overFieldId = parseArchiveFieldDragId(event.over?.id);
     const activeData = event.active.data.current as FieldDragData | undefined;
     const overData = event.over?.data.current as FieldDragData | GroupDragData | FieldInsertDropData | FieldRowDropData | undefined;
+    const translatedActiveRect = event.active.rect.current.translated ?? event.active.rect.current.initial;
+    const activeCenterX = translatedActiveRect
+      ? translatedActiveRect.left + translatedActiveRect.width / 2
+      : null;
     if (!activeFieldId && activeData?.type !== 'archive-field') {
       return;
     }
     if (overFieldId && overFieldId !== activeFieldId) {
-      setDropTargetIfChanged({
-        beforeId: overFieldId,
+      const targetGroup = groups.find((group) => group.group.id === (fieldIdToGroupId.get(overFieldId) ?? activeData?.groupId ?? ''));
+      const targetField = targetGroup?.fields.find((field) => field.id === overFieldId);
+      const rowFieldIds = targetField
+        ? rowFieldIdsByGroupRow.get(`${targetGroup?.group.id}:${targetField.panelRow}`) ?? [overFieldId]
+        : [overFieldId];
+      const currentIndex = rowFieldIds.indexOf(overFieldId);
+      const overRect = event.over?.rect ?? null;
+      const leftBoundary = overRect ? overRect.left + overRect.width * 0.44 : null;
+      const rightBoundary = overRect ? overRect.left + overRect.width * 0.56 : null;
+      if (
+        overRect
+        && activeCenterX != null
+        && leftBoundary != null
+        && rightBoundary != null
+        && activeCenterX > leftBoundary
+        && activeCenterX < rightBoundary
+        && dropTarget?.groupId === (fieldIdToGroupId.get(overFieldId) ?? activeData?.groupId ?? '')
+        && dropTarget?.rowNumber === (targetField?.panelRow ?? null)
+      ) {
+        return;
+      }
+      const insertAfter = Boolean(
+        overRect
+        && activeCenterX != null
+        && rightBoundary != null
+        && activeCenterX >= rightBoundary,
+      );
+      const nextBeforeId = insertAfter
+        ? rowFieldIds[currentIndex + 1] ?? null
+        : overFieldId;
+      setDropTargetWithHysteresis({
+        beforeId: nextBeforeId,
         groupId: fieldIdToGroupId.get(overFieldId) ?? activeData?.groupId ?? '',
-        rowNumber: overData?.type === 'archive-field' ? null : null,
+        rowNumber: targetField?.panelRow ?? null,
         mode: 'standard',
       });
       return;
@@ -1495,7 +1806,49 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       return;
     }
     if (overData?.type === 'archive-field-row') {
-      setDropTargetIfChanged({ beforeId: overData.beforeId, groupId: overData.groupId, rowNumber: overData.rowNumber, mode: 'row' });
+      const rowFieldIds = rowFieldIdsByGroupRow.get(`${overData.groupId}:${overData.rowNumber}`) ?? [];
+      const isEmptyRowTarget = rowFieldIds.length === 0;
+      const overRect = event.over?.rect ?? null;
+      const startHotZone = overRect ? Math.min(124, overRect.width * 0.2) : 0;
+      const endHotZone = overRect ? Math.min(124, overRect.width * 0.2) : 0;
+      if (isEmptyRowTarget) {
+        setDropTargetIfChanged({
+          beforeId: null,
+          groupId: overData.groupId,
+          rowNumber: overData.rowNumber,
+          mode: 'row',
+        });
+        return;
+      }
+      const preferRowStart = Boolean(
+        rowFieldIds.length > 0
+        && overRect
+        && activeCenterX != null
+        && activeCenterX <= overRect.left + startHotZone,
+      );
+      const preferRowEnd = Boolean(
+        rowFieldIds.length > 0
+        && overRect
+        && activeCenterX != null
+        && activeCenterX >= overRect.right - endHotZone,
+      );
+      if (
+        overRect
+        && activeCenterX != null
+        && !preferRowStart
+        && !preferRowEnd
+        && dropTarget?.groupId === overData.groupId
+        && dropTarget?.rowNumber === overData.rowNumber
+        && dropTarget?.mode === 'row'
+      ) {
+        return;
+      }
+      setDropTargetWithHysteresis({
+        beforeId: preferRowStart ? rowFieldIds[0] ?? null : (preferRowEnd ? null : overData.beforeId),
+        groupId: overData.groupId,
+        rowNumber: overData.rowNumber,
+        mode: 'row',
+      });
       return;
     }
     if (overData?.type === 'archive-field-insert') {
@@ -1505,7 +1858,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     if (overData?.type === 'archive-field' && overData.fieldId !== (activeFieldId ?? activeData?.fieldId)) {
       const targetGroup = groups.find((group) => group.group.id === overData.groupId);
       const targetField = targetGroup?.fields.find((field) => field.id === overData.fieldId);
-      setDropTargetIfChanged({
+      setDropTargetWithHysteresis({
         beforeId: overData.fieldId,
         groupId: overData.groupId,
         rowNumber: targetField?.panelRow ?? null,
@@ -1517,7 +1870,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       setDropTargetIfChanged({ beforeId: null, groupId: overData.groupId, rowNumber: null, mode: 'standard' });
       return;
     }
-  }, [fieldIdToGroupId, groups, setDropTargetIfChanged]);
+  }, [dropTarget, fieldIdToGroupId, groups, rowFieldIdsByGroupRow, setDropTargetIfChanged, setDropTargetWithHysteresis]);
 
   const handleDragEnd = React.useCallback((event: DragEndEvent) => {
     const activeFieldId = parseArchiveFieldDragId(event.active.id);
@@ -1551,17 +1904,35 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       moveField(resolvedActiveFieldId, overData.groupId, resolvedActiveRowNumber);
     }
     lastDragOverIdRef.current = null;
+    dragOverlayVisualPositionRef.current = null;
+    dragOverlayLastTickRef.current = null;
+    dragOverlayMotionIntensityRef.current = 0;
+    if (typeof window !== 'undefined' && dragOverlayMotionFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragOverlayMotionFrameRef.current);
+      dragOverlayMotionFrameRef.current = null;
+    }
+    setDragOverlayMotionIntensity(0);
     setDragFieldId(null);
     setDropTargetIfChanged(null);
     setDragOverlayOffset(null);
-  }, [dropTarget, fieldIdToGroupId, groups, moveField, setDropTargetIfChanged]);
+    startDragFeedbackSettling(DASHBOARD_DRAG_FEEDBACK_END_SETTLE_MS);
+  }, [dropTarget, fieldIdToGroupId, groups, moveField, setDropTargetIfChanged, startDragFeedbackSettling]);
 
   const handleDragCancel = React.useCallback(() => {
     lastDragOverIdRef.current = null;
+    dragOverlayVisualPositionRef.current = null;
+    dragOverlayLastTickRef.current = null;
+    dragOverlayMotionIntensityRef.current = 0;
+    if (typeof window !== 'undefined' && dragOverlayMotionFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragOverlayMotionFrameRef.current);
+      dragOverlayMotionFrameRef.current = null;
+    }
+    setDragOverlayMotionIntensity(0);
     setDragFieldId(null);
     setDropTargetIfChanged(null);
     setDragOverlayOffset(null);
-  }, [setDropTargetIfChanged]);
+    startDragFeedbackSettling(DASHBOARD_DRAG_FEEDBACK_CANCEL_SETTLE_MS);
+  }, [setDropTargetIfChanged, startDragFeedbackSettling]);
 
   const groupedPlacedFields = React.useMemo(() => {
     const fieldGroupMap = new Map<string, string>();
@@ -1686,6 +2057,65 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     updateSchemeFieldDefault(fieldId, dimension, nextValue);
     return nextValue;
   }, [updateSchemeFieldDefault]);
+  const applySchemeBatchFieldSize = React.useCallback(() => {
+    if (selectedSchemeFieldIds.length === 0) {
+      return;
+    }
+
+    const nextWidth = schemeBatchSizeInput.w.trim()
+      ? parseCommittedNumber(
+        schemeBatchSizeInput.w,
+        BILL_FORM_DEFAULT_WIDTH,
+        BILL_FORM_MIN_WIDTH,
+        Math.max(BILL_FORM_MAX_WIDTH, PREVIEW_WIDTH_MAX),
+      )
+      : null;
+    const nextHeight = schemeBatchSizeInput.h.trim()
+      ? parseCommittedNumber(
+        schemeBatchSizeInput.h,
+        BILL_FORM_MIN_CONTROL_HEIGHT,
+        BILL_FORM_MIN_CONTROL_HEIGHT,
+        160,
+      )
+      : null;
+
+    if (nextWidth == null && nextHeight == null) {
+      return;
+    }
+
+    updateSchemeDraft((current) => {
+      const mergedDefaults = { ...(current.fieldDefaults ?? {}) };
+      selectedSchemeFieldIds.forEach((fieldId) => {
+        const nextDefaults = { ...(mergedDefaults[fieldId] ?? {}) };
+        if (nextWidth != null) {
+          nextDefaults.w = nextWidth;
+        }
+        if (nextHeight != null) {
+          nextDefaults.h = nextHeight;
+        }
+        mergedDefaults[fieldId] = nextDefaults;
+      });
+      return {
+        ...current,
+        fieldDefaults: mergedDefaults,
+      };
+    });
+
+    setSchemeFieldSizeInputs((current) => {
+      const nextInputs = { ...current };
+      selectedSchemeFieldIds.forEach((fieldId) => {
+        nextInputs[fieldId] = {
+          h: nextHeight != null ? String(nextHeight) : (nextInputs[fieldId]?.h ?? String(getSchemeFieldResolvedSize(fieldId).h)),
+          w: nextWidth != null ? String(nextWidth) : (nextInputs[fieldId]?.w ?? String(getSchemeFieldResolvedSize(fieldId).w)),
+        };
+      });
+      return nextInputs;
+    });
+    setSchemeBatchSizeInput({
+      h: nextHeight != null ? String(nextHeight) : schemeBatchSizeInput.h,
+      w: nextWidth != null ? String(nextWidth) : schemeBatchSizeInput.w,
+    });
+  }, [getSchemeFieldResolvedSize, schemeBatchSizeInput.h, schemeBatchSizeInput.w, selectedSchemeFieldIds, updateSchemeDraft]);
 
   const closeFieldEditor = React.useCallback(() => {
     setOpenFieldEditorId(null);
@@ -1723,7 +2153,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       );
     }
 
-    if (fieldTypeText.includes('日期') || fieldTypeText.includes('time') || fieldTypeText.includes('date')) {
+    if (fieldTypeText.includes('鏃ユ湡') || fieldTypeText.includes('time') || fieldTypeText.includes('date')) {
       return (
         <div className={shellClass} style={{ height: previewHeight }}>
           {previewTextNode}
@@ -1732,7 +2162,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
       );
     }
 
-    if (fieldTypeText.includes('下拉')
+    if (fieldTypeText.includes('涓嬫媺')
       || fieldTypeText.includes('select')
       || fieldTypeText.includes('多选')) {
       return (
@@ -1774,14 +2204,16 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
             <button
               type="button"
               onClick={() => openSchemeModal()}
-              className="inline-flex h-8 items-center justify-center rounded-[9px] bg-[#f8fbff] px-2 text-center text-[11px] font-semibold leading-tight text-slate-600 transition-colors hover:bg-[#eef5ff] hover:text-primary"
+              className="inline-flex h-8 items-center justify-center rounded-[9px] bg-[#f8fbff] px-2 text-center text-[11px] font-semibold leading-tight text-slate-600 transition-[background-color,color,box-shadow,transform] hover:bg-[#eef5ff] hover:text-primary hover:shadow-[0_10px_24px_-24px_rgba(15,23,42,0.2)]"
+              style={staticWorkbenchMotionStyle}
             >
               方案设置
             </button>
             <button
               type="button"
               onClick={addGroup}
-              className="inline-flex h-8 items-center justify-center rounded-[9px] bg-[#f8fbff] px-2 text-center text-[11px] font-semibold leading-tight text-slate-600 transition-colors hover:bg-[#eef5ff] hover:text-primary"
+              className="inline-flex h-8 items-center justify-center rounded-[9px] bg-[#f8fbff] px-2 text-center text-[11px] font-semibold leading-tight text-slate-600 transition-[background-color,color,box-shadow,transform] hover:bg-[#eef5ff] hover:text-primary hover:shadow-[0_10px_24px_-24px_rgba(15,23,42,0.2)]"
+              style={staticWorkbenchMotionStyle}
             >
               新增分组
             </button>
@@ -1791,7 +2223,8 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             placeholder="搜索字段名、编码或描述"
-            className="mt-2 h-8.5 w-full rounded-[10px] border border-[#d8e3ef] bg-white px-3 text-[12px] text-slate-700 outline-none placeholder:text-slate-400"
+            className="mt-2 h-8.5 w-full rounded-[10px] border border-[#d8e3ef] bg-white px-3 text-[12px] text-slate-700 outline-none placeholder:text-slate-400 transition-[border-color,box-shadow,background-color] focus:border-primary/35 focus:bg-white focus:shadow-[0_0_0_3px_rgba(59,130,246,0.08)]"
+            style={staticWorkbenchMotionStyle}
           />
           {showFieldStats && <div className="mt-2 grid grid-cols-3 gap-1.5">
             <div className="rounded-[10px] border border-[#e6edf6] bg-white/80 px-2 py-1.5">
@@ -1818,9 +2251,10 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                 type="button"
                 onClick={() => setSidebarTab(tab.key)}
                 className={cn(
-                  'rounded-[8px] px-2.5 py-1.5 text-[11px] font-semibold transition-colors',
-                  sidebarTab === tab.key ? 'bg-primary text-white' : 'text-slate-500 hover:bg-[#f8fbff]',
+                  'rounded-[8px] px-2.5 py-1.5 text-[11px] font-semibold transition-[background-color,color,box-shadow,transform]',
+                  sidebarTab === tab.key ? 'bg-primary text-white shadow-[0_10px_24px_-24px_rgba(59,130,246,0.45)]' : 'text-slate-500 hover:bg-[#f8fbff]',
                 )}
+                style={staticWorkbenchMotionStyle}
               >
                 {tab.label}
               </button>
@@ -1846,11 +2280,12 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                       setSelectedFieldId(itemId);
                     }}
                     className={cn(
-                      'mb-2 flex w-full items-center justify-between rounded-[14px] border px-3 py-3 text-left transition-colors',
+                      'mb-2 flex w-full items-center justify-between rounded-[14px] border px-3 py-3 text-left transition-[border-color,background-color,box-shadow,transform]',
                       itemId === selectedFieldId
-                        ? 'border-primary/35 bg-primary/5'
-                        : 'border-[#edf2f7] bg-[#fbfdff] hover:border-[#d7e5f4] hover:bg-white',
+                        ? 'border-primary/35 bg-primary/5 shadow-[0_12px_24px_-24px_rgba(59,130,246,0.32)]'
+                        : 'border-[#edf2f7] bg-[#fbfdff] hover:border-[#d7e5f4] hover:bg-white hover:shadow-[0_12px_24px_-24px_rgba(15,23,42,0.18)]',
                     )}
+                    style={staticWorkbenchMotionStyle}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[12px] font-semibold text-slate-800">{option.title || option.label}</div>
@@ -1879,13 +2314,14 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                   key={String(option.value)}
                   type="button"
                   onClick={() => addFieldToGroup(String(option.value))}
-                  className="mb-2 flex w-full items-center justify-between rounded-[14px] border border-dashed border-[#d8e3ef] bg-[#f8fbff] px-3 py-3 text-left transition-colors hover:border-primary/40 hover:bg-white"
+                  className="mb-2 flex w-full items-center justify-between rounded-[14px] border border-dashed border-[#d8e3ef] bg-[#f8fbff] px-3 py-3 text-left transition-[border-color,background-color,box-shadow,transform] hover:border-primary/40 hover:bg-white hover:shadow-[0_12px_24px_-24px_rgba(15,23,42,0.18)]"
+                  style={staticWorkbenchMotionStyle}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[12px] font-semibold text-slate-800">{option.title || option.label}</div>
                     <div className="mt-1 truncate text-[11px] text-slate-400">{option.label}</div>
                   </div>
-                  <span className="ml-2 shrink-0 text-[11px] font-semibold text-primary">放入</span>
+                  <span className="ml-2 shrink-0 text-[11px] font-semibold text-primary">鏀惧叆</span>
                 </button>
               )) : (
                 <div className="px-2 py-6 text-center text-[12px] text-slate-400">所有字段都已放入布局</div>
@@ -1906,25 +2342,28 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                   onClick={createSchemeFromCurrentLayout}
                   disabled={!hasPlacedFields}
                   className={cn(
-                    'inline-flex h-8 items-center justify-center rounded-[9px] px-2 text-center text-[10px] font-semibold leading-tight transition-colors',
+                    'inline-flex h-8 items-center justify-center rounded-[9px] px-2 text-center text-[10px] font-semibold leading-tight transition-[background-color,color,box-shadow,transform]',
                     hasPlacedFields
-                      ? 'bg-[#f8fbff] text-slate-600 hover:bg-[#eef5ff] hover:text-primary'
+                      ? 'bg-[#f8fbff] text-slate-600 hover:bg-[#eef5ff] hover:text-primary hover:shadow-[0_10px_24px_-24px_rgba(15,23,42,0.2)]'
                       : 'cursor-not-allowed bg-[#f8fafc] text-slate-300',
                   )}
+                  style={staticWorkbenchMotionStyle}
                 >
                   从当前布局生成
                 </button>
                 <button
                   type="button"
                   onClick={createNewSchemeDraft}
-                  className="inline-flex h-8 items-center justify-center rounded-[9px] bg-[#f8fbff] px-2 text-center text-[10px] font-semibold leading-tight text-slate-600 transition-colors hover:bg-[#eef5ff] hover:text-primary"
+                  className="inline-flex h-8 items-center justify-center rounded-[9px] bg-[#f8fbff] px-2 text-center text-[10px] font-semibold leading-tight text-slate-600 transition-[background-color,color,box-shadow,transform] hover:bg-[#eef5ff] hover:text-primary hover:shadow-[0_10px_24px_-24px_rgba(15,23,42,0.2)]"
+                  style={staticWorkbenchMotionStyle}
                 >
                   新建方案
                 </button>
                 <button
                   type="button"
                   onClick={() => openSchemeModal()}
-                  className="inline-flex h-8 items-center justify-center rounded-[9px] bg-primary px-2 text-center text-[10px] font-semibold leading-tight text-white transition-colors hover:bg-primary/90"
+                  className="inline-flex h-8 items-center justify-center rounded-[9px] bg-primary px-2 text-center text-[10px] font-semibold leading-tight text-white transition-[background-color,box-shadow,transform] hover:bg-primary/90 hover:shadow-[0_12px_24px_-24px_rgba(59,130,246,0.45)]"
+                  style={staticWorkbenchMotionStyle}
                 >
                   打开设置
                 </button>
@@ -1938,9 +2377,10 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                 <div
                   key={scheme.id}
                   className={cn(
-                    'mb-1.5 rounded-[12px] border px-2.5 py-2.5',
-                    schemeSourceId === scheme.id ? 'border-primary/35 bg-primary/5' : 'border-[#edf2f7] bg-[#fbfdff]',
+                    'mb-1.5 rounded-[12px] border px-2.5 py-2.5 transition-[border-color,background-color,box-shadow,transform]',
+                    schemeSourceId === scheme.id ? 'border-primary/35 bg-primary/5 shadow-[0_12px_24px_-24px_rgba(59,130,246,0.3)]' : 'border-[#edf2f7] bg-[#fbfdff] hover:border-[#d7e5f4] hover:bg-white hover:shadow-[0_12px_24px_-24px_rgba(15,23,42,0.18)]',
                   )}
+                  style={staticWorkbenchMotionStyle}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -1955,7 +2395,8 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                         setSchemeDraft(cloneArchiveLayoutScheme(scheme));
                         setSelectedSchemeGroupId(scheme.groups[0]?.id ?? null);
                       }}
-                      className="rounded-[9px] border border-[#dbe5ef] bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 hover:bg-[#f8fbff]"
+                      className="rounded-[9px] border border-[#dbe5ef] bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 transition-[background-color,color,box-shadow,transform] hover:bg-[#f8fbff] hover:text-slate-700 hover:shadow-[0_10px_24px_-24px_rgba(15,23,42,0.18)]"
+                      style={staticWorkbenchMotionStyle}
                     >
                       选中
                     </button>
@@ -1964,21 +2405,24 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                     <button
                       type="button"
                       onClick={() => applySpecificScheme(scheme)}
-                      className="rounded-[9px] border border-primary/20 bg-primary px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-primary/90"
+                      className="rounded-[9px] border border-primary/20 bg-primary px-2.5 py-1.5 text-[10px] font-semibold text-white transition-[background-color,box-shadow,transform] hover:bg-primary/90 hover:shadow-[0_12px_24px_-24px_rgba(59,130,246,0.45)]"
+                      style={staticWorkbenchMotionStyle}
                     >
                       应用
                     </button>
                     <button
                       type="button"
                       onClick={() => openSchemeModal(scheme.id)}
-                      className="rounded-[9px] border border-[#dbe5ef] bg-white px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 hover:bg-[#f8fbff]"
+                      className="rounded-[9px] border border-[#dbe5ef] bg-white px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition-[background-color,color,box-shadow,transform] hover:bg-[#f8fbff] hover:text-slate-700 hover:shadow-[0_10px_24px_-24px_rgba(15,23,42,0.18)]"
+                      style={staticWorkbenchMotionStyle}
                     >
                       编辑
                     </button>
                     <button
                       type="button"
                       onClick={() => duplicateScheme(scheme)}
-                      className="rounded-[9px] border border-[#dbe5ef] bg-white px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 hover:bg-[#f8fbff]"
+                      className="rounded-[9px] border border-[#dbe5ef] bg-white px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition-[background-color,color,box-shadow,transform] hover:bg-[#f8fbff] hover:text-slate-700 hover:shadow-[0_10px_24px_-24px_rgba(15,23,42,0.18)]"
+                      style={staticWorkbenchMotionStyle}
                     >
                       复制
                     </button>
@@ -1992,14 +2436,16 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                     <button
                       type="button"
                       onClick={createNewSchemeDraft}
-                      className="rounded-[10px] border border-[#dbe5ef] bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 hover:bg-[#f8fbff]"
+                      className="rounded-[10px] border border-[#dbe5ef] bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 transition-[background-color,color,box-shadow,transform] hover:bg-[#f8fbff] hover:shadow-[0_10px_24px_-24px_rgba(15,23,42,0.18)]"
+                      style={staticWorkbenchMotionStyle}
                     >
                       新建方案
                     </button>
                     <button
                       type="button"
                       onClick={() => openSchemeModal(null, suggestedScheme)}
-                      className="rounded-[10px] border border-primary/20 bg-primary/8 px-3 py-2 text-[12px] font-semibold text-primary hover:bg-primary/12"
+                      className="rounded-[10px] border border-primary/20 bg-primary/8 px-3 py-2 text-[12px] font-semibold text-primary transition-[background-color,box-shadow,transform] hover:bg-primary/12 hover:shadow-[0_10px_24px_-24px_rgba(59,130,246,0.28)]"
+                      style={staticWorkbenchMotionStyle}
                     >
                       使用默认建议
                     </button>
@@ -2022,7 +2468,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-2.5 py-1.5">
-                <span className="text-[11px] font-medium text-slate-500">预览宽度</span>
+                <span className="text-[11px] font-medium text-slate-500">预览区域宽度</span>
                 <input
                   type="range"
                   min={PREVIEW_WIDTH_MIN}
@@ -2073,6 +2519,15 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
           </div>
         </div>
         <DndContext
+          autoScroll={{
+            acceleration: 14,
+            activator: AutoScrollActivator.Pointer,
+            interval: 8,
+            threshold: {
+              x: 0.12,
+              y: 0.16,
+            },
+          }}
           collisionDetection={collisionDetection}
           measuring={{
             droppable: {
@@ -2147,11 +2602,12 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                       dropId={`archive-group:${group.group.id}`}
                       data={{ groupId: group.group.id, type: 'archive-group' } as GroupDragData}
                       className={cn(
-                        'scrollbar-none rounded-[16px] px-1 py-1 transition-colors',
-                        dragFieldId && dropTarget?.groupId === group.group.id && !dropTarget.beforeId ? 'bg-primary/5' : '',
+                        'scrollbar-none relative -mx-1 rounded-[16px] px-2 py-1.5 transition-colors',
+                        dragFieldId && renderDropTarget?.groupId === group.group.id && !renderDropTarget.beforeId ? 'bg-primary/5' : '',
                         group.fields.length === 0 && 'rounded-[14px] border border-dashed border-[#dfe7f1]/80 bg-white/40 px-3 py-4',
                       )}
                       style={{
+                        transitionDuration: `${dragFeedbackTransitionMs}ms`,
                         minHeight: group.fields.length > 0
                           ? Math.max(...group.fields.map((item) => getBillHeaderFieldShellHeight({
                               controlHeight: getBillHeaderFieldHeight({ controlHeight: item.h }),
@@ -2167,9 +2623,27 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                             .sort((left, right) => left.panelOrder - right.panelOrder || left.x - right.x);
                           const isRowTarget = Boolean(
                             dragFieldId
-                            && dropTarget?.groupId === group.group.id
-                            && dropTarget.rowNumber === rowNumber
-                            && dropTarget.mode === 'row',
+                            && renderDropTarget?.groupId === group.group.id
+                            && renderDropTarget.rowNumber === rowNumber
+                            && renderDropTarget.mode === 'row',
+                          );
+                          const isRowWarm = Boolean(
+                            dragFieldId
+                            && renderDropTarget?.groupId === group.group.id
+                            && renderDropTarget.rowNumber === rowNumber,
+                          );
+                          const isEmptyRow = rowFields.length === 0;
+                          const isRowEndTarget = Boolean(isRowTarget && renderDropTarget?.beforeId == null && rowFields.length > 0);
+                          const isRowStartWarm = Boolean(
+                            isRowWarm
+                            && !isEmptyRow
+                            && renderDropTarget?.beforeId != null
+                            && renderDropTarget.beforeId === rowFields[0]?.id,
+                          );
+                          const isRowEndWarm = Boolean(
+                            isRowWarm
+                            && !isEmptyRow
+                            && renderDropTarget?.beforeId == null,
                           );
 
                           return (
@@ -2178,17 +2652,80 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                               dropId={`archive-row:${group.group.id}:${rowNumber}`}
                               data={{ beforeId: null, groupId: group.group.id, rowNumber, type: 'archive-field-row' } as FieldRowDropData}
                               className={cn(
-                                'group/row relative rounded-[12px] px-1 py-0.5 transition-colors',
-                                isRowTarget ? 'bg-primary/6' : 'hover:bg-slate-50/70',
-                                rowFields.length === 0 ? 'border border-dashed border-[#dbe5ef] bg-white/70 px-3 py-2' : '',
+                                'group/row relative -mx-1.5 rounded-[12px] px-2.5 py-1 transition-[background-color,border-color,box-shadow,transform] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                                isRowTarget ? 'bg-primary/6 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.14)]' : 'hover:bg-slate-50/70',
+                                isRowWarm && !isRowTarget && !isEmptyRow ? 'bg-primary/[0.028] shadow-[inset_0_0_0_1px_rgba(59,130,246,0.08)]' : '',
+                                isEmptyRow ? 'border border-dashed border-[#dbe5ef] bg-white/78 px-3 py-2.5 hover:border-primary/28 hover:bg-primary/[0.025]' : '',
+                                isEmptyRow && isRowTarget ? 'translate-y-[-1px] border-primary/40 bg-primary/[0.06] shadow-[inset_0_0_0_1px_rgba(59,130,246,0.18),0_10px_24px_-22px_rgba(59,130,246,0.35)]' : '',
                               )}
+                              style={{ transitionDuration: `${dragFeedbackTransitionMs}ms` }}
                             >
+                              {isRowWarm && !isEmptyRow ? (
+                                <>
+                                  <span className={cn(
+                                    'pointer-events-none absolute inset-x-3 top-0 h-px transition-colors duration-180',
+                                    isRowTarget ? 'bg-primary/45' : 'bg-primary/20',
+                                  )} style={{ opacity: dragFeedbackIndicatorOpacity, transitionDuration: `${dragFeedbackTransitionMs}ms` }} />
+                                  <span className={cn(
+                                    'pointer-events-none absolute inset-x-3 bottom-0 h-px transition-colors duration-180',
+                                    isRowTarget ? 'bg-primary/20' : 'bg-primary/12',
+                                  )} style={{ opacity: dragFeedbackIndicatorOpacity, transitionDuration: `${dragFeedbackTransitionMs}ms` }} />
+                                  {isRowStartWarm ? (
+                                    <span className="pointer-events-none absolute inset-y-1 left-0 flex w-4 items-center justify-center">
+                                      <span className={cn(
+                                        'w-[3px] rounded-full transition-[height,background-color,box-shadow] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                                        isRowTarget ? 'h-full bg-primary shadow-[0_0_0_3px_rgba(59,130,246,0.10)]' : 'h-[72%] bg-primary/45 shadow-[0_0_0_2px_rgba(59,130,246,0.07)]',
+                                      )} style={{ opacity: dragFeedbackIndicatorOpacity, transitionDuration: `${dragFeedbackTransitionMs}ms` }} />
+                                    </span>
+                                  ) : null}
+                                  {isRowEndWarm ? (
+                                    <span className="pointer-events-none absolute inset-y-1 right-0 flex w-4 items-center justify-center">
+                                      <span className={cn(
+                                        'w-[3px] rounded-full transition-[height,background-color,box-shadow] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                                        isRowTarget ? 'h-full bg-primary shadow-[0_0_0_3px_rgba(59,130,246,0.10)]' : 'h-[72%] bg-primary/45 shadow-[0_0_0_2px_rgba(59,130,246,0.07)]',
+                                      )} style={{ opacity: dragFeedbackIndicatorOpacity, transitionDuration: `${dragFeedbackTransitionMs}ms` }} />
+                                    </span>
+                                  ) : null}
+                                </>
+                              ) : null}
+                              {isRowTarget ? (
+                                <>
+                                  {isEmptyRow ? (
+                                    <span className="pointer-events-none absolute inset-[3px] rounded-[10px] bg-primary/[0.045]" />
+                                  ) : null}
+                                  {isRowEndTarget ? (
+                                    <span className="pointer-events-none absolute inset-y-1 right-0 flex w-4 items-center justify-center">
+                                      <span className="h-full w-[3px] rounded-full bg-primary shadow-[0_0_0_3px_rgba(59,130,246,0.10)]" />
+                                    </span>
+                                  ) : null}
+                                </>
+                              ) : null}
+                              {isEmptyRow ? (
+                                <div className="pointer-events-none absolute inset-x-0 top-1/2 z-[1] flex -translate-y-1/2 justify-center px-5">
+                                  <span
+                                    className={cn(
+                                      'inline-flex min-w-[116px] items-center justify-center rounded-full border px-3.5 py-1 text-[10px] font-semibold tracking-[0.01em] transition-[border-color,background-color,color,transform,box-shadow] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                                      isRowTarget
+                                        ? 'scale-[1.02] border-primary/26 bg-primary/[0.075] text-primary shadow-[0_8px_20px_-18px_rgba(59,130,246,0.42)]'
+                                        : 'border-[#e2eaf3] bg-white/96 text-slate-400 group-hover/row:border-primary/16 group-hover/row:text-slate-500',
+                                    )}
+                                  >
+                                    拖入新增行
+                                  </span>
+                                </div>
+                              ) : null}
                               <SortableContext items={rowFields.map((field) => `archive-field:${field.id}`)} strategy={rectSortingStrategy}>
                                 <div className={cn(
                                   'flex min-w-full items-start',
                                   density === 'compact' ? 'gap-x-3.5' : 'gap-x-4.5',
+                                  isEmptyRow ? 'opacity-0' : '',
                                 )}>
-                                  {rowFields.length > 0 ? rowFields.map((field) => {
+                                  {(() => {
+                                    const rowInsertIndex = dragFieldId && renderDropTarget?.groupId === group.group.id && renderDropTarget?.beforeId
+                                      ? rowFields.findIndex((candidate) => candidate.id === renderDropTarget.beforeId)
+                                      : -1;
+
+                                    return rowFields.length > 0 ? rowFields.map((field, fieldIndex) => {
                                     const fieldOption = optionMap.get(String(field.field ?? ''));
                                     const rawField = (fieldOption?.rawField ?? {}) as Record<string, any>;
                                     const displayTitle = getDisplayTitle(field, fieldOption, rawField);
@@ -2199,51 +2736,104 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                                     const liveHeight = getBillHeaderFieldHeight({ controlHeight: previewFieldHeight });
                                     const shellHeight = Math.max(28, getBillHeaderFieldShellHeight({ controlHeight: liveHeight, width: liveWidth }) - 24);
                                     const previewHeight = clampNumber(liveHeight - 24, 18, 24);
-                                    const isInsertTarget = dragFieldId && dropTarget?.groupId === group.group.id && dropTarget.beforeId === field.id && dragFieldId !== field.id;
+                                    const isInsertTarget = dragFieldId && renderDropTarget?.groupId === group.group.id && renderDropTarget.beforeId === field.id && dragFieldId !== field.id;
                                     const isDragging = dragFieldId === field.id;
                                     const isSelected = selectedFieldId === field.id || isInsertTarget || openFieldEditorId === field.id;
+                                    const insertSpacerWidth = isInsertTarget ? 22 : 0;
+                                    const isNeighborBeforeInsert = rowInsertIndex > 0 && fieldIndex === rowInsertIndex - 1;
+                                    const isNeighborAfterInsert = rowInsertIndex >= 0 && fieldIndex === rowInsertIndex + 1;
 
                                     return (
-                                      <DesignerWorkbenchDraggableItem
-                                        key={field.id}
-                                        dragId={`archive-field:${field.id}`}
-                                        dropId={`archive-drop:${field.id}`}
-                                        data={{ fieldId: field.id, groupId: group.group.id, type: 'archive-field' } as FieldDragData}
-                                        sortable
-                                        itemAttributes={{ 'data-archive-field-card': 'true', title: `${displayTitle} · 拖动调整顺序，双击设置` }}
-                                        className={cn(
-                                          'group relative flex shrink-0 select-none rounded-[10px] text-left transition-[background-color,box-shadow,opacity] duration-150 ease-out',
-                                          isDragging ? 'cursor-grabbing opacity-0' : 'cursor-grab active:cursor-grabbing',
-                                          !isDragging && isSelected ? 'ring-2 ring-[color:var(--workspace-accent)]/10' : null,
-                                          !isDragging && !isSelected ? 'hover:bg-slate-50/40' : null,
-                                        )}
-                                        style={{ height: shellHeight, width: liveWidth, willChange: 'transform' }}
-                                        onClick={(event: React.MouseEvent<HTMLDivElement>) => {
+                                      <React.Fragment key={field.id}>
+                                        <span
+                                          aria-hidden="true"
+                                          className={cn(
+                                            'pointer-events-none relative block shrink-0 overflow-visible transition-[width,opacity,transform] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                                            isInsertTarget ? 'opacity-100' : 'opacity-0',
+                                          )}
+                                          style={{
+                                            opacity: isInsertTarget ? dragFeedbackIndicatorOpacity : 0,
+                                            transitionDuration: `${dragFeedbackTransitionMs}ms`,
+                                            width: insertSpacerWidth,
+                                          }}
+                                        >
+                                          <span className="absolute inset-y-1 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary shadow-[0_0_0_3px_rgba(59,130,246,0.10)]" />
+                                        </span>
+                                        <DesignerWorkbenchDraggableItem
+                                          dragId={`archive-field:${field.id}`}
+                                          dropId={`archive-drop:${field.id}`}
+                                          data={{ fieldId: field.id, groupId: group.group.id, type: 'archive-field' } as FieldDragData}
+                                          sortable
+                                          itemAttributes={{ 'data-archive-field-card': 'true', title: `${displayTitle} · 拖动调整顺序，双击设置` }}
+                                          className={cn(
+                                            'group relative flex shrink-0 select-none rounded-[10px] text-left transition-[transform,background-color,box-shadow,opacity] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                                            isDragging ? 'cursor-grabbing opacity-0' : 'cursor-grab active:cursor-grabbing',
+                                            !isDragging && isSelected ? 'bg-[color:var(--workspace-accent)]/[0.028] ring-2 ring-[color:var(--workspace-accent)]/10 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.05),0_12px_24px_-24px_rgba(15,23,42,0.24)]' : null,
+                                            !isDragging && !isSelected ? 'hover:bg-slate-50/60 hover:shadow-[0_10px_24px_-24px_rgba(15,23,42,0.18)]' : null,
+                                            isInsertTarget ? 'translate-x-1.5' : null,
+                                            isNeighborBeforeInsert ? '-translate-x-0.5' : null,
+                                            isNeighborAfterInsert ? 'translate-x-0.5' : null,
+                                          )}
+                                          style={{
+                                            height: shellHeight,
+                                            width: liveWidth,
+                                            willChange: 'transform',
+                                            transitionDuration: `${dragFeedbackTransitionMs}ms`,
+                                            transitionTimingFunction: DASHBOARD_DRAG_MOTION_EASING,
+                                          }}
+                                          onClick={(event: React.MouseEvent<HTMLDivElement>) => {
                                           event.stopPropagation();
                                           setSelectedGroupId(group.group.id);
                                           setSelectedFieldId(field.id);
                                         }}
-                                        onDoubleClick={(event: React.MouseEvent<HTMLDivElement>) => {
+                                          onDoubleClick={(event: React.MouseEvent<HTMLDivElement>) => {
                                           event.stopPropagation();
                                           openFieldEditor(field.id);
                                         }}
                                       >
-                                        {isInsertTarget ? <span className="pointer-events-none absolute inset-y-2 left-0 w-[3px] rounded-full bg-primary" /> : null}
+                                          {isInsertTarget ? (
+                                            <span className="pointer-events-none absolute inset-[2px] rounded-[10px] bg-primary/[0.045] shadow-[inset_0_0_0_1px_rgba(59,130,246,0.08)]" />
+                                          ) : null}
+                                          <div
+                                            data-workbench-no-drag="true"
+                                            className={cn(
+                                              'absolute inset-y-1 right-0 z-10 flex w-3 cursor-col-resize items-center justify-center rounded-full transition-[opacity,background-color,transform] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-primary/8',
+                                              isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                                            )}
+                                            style={{
+                                              transitionDuration: `${dragFeedbackTransitionMs}ms`,
+                                              transitionTimingFunction: DASHBOARD_DRAG_MOTION_EASING,
+                                            }}
+                                            onPointerDown={(event) => startFieldResize(event, field, 'w')}
+                                          >
+                                            <span className="h-7 w-px rounded-full bg-slate-300/70" />
+                                          </div>
                                         <div
                                           data-workbench-no-drag="true"
-                                          className="absolute inset-y-1 right-0 z-10 flex w-3 cursor-col-resize items-center justify-center rounded-full opacity-0 transition-all group-hover:opacity-100 hover:bg-primary/8"
-                                          onPointerDown={(event) => startFieldResize(event, field, 'w')}
-                                        >
-                                          <span className="h-7 w-px rounded-full bg-slate-300/70" />
-                                        </div>
-                                        <div
-                                          data-workbench-no-drag="true"
-                                          className="absolute inset-x-3 bottom-0 z-10 flex h-3 cursor-row-resize items-center justify-center rounded-full opacity-0 transition-all group-hover:opacity-100 hover:bg-primary/8"
+                                          className={cn(
+                                            'absolute inset-x-3 bottom-0 z-10 flex h-3 cursor-row-resize items-center justify-center rounded-full transition-[opacity,background-color,transform] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-primary/8',
+                                            isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                                          )}
+                                          style={{
+                                            transitionDuration: `${dragFeedbackTransitionMs}ms`,
+                                            transitionTimingFunction: DASHBOARD_DRAG_MOTION_EASING,
+                                          }}
                                           onPointerDown={(event) => startFieldResize(event, field, 'h')}
                                         >
                                           <span className="h-px w-7 rounded-full bg-slate-300/70" />
                                         </div>
-                                        <div className="pointer-events-none flex h-full min-w-0 flex-1 items-center gap-1.5 px-1">
+                                        <div
+                                          className={cn(
+                                            'pointer-events-none flex h-full min-w-0 flex-1 items-center gap-1.5 px-1 transition-[padding-left,transform,opacity] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                                            isInsertTarget ? 'pl-2 translate-x-0.5 opacity-95' : '',
+                                            isNeighborBeforeInsert ? '-translate-x-0.5 opacity-[0.98]' : '',
+                                            isNeighborAfterInsert ? 'translate-x-0.5 opacity-[0.98]' : '',
+                                          )}
+                                          style={{
+                                            transitionDuration: `${dragFeedbackTransitionMs}ms`,
+                                            transitionTimingFunction: DASHBOARD_DRAG_MOTION_EASING,
+                                          }}
+                                        >
                                           <div className="flex h-full max-w-[42%] shrink-0 items-center text-[12px] font-medium tracking-[-0.01em] text-slate-800" title={displayTitle}>
                                             <span className="truncate">{displayTitle}</span>
                                           </div>
@@ -2252,6 +2842,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                                           </div>
                                         </div>
                                       </DesignerWorkbenchDraggableItem>
+                                      </React.Fragment>
                                     );
                                   }) : (
                                     <>
@@ -2259,7 +2850,22 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                                       <span className="shrink-0 text-[11px] font-medium text-slate-400">拖到这一行</span>
                                       <span className="h-px flex-1 self-center bg-[#dbe6f2]" />
                                     </>
-                                  )}
+                                  );
+                                  })()}
+                                  <span
+                                    aria-hidden="true"
+                                    className={cn(
+                                      'pointer-events-none relative block shrink-0 overflow-visible transition-[width,opacity] duration-180 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                                      isRowEndTarget ? 'opacity-100' : 'opacity-0',
+                                    )}
+                                    style={{
+                                      opacity: isRowEndTarget ? dragFeedbackIndicatorOpacity : 0,
+                                      transitionDuration: `${dragFeedbackTransitionMs}ms`,
+                                      width: isRowEndTarget ? 22 : 0,
+                                    }}
+                                  >
+                                    <span className="absolute inset-y-1 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary shadow-[0_0_0_3px_rgba(59,130,246,0.10)]" />
+                                  </span>
                                 </div>
                               </SortableContext>
                               {rowFields.length === 0 ? (
@@ -2288,8 +2894,8 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
           <DragOverlay
             modifiers={dragOverlayModifiers}
             dropAnimation={{
-              duration: 180,
-              easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+              duration: DASHBOARD_DRAG_MOTION_BASE_MS,
+              easing: DASHBOARD_DRAG_MOTION_EASING,
             }}
           >
             {activeDragFieldContext ? (() => {
@@ -2299,23 +2905,36 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
               const normalizedField = normalizeColumn({ ...rawField, name: displayTitle });
               const liveHeight = getBillHeaderFieldHeight({ controlHeight: activeDragFieldContext.field.h });
               const overlayWidth = clampNumber(
-                Math.min(getBillHeaderFieldWidth({ width: activeDragFieldContext.field.w, name: displayTitle }), 320),
+                Math.min(getBillHeaderFieldWidth({ width: activeDragFieldContext.field.w, name: displayTitle }), 220),
+                148,
                 220,
-                320,
               );
-              const overlayHeight = clampNumber(Math.max(32, liveHeight + 8), 32, 42);
-              const previewHeight = clampNumber(liveHeight - 26, 16, 20);
+              const overlayHeight = 32;
+              const previewHeight = clampNumber(liveHeight - 28, 14, 18);
+              const overlayMotion = clampNumber(dragOverlayMotionIntensity, 0, 1);
+              const overlayScale = 1 - overlayMotion * 0.025;
+              const overlayOpacity = 0.97 - overlayMotion * 0.12;
+              const overlayValueOpacity = 0.82 - overlayMotion * 0.18;
+              const overlayShadowOpacity = 0.24 - overlayMotion * 0.08;
+              const overlayShadow = `0 16px 30px -24px rgba(15,23,42,${overlayShadowOpacity.toFixed(3)})`;
 
               return (
                 <div
-                  className="flex select-none rounded-[10px] border border-[color:var(--workspace-accent)]/18 bg-white/96 text-left shadow-[0_16px_30px_-24px_rgba(15,23,42,0.28)]"
-                  style={{ height: overlayHeight, width: overlayWidth }}
+                  className="flex select-none rounded-[10px] border border-[color:var(--workspace-accent)]/18 bg-white/97 text-left transition-[opacity,transform,box-shadow] duration-150 ease-out"
+                  style={{
+                    height: overlayHeight,
+                    width: overlayWidth,
+                    opacity: overlayOpacity,
+                    transform: `translateZ(0) scale(${overlayScale})`,
+                    transformOrigin: 'top left',
+                    boxShadow: overlayShadow,
+                  }}
                 >
                   <div className="pointer-events-none flex h-full min-w-0 flex-1 items-center gap-2 px-2">
-                    <div className="flex h-full max-w-[44%] shrink-0 items-center text-[12px] font-semibold tracking-[-0.01em] text-slate-800" title={displayTitle}>
+                    <div className="flex h-full max-w-[56%] shrink-0 items-center text-[12px] font-semibold tracking-[-0.01em] text-slate-800" title={displayTitle}>
                       <span className="truncate">{displayTitle}</span>
                     </div>
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1" style={{ opacity: overlayValueOpacity }}>
                       {renderBillStyleFieldPreview(normalizedField, previewHeight)}
                     </div>
                   </div>
@@ -2347,7 +2966,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                           saveSchemeDraft();
                           setSidebarTab('schemes');
                         }}
-                        className="rounded-[12px] border border-[#dbe5ef] bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 hover:bg-[#f8fbff]"
+                        className={cn(
+                          'rounded-[12px] border border-[#dbe5ef] bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 hover:border-[#cddaea] hover:bg-[#f8fbff]',
+                          schemeModalSurfaceButtonClass,
+                        )}
+                        style={staticWorkbenchMotionStyle}
                       >
                         保存方案
                       </button>
@@ -2357,14 +2980,22 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                           saveSchemeDraftAsCopy();
                           setSidebarTab('schemes');
                         }}
-                        className="rounded-[12px] border border-[#dbe5ef] bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 hover:bg-[#f8fbff]"
+                        className={cn(
+                          'rounded-[12px] border border-[#dbe5ef] bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 hover:border-[#cddaea] hover:bg-[#f8fbff]',
+                          schemeModalSurfaceButtonClass,
+                        )}
+                        style={staticWorkbenchMotionStyle}
                       >
                         另存为
                       </button>
                       <button
                         type="button"
                         onClick={() => setIsSchemeModalOpen(false)}
-                        className="rounded-[12px] border border-[#dbe5ef] bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 hover:bg-[#f8fbff]"
+                        className={cn(
+                          'rounded-[12px] border border-[#dbe5ef] bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 hover:border-[#cddaea] hover:bg-[#f8fbff]',
+                          schemeModalSurfaceButtonClass,
+                        )}
+                        style={staticWorkbenchMotionStyle}
                       >
                         关闭
                       </button>
@@ -2379,7 +3010,7 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                   <div className="grid min-h-0 flex-1 grid-cols-[260px_240px_minmax(0,1fr)] gap-0">
                     <div className="flex min-h-0 flex-col border-r border-[#edf2f7] bg-[#fbfdff]">
                       <div className="flex items-center justify-between px-4 py-3">
-                        <div className="text-[12px] font-semibold text-slate-700">已有方案</div>
+                          <div className="text-[12px] font-semibold text-slate-700">已有方案</div>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
@@ -2388,16 +3019,21 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                             className={cn(
                               'rounded-[9px] border px-2.5 py-1 text-[11px] font-semibold',
                               hasPlacedFields
-                                ? 'border-[#dbe5ef] bg-white text-slate-600 hover:bg-[#f8fbff]'
+                                ? `border-[#dbe5ef] bg-white text-slate-600 hover:border-[#cddaea] hover:bg-[#f8fbff] ${schemeModalSurfaceButtonClass}`
                                 : 'cursor-not-allowed border-[#eef2f7] bg-[#f8fafc] text-slate-300',
                             )}
+                            style={hasPlacedFields ? staticWorkbenchMotionStyle : undefined}
                           >
                             从布局生成
                           </button>
                           <button
                             type="button"
                             onClick={createNewSchemeDraft}
-                            className="rounded-[9px] border border-[#dbe5ef] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-[#f8fbff]"
+                            className={cn(
+                              'rounded-[9px] border border-[#dbe5ef] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:border-[#cddaea] hover:bg-[#f8fbff]',
+                              schemeModalSurfaceButtonClass,
+                            )}
+                            style={staticWorkbenchMotionStyle}
                           >
                             新建
                           </button>
@@ -2415,9 +3051,13 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                               setSelectedSchemeGroupId(scheme.groups[0]?.id ?? null);
                             }}
                             className={cn(
-                              'mb-2 w-full rounded-[14px] border px-3 py-3 text-left transition-colors',
-                              schemeSourceId === scheme.id ? 'border-primary/35 bg-primary/5' : 'border-[#e6edf6] bg-white hover:border-[#d7e5f4]',
+                              'mb-2 w-full rounded-[14px] border px-3 py-3 text-left',
+                              schemeSourceId === scheme.id
+                                ? `border-primary/35 bg-primary/5 ${schemeModalSelectedCardClass}`
+                                : 'border-[#e6edf6] bg-white hover:border-[#d7e5f4]',
+                              schemeModalCardClass,
                             )}
+                            style={staticWorkbenchMotionStyle}
                           >
                             <div className="truncate text-[12px] font-semibold text-slate-800">{scheme.name}</div>
                             <div className="mt-1 text-[11px] text-slate-400">{scheme.groups.length} 个分组 · {countSchemeFields(scheme)} 个字段</div>
@@ -2432,7 +3072,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                         <button
                           type="button"
                           onClick={() => openSchemeModal(null, suggestedScheme)}
-                          className="w-full rounded-[12px] border border-primary/20 bg-primary/8 px-3 py-2 text-[12px] font-semibold text-primary hover:bg-primary/12"
+                          className={cn(
+                            'w-full rounded-[12px] border border-primary/20 bg-primary/8 px-3 py-2 text-[12px] font-semibold text-primary hover:border-primary/28 hover:bg-primary/12',
+                            schemeModalSurfaceButtonClass,
+                          )}
+                          style={staticWorkbenchMotionStyle}
                         >
                           使用默认建议
                         </button>
@@ -2445,7 +3089,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                           <input
                             value={schemeDraft.name}
                             onChange={(event) => setSchemeDraft((current) => ({ ...current, name: event.target.value }))}
-                            className="h-9 rounded-[10px] border border-[#d8e3ef] px-3 text-[12px] text-slate-700 outline-none"
+                            className={cn(
+                              'h-9 rounded-[10px] border border-[#d8e3ef] bg-white px-3 text-[12px] text-slate-700 outline-none',
+                              schemeModalInputClass,
+                            )}
+                            style={staticWorkbenchMotionStyle}
                           />
                         </label>
                       </div>
@@ -2454,7 +3102,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                         <button
                           type="button"
                           onClick={addSchemeGroup}
-                          className="rounded-[9px] border border-[#dbe5ef] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-[#f8fbff]"
+                          className={cn(
+                            'rounded-[9px] border border-[#dbe5ef] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:border-[#cddaea] hover:bg-[#f8fbff]',
+                            schemeModalSurfaceButtonClass,
+                          )}
+                          style={staticWorkbenchMotionStyle}
                         >
                           新增分组
                         </button>
@@ -2465,13 +3117,18 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                             key={group.id}
                             className={cn(
                               'mb-2 rounded-[14px] border px-3 py-3',
-                              selectedSchemeGroupId === group.id ? 'border-primary/35 bg-primary/5' : 'border-[#e6edf6] bg-white',
+                              selectedSchemeGroupId === group.id
+                                ? `border-primary/35 bg-primary/5 ${schemeModalSelectedCardClass}`
+                                : 'border-[#e6edf6] bg-white hover:border-[#d7e5f4]',
+                              schemeModalCardClass,
                             )}
+                            style={staticWorkbenchMotionStyle}
                           >
                             <button
                               type="button"
                               onClick={() => setSelectedSchemeGroupId(group.id)}
                               className="mb-2 w-full text-left"
+                              style={staticWorkbenchMotionStyle}
                             >
                               <div className="text-[11px] text-slate-400">{group.fieldIds.length} 个字段</div>
                             </button>
@@ -2479,12 +3136,20 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                               value={group.name}
                               onChange={(event) => renameSchemeGroup(group.id, event.target.value)}
                               onFocus={() => setSelectedSchemeGroupId(group.id)}
-                              className="h-9 w-full rounded-[10px] border border-[#d8e3ef] px-3 text-[12px] text-slate-700 outline-none"
+                              className={cn(
+                                'h-9 w-full rounded-[10px] border border-[#d8e3ef] bg-white px-3 text-[12px] text-slate-700 outline-none',
+                                schemeModalInputClass,
+                              )}
+                              style={staticWorkbenchMotionStyle}
                             />
                             <button
                               type="button"
                               onClick={() => removeSchemeGroup(group.id)}
-                              className="mt-2 w-full rounded-[10px] border border-[#f1d4d8] bg-[#fff7f7] px-3 py-2 text-[11px] font-semibold text-rose-600 hover:bg-[#fff1f1]"
+                              className={cn(
+                                'mt-2 w-full rounded-[10px] border border-[#f1d4d8] bg-[#fff7f7] px-3 py-2 text-[11px] font-semibold text-rose-600 hover:border-[#edc2ca] hover:bg-[#fff1f1]',
+                                schemeModalSurfaceButtonClass,
+                              )}
+                              style={staticWorkbenchMotionStyle}
                             >
                               删除分组
                             </button>
@@ -2503,7 +3168,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                             <button
                               type="button"
                               onClick={deleteActiveScheme}
-                              className="rounded-[10px] border border-[#f1d4d8] bg-[#fff7f7] px-3 py-2 text-[11px] font-semibold text-rose-600 hover:bg-[#fff1f1]"
+                              className={cn(
+                                'rounded-[10px] border border-[#f1d4d8] bg-[#fff7f7] px-3 py-2 text-[11px] font-semibold text-rose-600 hover:border-[#edc2ca] hover:bg-[#fff1f1]',
+                                schemeModalSurfaceButtonClass,
+                              )}
+                              style={staticWorkbenchMotionStyle}
                             >
                               删除方案
                             </button>
@@ -2513,8 +3182,84 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                           value={schemeFieldKeyword}
                           onChange={(event) => setSchemeFieldKeyword(event.target.value)}
                           placeholder="搜索字段"
-                          className="mt-3 h-10 w-full rounded-[12px] border border-[#d8e3ef] bg-white px-3 text-[12px] text-slate-700 outline-none placeholder:text-slate-400"
+                          className={cn(
+                            'mt-3 h-10 w-full rounded-[12px] border border-[#d8e3ef] bg-white px-3 text-[12px] text-slate-700 outline-none placeholder:text-slate-400',
+                            schemeModalInputClass,
+                          )}
+                          style={staticWorkbenchMotionStyle}
                         />
+                        <div className="mt-3 rounded-[14px] border border-[#e6edf6] bg-[#fbfdff] p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-[12px] font-semibold text-slate-700">统一宽高</div>
+                              <div className="mt-1 text-[11px] text-slate-400">一键应用到当前方案内所有已选字段，共 {selectedSchemeFieldIds.length} 个。</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={applySchemeBatchFieldSize}
+                              disabled={selectedSchemeFieldIds.length === 0}
+                              className={cn(
+                                'shrink-0 rounded-[10px] border px-3 py-2 text-[11px] font-semibold',
+                                selectedSchemeFieldIds.length > 0
+                                  ? `border-primary/20 bg-primary/8 text-primary hover:border-primary/28 hover:bg-primary/12 ${schemeModalSurfaceButtonClass}`
+                                  : 'cursor-not-allowed border-[#eef2f7] bg-[#f8fafc] text-slate-300',
+                              )}
+                              style={selectedSchemeFieldIds.length > 0 ? staticWorkbenchMotionStyle : undefined}
+                            >
+                              应用到全部
+                            </button>
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <label className="grid gap-1 text-[10px] font-medium text-slate-500">
+                              <span>统一宽度</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={schemeBatchSizeInput.w}
+                                onChange={(event) => setSchemeBatchSizeInput((current) => ({
+                                  ...current,
+                                  w: event.target.value.replace(/[^\d]/g, ''),
+                                }))}
+                                onKeyDown={(event) => handleFieldSizeInputKeyDown(
+                                  event,
+                                  applySchemeBatchFieldSize,
+                                  () => setSchemeBatchSizeInput((current) => ({ ...current, w: '' })),
+                                )}
+                                className={cn(
+                                  'h-8 min-w-0 rounded-[10px] border border-[#d8e3ef] bg-white px-3 text-[11px] text-slate-700 outline-none',
+                                  schemeModalInputClass,
+                                )}
+                                style={staticWorkbenchMotionStyle}
+                                placeholder="例如 280"
+                              />
+                            </label>
+                            <label className="grid gap-1 text-[10px] font-medium text-slate-500">
+                              <span>统一高度</span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={schemeBatchSizeInput.h}
+                                onChange={(event) => setSchemeBatchSizeInput((current) => ({
+                                  ...current,
+                                  h: event.target.value.replace(/[^\d]/g, ''),
+                                }))}
+                                onKeyDown={(event) => handleFieldSizeInputKeyDown(
+                                  event,
+                                  applySchemeBatchFieldSize,
+                                  () => setSchemeBatchSizeInput((current) => ({ ...current, h: '' })),
+                                )}
+                                className={cn(
+                                  'h-8 min-w-0 rounded-[10px] border border-[#d8e3ef] bg-white px-3 text-[11px] text-slate-700 outline-none',
+                                  schemeModalInputClass,
+                                )}
+                                style={staticWorkbenchMotionStyle}
+                                placeholder="例如 36"
+                              />
+                            </label>
+                          </div>
+                        </div>
                       </div>
                       <div className="min-h-0 flex-1 overflow-y-auto p-3">
                         {selectedSchemeGroup ? filteredSchemeFieldOptions.map((option) => {
@@ -2530,9 +3275,13 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                             <label
                               key={fieldId}
                               className={cn(
-                                'mb-2 flex cursor-pointer items-start gap-3 rounded-[14px] border px-3 py-3 transition-colors',
-                                checked ? 'border-primary/35 bg-primary/5' : 'border-[#edf2f7] bg-[#fbfdff] hover:border-[#d7e5f4] hover:bg-white',
+                                'mb-2 flex cursor-pointer items-start gap-3 rounded-[14px] border px-3 py-3',
+                                checked
+                                  ? `border-primary/35 bg-primary/5 ${schemeModalSelectedCardClass}`
+                                  : 'border-[#edf2f7] bg-[#fbfdff] hover:border-[#d7e5f4] hover:bg-white',
+                                schemeModalCardClass,
                               )}
+                              style={staticWorkbenchMotionStyle}
                             >
                               <input
                                 type="checkbox"
@@ -2560,7 +3309,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                                               [fieldId]: { ...(current[fieldId] ?? {}), h: current[fieldId]?.h ?? String(resolvedSchemeFieldSize.h), w: String(nextValue) },
                                             }));
                                           }}
-                                          className="h-7 rounded-[8px] border border-[#d8e3ef] bg-white text-[12px] font-semibold text-slate-500 hover:bg-[#f8fbff]"
+                                          className={cn(
+                                            'h-7 rounded-[8px] border border-[#d8e3ef] bg-white text-[12px] font-semibold text-slate-500 hover:border-[#cddaea] hover:bg-[#f8fbff]',
+                                            schemeModalSurfaceButtonClass,
+                                          )}
+                                          style={staticWorkbenchMotionStyle}
                                         >
                                           -
                                         </button>
@@ -2604,7 +3357,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                                               [fieldId]: { ...(current[fieldId] ?? {}), h: current[fieldId]?.h ?? String(resolvedSchemeFieldSize.h), w: String(resolvedSchemeFieldSize.w) },
                                             })),
                                           )}
-                                          className="h-7 min-w-0 rounded-[8px] border border-[#d8e3ef] bg-white px-2 text-center text-[11px] text-slate-700 outline-none"
+                                          className={cn(
+                                            'h-7 min-w-0 rounded-[8px] border border-[#d8e3ef] bg-white px-2 text-center text-[11px] text-slate-700 outline-none',
+                                            schemeModalInputClass,
+                                          )}
+                                          style={staticWorkbenchMotionStyle}
                                         />
                                         <button
                                           type="button"
@@ -2615,7 +3372,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                                               [fieldId]: { ...(current[fieldId] ?? {}), h: current[fieldId]?.h ?? String(resolvedSchemeFieldSize.h), w: String(nextValue) },
                                             }));
                                           }}
-                                          className="h-7 rounded-[8px] border border-[#d8e3ef] bg-white text-[12px] font-semibold text-slate-500 hover:bg-[#f8fbff]"
+                                          className={cn(
+                                            'h-7 rounded-[8px] border border-[#d8e3ef] bg-white text-[12px] font-semibold text-slate-500 hover:border-[#cddaea] hover:bg-[#f8fbff]',
+                                            schemeModalSurfaceButtonClass,
+                                          )}
+                                          style={staticWorkbenchMotionStyle}
                                         >
                                           +
                                         </button>
@@ -2633,7 +3394,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                                               [fieldId]: { ...(current[fieldId] ?? {}), h: String(nextValue), w: current[fieldId]?.w ?? String(resolvedSchemeFieldSize.w) },
                                             }));
                                           }}
-                                          className="h-7 rounded-[8px] border border-[#d8e3ef] bg-white text-[12px] font-semibold text-slate-500 hover:bg-[#f8fbff]"
+                                          className={cn(
+                                            'h-7 rounded-[8px] border border-[#d8e3ef] bg-white text-[12px] font-semibold text-slate-500 hover:border-[#cddaea] hover:bg-[#f8fbff]',
+                                            schemeModalSurfaceButtonClass,
+                                          )}
+                                          style={staticWorkbenchMotionStyle}
                                         >
                                           -
                                         </button>
@@ -2677,7 +3442,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                                               [fieldId]: { ...(current[fieldId] ?? {}), h: String(resolvedSchemeFieldSize.h), w: current[fieldId]?.w ?? String(resolvedSchemeFieldSize.w) },
                                             })),
                                           )}
-                                          className="h-7 min-w-0 rounded-[8px] border border-[#d8e3ef] bg-white px-2 text-center text-[11px] text-slate-700 outline-none"
+                                          className={cn(
+                                            'h-7 min-w-0 rounded-[8px] border border-[#d8e3ef] bg-white px-2 text-center text-[11px] text-slate-700 outline-none',
+                                            schemeModalInputClass,
+                                          )}
+                                          style={staticWorkbenchMotionStyle}
                                         />
                                         <button
                                           type="button"
@@ -2688,7 +3457,11 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                                               [fieldId]: { ...(current[fieldId] ?? {}), h: String(nextValue), w: current[fieldId]?.w ?? String(resolvedSchemeFieldSize.w) },
                                             }));
                                           }}
-                                          className="h-7 rounded-[8px] border border-[#d8e3ef] bg-white text-[12px] font-semibold text-slate-500 hover:bg-[#f8fbff]"
+                                          className={cn(
+                                            'h-7 rounded-[8px] border border-[#d8e3ef] bg-white text-[12px] font-semibold text-slate-500 hover:border-[#cddaea] hover:bg-[#f8fbff]',
+                                            schemeModalSurfaceButtonClass,
+                                          )}
+                                          style={staticWorkbenchMotionStyle}
                                         >
                                           +
                                         </button>
@@ -2698,7 +3471,10 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                                 ) : null}
                               </div>
                               {assignedGroupId && !checked ? (
-                                <span className="shrink-0 rounded-full border border-[#e5ecf5] bg-white px-2 py-1 text-[10px] font-medium text-slate-500">
+                                <span
+                                  className="shrink-0 rounded-full border border-[#e5ecf5] bg-white px-2 py-1 text-[10px] font-medium text-slate-500 transition-[border-color,background-color,box-shadow]"
+                                  style={staticWorkbenchMotionStyle}
+                                >
                                   {assignedGroupName}
                                 </span>
                               ) : null}
@@ -2719,7 +3495,8 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
                               saveSchemeDraft();
                               applySchemeDraft();
                             }}
-                            className="rounded-[12px] border border-primary/20 bg-primary px-4 py-2 text-[12px] font-semibold text-white hover:bg-primary/90"
+                            className="rounded-[12px] border border-primary/20 bg-primary px-4 py-2 text-[12px] font-semibold text-white transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-[1px] hover:bg-primary/90 hover:shadow-[0_16px_28px_-20px_rgba(59,130,246,0.42)] active:translate-y-0"
+                            style={staticWorkbenchMotionStyle}
                           >
                             一键放入布局
                           </button>
@@ -2910,3 +3687,4 @@ export const ArchiveLayoutFieldLayoutEditor = React.memo(function ArchiveLayoutF
     </div>
   );
 });
+
